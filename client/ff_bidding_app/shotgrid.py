@@ -46,6 +46,8 @@ class ShotgridClient:
         self.script_name = script_name or os.getenv("SG_SCRIPT", "")
         self.api_key = api_key or os.getenv("SG_KEY", "")
         self._sg = None
+        self._field_schema_cache = {}
+        self._entity_schema_cache = {}
 
     def connect(self):
         """Connect to Shotgrid."""
@@ -240,6 +242,62 @@ class ShotgridClient:
             fields,
             order=[{"field_name": "created_at", "direction": "desc"}]  # Newest first
         )
+
+    # ------------------------------------------------------------------
+    # Schema helpers
+    # ------------------------------------------------------------------
+
+    def get_field_schema(self, entity_type, field_name):
+        """Read schema information for a specific field and cache the result."""
+
+        cache_key = (entity_type, field_name)
+        if cache_key not in self._field_schema_cache:
+            schema = self.sg.schema_field_read(entity_type, field_name)
+            self._field_schema_cache[cache_key] = schema.get(field_name, {})
+        return self._field_schema_cache[cache_key]
+
+    def get_entity_schema(self, entity_type):
+        """Read and cache the schema for an entity type."""
+
+        if entity_type not in self._entity_schema_cache:
+            self._entity_schema_cache[entity_type] = self.sg.schema_read(entity_type)
+        return self._entity_schema_cache[entity_type]
+
+    def get_vfx_breakdown_entity_type(self):
+        """Return the ShotGrid entity type used for VFX Breakdowns."""
+
+        field_schema = self.get_field_schema("CustomEntity04", "sg_vfx_breakdown")
+        properties = field_schema.get("properties", {})
+        valid_types = properties.get("valid_types", [])
+
+        if not valid_types:
+            raise ValueError("sg_vfx_breakdown field has no valid types configured")
+
+        # sg schema typically returns {"entity_type": "CustomEntityXX", "name": "..."}
+        entity_type = valid_types[0].get("entity_type") or valid_types[0].get("type")
+        if not entity_type:
+            raise ValueError("Could not determine VFX Breakdown entity type from schema")
+
+        return entity_type
+
+    def get_entity_fields_with_labels(self, entity_type):
+        """Return a tuple of (field_names, display_labels) for an entity type."""
+
+        schema = self.get_entity_schema(entity_type)
+        field_names = []
+        display_labels = {}
+
+        for field, metadata in schema.items():
+            field_names.append(field)
+            display_labels[field] = metadata.get("name") or metadata.get("properties", {}).get("display_name", field)
+
+        return field_names, display_labels
+
+    def get_entity_by_id(self, entity_type, entity_id, fields=None):
+        """Retrieve a single entity by id."""
+
+        filters = [["id", "is", entity_id]]
+        return self.sg.find_one(entity_type, filters, fields)
 
     def get_rfq_versions(self, rfq_id, fields=None):
         """
