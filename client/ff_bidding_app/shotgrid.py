@@ -296,38 +296,99 @@ class ShotgridClient:
             ]
         )
 
-    def get_vfx_breakdown(self, rfq_id, fields=None):
+    def get_vfx_breakdowns(self, rfq_id, fields=None):
         """
-        Get VFX Breakdown items linked to an RFQ.
+        Get all VFX Breakdown entities linked to an RFQ.
 
         Args:
             rfq_id: RFQ (CustomEntity04) ID
-            fields: List of fields to return. Defaults to common VFX breakdown fields
+            fields: List of fields to return for breakdown entities
 
         Returns:
-            List of VFX breakdown dictionaries linked to the RFQ
+            Tuple of (list of VFX breakdown entities, current breakdown entity or None)
         """
-        # First, get the RFQ with its sg_vfx_breakdown field
+        # Get the RFQ with its sg_vfx_breakdowns and sg_current_vfx_breakdown fields
         rfq = self.sg.find_one(
             "CustomEntity04",
             [["id", "is", rfq_id]],
-            ["sg_vfx_breakdown"]
+            ["sg_vfx_breakdowns", "sg_current_vfx_breakdown"]
         )
 
-        if not rfq or not rfq.get("sg_vfx_breakdown"):
-            return []
+        if not rfq:
+            return [], None
 
-        # Extract breakdown IDs from the sg_vfx_breakdown field
-        breakdown_items = rfq["sg_vfx_breakdown"]
-        if not isinstance(breakdown_items, list):
-            breakdown_items = [breakdown_items]
+        breakdowns_list = rfq.get("sg_vfx_breakdowns", [])
+        current_breakdown = rfq.get("sg_current_vfx_breakdown")
 
-        breakdown_ids = [item["id"] for item in breakdown_items if item]
+        if not breakdowns_list:
+            return [], None
+
+        # Ensure it's a list
+        if not isinstance(breakdowns_list, list):
+            breakdowns_list = [breakdowns_list]
+
+        breakdown_ids = [b["id"] for b in breakdowns_list if b]
 
         if not breakdown_ids:
+            return [], current_breakdown
+
+        # Default fields for VFX Breakdown entities
+        if fields is None:
+            fields = [
+                "id",
+                "code",
+                "description",
+                "sg_status_list",
+                "created_at",
+                "updated_at",
+            ]
+
+        # Determine entity type from first item
+        entity_type = breakdowns_list[0].get("type", "CustomEntity01")
+
+        # Query the breakdown entities
+        breakdowns = self.sg.find(
+            entity_type,
+            [["id", "in", breakdown_ids]],
+            fields,
+            order=[{"field_name": "code", "direction": "asc"}]
+        )
+
+        return breakdowns, current_breakdown
+
+    def get_vfx_breakdown_items(self, breakdown_id, breakdown_entity_type="CustomEntity01", fields=None):
+        """
+        Get all items in a specific VFX Breakdown.
+
+        Args:
+            breakdown_id: VFX Breakdown entity ID
+            breakdown_entity_type: Entity type (CustomEntity01, CustomEntity02, etc.)
+            fields: List of fields to return. Defaults to common VFX breakdown item fields
+
+        Returns:
+            List of VFX breakdown item dictionaries
+        """
+        # Get the breakdown with its items field
+        breakdown = self.sg.find_one(
+            breakdown_entity_type,
+            [["id", "is", breakdown_id]],
+            ["sg_breakdown_items"]
+        )
+
+        if not breakdown or not breakdown.get("sg_breakdown_items"):
             return []
 
-        # Default fields for VFX Breakdown
+        # Extract item IDs
+        items_list = breakdown["sg_breakdown_items"]
+        if not isinstance(items_list, list):
+            items_list = [items_list]
+
+        item_ids = [item["id"] for item in items_list if item]
+
+        if not item_ids:
+            return []
+
+        # Default fields for breakdown items
         if fields is None:
             fields = [
                 "id",
@@ -344,17 +405,42 @@ class ShotgridClient:
                 "updated_at",
             ]
 
-        # Query the breakdown items
-        # Note: VFX Breakdown could be CustomEntity01, CustomEntity02, etc.
-        # We need to determine the entity type from the first item
-        entity_type = breakdown_items[0].get("type", "CustomEntity01")
+        # Determine item entity type
+        item_entity_type = items_list[0].get("type", "CustomEntity02")
 
         return self.sg.find(
-            entity_type,
-            [["id", "in", breakdown_ids]],
+            item_entity_type,
+            [["id", "in", item_ids]],
             fields,
             order=[{"field_name": "code", "direction": "asc"}]
         )
+
+    def set_current_vfx_breakdown(self, rfq_id, breakdown_id, breakdown_entity_type="CustomEntity01"):
+        """
+        Set the current VFX Breakdown for an RFQ.
+
+        Args:
+            rfq_id: RFQ (CustomEntity04) ID
+            breakdown_id: VFX Breakdown entity ID to set as current
+            breakdown_entity_type: Entity type of the breakdown
+
+        Returns:
+            Updated RFQ entity or None if failed
+        """
+        try:
+            return self.sg.update(
+                "CustomEntity04",
+                rfq_id,
+                {
+                    "sg_current_vfx_breakdown": {
+                        "type": breakdown_entity_type,
+                        "id": breakdown_id
+                    }
+                }
+            )
+        except Exception as e:
+            logging.error(f"Failed to set current VFX Breakdown: {e}")
+            return None
 
     def get_version_published_files(self, version_id, fields=None):
         """
