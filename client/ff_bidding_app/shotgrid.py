@@ -4,6 +4,7 @@ import os
 
 try:
     from shotgun_api3 import Shotgun
+    from shotgun_api3 import Fault  # at top with other imports
 except ImportError:
     Shotgun = None
     print("Warning: shotgun_api3 not installed. Using simulated data.")
@@ -224,23 +225,22 @@ class ShotgridClient:
 
     def get_rfqs(self, project_id, fields=None):
         """
-        Get RFQs (CustomEntity04) for a project.
-
-        Args:
-            project_id: Project ID
-            fields: List of fields to return. Defaults to id, code, sg_status_list, created_at
-
-        Returns:
-            List of RFQ dictionaries (sorted by created_at descending - newest first)
+        Get RFQs (CustomEntity04) for a project, including the linked VFX Breakdown.
         """
         if fields is None:
-            fields = ["id", "code", "sg_status_list", "created_at"]
+            fields = [
+                "id",
+                "code",
+                "sg_status_list",
+                "created_at",
+                "sg_vfx_breakdown",  # include the link so UI stays in sync on reload
+            ]
 
         return self.sg.find(
             "CustomEntity04",
-            [["project", "is", {"type": "Project", "id": project_id}]],
+            [["project", "is", {"type": "Project", "id": int(project_id)}]],
             fields,
-            order=[{"field_name": "created_at", "direction": "desc"}]  # Newest first
+            order=[{"field_name": "created_at", "direction": "desc"}],
         )
 
     # ------------------------------------------------------------------
@@ -263,22 +263,97 @@ class ShotgridClient:
             self._entity_schema_cache[entity_type] = self.sg.schema_read(entity_type)
         return self._entity_schema_cache[entity_type]
 
+    def get_beats_for_vfx_breakdown(self, vfx_breakdown_id, fields=None, order=None):
+        """
+        Return all Beats (CustomEntity02) whose sg_parent references the given VFX Breakdown (CustomEntity01).
+        """
+        if fields is None:
+            fields = [
+                "id", "code", "sg_beat_id", "sg_vfx_breakdown_scene", "sg_page",
+                "sg_script_excerpt", "description", "sg_vfx_type", "sg_complexity",
+                "sg_category", "sg_vfx_description", "sg_numer_of_shots", "sg_number_of_shots"
+            ]
+        if order is None:
+            order = [
+                {"field_name": "sg_page", "direction": "asc"},
+                {"field_name": "code", "direction": "asc"},
+            ]
+
+        filters = [
+            ["sg_parent", "is", {"type": "CustomEntity01", "id": int(vfx_breakdown_id)}],
+        ]
+        return self.sg.find("CustomEntity02", filters, fields, order=order)
+
     def get_vfx_breakdown_entity_type(self):
-        """Return the ShotGrid entity type used for VFX Breakdowns."""
+        """
+        Return the SG entity type used for VFX Breakdowns.
+        1) Try schema on RFQ field 'sg_vfx_breakdown'
+        2) Fallback to explicit override (env var or default)
+        """
+        # 1) Schema-based
+        try:
+            field_schema = self.get_field_schema("CustomEntity04", "sg_vfx_breakdown")
+            props = field_schema.get("properties", {}) or {}
+            valid_types = props.get("valid_types", []) or []
+            if valid_types:
+                # SG returns {'entity_type': 'CustomEntityXX', 'name': '...'} (older) or {'type': 'CustomEntityXX'} (newer)
+                ent = valid_types[0].get("entity_type") or valid_types[0].get("type")
+                if ent:
+                    return ent
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"Schema read failed for sg_vfx_breakdown: {e}")
 
-        field_schema = self.get_field_schema("CustomEntity04", "sg_vfx_breakdown")
-        properties = field_schema.get("properties", {})
-        valid_types = properties.get("valid_types", [])
+        # 2) Fallback (env or known default)
+        return os.getenv("FF_VFX_BREAKDOWN_ENTITY", "CustomEntity01")
 
-        if not valid_types:
-            raise ValueError("sg_vfx_breakdown field has no valid types configured")
+    def get_vfx_breakdowns(self, project_id, fields=None, order=None):
+        """
+        Return all VFX Breakdowns (CustomEntity01) for a project.
+        """
+        entity = "CustomEntity01"
+        if fields is None:
+            fields = ["id", "code", "name", "description", "created_at", "updated_at"]
+        if order is None:
+            order = [{"field_name": "created_at", "direction": "desc"}]
 
-        # sg schema typically returns {"entity_type": "CustomEntityXX", "name": "..."}
-        entity_type = valid_types[0].get("entity_type") or valid_types[0].get("type")
-        if not entity_type:
-            raise ValueError("Could not determine VFX Breakdown entity type from schema")
+        filters = [["project", "is", {"type": "Project", "id": int(project_id)}]]
+        return self.sg.find(entity, filters, fields, order=order)
 
-        return entity_type
+    def update_rfq_vfx_breakdown(self, rfq_id, breakdown):
+        """
+        Set sg_vfx_breakdown on RFQ (CustomEntity04) to the given breakdown link.
+        Robust to single-entity vs multi-entity:
+          - try as multi (list) first
+          - if API says 'expected Hash', retry as single (dict)
+        """
+        # Normalize link
+        if isinstance(breakdown, int):
+            br_link = {"type": "CustomEntity01", "id": int(breakdown)}
+        elif isinstance(breakdown, dict) and "id" in breakdown:
+            br_link = {"type": breakdown.get("type", "CustomEntity01"), "id": int(breakdown["id"])}
+        else:
+            raise ValueError("Invalid breakdown argument; expected id or SG link dict.")
+
+        # Import Fault safely (works even if shotgun_api3 wasn't imported globally)
+        try:
+            from shotgun_api3 import Fault as SGFault
+        except Exception:  # pragma: no cover
+            SGFault = Exception
+
+        log = logging.getLogger(__name__)
+        payload_multi = {"sg_vfx_breakdown": [br_link]}
+        payload_single = {"sg_vfx_breakdown": br_link}
+
+        log.info(f"Updating RFQ {rfq_id} sg_vfx_breakdown -> TRY multi {payload_multi}")
+        try:
+            return self.sg.update("CustomEntity04", int(rfq_id), payload_multi)
+        except SGFault as e:
+            msg = str(e)
+            log.warning(f"Multi update failed: {msg}")
+            if "expected Hash" in msg:
+                log.info(f"Retrying RFQ {rfq_id} sg_vfx_breakdown -> single {payload_single}")
+                return self.sg.update("CustomEntity04", int(rfq_id), payload_single)
+            raise
 
     def get_entity_fields_with_labels(self, entity_type):
         """Return a tuple of (field_names, display_labels) for an entity type."""
