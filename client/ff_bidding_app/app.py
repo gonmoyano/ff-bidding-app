@@ -1,7 +1,7 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 import sys
 
@@ -64,6 +64,11 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             )
             logger.info(f"Shotgrid Session: {self.sg_session}")
             self.output_directory = output_directory or str(Path.home() / "shotgrid_packages")
+
+            # Cached schema information for VFX Breakdowns
+            self.vfx_breakdown_entity_type = None
+            self.vfx_breakdown_field_names = []
+            self.vfx_breakdown_field_labels = {}
 
             self.setWindowTitle("Fireframe - Bidding Manager")
             self.setMinimumSize(1400, 700)
@@ -563,17 +568,48 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         """Create the VFX Breakdown tab content."""
         vfx_breakdown_widget = QtWidgets.QWidget()
         vfx_breakdown_layout = QtWidgets.QVBoxLayout(vfx_breakdown_widget)
+        vfx_breakdown_layout.setContentsMargins(6, 6, 6, 6)
 
-        # Placeholder content
-        label = QtWidgets.QLabel("VFX Breakdown")
-        label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 20px;")
-        vfx_breakdown_layout.addWidget(label)
+        selector_group = QtWidgets.QGroupBox("VFX Breakdowns")
+        selector_layout = QtWidgets.QVBoxLayout(selector_group)
 
-        info_label = QtWidgets.QLabel("VFX Breakdown content will be displayed here.")
-        info_label.setStyleSheet("padding: 20px;")
-        vfx_breakdown_layout.addWidget(info_label)
+        selector_row = QtWidgets.QHBoxLayout()
+        selector_label = QtWidgets.QLabel("Select VFX Breakdown:")
+        selector_row.addWidget(selector_label)
 
-        vfx_breakdown_layout.addStretch()
+        self.vfx_breakdown_combo = QtWidgets.QComboBox()
+        self.vfx_breakdown_combo.setMinimumWidth(250)
+        self.vfx_breakdown_combo.currentIndexChanged.connect(self._on_vfx_breakdown_changed)
+        selector_row.addWidget(self.vfx_breakdown_combo, stretch=1)
+
+        self.vfx_breakdown_set_btn = QtWidgets.QPushButton("Set as Current")
+        self.vfx_breakdown_set_btn.setEnabled(False)
+        selector_row.addWidget(self.vfx_breakdown_set_btn)
+
+        self.vfx_breakdown_refresh_btn = QtWidgets.QPushButton("Refresh")
+        self.vfx_breakdown_refresh_btn.clicked.connect(self._refresh_vfx_breakdowns)
+        selector_row.addWidget(self.vfx_breakdown_refresh_btn)
+
+        selector_layout.addLayout(selector_row)
+
+        self.vfx_breakdown_status_label = QtWidgets.QLabel("Select an RFQ to view VFX Breakdowns.")
+        self.vfx_breakdown_status_label.setObjectName("vfxBreakdownStatusLabel")
+        self.vfx_breakdown_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
+        selector_layout.addWidget(self.vfx_breakdown_status_label)
+
+        vfx_breakdown_layout.addWidget(selector_group)
+
+        self.vfx_breakdown_table = QtWidgets.QTableWidget()
+        self.vfx_breakdown_table.setColumnCount(2)
+        self.vfx_breakdown_table.setHorizontalHeaderLabels(["Field", "Value"])
+        self.vfx_breakdown_table.horizontalHeader().setStretchLastSection(True)
+        self.vfx_breakdown_table.verticalHeader().setVisible(False)
+        self.vfx_breakdown_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.vfx_breakdown_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.vfx_breakdown_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.vfx_breakdown_table.setAlternatingRowColors(True)
+        self.vfx_breakdown_table.setWordWrap(True)
+        vfx_breakdown_layout.addWidget(self.vfx_breakdown_table)
 
         return vfx_breakdown_widget
 
@@ -632,6 +668,223 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         delivery_layout.addStretch()
 
         return delivery_widget
+
+    # ------------------------------------------------------------------
+    # VFX Breakdown helpers
+    # ------------------------------------------------------------------
+
+    def _refresh_vfx_breakdowns(self):
+        """Reload the VFX Breakdown list for the current RFQ."""
+
+        if not hasattr(self, "vfx_breakdown_combo"):
+            return
+
+        current_data = self.vfx_breakdown_combo.currentData()
+        current_id = current_data.get("id") if isinstance(current_data, dict) else None
+
+        rfq = self.rfq_combo.itemData(self.rfq_combo.currentIndex()) if self.rfq_combo else None
+        self._populate_vfx_breakdown_combo(rfq, auto_select=False)
+
+        if current_id:
+            self._select_vfx_breakdown_by_id(current_id)
+
+    def _select_vfx_breakdown_by_id(self, entity_id):
+        if not entity_id or not hasattr(self, "vfx_breakdown_combo"):
+            return False
+
+        for index in range(self.vfx_breakdown_combo.count()):
+            breakdown = self.vfx_breakdown_combo.itemData(index)
+            if isinstance(breakdown, dict) and breakdown.get("id") == entity_id:
+                self.vfx_breakdown_combo.setCurrentIndex(index)
+                return True
+        return False
+
+    def _populate_vfx_breakdown_combo(self, rfq, auto_select=True):
+        if not hasattr(self, "vfx_breakdown_combo"):
+            return
+
+        self.vfx_breakdown_combo.blockSignals(True)
+        self.vfx_breakdown_combo.clear()
+        self.vfx_breakdown_combo.addItem("-- Select VFX Breakdown --", None)
+
+        breakdowns = []
+        if rfq:
+            raw_breakdown = rfq.get("sg_vfx_breakdown")
+            if isinstance(raw_breakdown, list):
+                breakdowns = [item for item in raw_breakdown if isinstance(item, dict)]
+            elif isinstance(raw_breakdown, dict):
+                breakdowns = [raw_breakdown]
+
+        for breakdown in breakdowns:
+            label = (
+                breakdown.get("name")
+                or breakdown.get("code")
+                or breakdown.get("content")
+                or f"ID {breakdown.get('id', 'N/A')}"
+            )
+            self.vfx_breakdown_combo.addItem(label, breakdown)
+
+        self.vfx_breakdown_combo.blockSignals(False)
+
+        if hasattr(self, "vfx_breakdown_set_btn"):
+            self.vfx_breakdown_set_btn.setEnabled(bool(breakdowns))
+
+        if breakdowns:
+            message = f"Loaded {len(breakdowns)} VFX Breakdown(s)."
+            self._set_vfx_breakdown_status(message)
+            if auto_select and self.vfx_breakdown_combo.count() > 1:
+                # Trigger selection for the first breakdown
+                self.vfx_breakdown_combo.setCurrentIndex(1)
+            else:
+                self._clear_vfx_breakdown_table()
+        else:
+            if rfq:
+                self._set_vfx_breakdown_status("No VFX Breakdowns linked to this RFQ.")
+            else:
+                self._set_vfx_breakdown_status("Select an RFQ to view VFX Breakdowns.")
+            self._clear_vfx_breakdown_table()
+
+    def _set_vfx_breakdown_status(self, message, is_error=False):
+        if not hasattr(self, "vfx_breakdown_status_label"):
+            return
+
+        color = "#ff8080" if is_error else "#a0a0a0"
+        self.vfx_breakdown_status_label.setStyleSheet(f"color: {color}; padding: 2px 0;")
+        self.vfx_breakdown_status_label.setText(message)
+
+    def _clear_vfx_breakdown_table(self):
+        if hasattr(self, "vfx_breakdown_table"):
+            self.vfx_breakdown_table.setRowCount(0)
+
+    def _on_vfx_breakdown_changed(self, index):
+        if not hasattr(self, "vfx_breakdown_combo"):
+            return
+
+        breakdown = self.vfx_breakdown_combo.itemData(index)
+        if not breakdown:
+            self._clear_vfx_breakdown_table()
+            if index == 0:
+                self._set_vfx_breakdown_status("Select a VFX Breakdown to view its details.")
+            return
+
+        try:
+            self._load_vfx_breakdown_details(breakdown)
+        except Exception as exc:
+            logger.error(f"Failed to load VFX Breakdown details: {exc}", exc_info=True)
+            self._clear_vfx_breakdown_table()
+            self._set_vfx_breakdown_status("Failed to load VFX Breakdown details.", is_error=True)
+
+    def _ensure_vfx_breakdown_schema(self, breakdown):
+        if not breakdown:
+            return None
+
+        entity_type = breakdown.get("type") or self.vfx_breakdown_entity_type
+        if not entity_type:
+            entity_type = self.sg_session.get_vfx_breakdown_entity_type()
+
+        if entity_type != self.vfx_breakdown_entity_type or not self.vfx_breakdown_field_names:
+            field_names, labels = self.sg_session.get_entity_fields_with_labels(entity_type)
+            if not field_names:
+                raise ValueError(f"No schema fields returned for entity type {entity_type}")
+
+            # Sort by display label for readability
+            sorted_fields = sorted(field_names, key=lambda field: labels.get(field, field).lower())
+
+            self.vfx_breakdown_entity_type = entity_type
+            self.vfx_breakdown_field_names = sorted_fields
+            self.vfx_breakdown_field_labels = labels
+
+        return self.vfx_breakdown_entity_type
+
+    def _load_vfx_breakdown_details(self, breakdown):
+        entity_type = self._ensure_vfx_breakdown_schema(breakdown)
+        if not entity_type:
+            self._set_vfx_breakdown_status("Unable to determine VFX Breakdown entity type.", is_error=True)
+            return
+
+        if "id" not in breakdown:
+            raise ValueError("VFX Breakdown data is missing an id")
+
+        fields_to_fetch = list(self.vfx_breakdown_field_names)
+
+        try:
+            data = self.sg_session.get_entity_by_id(entity_type, breakdown["id"], fields_to_fetch)
+        except Exception as exc:
+            logger.error(f"ShotGrid query for VFX Breakdown failed: {exc}")
+            raise
+
+        if not data:
+            self._clear_vfx_breakdown_table()
+            self._set_vfx_breakdown_status("VFX Breakdown could not be found.", is_error=True)
+            return
+
+        self._populate_vfx_breakdown_table(data)
+
+    def _populate_vfx_breakdown_table(self, breakdown_data):
+        if not hasattr(self, "vfx_breakdown_table"):
+            return
+
+        rows = []
+
+        # Ensure ID and Type are shown even if not part of schema
+        rows.append(("ID", self._format_sg_value(breakdown_data.get("id"))))
+        rows.append(("Type", self._format_sg_value(breakdown_data.get("type"))))
+
+        for field in self.vfx_breakdown_field_names:
+            label = self.vfx_breakdown_field_labels.get(field, field)
+            value = self._format_sg_value(breakdown_data.get(field))
+            rows.append((label, value))
+
+        self.vfx_breakdown_table.setRowCount(len(rows))
+
+        for row_index, (field_label, value) in enumerate(rows):
+            field_item = QtWidgets.QTableWidgetItem(field_label)
+            field_item.setFlags(field_item.flags() ^ QtCore.Qt.ItemIsEditable)
+            value_item = QtWidgets.QTableWidgetItem(value)
+            value_item.setFlags(value_item.flags() ^ QtCore.Qt.ItemIsEditable)
+            value_item.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+
+            self.vfx_breakdown_table.setItem(row_index, 0, field_item)
+            self.vfx_breakdown_table.setItem(row_index, 1, value_item)
+
+        display_name = self.vfx_breakdown_combo.currentText()
+        self._set_vfx_breakdown_status(f"Loaded details for '{display_name}'.")
+
+        self.vfx_breakdown_table.resizeColumnsToContents()
+        self.vfx_breakdown_table.horizontalHeader().setStretchLastSection(True)
+
+    def _format_sg_value(self, value):
+        if value is None:
+            return ""
+
+        if isinstance(value, datetime):
+            return value.strftime("%Y-%m-%d %H:%M:%S")
+
+        if isinstance(value, date):
+            return value.strftime("%Y-%m-%d")
+
+        if isinstance(value, list):
+            formatted_items = [self._format_sg_value(item) for item in value if item is not None]
+            formatted_items = [item for item in formatted_items if item]
+            return ", ".join(formatted_items) if formatted_items else "-"
+
+        if isinstance(value, dict):
+            for key in ("name", "code", "content", "title", "description"):
+                if key in value and value[key]:
+                    return str(value[key])
+
+            if "id" in value and "type" in value:
+                return f"{value['type']} {value['id']}"
+
+            try:
+                return json.dumps(value, default=str)
+            except TypeError:
+                return str(value)
+
+        if isinstance(value, bool):
+            return "Yes" if value else "No"
+
+        return str(value)
 
     def _create_packages_left_panel(self):
         """Create the left panel for the Packages tab."""
@@ -809,6 +1062,9 @@ class PackageManagerApp(QtWidgets.QMainWindow):
     def _on_rfq_changed(self, index):
         """Handle RFQ selection."""
         rfq = self.rfq_combo.itemData(index)
+
+        # Update VFX Breakdown combo whenever RFQ changes
+        self._populate_vfx_breakdown_combo(rfq)
 
         if rfq:
             self.rfq_id_label.setText(str(rfq['id']))
