@@ -1,0 +1,33 @@
+2025-10-09 10:31:50,072 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251009_103150.log
+2025-10-09 10:31:50,074 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-09 10:31:50,074 - FFPackageManager - INFO - super().__init__() completed
+2025-10-09 10:31:50,075 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x0000022B27AACA10>
+2025-10-09 10:31:50,087 - FFPackageManager - INFO - _create_content_panel() started
+2025-10-09 10:31:50,092 - FFPackageManager - INFO - _create_content_panel() completed
+2025-10-09 10:31:50,094 - FFPackageManager - INFO - create_panel() started
+2025-10-09 10:31:50,096 - FFPackageManager - INFO - load_tree_data() started
+2025-10-09 10:31:50,096 - FFPackageManager - INFO - No RFQ selected - showing empty tree
+2025-10-09 10:31:50,096 - FFPackageManager - INFO - create_panel() completed
+2025-10-09 10:31:50,097 - FFPackageManager - INFO - Building bottom panel...
+2025-10-09 10:31:50,098 - FFPackageManager - INFO - _build_ui() completed successfully
+2025-10-09 10:31:50,224 - FFPackageManager - INFO - showEvent() - Window is being shown
+2025-10-09 10:31:51,846 - FFPackageManager - INFO - _load_sg_projects() started
+2025-10-09 10:31:51,846 - FFPackageManager - INFO - _load_version_tree() started
+2025-10-09 10:31:51,847 - FFPackageManager - INFO - clear() called
+2025-10-09 10:31:51,847 - FFPackageManager - INFO - No RFQ selected - showing empty tree
+2025-10-09 10:31:52,508 - FFPackageManager - INFO - _load_sg_projects() completed - 1 projects
+2025-10-09 10:31:55,090 - FFPackageManager - INFO - SG project selected: None (ID: 389)
+2025-10-09 10:31:55,090 - FFPackageManager - INFO - _load_rfqs() started for project 389
+2025-10-09 10:31:55,091 - FFPackageManager - INFO - _load_version_tree() started
+2025-10-09 10:31:55,091 - FFPackageManager - INFO - clear() called
+2025-10-09 10:31:55,091 - FFPackageManager - INFO - No RFQ selected - showing empty tree
+2025-10-09 10:31:55,092 - FFPackageManager - INFO - _load_version_tree() started
+2025-10-09 10:31:55,092 - FFPackageManager - INFO - clear() called
+2025-10-09 10:31:55,092 - FFPackageManager - INFO - No RFQ selected - showing empty tree
+2025-10-09 10:31:55,323 - FFPackageManager - INFO - Loaded 1 RFQs for project 389
+2025-10-09 10:31:56,683 - FFPackageManager - INFO - RFQ selected: Request for Ballpark (ID: 3)
+2025-10-09 10:31:56,683 - FFPackageManager - INFO - _load_version_tree() started
+2025-10-09 10:31:56,684 - FFPackageManager - INFO - clear() called
+2025-10-09 10:31:56,684 - FFPackageManager - INFO - RFQ data: {'code': 'Request for Ballpark', 'id': 3, 'sg_status_list': 'wtg', 'type': 'CustomEntity04'}
+2025-10-09 10:31:56,684 - FFPackageManager - INFO - VFX Breakdown field: None
+2025-10-09 10:31:58,761 - FFPackageManager - INFO - closeEvent() - Window is being closed

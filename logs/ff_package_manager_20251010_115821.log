@@ -1,0 +1,45 @@
+2025-10-10 11:58:21,904 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251010_115821.log
+2025-10-10 11:58:21,906 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-10 11:58:21,907 - FFPackageManager - INFO - super().__init__() completed
+2025-10-10 11:58:21,907 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x0000017AEF853890>
+2025-10-10 11:58:21,921 - FFPackageManager - INFO - _create_content_panel() started
+2025-10-10 11:58:21,927 - FFPackageManager - INFO - _create_content_panel() completed
+2025-10-10 11:58:21,929 - FFPackageManager - INFO - create_panel() started
+2025-10-10 11:58:21,931 - FFPackageManager - INFO - create_panel() completed
+2025-10-10 11:58:21,933 - FFPackageManager - INFO - Building bottom panel...
+2025-10-10 11:58:21,933 - FFPackageManager - INFO - _build_ui() completed successfully
+2025-10-10 11:58:22,066 - FFPackageManager - INFO - showEvent() - Window is being shown
+2025-10-10 11:58:23,530 - FFPackageManager - INFO - _load_sg_projects() started
+2025-10-10 11:58:23,530 - FFPackageManager - INFO - clear() called
+2025-10-10 11:58:23,531 - FFPackageManager - INFO - clear() called
+2025-10-10 11:58:24,106 - FFPackageManager - INFO - _load_sg_projects() completed - 1 projects
+2025-10-10 11:58:26,255 - FFPackageManager - INFO - SG project selected: None (ID: 389)
+2025-10-10 11:58:26,255 - FFPackageManager - INFO - _load_rfqs() started for project 389
+2025-10-10 11:58:26,256 - FFPackageManager - INFO - clear() called
+2025-10-10 11:58:26,257 - FFPackageManager - INFO - clear() called
+2025-10-10 11:58:26,425 - FFPackageManager - INFO - Loaded 1 RFQs for project 389
+2025-10-10 11:58:28,473 - FFPackageManager - INFO - RFQ selected: Request for Ballpark (ID: 3)
+2025-10-10 11:58:28,473 - FFPackageManager - INFO - set_rfq() called with RFQ: Request for Ballpark
+2025-10-10 11:58:28,474 - FFPackageManager - INFO - load_tree_data() started
+2025-10-10 11:58:28,881 - FFPackageManager - INFO - Found 6 versions linked to RFQ ID 3
+2025-10-10 11:58:28,881 - FFPackageManager - INFO - VFX Breakdown field: [{'id': 1, 'name': 'Revised Third Draft - August 1979', 'type': 'CustomEntity01'}]
+2025-10-10 11:58:28,882 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 11:58:28,882 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 11:58:28,883 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 11:58:28,883 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 11:58:28,883 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 11:58:28,884 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 11:58:28,884 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 11:58:28,884 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 11:58:28,884 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 11:58:28,885 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 11:58:28,885 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 11:58:28,885 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 11:58:28,886 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 11:58:28,886 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 11:58:28,886 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 11:58:28,887 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 11:58:28,887 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 11:58:28,887 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 11:58:28,887 - FFPackageManager - INFO - load_tree_data() completed with RFQ data
+2025-10-10 11:59:20,537 - FFPackageManager - INFO - closeEvent() - Window is being closed

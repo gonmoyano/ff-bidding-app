@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="com.obiscr.chatgpt.settings.EasyCodeState">
+    <option name="projectFiles" value="$PROJECT_DIR$/client/ff_package_manager/__init__.py;C:/ayon_src/ff_package_manager/client/ff_package_manager/addon.py;C:/ayon_src/ff_package_manager/client/ff_package_manager/app.py;C:/ayon_src/ff_package_manager/client/ff_package_manager/logger.py;C:/ayon_src/ff_package_manager/client/ff_package_manager/shotgrid.py;C:/ayon_src/ff_package_manager/client/ff_package_manager/version.py;C:/ayon_src/ff_package_manager/server/__init__.py;C:/ayon_src/ff_package_manager/create_package.py;C:/ayon_src/ff_package_manager/package.py;C:/ayon_src/ff_package_manager/README.md;C:/ayon_src/ff_package_manager/run_standalone.py;C:/ayon_src/ff_package_manager/test_app.py" />
+  </component>
+</project>

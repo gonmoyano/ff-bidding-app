@@ -1,0 +1,22 @@
+2025-10-10 12:51:00,176 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251010_125100.log
+2025-10-10 12:51:00,178 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-10 12:51:00,178 - FFPackageManager - INFO - super().__init__() completed
+2025-10-10 12:51:00,178 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x000002640545F6D0>
+2025-10-10 12:51:00,196 - FFPackageManager - INFO - _create_content_panel() started
+2025-10-10 12:51:00,202 - FFPackageManager - INFO - _create_content_panel() completed
+2025-10-10 12:51:00,204 - FFPackageManager - ERROR - Error in _build_ui: PackageTreeView.__init__() got an unexpected keyword argument 'sg_session'
+Traceback (most recent call last):
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\app.py", line 102, in _build_ui
+    self.package_data_tree = PackageTreeView(sg_session=self.sg_session)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: PackageTreeView.__init__() got an unexpected keyword argument 'sg_session'
+2025-10-10 12:51:00,205 - FFPackageManager - ERROR - ============================================================
+2025-10-10 12:51:00,205 - FFPackageManager - ERROR - CRITICAL ERROR in __init__: PackageTreeView.__init__() got an unexpected keyword argument 'sg_session'
+Traceback (most recent call last):
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\app.py", line 65, in __init__
+    self._build_ui()
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\app.py", line 102, in _build_ui
+    self.package_data_tree = PackageTreeView(sg_session=self.sg_session)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: PackageTreeView.__init__() got an unexpected keyword argument 'sg_session'
+2025-10-10 12:51:00,206 - FFPackageManager - ERROR - ============================================================

@@ -1,0 +1,90 @@
+2025-10-10 13:01:44,232 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251010_130144.log
+2025-10-10 13:01:44,233 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-10 13:01:44,233 - FFPackageManager - INFO - super().__init__() completed
+2025-10-10 13:01:44,234 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x0000026B66A8F810>
+2025-10-10 13:01:44,246 - FFPackageManager - INFO - _create_content_panel() started
+2025-10-10 13:01:44,251 - FFPackageManager - INFO - _create_content_panel() completed
+2025-10-10 13:01:44,254 - FFPackageManager - INFO - create_panel() started
+2025-10-10 13:01:44,256 - FFPackageManager - INFO - create_panel() completed
+2025-10-10 13:01:44,257 - FFPackageManager - INFO - Building bottom panel...
+2025-10-10 13:01:44,257 - FFPackageManager - INFO - _build_ui() completed successfully
+2025-10-10 13:01:44,257 - FFPackageManager - INFO - Auto-loading latest project...
+2025-10-10 13:01:44,257 - FFPackageManager - INFO - Attempting to auto-load latest project...
+2025-10-10 13:01:44,822 - FFPackageManager - INFO - Latest project found: None (ID: 389)
+2025-10-10 13:01:44,822 - FFPackageManager - INFO - _load_sg_projects() started
+2025-10-10 13:01:44,824 - FFPackageManager - INFO - clear() called
+2025-10-10 13:01:44,824 - FFPackageManager - INFO - clear() called
+2025-10-10 13:01:45,016 - FFPackageManager - INFO - _load_sg_projects() completed - 1 projects
+2025-10-10 13:01:45,017 - FFPackageManager - INFO - SG project selected: None (ID: 389)
+2025-10-10 13:01:45,018 - FFPackageManager - INFO - _load_rfqs() started for project 389
+2025-10-10 13:01:45,019 - FFPackageManager - INFO - clear() called
+2025-10-10 13:01:45,019 - FFPackageManager - INFO - clear() called
+2025-10-10 13:01:45,204 - FFPackageManager - INFO - Loaded 1 RFQs for project 389
+2025-10-10 13:01:45,204 - FFPackageManager - INFO - RFQ selected: Request for Ballpark (ID: 3)
+2025-10-10 13:01:45,205 - FFPackageManager - INFO - set_rfq() called with RFQ: Request for Ballpark
+2025-10-10 13:01:45,205 - FFPackageManager - INFO - load_tree_data() started
+2025-10-10 13:01:45,597 - FFPackageManager - INFO - Found 6 versions linked to RFQ ID 3
+2025-10-10 13:01:45,598 - FFPackageManager - INFO - VFX Breakdown field: [{'id': 1, 'name': 'Revised Third Draft - August 1979', 'type': 'CustomEntity01'}]
+2025-10-10 13:01:45,599 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 13:01:45,599 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 13:01:45,599 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 13:01:45,599 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 13:01:45,600 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 13:01:45,600 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 13:01:45,600 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 13:01:45,601 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 13:01:45,601 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 13:01:45,601 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 13:01:45,602 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 13:01:45,602 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 13:01:45,602 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 13:01:45,602 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 13:01:45,603 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 13:01:45,603 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 13:01:45,603 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 13:01:45,604 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 13:01:45,604 - FFPackageManager - INFO - load_tree_data() completed with RFQ data
+2025-10-10 13:01:45,604 - FFPackageManager - INFO - Auto-selected latest RFQ: Request for Ballpark
+2025-10-10 13:01:45,605 - FFPackageManager - INFO - Auto-selected latest project at index 1
+2025-10-10 13:01:45,727 - FFPackageManager - INFO - showEvent() - Window is being shown
+2025-10-10 13:01:47,260 - FFPackageManager - INFO - _load_sg_projects() started
+2025-10-10 13:01:47,260 - FFPackageManager - INFO - clear() called
+2025-10-10 13:01:47,261 - FFPackageManager - INFO - clear() called
+2025-10-10 13:01:47,262 - FFPackageManager - INFO - clear() called
+2025-10-10 13:01:47,262 - FFPackageManager - INFO - clear() called
+2025-10-10 13:01:47,262 - FFPackageManager - INFO - clear() called
+2025-10-10 13:01:47,263 - FFPackageManager - INFO - clear() called
+2025-10-10 13:01:47,437 - FFPackageManager - INFO - _load_sg_projects() completed - 1 projects
+2025-10-10 13:01:49,441 - FFPackageManager - INFO - SG project selected: None (ID: 389)
+2025-10-10 13:01:49,441 - FFPackageManager - INFO - _load_rfqs() started for project 389
+2025-10-10 13:01:49,442 - FFPackageManager - INFO - clear() called
+2025-10-10 13:01:49,442 - FFPackageManager - INFO - clear() called
+2025-10-10 13:01:49,625 - FFPackageManager - INFO - Loaded 1 RFQs for project 389
+2025-10-10 13:01:49,626 - FFPackageManager - INFO - RFQ selected: Request for Ballpark (ID: 3)
+2025-10-10 13:01:49,627 - FFPackageManager - INFO - set_rfq() called with RFQ: Request for Ballpark
+2025-10-10 13:01:49,627 - FFPackageManager - INFO - load_tree_data() started
+2025-10-10 13:01:50,007 - FFPackageManager - INFO - Found 6 versions linked to RFQ ID 3
+2025-10-10 13:01:50,007 - FFPackageManager - INFO - VFX Breakdown field: [{'id': 1, 'name': 'Revised Third Draft - August 1979', 'type': 'CustomEntity01'}]
+2025-10-10 13:01:50,008 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 13:01:50,008 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 13:01:50,008 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 13:01:50,009 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 13:01:50,009 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 13:01:50,009 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 13:01:50,010 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 13:01:50,010 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 13:01:50,010 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 13:01:50,011 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 13:01:50,011 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 13:01:50,011 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 13:01:50,011 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 13:01:50,012 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 13:01:50,012 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 13:01:50,012 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 13:01:50,012 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 13:01:50,013 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 13:01:50,013 - FFPackageManager - INFO - load_tree_data() completed with RFQ data
+2025-10-10 13:01:50,013 - FFPackageManager - INFO - Auto-selected latest RFQ: Request for Ballpark
+2025-10-10 13:01:51,860 - FFPackageManager - INFO - Entity type 'VFX Breakdown' toggled: hide
+2025-10-10 13:01:53,186 - FFPackageManager - INFO - Entity type 'VFX Breakdown' toggled: hide
+2025-10-10 13:09:51,003 - FFPackageManager - INFO - closeEvent() - Window is being closed

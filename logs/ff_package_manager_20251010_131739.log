@@ -1,0 +1,74 @@
+2025-10-10 13:17:39,611 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251010_131739.log
+2025-10-10 13:17:39,612 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-10 13:17:39,613 - FFPackageManager - INFO - super().__init__() completed
+2025-10-10 13:17:39,613 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x0000025CDA7C8890>
+2025-10-10 13:17:39,625 - FFPackageManager - INFO - _create_content_panel() started
+2025-10-10 13:17:39,631 - FFPackageManager - INFO - _create_content_panel() completed
+2025-10-10 13:17:39,633 - FFPackageManager - INFO - create_panel() started
+2025-10-10 13:17:39,635 - FFPackageManager - INFO - create_panel() completed
+2025-10-10 13:17:39,636 - FFPackageManager - INFO - Building bottom panel...
+2025-10-10 13:17:39,636 - FFPackageManager - INFO - _build_ui() completed successfully
+2025-10-10 13:17:39,636 - FFPackageManager - INFO - Auto-loading latest project...
+2025-10-10 13:17:39,637 - FFPackageManager - INFO - Attempting to auto-load latest project...
+2025-10-10 13:17:40,202 - FFPackageManager - INFO - Latest project found: None (ID: 389)
+2025-10-10 13:17:40,202 - FFPackageManager - INFO - _load_sg_projects() started
+2025-10-10 13:17:40,203 - FFPackageManager - INFO - clear() called
+2025-10-10 13:17:40,203 - FFPackageManager - INFO - clear() called
+2025-10-10 13:17:40,382 - FFPackageManager - INFO - _load_sg_projects() completed - 1 projects
+2025-10-10 13:17:40,383 - FFPackageManager - INFO - SG project selected: None (ID: 389)
+2025-10-10 13:17:40,383 - FFPackageManager - INFO - _load_rfqs() started for project 389
+2025-10-10 13:17:40,384 - FFPackageManager - INFO - clear() called
+2025-10-10 13:17:40,384 - FFPackageManager - INFO - clear() called
+2025-10-10 13:17:40,569 - FFPackageManager - INFO - Loaded 1 RFQs for project 389
+2025-10-10 13:17:40,569 - FFPackageManager - INFO - RFQ selected: Request for Ballpark (ID: 3)
+2025-10-10 13:17:40,570 - FFPackageManager - INFO - set_rfq() called with RFQ: Request for Ballpark
+2025-10-10 13:17:40,570 - FFPackageManager - INFO - load_tree_data() started
+2025-10-10 13:17:41,606 - FFPackageManager - INFO - Found 6 versions linked to RFQ ID 3
+2025-10-10 13:17:41,607 - FFPackageManager - INFO - VFX Breakdown field: [{'id': 1, 'name': 'Revised Third Draft - August 1979', 'type': 'CustomEntity01'}]
+2025-10-10 13:17:41,607 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 13:17:41,607 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 13:17:41,608 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 13:17:41,608 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 13:17:41,608 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 13:17:41,609 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 13:17:41,609 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 13:17:41,609 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 13:17:41,609 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 13:17:41,610 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 13:17:41,610 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 13:17:41,610 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 13:17:41,611 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 13:17:41,611 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 13:17:41,611 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 13:17:41,611 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 13:17:41,612 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 13:17:41,612 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 13:17:41,612 - FFPackageManager - INFO - load_tree_data() completed with RFQ data
+2025-10-10 13:17:41,613 - FFPackageManager - INFO - Category 'VFX Breakdown' visibility set to: True
+2025-10-10 13:17:41,613 - FFPackageManager - INFO - Category 'Script' visibility set to: True
+2025-10-10 13:17:41,613 - FFPackageManager - INFO - Category 'Concept Art' visibility set to: True
+2025-10-10 13:17:41,613 - FFPackageManager - INFO - Category 'Storyboard' visibility set to: True
+2025-10-10 13:17:41,614 - FFPackageManager - INFO - Auto-selected latest RFQ: Request for Ballpark
+2025-10-10 13:17:41,614 - FFPackageManager - INFO - Auto-selected latest project at index 1
+2025-10-10 13:17:41,738 - FFPackageManager - INFO - showEvent() - Window is being shown
+2025-10-10 13:17:43,853 - FFPackageManager - INFO - Entity type 'VFX Breakdown' toggled: hide
+2025-10-10 13:17:43,853 - FFPackageManager - INFO - Category 'VFX Breakdown' visibility set to: False
+2025-10-10 13:17:44,528 - FFPackageManager - INFO - Entity type 'VFX Breakdown' toggled: hide
+2025-10-10 13:17:44,528 - FFPackageManager - INFO - Category 'VFX Breakdown' visibility set to: False
+2025-10-10 13:17:46,081 - FFPackageManager - INFO - Entity type 'VFX Breakdown' toggled: hide
+2025-10-10 13:17:46,082 - FFPackageManager - INFO - Category 'VFX Breakdown' visibility set to: False
+2025-10-10 13:17:46,601 - FFPackageManager - INFO - Entity type 'VFX Breakdown' toggled: hide
+2025-10-10 13:17:46,602 - FFPackageManager - INFO - Category 'VFX Breakdown' visibility set to: False
+2025-10-10 13:17:47,231 - FFPackageManager - INFO - Entity type 'Script' toggled: hide
+2025-10-10 13:17:47,231 - FFPackageManager - INFO - Category 'Script' visibility set to: False
+2025-10-10 13:17:47,920 - FFPackageManager - INFO - Entity type 'Script' toggled: hide
+2025-10-10 13:17:47,920 - FFPackageManager - INFO - Category 'Script' visibility set to: False
+2025-10-10 13:17:49,053 - FFPackageManager - INFO - Entity type 'Concept Art' toggled: hide
+2025-10-10 13:17:49,054 - FFPackageManager - INFO - Category 'Concept Art' visibility set to: False
+2025-10-10 13:17:49,614 - FFPackageManager - INFO - Entity type 'Concept Art' toggled: hide
+2025-10-10 13:17:49,614 - FFPackageManager - INFO - Category 'Concept Art' visibility set to: False
+2025-10-10 13:17:50,390 - FFPackageManager - INFO - Entity type 'Storyboard' toggled: hide
+2025-10-10 13:17:50,390 - FFPackageManager - INFO - Category 'Storyboard' visibility set to: False
+2025-10-10 13:17:50,830 - FFPackageManager - INFO - Entity type 'Storyboard' toggled: hide
+2025-10-10 13:17:50,831 - FFPackageManager - INFO - Category 'Storyboard' visibility set to: False
+2025-10-10 13:17:52,333 - FFPackageManager - INFO - closeEvent() - Window is being closed

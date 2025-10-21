@@ -1,0 +1,24 @@
+2025-10-09 10:28:22,870 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251009_102822.log
+2025-10-09 10:28:22,872 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-09 10:28:22,872 - FFPackageManager - INFO - super().__init__() completed
+2025-10-09 10:28:22,872 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x000002A4C0FA1FD0>
+2025-10-09 10:28:22,884 - FFPackageManager - INFO - _create_content_panel() started
+2025-10-09 10:28:22,890 - FFPackageManager - INFO - _create_content_panel() completed
+2025-10-09 10:28:22,892 - FFPackageManager - INFO - create_panel() started
+2025-10-09 10:28:22,893 - FFPackageManager - INFO - load_tree_data() started
+2025-10-09 10:28:22,893 - FFPackageManager - INFO - No RFQ selected - showing empty tree
+2025-10-09 10:28:22,894 - FFPackageManager - INFO - create_panel() completed
+2025-10-09 10:28:22,895 - FFPackageManager - INFO - Building bottom panel...
+2025-10-09 10:28:22,895 - FFPackageManager - INFO - _build_ui() completed successfully
+2025-10-09 10:28:23,018 - FFPackageManager - INFO - showEvent() - Window is being shown
+2025-10-09 10:28:25,200 - FFPackageManager - INFO - _load_sg_projects() started
+2025-10-09 10:28:25,200 - FFPackageManager - INFO - _load_version_tree() started
+2025-10-09 10:28:25,833 - FFPackageManager - INFO - _load_sg_projects() completed - 1 projects
+2025-10-09 10:28:26,892 - FFPackageManager - INFO - SG project selected: None (ID: 389)
+2025-10-09 10:28:26,892 - FFPackageManager - INFO - _load_rfqs() started for project 389
+2025-10-09 10:28:26,893 - FFPackageManager - INFO - _load_version_tree() started
+2025-10-09 10:28:26,895 - FFPackageManager - INFO - _load_version_tree() started
+2025-10-09 10:28:27,089 - FFPackageManager - INFO - Loaded 1 RFQs for project 389
+2025-10-09 10:28:28,490 - FFPackageManager - INFO - RFQ selected: Request for Ballpark (ID: 3)
+2025-10-09 10:28:28,491 - FFPackageManager - INFO - _load_version_tree() started
+2025-10-09 10:31:08,621 - FFPackageManager - INFO - closeEvent() - Window is being closed

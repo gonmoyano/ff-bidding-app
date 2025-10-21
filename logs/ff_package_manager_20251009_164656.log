@@ -1,0 +1,25 @@
+2025-10-09 16:46:56,781 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251009_164656.log
+2025-10-09 16:46:56,784 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-09 16:46:56,784 - FFPackageManager - INFO - super().__init__() completed
+2025-10-09 16:46:56,784 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x000001CA08C0DDD0>
+2025-10-09 16:46:56,797 - FFPackageManager - INFO - _create_content_panel() started
+2025-10-09 16:46:56,802 - FFPackageManager - INFO - _create_content_panel() completed
+2025-10-09 16:46:56,804 - FFPackageManager - INFO - create_panel() started
+2025-10-09 16:46:56,807 - FFPackageManager - INFO - create_panel() completed
+2025-10-09 16:46:56,808 - FFPackageManager - INFO - Building bottom panel...
+2025-10-09 16:46:56,809 - FFPackageManager - INFO - _build_ui() completed successfully
+2025-10-09 16:46:56,935 - FFPackageManager - INFO - showEvent() - Window is being shown
+2025-10-09 16:46:58,681 - FFPackageManager - INFO - _load_sg_projects() started
+2025-10-09 16:46:58,681 - FFPackageManager - INFO - clear() called
+2025-10-09 16:46:58,683 - FFPackageManager - INFO - clear() called
+2025-10-09 16:46:59,241 - FFPackageManager - INFO - _load_sg_projects() completed - 1 projects
+2025-10-09 16:47:01,223 - FFPackageManager - INFO - SG project selected: None (ID: 389)
+2025-10-09 16:47:01,223 - FFPackageManager - INFO - _load_rfqs() started for project 389
+2025-10-09 16:47:01,228 - FFPackageManager - INFO - clear() called
+2025-10-09 16:47:01,228 - FFPackageManager - INFO - clear() called
+2025-10-09 16:47:01,410 - FFPackageManager - INFO - Loaded 1 RFQs for project 389
+2025-10-09 16:47:03,039 - FFPackageManager - INFO - RFQ selected: Request for Ballpark (ID: 3)
+2025-10-09 16:47:03,040 - FFPackageManager - INFO - set_rfq() called with RFQ: Request for Ballpark
+2025-10-09 16:47:03,045 - FFPackageManager - INFO - load_tree_data() started
+2025-10-09 16:47:03,439 - FFPackageManager - INFO - Found 6 versions linked to RFQ ID 3
+2025-10-09 16:49:09,537 - FFPackageManager - INFO - closeEvent() - Window is being closed

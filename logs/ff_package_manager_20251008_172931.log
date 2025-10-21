@@ -1,0 +1,35 @@
+2025-10-08 17:29:31,940 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251008_172931.log
+2025-10-08 17:29:31,943 - FFPackageManager - INFO - ============================================================
+2025-10-08 17:29:31,943 - FFPackageManager - INFO - FFPackageManagerApp.__init__() called
+2025-10-08 17:29:31,943 - FFPackageManager - INFO - ============================================================
+2025-10-08 17:29:31,944 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-08 17:29:31,944 - FFPackageManager - INFO - super().__init__() completed
+2025-10-08 17:29:31,944 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x0000018BE1955510>
+2025-10-08 17:29:31,945 - FFPackageManager - INFO - Output directory: C:\Users\gonzalo\shotgrid_packages
+2025-10-08 17:29:31,945 - FFPackageManager - INFO - Parent widget: None
+2025-10-08 17:29:31,945 - FFPackageManager - INFO - Setting window title...
+2025-10-08 17:29:31,946 - FFPackageManager - INFO - Window title set
+2025-10-08 17:29:31,946 - FFPackageManager - INFO - Setting minimum size...
+2025-10-08 17:29:31,946 - FFPackageManager - INFO - Minimum size set
+2025-10-08 17:29:31,947 - FFPackageManager - INFO - Building UI...
+2025-10-08 17:29:31,947 - FFPackageManager - INFO - _build_ui() started
+2025-10-08 17:29:31,947 - FFPackageManager - INFO - Creating central widget...
+2025-10-08 17:29:31,948 - FFPackageManager - INFO - Building header...
+2025-10-08 17:29:31,949 - FFPackageManager - INFO - Creating main content area...
+2025-10-08 17:29:31,950 - FFPackageManager - INFO - _create_content_panel() started
+2025-10-08 17:29:31,955 - FFPackageManager - INFO - _create_content_panel() completed
+2025-10-08 17:29:31,955 - FFPackageManager - INFO - Building bottom panel...
+2025-10-08 17:29:31,956 - FFPackageManager - INFO - _build_ui() completed successfully
+2025-10-08 17:29:31,956 - FFPackageManager - INFO - UI built successfully
+2025-10-08 17:29:31,956 - FFPackageManager - INFO - Loading projects...
+2025-10-08 17:29:31,956 - FFPackageManager - INFO - Projects loaded
+2025-10-08 17:29:31,957 - FFPackageManager - INFO - FFPackageManagerApp initialization complete
+2025-10-08 17:29:31,957 - FFPackageManager - INFO - ============================================================
+2025-10-08 17:29:32,086 - FFPackageManager - INFO - showEvent() - Window is being shown
+2025-10-08 17:29:32,086 - FFPackageManager - INFO -   isVisible: True
+2025-10-08 17:29:32,087 - FFPackageManager - INFO -   isMinimized: False
+2025-10-08 17:29:32,087 - FFPackageManager - INFO -   isMaximized: False
+2025-10-08 17:29:32,088 - FFPackageManager - INFO -   geometry: PySide6.QtCore.QRect(-2035, 206, 1000, 700)
+2025-10-08 17:29:32,088 - FFPackageManager - INFO -   pos: PySide6.QtCore.QPoint(-2035, 176)
+2025-10-08 17:29:34,490 - FFPackageManager - INFO - _load_sg_projects() started
+2025-10-08 17:29:38,208 - FFPackageManager - INFO - closeEvent() - Window is being closed

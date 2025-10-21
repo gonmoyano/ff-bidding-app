@@ -1,0 +1,18 @@
+2025-10-09 10:52:57,448 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251009_105257.log
+2025-10-09 10:52:57,450 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-09 10:52:57,450 - FFPackageManager - INFO - super().__init__() completed
+2025-10-09 10:52:57,450 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x0000025EBAA45F50>
+2025-10-09 10:52:57,463 - FFPackageManager - INFO - _create_content_panel() started
+2025-10-09 10:52:57,469 - FFPackageManager - INFO - _create_content_panel() completed
+2025-10-09 10:52:57,471 - FFPackageManager - INFO - create_panel() started
+2025-10-09 10:52:57,473 - FFPackageManager - INFO - create_panel() completed
+2025-10-09 10:52:57,474 - FFPackageManager - INFO - Building bottom panel...
+2025-10-09 10:52:57,475 - FFPackageManager - INFO - _build_ui() completed successfully
+2025-10-09 10:52:57,601 - FFPackageManager - INFO - showEvent() - Window is being shown
+2025-10-09 10:53:06,572 - FFPackageManager - INFO - _load_sg_projects() started
+2025-10-09 10:53:07,149 - FFPackageManager - INFO - _load_sg_projects() completed - 1 projects
+2025-10-09 10:53:08,774 - FFPackageManager - INFO - SG project selected: None (ID: 389)
+2025-10-09 10:53:08,774 - FFPackageManager - INFO - _load_rfqs() started for project 389
+2025-10-09 10:53:08,958 - FFPackageManager - INFO - Loaded 1 RFQs for project 389
+2025-10-09 10:53:10,659 - FFPackageManager - INFO - RFQ selected: Request for Ballpark (ID: 3)
+2025-10-09 10:53:18,459 - FFPackageManager - INFO - closeEvent() - Window is being closed

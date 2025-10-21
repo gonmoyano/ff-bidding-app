@@ -1,0 +1,24 @@
+2025-10-09 13:37:24,695 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251009_133724.log
+2025-10-09 13:37:24,697 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-09 13:37:24,697 - FFPackageManager - INFO - super().__init__() completed
+2025-10-09 13:37:24,698 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x0000023291F20290>
+2025-10-09 13:37:24,710 - FFPackageManager - INFO - _create_content_panel() started
+2025-10-09 13:37:24,716 - FFPackageManager - INFO - _create_content_panel() completed
+2025-10-09 13:37:24,718 - FFPackageManager - INFO - create_panel() started
+2025-10-09 13:37:24,720 - FFPackageManager - INFO - create_panel() completed
+2025-10-09 13:37:24,721 - FFPackageManager - INFO - Building bottom panel...
+2025-10-09 13:37:24,721 - FFPackageManager - INFO - _build_ui() completed successfully
+2025-10-09 13:37:24,851 - FFPackageManager - INFO - showEvent() - Window is being shown
+2025-10-09 13:37:26,496 - FFPackageManager - INFO - _load_sg_projects() started
+2025-10-09 13:37:26,496 - FFPackageManager - INFO - clear() called
+2025-10-09 13:37:26,498 - FFPackageManager - INFO - clear() called
+2025-10-09 13:37:27,063 - FFPackageManager - INFO - _load_sg_projects() completed - 1 projects
+2025-10-09 13:37:30,702 - FFPackageManager - INFO - SG project selected: None (ID: 389)
+2025-10-09 13:37:30,702 - FFPackageManager - INFO - _load_rfqs() started for project 389
+2025-10-09 13:37:30,703 - FFPackageManager - INFO - clear() called
+2025-10-09 13:37:30,704 - FFPackageManager - INFO - clear() called
+2025-10-09 13:37:30,886 - FFPackageManager - INFO - Loaded 1 RFQs for project 389
+2025-10-09 13:37:32,651 - FFPackageManager - INFO - RFQ selected: Request for Ballpark (ID: 3)
+2025-10-09 13:37:32,651 - FFPackageManager - INFO - set_rfq() called with RFQ: Request for Ballpark
+2025-10-09 13:37:32,652 - FFPackageManager - INFO - load_tree_data() started
+2025-10-09 13:37:38,573 - FFPackageManager - INFO - closeEvent() - Window is being closed

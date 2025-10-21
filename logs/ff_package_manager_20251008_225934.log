@@ -1,0 +1,33 @@
+2025-10-08 22:59:34,586 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251008_225934.log
+2025-10-08 22:59:34,590 - FFPackageManager - INFO - ============================================================
+2025-10-08 22:59:34,591 - FFPackageManager - INFO - FFPackageManagerApp.__init__() called
+2025-10-08 22:59:34,591 - FFPackageManager - INFO - ============================================================
+2025-10-08 22:59:34,592 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-08 22:59:34,593 - FFPackageManager - INFO - super().__init__() completed
+2025-10-08 22:59:34,593 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x000002012CFB0A50>
+2025-10-08 22:59:34,594 - FFPackageManager - INFO - Output directory: C:\Users\gonzalo\shotgrid_packages
+2025-10-08 22:59:34,594 - FFPackageManager - INFO - Parent widget: None
+2025-10-08 22:59:34,595 - FFPackageManager - INFO - Setting window title...
+2025-10-08 22:59:34,595 - FFPackageManager - INFO - Window title set
+2025-10-08 22:59:34,596 - FFPackageManager - INFO - Setting minimum size...
+2025-10-08 22:59:34,596 - FFPackageManager - INFO - Minimum size set
+2025-10-08 22:59:34,597 - FFPackageManager - INFO - Building UI...
+2025-10-08 22:59:34,597 - FFPackageManager - INFO - _build_ui() started
+2025-10-08 22:59:34,597 - FFPackageManager - INFO - Creating central widget...
+2025-10-08 22:59:34,598 - FFPackageManager - INFO - Building header...
+2025-10-08 22:59:34,600 - FFPackageManager - INFO - Creating main content area...
+2025-10-08 22:59:34,602 - FFPackageManager - INFO - _create_content_panel() started
+2025-10-08 22:59:34,608 - FFPackageManager - INFO - _create_content_panel() completed
+2025-10-08 22:59:34,608 - FFPackageManager - INFO - Building bottom panel...
+2025-10-08 22:59:34,609 - FFPackageManager - INFO - _build_ui() completed successfully
+2025-10-08 22:59:34,610 - FFPackageManager - INFO - UI built successfully
+2025-10-08 22:59:34,610 - FFPackageManager - INFO - FFPackageManagerApp initialization complete
+2025-10-08 22:59:34,611 - FFPackageManager - INFO - ============================================================
+2025-10-08 22:59:34,611 - FFPackageManager - ERROR - ============================================================
+2025-10-08 22:59:34,612 - FFPackageManager - ERROR - CRITICAL ERROR in __init__: 'FFPackageManagerApp' object has no attribute '_load_sg_projects_deferred'
+Traceback (most recent call last):
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\app.py", line 90, in __init__
+    QtCore.QTimer.singleShot(100, self._load_sg_projects_deferred)
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'FFPackageManagerApp' object has no attribute '_load_sg_projects_deferred'
+2025-10-08 22:59:34,613 - FFPackageManager - ERROR - ============================================================

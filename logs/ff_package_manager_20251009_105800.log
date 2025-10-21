@@ -1,0 +1,44 @@
+2025-10-09 10:58:00,407 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251009_105800.log
+2025-10-09 10:58:00,409 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-09 10:58:00,410 - FFPackageManager - INFO - super().__init__() completed
+2025-10-09 10:58:00,410 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x0000029992733750>
+2025-10-09 10:58:00,424 - FFPackageManager - INFO - _create_content_panel() started
+2025-10-09 10:58:00,429 - FFPackageManager - INFO - _create_content_panel() completed
+2025-10-09 10:58:00,431 - FFPackageManager - ERROR - Error in _build_ui: name 'logger' is not defined
+Traceback (most recent call last):
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\app.py", line 131, in _build_ui
+    right_panel = self.create_package_data_tree()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\app.py", line 165, in create_package_data_tree
+    self.package_data_tree = PackageTreeView()
+                             ^^^^^^^^^^^^^^^^^
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\package_data_treeview.py", line 15, in __init__
+    self._setup_ui()
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\package_data_treeview.py", line 27, in _setup_ui
+    panel = self.create_panel()
+            ^^^^^^^^^^^^^^^^^^^
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\package_data_treeview.py", line 32, in create_panel
+    logger.info("create_panel() started")
+    ^^^^^^
+NameError: name 'logger' is not defined
+2025-10-09 10:58:00,433 - FFPackageManager - ERROR - ============================================================
+2025-10-09 10:58:00,433 - FFPackageManager - ERROR - CRITICAL ERROR in __init__: name 'logger' is not defined
+Traceback (most recent call last):
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\app.py", line 92, in __init__
+    self._build_ui()
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\app.py", line 131, in _build_ui
+    right_panel = self.create_package_data_tree()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\app.py", line 165, in create_package_data_tree
+    self.package_data_tree = PackageTreeView()
+                             ^^^^^^^^^^^^^^^^^
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\package_data_treeview.py", line 15, in __init__
+    self._setup_ui()
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\package_data_treeview.py", line 27, in _setup_ui
+    panel = self.create_panel()
+            ^^^^^^^^^^^^^^^^^^^
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\package_data_treeview.py", line 32, in create_panel
+    logger.info("create_panel() started")
+    ^^^^^^
+NameError: name 'logger' is not defined
+2025-10-09 10:58:00,434 - FFPackageManager - ERROR - ============================================================

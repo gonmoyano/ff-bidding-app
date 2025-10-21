@@ -1,0 +1,36 @@
+2025-10-09 16:51:47,433 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251009_165147.log
+2025-10-09 16:51:47,436 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-09 16:51:47,436 - FFPackageManager - INFO - super().__init__() completed
+2025-10-09 16:51:47,437 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x00000175C0A3DE90>
+2025-10-09 16:51:47,450 - FFPackageManager - INFO - _create_content_panel() started
+2025-10-09 16:51:47,455 - FFPackageManager - INFO - _create_content_panel() completed
+2025-10-09 16:51:47,457 - FFPackageManager - INFO - create_panel() started
+2025-10-09 16:51:47,458 - FFPackageManager - INFO - create_panel() completed
+2025-10-09 16:51:47,460 - FFPackageManager - INFO - Building bottom panel...
+2025-10-09 16:51:47,462 - FFPackageManager - INFO - _build_ui() completed successfully
+2025-10-09 16:51:47,594 - FFPackageManager - INFO - showEvent() - Window is being shown
+2025-10-09 16:51:49,323 - FFPackageManager - INFO - _load_sg_projects() started
+2025-10-09 16:51:49,323 - FFPackageManager - INFO - clear() called
+2025-10-09 16:51:49,325 - FFPackageManager - INFO - clear() called
+2025-10-09 16:51:49,891 - FFPackageManager - INFO - _load_sg_projects() completed - 1 projects
+2025-10-09 16:51:55,270 - FFPackageManager - INFO - SG project selected: None (ID: 389)
+2025-10-09 16:51:55,270 - FFPackageManager - INFO - _load_rfqs() started for project 389
+2025-10-09 16:51:55,272 - FFPackageManager - INFO - clear() called
+2025-10-09 16:51:55,272 - FFPackageManager - INFO - clear() called
+2025-10-09 16:51:55,465 - FFPackageManager - INFO - Loaded 1 RFQs for project 389
+2025-10-09 16:51:56,680 - FFPackageManager - INFO - RFQ selected: Request for Ballpark (ID: 3)
+2025-10-09 16:51:56,680 - FFPackageManager - INFO - set_rfq() called with RFQ: Request for Ballpark
+2025-10-09 16:51:56,682 - FFPackageManager - INFO - load_tree_data() started
+2025-10-09 16:51:57,083 - FFPackageManager - INFO - Found 6 versions linked to RFQ ID 3
+2025-10-09 16:51:57,293 - FFPackageManager - INFO - File info: {'mo_11.jpg'}  {'image/jpeg'}
+2025-10-09 16:51:57,487 - FFPackageManager - INFO - File info: {'mo_04.jpg'}  {'image/jpeg'}
+2025-10-09 16:51:57,686 - FFPackageManager - INFO - File info: {'mo_03.jpg'}  {'image/jpeg'}
+2025-10-09 16:51:57,881 - FFPackageManager - INFO - File info: {'mo_02.jpg'}  {'image/jpeg'}
+2025-10-09 16:51:58,100 - FFPackageManager - INFO - File info: {'Raiders-Storyboards-45_2K.jpg'}  {'image/jpeg'}
+2025-10-09 16:51:58,317 - FFPackageManager - INFO - File info: {'RaidersoftheLostArk.pdf'}  {'application/pdf'}
+2025-10-09 16:51:58,317 - FFPackageManager - INFO - RFQ data: {'code': 'Request for Ballpark', 'id': 3, 'sg_status_list': 'wtg', 'sg_vfx_breakdown': [{'id': 1, 'name': 'Revised Third Draft - August 1979', 'type': 'CustomEntity01'}], 'type': 'CustomEntity04'}
+2025-10-09 16:51:58,318 - FFPackageManager - INFO - VFX Breakdown field: No VFX Breakdown Available
+2025-10-09 16:51:58,319 - FFPackageManager - INFO - Adding VFX Breakdown to tree
+2025-10-09 16:51:58,319 - FFPackageManager - INFO - [{'id': 1, 'name': 'Revised Third Draft - August 1979', 'type': 'CustomEntity01'}]
+2025-10-09 16:51:58,319 - FFPackageManager - INFO - load_tree_data() completed with RFQ data
+2025-10-09 16:54:25,945 - FFPackageManager - INFO - closeEvent() - Window is being closed

@@ -1,0 +1,221 @@
+2025-10-10 16:27:34,532 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251010_162734.log
+2025-10-10 16:27:34,533 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-10 16:27:34,534 - FFPackageManager - INFO - super().__init__() completed
+2025-10-10 16:27:34,534 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x000001A16130BDD0>
+2025-10-10 16:27:34,546 - FFPackageManager - INFO - _create_content_panel() started
+2025-10-10 16:27:34,552 - FFPackageManager - INFO - _create_content_panel() completed
+2025-10-10 16:27:34,554 - FFPackageManager - INFO - create_panel() started
+2025-10-10 16:27:34,555 - FFPackageManager - INFO - create_panel() completed
+2025-10-10 16:27:34,556 - FFPackageManager - INFO - Building bottom panel...
+2025-10-10 16:27:34,556 - FFPackageManager - INFO - _build_ui() completed successfully
+2025-10-10 16:27:34,556 - FFPackageManager - INFO - Auto-loading latest project...
+2025-10-10 16:27:34,556 - FFPackageManager - INFO - Attempting to auto-load latest project...
+2025-10-10 16:27:35,118 - FFPackageManager - INFO - Latest project found: None (ID: 389)
+2025-10-10 16:27:35,118 - FFPackageManager - INFO - _load_sg_projects() started
+2025-10-10 16:27:35,119 - FFPackageManager - INFO - clear() called
+2025-10-10 16:27:35,119 - FFPackageManager - INFO - clear() called
+2025-10-10 16:27:35,295 - FFPackageManager - INFO - _load_sg_projects() completed - 1 projects
+2025-10-10 16:27:35,295 - FFPackageManager - INFO - SG project selected: None (ID: 389)
+2025-10-10 16:27:35,296 - FFPackageManager - INFO - _load_rfqs() started for project 389
+2025-10-10 16:27:35,296 - FFPackageManager - INFO - clear() called
+2025-10-10 16:27:35,296 - FFPackageManager - INFO - clear() called
+2025-10-10 16:27:35,474 - FFPackageManager - INFO - Loaded 1 RFQs for project 389
+2025-10-10 16:27:35,474 - FFPackageManager - INFO - RFQ selected: Request for Ballpark (ID: 3)
+2025-10-10 16:27:35,475 - FFPackageManager - INFO - set_rfq() called with RFQ: Request for Ballpark
+2025-10-10 16:27:35,475 - FFPackageManager - INFO - load_tree_data() started
+2025-10-10 16:27:35,831 - FFPackageManager - INFO - Found 6 versions linked to RFQ ID 3
+2025-10-10 16:27:35,832 - FFPackageManager - INFO - VFX Breakdown field: [{'id': 1, 'name': 'Revised Third Draft - August 1979', 'type': 'CustomEntity01'}]
+2025-10-10 16:27:35,832 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 16:27:35,832 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 16:27:35,832 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 16:27:35,832 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 16:27:35,832 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 16:27:35,832 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 16:27:35,832 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 16:27:35,832 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 16:27:35,833 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 16:27:35,833 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 16:27:35,833 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 16:27:35,833 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 16:27:35,833 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 16:27:35,833 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 16:27:35,833 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 16:27:35,833 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 16:27:35,833 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 16:27:35,833 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 16:27:35,833 - FFPackageManager - INFO - Applying visibility preferences: {}
+2025-10-10 16:27:35,833 - FFPackageManager - INFO - load_tree_data() completed with RFQ data
+2025-10-10 16:27:35,834 - FFPackageManager - INFO - Auto-selected latest RFQ: Request for Ballpark
+2025-10-10 16:27:35,834 - FFPackageManager - INFO - Auto-selected latest project at index 1
+2025-10-10 16:27:35,960 - FFPackageManager - INFO - showEvent() - Window is being shown
+2025-10-10 16:27:35,977 - FFPackageManager - INFO - set_category_visibility: 'VFX Breakdown' = True (type: <class 'bool'>)
+2025-10-10 16:27:35,977 - FFPackageManager - INFO - Current index of 'VFX Breakdown': 0
+2025-10-10 16:27:35,977 - FFPackageManager - INFO - Removed 'VFX Breakdown' from tree at index 0
+2025-10-10 16:27:35,977 - FFPackageManager - INFO - Inserting 'VFX Breakdown' at calculated index 0
+2025-10-10 16:27:35,977 - FFPackageManager - INFO - Successfully inserted 'VFX Breakdown' - new index: 0, isHidden: False
+2025-10-10 16:27:35,977 - FFPackageManager - INFO - set_category_visibility: 'Script' = True (type: <class 'bool'>)
+2025-10-10 16:27:35,977 - FFPackageManager - INFO - Current index of 'Script': 1
+2025-10-10 16:27:35,977 - FFPackageManager - INFO - Removed 'Script' from tree at index 1
+2025-10-10 16:27:35,977 - FFPackageManager - INFO -   Category 'VFX Breakdown' is visible at index 0, incrementing insert_index to 1
+2025-10-10 16:27:35,978 - FFPackageManager - INFO - Inserting 'Script' at calculated index 1
+2025-10-10 16:27:35,978 - FFPackageManager - INFO - Successfully inserted 'Script' - new index: 1, isHidden: False
+2025-10-10 16:27:35,978 - FFPackageManager - INFO - set_category_visibility: 'Concept Art' = True (type: <class 'bool'>)
+2025-10-10 16:27:35,978 - FFPackageManager - INFO - Current index of 'Concept Art': 2
+2025-10-10 16:27:35,978 - FFPackageManager - INFO - Removed 'Concept Art' from tree at index 2
+2025-10-10 16:27:35,978 - FFPackageManager - INFO -   Category 'VFX Breakdown' is visible at index 0, incrementing insert_index to 1
+2025-10-10 16:27:35,978 - FFPackageManager - INFO -   Category 'Script' is visible at index 1, incrementing insert_index to 2
+2025-10-10 16:27:35,978 - FFPackageManager - INFO - Inserting 'Concept Art' at calculated index 2
+2025-10-10 16:27:35,979 - FFPackageManager - INFO - Successfully inserted 'Concept Art' - new index: 2, isHidden: False
+2025-10-10 16:27:35,979 - FFPackageManager - INFO - set_category_visibility: 'Storyboard' = True (type: <class 'bool'>)
+2025-10-10 16:27:35,979 - FFPackageManager - INFO - Current index of 'Storyboard': 3
+2025-10-10 16:27:35,979 - FFPackageManager - INFO - Removed 'Storyboard' from tree at index 3
+2025-10-10 16:27:35,979 - FFPackageManager - INFO -   Category 'VFX Breakdown' is visible at index 0, incrementing insert_index to 1
+2025-10-10 16:27:35,979 - FFPackageManager - INFO -   Category 'Script' is visible at index 1, incrementing insert_index to 2
+2025-10-10 16:27:35,979 - FFPackageManager - INFO -   Category 'Concept Art' is visible at index 2, incrementing insert_index to 3
+2025-10-10 16:27:35,979 - FFPackageManager - INFO - Inserting 'Storyboard' at calculated index 3
+2025-10-10 16:27:35,979 - FFPackageManager - INFO - Successfully inserted 'Storyboard' - new index: 3, isHidden: False
+2025-10-10 16:27:37,099 - FFPackageManager - INFO - Checkbox 'VFX Breakdown' toggled: state=0, checkbox.isChecked()=False
+2025-10-10 16:27:37,100 - FFPackageManager - INFO - set_category_visibility: 'VFX Breakdown' = False (type: <class 'bool'>)
+2025-10-10 16:27:37,100 - FFPackageManager - INFO - Current index of 'VFX Breakdown': 0
+2025-10-10 16:27:37,100 - FFPackageManager - INFO - Removed 'VFX Breakdown' from tree at index 0
+2025-10-10 16:27:37,100 - FFPackageManager - INFO - 'VFX Breakdown' removed and will stay hidden
+2025-10-10 16:27:37,654 - FFPackageManager - INFO - Checkbox 'VFX Breakdown' toggled: state=2, checkbox.isChecked()=True
+2025-10-10 16:27:37,654 - FFPackageManager - INFO - set_category_visibility: 'VFX Breakdown' = True (type: <class 'bool'>)
+2025-10-10 16:27:37,655 - FFPackageManager - INFO - Current index of 'VFX Breakdown': -1
+2025-10-10 16:27:37,655 - FFPackageManager - INFO - 'VFX Breakdown' was not in tree (index=-1)
+2025-10-10 16:27:37,655 - FFPackageManager - INFO - Inserting 'VFX Breakdown' at calculated index 0
+2025-10-10 16:27:37,655 - FFPackageManager - INFO - Successfully inserted 'VFX Breakdown' - new index: 0, isHidden: False
+2025-10-10 16:27:38,394 - FFPackageManager - INFO - Checkbox 'VFX Breakdown' toggled: state=0, checkbox.isChecked()=False
+2025-10-10 16:27:38,394 - FFPackageManager - INFO - set_category_visibility: 'VFX Breakdown' = False (type: <class 'bool'>)
+2025-10-10 16:27:38,395 - FFPackageManager - INFO - Current index of 'VFX Breakdown': 0
+2025-10-10 16:27:38,395 - FFPackageManager - INFO - Removed 'VFX Breakdown' from tree at index 0
+2025-10-10 16:27:38,395 - FFPackageManager - INFO - 'VFX Breakdown' removed and will stay hidden
+2025-10-10 16:27:38,914 - FFPackageManager - INFO - Checkbox 'VFX Breakdown' toggled: state=2, checkbox.isChecked()=True
+2025-10-10 16:27:38,914 - FFPackageManager - INFO - set_category_visibility: 'VFX Breakdown' = True (type: <class 'bool'>)
+2025-10-10 16:27:38,915 - FFPackageManager - INFO - Current index of 'VFX Breakdown': -1
+2025-10-10 16:27:38,915 - FFPackageManager - INFO - 'VFX Breakdown' was not in tree (index=-1)
+2025-10-10 16:27:38,915 - FFPackageManager - INFO - Inserting 'VFX Breakdown' at calculated index 0
+2025-10-10 16:27:38,915 - FFPackageManager - INFO - Successfully inserted 'VFX Breakdown' - new index: 0, isHidden: False
+2025-10-10 16:27:42,081 - FFPackageManager - INFO - Checkbox 'Script' toggled: state=0, checkbox.isChecked()=False
+2025-10-10 16:27:42,082 - FFPackageManager - INFO - set_category_visibility: 'Script' = False (type: <class 'bool'>)
+2025-10-10 16:27:42,082 - FFPackageManager - INFO - Current index of 'Script': 1
+2025-10-10 16:27:42,082 - FFPackageManager - INFO - Removed 'Script' from tree at index 1
+2025-10-10 16:27:42,082 - FFPackageManager - INFO - 'Script' removed and will stay hidden
+2025-10-10 16:27:42,743 - FFPackageManager - INFO - Checkbox 'Script' toggled: state=2, checkbox.isChecked()=True
+2025-10-10 16:27:42,744 - FFPackageManager - INFO - set_category_visibility: 'Script' = True (type: <class 'bool'>)
+2025-10-10 16:27:42,744 - FFPackageManager - INFO - Current index of 'Script': -1
+2025-10-10 16:27:42,744 - FFPackageManager - INFO - 'Script' was not in tree (index=-1)
+2025-10-10 16:27:42,744 - FFPackageManager - INFO -   Category 'VFX Breakdown' is visible at index 0, incrementing insert_index to 1
+2025-10-10 16:27:42,744 - FFPackageManager - INFO - Inserting 'Script' at calculated index 1
+2025-10-10 16:27:42,744 - FFPackageManager - INFO - Successfully inserted 'Script' - new index: 1, isHidden: False
+2025-10-10 16:27:43,573 - FFPackageManager - INFO - Checkbox 'Script' toggled: state=0, checkbox.isChecked()=False
+2025-10-10 16:27:43,574 - FFPackageManager - INFO - set_category_visibility: 'Script' = False (type: <class 'bool'>)
+2025-10-10 16:27:43,574 - FFPackageManager - INFO - Current index of 'Script': 1
+2025-10-10 16:27:43,574 - FFPackageManager - INFO - Removed 'Script' from tree at index 1
+2025-10-10 16:27:43,574 - FFPackageManager - INFO - 'Script' removed and will stay hidden
+2025-10-10 16:27:44,681 - FFPackageManager - INFO - Checkbox 'Concept Art' toggled: state=0, checkbox.isChecked()=False
+2025-10-10 16:27:44,681 - FFPackageManager - INFO - set_category_visibility: 'Concept Art' = False (type: <class 'bool'>)
+2025-10-10 16:27:44,682 - FFPackageManager - INFO - Current index of 'Concept Art': 1
+2025-10-10 16:27:44,682 - FFPackageManager - INFO - Removed 'Concept Art' from tree at index 1
+2025-10-10 16:27:44,682 - FFPackageManager - INFO - 'Concept Art' removed and will stay hidden
+2025-10-10 16:27:45,126 - FFPackageManager - INFO - Checkbox 'Storyboard' toggled: state=0, checkbox.isChecked()=False
+2025-10-10 16:27:45,127 - FFPackageManager - INFO - set_category_visibility: 'Storyboard' = False (type: <class 'bool'>)
+2025-10-10 16:27:45,127 - FFPackageManager - INFO - Current index of 'Storyboard': 1
+2025-10-10 16:27:45,127 - FFPackageManager - INFO - Removed 'Storyboard' from tree at index 1
+2025-10-10 16:27:45,127 - FFPackageManager - INFO - 'Storyboard' removed and will stay hidden
+2025-10-10 16:27:46,348 - FFPackageManager - INFO - Checkbox 'VFX Breakdown' toggled: state=0, checkbox.isChecked()=False
+2025-10-10 16:27:46,348 - FFPackageManager - INFO - set_category_visibility: 'VFX Breakdown' = False (type: <class 'bool'>)
+2025-10-10 16:27:46,349 - FFPackageManager - INFO - Current index of 'VFX Breakdown': 0
+2025-10-10 16:27:46,349 - FFPackageManager - INFO - Removed 'VFX Breakdown' from tree at index 0
+2025-10-10 16:27:46,349 - FFPackageManager - INFO - 'VFX Breakdown' removed and will stay hidden
+2025-10-10 16:27:47,479 - FFPackageManager - INFO - Checkbox 'VFX Breakdown' toggled: state=2, checkbox.isChecked()=True
+2025-10-10 16:27:47,480 - FFPackageManager - INFO - set_category_visibility: 'VFX Breakdown' = True (type: <class 'bool'>)
+2025-10-10 16:27:47,480 - FFPackageManager - INFO - Current index of 'VFX Breakdown': -1
+2025-10-10 16:27:47,480 - FFPackageManager - INFO - 'VFX Breakdown' was not in tree (index=-1)
+2025-10-10 16:27:47,480 - FFPackageManager - INFO - Inserting 'VFX Breakdown' at calculated index 0
+2025-10-10 16:27:47,480 - FFPackageManager - INFO - Successfully inserted 'VFX Breakdown' - new index: 0, isHidden: False
+2025-10-10 16:27:48,733 - FFPackageManager - INFO - Checkbox 'Script' toggled: state=2, checkbox.isChecked()=True
+2025-10-10 16:27:48,733 - FFPackageManager - INFO - set_category_visibility: 'Script' = True (type: <class 'bool'>)
+2025-10-10 16:27:48,733 - FFPackageManager - INFO - Current index of 'Script': -1
+2025-10-10 16:27:48,734 - FFPackageManager - INFO - 'Script' was not in tree (index=-1)
+2025-10-10 16:27:48,734 - FFPackageManager - INFO -   Category 'VFX Breakdown' is visible at index 0, incrementing insert_index to 1
+2025-10-10 16:27:48,734 - FFPackageManager - INFO - Inserting 'Script' at calculated index 1
+2025-10-10 16:27:48,734 - FFPackageManager - INFO - Successfully inserted 'Script' - new index: 1, isHidden: False
+2025-10-10 16:27:49,623 - FFPackageManager - INFO - Checkbox 'Concept Art' toggled: state=2, checkbox.isChecked()=True
+2025-10-10 16:27:49,624 - FFPackageManager - INFO - set_category_visibility: 'Concept Art' = True (type: <class 'bool'>)
+2025-10-10 16:27:49,625 - FFPackageManager - INFO - Current index of 'Concept Art': -1
+2025-10-10 16:27:49,625 - FFPackageManager - INFO - 'Concept Art' was not in tree (index=-1)
+2025-10-10 16:27:49,625 - FFPackageManager - INFO -   Category 'VFX Breakdown' is visible at index 0, incrementing insert_index to 1
+2025-10-10 16:27:49,625 - FFPackageManager - INFO -   Category 'Script' is visible at index 1, incrementing insert_index to 2
+2025-10-10 16:27:49,625 - FFPackageManager - INFO - Inserting 'Concept Art' at calculated index 2
+2025-10-10 16:27:49,625 - FFPackageManager - INFO - Successfully inserted 'Concept Art' - new index: 2, isHidden: False
+2025-10-10 16:27:50,615 - FFPackageManager - INFO - Checkbox 'Storyboard' toggled: state=2, checkbox.isChecked()=True
+2025-10-10 16:27:50,615 - FFPackageManager - INFO - set_category_visibility: 'Storyboard' = True (type: <class 'bool'>)
+2025-10-10 16:27:50,615 - FFPackageManager - INFO - Current index of 'Storyboard': -1
+2025-10-10 16:27:50,615 - FFPackageManager - INFO - 'Storyboard' was not in tree (index=-1)
+2025-10-10 16:27:50,616 - FFPackageManager - INFO -   Category 'VFX Breakdown' is visible at index 0, incrementing insert_index to 1
+2025-10-10 16:27:50,616 - FFPackageManager - INFO -   Category 'Script' is visible at index 1, incrementing insert_index to 2
+2025-10-10 16:27:50,616 - FFPackageManager - INFO -   Category 'Concept Art' is visible at index 2, incrementing insert_index to 3
+2025-10-10 16:27:50,616 - FFPackageManager - INFO - Inserting 'Storyboard' at calculated index 3
+2025-10-10 16:27:50,616 - FFPackageManager - INFO - Successfully inserted 'Storyboard' - new index: 3, isHidden: False
+2025-10-10 16:27:59,928 - FFPackageManager - INFO - Checkbox 'VFX Breakdown' toggled: state=0, checkbox.isChecked()=False
+2025-10-10 16:27:59,929 - FFPackageManager - INFO - set_category_visibility: 'VFX Breakdown' = False (type: <class 'bool'>)
+2025-10-10 16:27:59,929 - FFPackageManager - INFO - Current index of 'VFX Breakdown': 0
+2025-10-10 16:27:59,929 - FFPackageManager - INFO - Removed 'VFX Breakdown' from tree at index 0
+2025-10-10 16:27:59,929 - FFPackageManager - INFO - 'VFX Breakdown' removed and will stay hidden
+2025-10-10 16:28:01,908 - FFPackageManager - INFO - Checkbox 'VFX Breakdown' toggled: state=2, checkbox.isChecked()=True
+2025-10-10 16:28:01,908 - FFPackageManager - INFO - set_category_visibility: 'VFX Breakdown' = True (type: <class 'bool'>)
+2025-10-10 16:28:01,908 - FFPackageManager - INFO - Current index of 'VFX Breakdown': -1
+2025-10-10 16:28:01,908 - FFPackageManager - INFO - 'VFX Breakdown' was not in tree (index=-1)
+2025-10-10 16:28:01,908 - FFPackageManager - INFO - Inserting 'VFX Breakdown' at calculated index 0
+2025-10-10 16:28:01,909 - FFPackageManager - INFO - Successfully inserted 'VFX Breakdown' - new index: 0, isHidden: False
+2025-10-10 16:28:02,795 - FFPackageManager - INFO - Checkbox 'Script' toggled: state=0, checkbox.isChecked()=False
+2025-10-10 16:28:02,796 - FFPackageManager - INFO - set_category_visibility: 'Script' = False (type: <class 'bool'>)
+2025-10-10 16:28:02,796 - FFPackageManager - INFO - Current index of 'Script': 1
+2025-10-10 16:28:02,796 - FFPackageManager - INFO - Removed 'Script' from tree at index 1
+2025-10-10 16:28:02,797 - FFPackageManager - INFO - 'Script' removed and will stay hidden
+2025-10-10 16:28:03,709 - FFPackageManager - INFO - Checkbox 'Script' toggled: state=2, checkbox.isChecked()=True
+2025-10-10 16:28:03,709 - FFPackageManager - INFO - set_category_visibility: 'Script' = True (type: <class 'bool'>)
+2025-10-10 16:28:03,709 - FFPackageManager - INFO - Current index of 'Script': -1
+2025-10-10 16:28:03,709 - FFPackageManager - INFO - 'Script' was not in tree (index=-1)
+2025-10-10 16:28:03,710 - FFPackageManager - INFO -   Category 'VFX Breakdown' is visible at index 0, incrementing insert_index to 1
+2025-10-10 16:28:03,710 - FFPackageManager - INFO - Inserting 'Script' at calculated index 1
+2025-10-10 16:28:03,710 - FFPackageManager - INFO - Successfully inserted 'Script' - new index: 1, isHidden: False
+2025-10-10 16:28:05,584 - FFPackageManager - INFO - Checkbox 'Concept Art' toggled: state=0, checkbox.isChecked()=False
+2025-10-10 16:28:05,584 - FFPackageManager - INFO - set_category_visibility: 'Concept Art' = False (type: <class 'bool'>)
+2025-10-10 16:28:05,585 - FFPackageManager - INFO - Current index of 'Concept Art': 2
+2025-10-10 16:28:05,585 - FFPackageManager - INFO - Removed 'Concept Art' from tree at index 2
+2025-10-10 16:28:05,585 - FFPackageManager - INFO - 'Concept Art' removed and will stay hidden
+2025-10-10 16:28:06,319 - FFPackageManager - INFO - Checkbox 'Concept Art' toggled: state=2, checkbox.isChecked()=True
+2025-10-10 16:28:06,319 - FFPackageManager - INFO - set_category_visibility: 'Concept Art' = True (type: <class 'bool'>)
+2025-10-10 16:28:06,319 - FFPackageManager - INFO - Current index of 'Concept Art': -1
+2025-10-10 16:28:06,319 - FFPackageManager - INFO - 'Concept Art' was not in tree (index=-1)
+2025-10-10 16:28:06,319 - FFPackageManager - INFO -   Category 'VFX Breakdown' is visible at index 0, incrementing insert_index to 1
+2025-10-10 16:28:06,319 - FFPackageManager - INFO -   Category 'Script' is visible at index 1, incrementing insert_index to 2
+2025-10-10 16:28:06,320 - FFPackageManager - INFO - Inserting 'Concept Art' at calculated index 2
+2025-10-10 16:28:06,320 - FFPackageManager - INFO - Successfully inserted 'Concept Art' - new index: 2, isHidden: False
+2025-10-10 16:28:32,761 - FFPackageManager - INFO - Checkbox 'Script' toggled: state=0, checkbox.isChecked()=False
+2025-10-10 16:28:32,761 - FFPackageManager - INFO - set_category_visibility: 'Script' = False (type: <class 'bool'>)
+2025-10-10 16:28:32,761 - FFPackageManager - INFO - Current index of 'Script': 1
+2025-10-10 16:28:32,762 - FFPackageManager - INFO - Removed 'Script' from tree at index 1
+2025-10-10 16:28:32,762 - FFPackageManager - INFO - 'Script' removed and will stay hidden
+2025-10-10 16:28:33,722 - FFPackageManager - INFO - Checkbox 'Script' toggled: state=2, checkbox.isChecked()=True
+2025-10-10 16:28:33,722 - FFPackageManager - INFO - set_category_visibility: 'Script' = True (type: <class 'bool'>)
+2025-10-10 16:28:33,723 - FFPackageManager - INFO - Current index of 'Script': -1
+2025-10-10 16:28:33,723 - FFPackageManager - INFO - 'Script' was not in tree (index=-1)
+2025-10-10 16:28:33,723 - FFPackageManager - INFO -   Category 'VFX Breakdown' is visible at index 0, incrementing insert_index to 1
+2025-10-10 16:28:33,723 - FFPackageManager - INFO - Inserting 'Script' at calculated index 1
+2025-10-10 16:28:33,723 - FFPackageManager - INFO - Successfully inserted 'Script' - new index: 1, isHidden: False
+2025-10-10 16:28:34,776 - FFPackageManager - INFO - Checkbox 'Script' toggled: state=0, checkbox.isChecked()=False
+2025-10-10 16:28:34,776 - FFPackageManager - INFO - set_category_visibility: 'Script' = False (type: <class 'bool'>)
+2025-10-10 16:28:34,777 - FFPackageManager - INFO - Current index of 'Script': 1
+2025-10-10 16:28:34,777 - FFPackageManager - INFO - Removed 'Script' from tree at index 1
+2025-10-10 16:28:34,777 - FFPackageManager - INFO - 'Script' removed and will stay hidden
+2025-10-10 16:28:35,320 - FFPackageManager - INFO - Checkbox 'Script' toggled: state=2, checkbox.isChecked()=True
+2025-10-10 16:28:35,320 - FFPackageManager - INFO - set_category_visibility: 'Script' = True (type: <class 'bool'>)
+2025-10-10 16:28:35,321 - FFPackageManager - INFO - Current index of 'Script': -1
+2025-10-10 16:28:35,321 - FFPackageManager - INFO - 'Script' was not in tree (index=-1)
+2025-10-10 16:28:35,321 - FFPackageManager - INFO -   Category 'VFX Breakdown' is visible at index 0, incrementing insert_index to 1
+2025-10-10 16:28:35,321 - FFPackageManager - INFO - Inserting 'Script' at calculated index 1
+2025-10-10 16:28:35,321 - FFPackageManager - INFO - Successfully inserted 'Script' - new index: 1, isHidden: False
+2025-10-10 16:30:53,288 - FFPackageManager - INFO - closeEvent() - Window is being closed

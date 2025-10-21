@@ -1,0 +1,14 @@
+2025-10-08 17:20:05,840 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251008_172005.log
+2025-10-08 17:20:05,842 - FFPackageManager - INFO - ============================================================
+2025-10-08 17:20:05,843 - FFPackageManager - INFO - FFPackageManagerApp.__init__() called
+2025-10-08 17:20:05,843 - FFPackageManager - INFO - ============================================================
+2025-10-08 17:20:05,844 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-08 17:20:05,845 - FFPackageManager - INFO - super().__init__() completed
+2025-10-08 17:20:05,845 - FFPackageManager - ERROR - ============================================================
+2025-10-08 17:20:05,846 - FFPackageManager - ERROR - CRITICAL ERROR in __init__: name 'ShotgridClient' is not defined
+Traceback (most recent call last):
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\sg_app.py", line 58, in __init__
+    self.sg_session = ShotgridClient(site_url=self.sg_url,script_name=self.sg_script_name,api_key=self.sg_api_key)
+                      ^^^^^^^^^^^^^^
+NameError: name 'ShotgridClient' is not defined
+2025-10-08 17:20:05,846 - FFPackageManager - ERROR - ============================================================

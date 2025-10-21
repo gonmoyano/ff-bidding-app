@@ -1,0 +1,239 @@
+2025-10-10 16:36:09,791 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251010_163609.log
+2025-10-10 16:36:09,792 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-10 16:36:09,792 - FFPackageManager - INFO - super().__init__() completed
+2025-10-10 16:36:09,792 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x0000028C4F3E9FD0>
+2025-10-10 16:36:09,804 - FFPackageManager - INFO - _create_content_panel() started
+2025-10-10 16:36:09,809 - FFPackageManager - INFO - _create_content_panel() completed
+2025-10-10 16:36:09,811 - FFPackageManager - INFO - create_panel() started
+2025-10-10 16:36:09,813 - FFPackageManager - INFO - create_panel() completed
+2025-10-10 16:36:09,814 - FFPackageManager - INFO - Building bottom panel...
+2025-10-10 16:36:09,814 - FFPackageManager - INFO - _build_ui() completed successfully
+2025-10-10 16:36:09,814 - FFPackageManager - INFO - Auto-loading latest project...
+2025-10-10 16:36:09,814 - FFPackageManager - INFO - Attempting to auto-load latest project...
+2025-10-10 16:36:10,377 - FFPackageManager - INFO - Latest project found: None (ID: 389)
+2025-10-10 16:36:10,377 - FFPackageManager - INFO - _load_sg_projects() started
+2025-10-10 16:36:10,378 - FFPackageManager - INFO - clear() called
+2025-10-10 16:36:10,378 - FFPackageManager - INFO - clear() called
+2025-10-10 16:36:10,576 - FFPackageManager - INFO - _load_sg_projects() completed - 1 projects
+2025-10-10 16:36:10,577 - FFPackageManager - INFO - SG project selected: None (ID: 389)
+2025-10-10 16:36:10,577 - FFPackageManager - INFO - _load_rfqs() started for project 389
+2025-10-10 16:36:10,577 - FFPackageManager - INFO - clear() called
+2025-10-10 16:36:10,577 - FFPackageManager - INFO - clear() called
+2025-10-10 16:36:10,768 - FFPackageManager - INFO - Loaded 1 RFQs for project 389
+2025-10-10 16:36:10,769 - FFPackageManager - INFO - RFQ selected: Request for Ballpark (ID: 3)
+2025-10-10 16:36:10,769 - FFPackageManager - INFO - set_rfq() called with RFQ: Request for Ballpark
+2025-10-10 16:36:10,769 - FFPackageManager - INFO - load_tree_data() started
+2025-10-10 16:36:11,162 - FFPackageManager - INFO - Found 6 versions linked to RFQ ID 3
+2025-10-10 16:36:11,163 - FFPackageManager - INFO - VFX Breakdown field: [{'id': 1, 'name': 'Revised Third Draft - August 1979', 'type': 'CustomEntity01'}]
+2025-10-10 16:36:11,163 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 16:36:11,163 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 16:36:11,163 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 16:36:11,163 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 16:36:11,163 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 16:36:11,163 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 16:36:11,164 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: False
+2025-10-10 16:36:11,164 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: False
+2025-10-10 16:36:11,164 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: False
+2025-10-10 16:36:11,165 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: True
+2025-10-10 16:36:11,165 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: True
+2025-10-10 16:36:11,165 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: True
+2025-10-10 16:36:11,165 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 16:36:11,165 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 16:36:11,165 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 16:36:11,165 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 16:36:11,165 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 16:36:11,165 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 16:36:11,165 - FFPackageManager - INFO - Version 'mo_11' active state changed to: False
+2025-10-10 16:36:11,165 - FFPackageManager - INFO - Version 'mo_11' active state changed to: False
+2025-10-10 16:36:11,165 - FFPackageManager - INFO - Version 'mo_11' active state changed to: False
+2025-10-10 16:36:11,166 - FFPackageManager - INFO - Version 'mo_11' active state changed to: True
+2025-10-10 16:36:11,166 - FFPackageManager - INFO - Version 'mo_11' active state changed to: True
+2025-10-10 16:36:11,166 - FFPackageManager - INFO - Version 'mo_11' active state changed to: True
+2025-10-10 16:36:11,166 - FFPackageManager - INFO - Version 'mo_04' active state changed to: False
+2025-10-10 16:36:11,166 - FFPackageManager - INFO - Version 'mo_04' active state changed to: False
+2025-10-10 16:36:11,166 - FFPackageManager - INFO - Version 'mo_04' active state changed to: False
+2025-10-10 16:36:11,166 - FFPackageManager - INFO - Version 'mo_04' active state changed to: True
+2025-10-10 16:36:11,166 - FFPackageManager - INFO - Version 'mo_04' active state changed to: True
+2025-10-10 16:36:11,166 - FFPackageManager - INFO - Version 'mo_04' active state changed to: True
+2025-10-10 16:36:11,166 - FFPackageManager - INFO - Version 'mo_03' active state changed to: False
+2025-10-10 16:36:11,166 - FFPackageManager - INFO - Version 'mo_03' active state changed to: False
+2025-10-10 16:36:11,166 - FFPackageManager - INFO - Version 'mo_03' active state changed to: False
+2025-10-10 16:36:11,167 - FFPackageManager - INFO - Version 'mo_03' active state changed to: True
+2025-10-10 16:36:11,167 - FFPackageManager - INFO - Version 'mo_03' active state changed to: True
+2025-10-10 16:36:11,167 - FFPackageManager - INFO - Version 'mo_03' active state changed to: True
+2025-10-10 16:36:11,167 - FFPackageManager - INFO - Version 'mo_02' active state changed to: False
+2025-10-10 16:36:11,167 - FFPackageManager - INFO - Version 'mo_02' active state changed to: False
+2025-10-10 16:36:11,167 - FFPackageManager - INFO - Version 'mo_02' active state changed to: False
+2025-10-10 16:36:11,167 - FFPackageManager - INFO - Version 'mo_02' active state changed to: True
+2025-10-10 16:36:11,167 - FFPackageManager - INFO - Version 'mo_02' active state changed to: True
+2025-10-10 16:36:11,167 - FFPackageManager - INFO - Version 'mo_02' active state changed to: True
+2025-10-10 16:36:11,167 - FFPackageManager - DEBUG - Version mo_11 has type: concept art
+2025-10-10 16:36:11,168 - FFPackageManager - DEBUG - Version mo_04 has type: concept art
+2025-10-10 16:36:11,168 - FFPackageManager - DEBUG - Version mo_03 has type: concept art
+2025-10-10 16:36:11,168 - FFPackageManager - DEBUG - Version mo_02 has type: concept art
+2025-10-10 16:36:11,168 - FFPackageManager - DEBUG - Version storyboard_scenes_86_92 has type: storyboard
+2025-10-10 16:36:11,168 - FFPackageManager - DEBUG - Version RaidersoftheLostArk has type: script
+2025-10-10 16:36:11,168 - FFPackageManager - INFO - Version 'storyboard_scenes_86_92' active state changed to: False
+2025-10-10 16:36:11,168 - FFPackageManager - INFO - Version 'storyboard_scenes_86_92' active state changed to: False
+2025-10-10 16:36:11,168 - FFPackageManager - INFO - Version 'storyboard_scenes_86_92' active state changed to: False
+2025-10-10 16:36:11,168 - FFPackageManager - INFO - Version 'storyboard_scenes_86_92' active state changed to: True
+2025-10-10 16:36:11,168 - FFPackageManager - INFO - Version 'storyboard_scenes_86_92' active state changed to: True
+2025-10-10 16:36:11,168 - FFPackageManager - INFO - Version 'storyboard_scenes_86_92' active state changed to: True
+2025-10-10 16:36:11,168 - FFPackageManager - INFO - Applying visibility preferences: {}
+2025-10-10 16:36:11,168 - FFPackageManager - INFO - load_tree_data() completed with RFQ data
+2025-10-10 16:36:11,168 - FFPackageManager - INFO - Auto-selected latest RFQ: Request for Ballpark
+2025-10-10 16:36:11,169 - FFPackageManager - INFO - Auto-selected latest project at index 1
+2025-10-10 16:36:11,293 - FFPackageManager - INFO - showEvent() - Window is being shown
+2025-10-10 16:36:11,310 - FFPackageManager - INFO - set_category_visibility: 'VFX Breakdown' = True (type: <class 'bool'>)
+2025-10-10 16:36:11,310 - FFPackageManager - INFO - Current index of 'VFX Breakdown': 0
+2025-10-10 16:36:11,310 - FFPackageManager - INFO - Removed 'VFX Breakdown' from tree at index 0
+2025-10-10 16:36:11,310 - FFPackageManager - INFO - Inserting 'VFX Breakdown' at calculated index 0
+2025-10-10 16:36:11,310 - FFPackageManager - INFO - Successfully inserted 'VFX Breakdown' - new index: 0, isHidden: False
+2025-10-10 16:36:11,311 - FFPackageManager - INFO - set_category_visibility: 'Script' = True (type: <class 'bool'>)
+2025-10-10 16:36:11,311 - FFPackageManager - INFO - Current index of 'Script': 1
+2025-10-10 16:36:11,311 - FFPackageManager - INFO - Removed 'Script' from tree at index 1
+2025-10-10 16:36:11,311 - FFPackageManager - INFO -   Category 'VFX Breakdown' is visible at index 0, incrementing insert_index to 1
+2025-10-10 16:36:11,311 - FFPackageManager - INFO - Inserting 'Script' at calculated index 1
+2025-10-10 16:36:11,311 - FFPackageManager - INFO - Successfully inserted 'Script' - new index: 1, isHidden: False
+2025-10-10 16:36:11,311 - FFPackageManager - INFO - set_category_visibility: 'Concept Art' = True (type: <class 'bool'>)
+2025-10-10 16:36:11,311 - FFPackageManager - INFO - Current index of 'Concept Art': 2
+2025-10-10 16:36:11,311 - FFPackageManager - INFO - Removed 'Concept Art' from tree at index 2
+2025-10-10 16:36:11,311 - FFPackageManager - INFO -   Category 'VFX Breakdown' is visible at index 0, incrementing insert_index to 1
+2025-10-10 16:36:11,312 - FFPackageManager - INFO -   Category 'Script' is visible at index 1, incrementing insert_index to 2
+2025-10-10 16:36:11,312 - FFPackageManager - INFO - Inserting 'Concept Art' at calculated index 2
+2025-10-10 16:36:11,312 - FFPackageManager - INFO - Successfully inserted 'Concept Art' - new index: 2, isHidden: False
+2025-10-10 16:36:11,312 - FFPackageManager - INFO - set_category_visibility: 'Storyboard' = True (type: <class 'bool'>)
+2025-10-10 16:36:11,312 - FFPackageManager - INFO - Current index of 'Storyboard': 3
+2025-10-10 16:36:11,312 - FFPackageManager - INFO - Removed 'Storyboard' from tree at index 3
+2025-10-10 16:36:11,312 - FFPackageManager - INFO -   Category 'VFX Breakdown' is visible at index 0, incrementing insert_index to 1
+2025-10-10 16:36:11,312 - FFPackageManager - INFO -   Category 'Script' is visible at index 1, incrementing insert_index to 2
+2025-10-10 16:36:11,312 - FFPackageManager - INFO -   Category 'Concept Art' is visible at index 2, incrementing insert_index to 3
+2025-10-10 16:36:11,312 - FFPackageManager - INFO - Inserting 'Storyboard' at calculated index 3
+2025-10-10 16:36:11,313 - FFPackageManager - INFO - Successfully inserted 'Storyboard' - new index: 3, isHidden: False
+2025-10-10 16:36:13,510 - FFPackageManager - INFO - Checkbox 'VFX Breakdown' toggled: state=0, checkbox.isChecked()=False
+2025-10-10 16:36:13,510 - FFPackageManager - INFO - set_category_visibility: 'VFX Breakdown' = False (type: <class 'bool'>)
+2025-10-10 16:36:13,511 - FFPackageManager - INFO - Current index of 'VFX Breakdown': 0
+2025-10-10 16:36:13,511 - FFPackageManager - INFO - Removed 'VFX Breakdown' from tree at index 0
+2025-10-10 16:36:13,511 - FFPackageManager - INFO - 'VFX Breakdown' removed and will stay hidden
+2025-10-10 16:36:14,172 - FFPackageManager - INFO - Checkbox 'VFX Breakdown' toggled: state=2, checkbox.isChecked()=True
+2025-10-10 16:36:14,173 - FFPackageManager - INFO - set_category_visibility: 'VFX Breakdown' = True (type: <class 'bool'>)
+2025-10-10 16:36:14,173 - FFPackageManager - INFO - Current index of 'VFX Breakdown': -1
+2025-10-10 16:36:14,173 - FFPackageManager - INFO - 'VFX Breakdown' was not in tree (index=-1)
+2025-10-10 16:36:14,173 - FFPackageManager - INFO - Inserting 'VFX Breakdown' at calculated index 0
+2025-10-10 16:36:14,173 - FFPackageManager - INFO - Successfully inserted 'VFX Breakdown' - new index: 0, isHidden: False
+2025-10-10 16:36:15,427 - FFPackageManager - INFO - Checkbox 'Script' toggled: state=0, checkbox.isChecked()=False
+2025-10-10 16:36:15,427 - FFPackageManager - INFO - set_category_visibility: 'Script' = False (type: <class 'bool'>)
+2025-10-10 16:36:15,428 - FFPackageManager - INFO - Current index of 'Script': 1
+2025-10-10 16:36:15,428 - FFPackageManager - INFO - Removed 'Script' from tree at index 1
+2025-10-10 16:36:15,428 - FFPackageManager - INFO - 'Script' removed and will stay hidden
+2025-10-10 16:36:16,112 - FFPackageManager - INFO - Checkbox 'Script' toggled: state=2, checkbox.isChecked()=True
+2025-10-10 16:36:16,113 - FFPackageManager - INFO - set_category_visibility: 'Script' = True (type: <class 'bool'>)
+2025-10-10 16:36:16,113 - FFPackageManager - INFO - Current index of 'Script': -1
+2025-10-10 16:36:16,113 - FFPackageManager - INFO - 'Script' was not in tree (index=-1)
+2025-10-10 16:36:16,113 - FFPackageManager - INFO -   Category 'VFX Breakdown' is visible at index 0, incrementing insert_index to 1
+2025-10-10 16:36:16,114 - FFPackageManager - INFO - Inserting 'Script' at calculated index 1
+2025-10-10 16:36:16,114 - FFPackageManager - INFO - Successfully inserted 'Script' - new index: 1, isHidden: False
+2025-10-10 16:36:19,445 - FFPackageManager - INFO - Version 'mo_11' active state changed to: False
+2025-10-10 16:36:19,445 - FFPackageManager - INFO - Version 'mo_11' active state changed to: False
+2025-10-10 16:36:19,446 - FFPackageManager - INFO - Version 'mo_11' active state changed to: False
+2025-10-10 16:36:20,387 - FFPackageManager - INFO - Version 'mo_11' active state changed to: True
+2025-10-10 16:36:20,387 - FFPackageManager - INFO - Version 'mo_11' active state changed to: True
+2025-10-10 16:36:20,388 - FFPackageManager - INFO - Version 'mo_11' active state changed to: True
+2025-10-10 16:36:21,311 - FFPackageManager - INFO - Version 'mo_04' active state changed to: False
+2025-10-10 16:36:21,311 - FFPackageManager - INFO - Version 'mo_04' active state changed to: False
+2025-10-10 16:36:21,311 - FFPackageManager - INFO - Version 'mo_04' active state changed to: False
+2025-10-10 16:36:22,094 - FFPackageManager - INFO - Version 'mo_04' active state changed to: True
+2025-10-10 16:36:22,094 - FFPackageManager - INFO - Version 'mo_04' active state changed to: True
+2025-10-10 16:36:22,095 - FFPackageManager - INFO - Version 'mo_04' active state changed to: True
+2025-10-10 16:36:27,382 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: False
+2025-10-10 16:36:27,383 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: False
+2025-10-10 16:36:27,384 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: False
+2025-10-10 16:36:29,447 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: True
+2025-10-10 16:36:29,447 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: True
+2025-10-10 16:36:29,448 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: True
+2025-10-10 16:36:31,774 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: False
+2025-10-10 16:36:31,774 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: False
+2025-10-10 16:36:31,774 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: False
+2025-10-10 16:36:32,268 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: True
+2025-10-10 16:36:32,268 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: True
+2025-10-10 16:36:32,268 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: True
+2025-10-10 16:36:32,812 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: False
+2025-10-10 16:36:32,812 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: False
+2025-10-10 16:36:32,812 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: False
+2025-10-10 16:36:33,857 - FFPackageManager - INFO - Version 'mo_11' active state changed to: False
+2025-10-10 16:36:33,857 - FFPackageManager - INFO - Version 'mo_11' active state changed to: False
+2025-10-10 16:36:33,858 - FFPackageManager - INFO - Version 'mo_11' active state changed to: False
+2025-10-10 16:36:34,398 - FFPackageManager - INFO - Version 'mo_04' active state changed to: False
+2025-10-10 16:36:34,398 - FFPackageManager - INFO - Version 'mo_04' active state changed to: False
+2025-10-10 16:36:34,399 - FFPackageManager - INFO - Version 'mo_04' active state changed to: False
+2025-10-10 16:36:35,027 - FFPackageManager - INFO - Version 'mo_03' active state changed to: False
+2025-10-10 16:36:35,028 - FFPackageManager - INFO - Version 'mo_03' active state changed to: False
+2025-10-10 16:36:35,028 - FFPackageManager - INFO - Version 'mo_03' active state changed to: False
+2025-10-10 16:36:35,445 - FFPackageManager - INFO - Version 'mo_02' active state changed to: False
+2025-10-10 16:36:35,445 - FFPackageManager - INFO - Version 'mo_02' active state changed to: False
+2025-10-10 16:36:35,445 - FFPackageManager - INFO - Version 'mo_02' active state changed to: False
+2025-10-10 16:36:37,656 - FFPackageManager - INFO - Checkbox 'Storyboard' toggled: state=0, checkbox.isChecked()=False
+2025-10-10 16:36:37,656 - FFPackageManager - INFO - set_category_visibility: 'Storyboard' = False (type: <class 'bool'>)
+2025-10-10 16:36:37,656 - FFPackageManager - INFO - Current index of 'Storyboard': 3
+2025-10-10 16:36:37,656 - FFPackageManager - INFO - Removed 'Storyboard' from tree at index 3
+2025-10-10 16:36:37,657 - FFPackageManager - INFO - 'Storyboard' removed and will stay hidden
+2025-10-10 16:36:38,230 - FFPackageManager - INFO - Checkbox 'Storyboard' toggled: state=2, checkbox.isChecked()=True
+2025-10-10 16:36:38,230 - FFPackageManager - INFO - set_category_visibility: 'Storyboard' = True (type: <class 'bool'>)
+2025-10-10 16:36:38,230 - FFPackageManager - INFO - Current index of 'Storyboard': -1
+2025-10-10 16:36:38,230 - FFPackageManager - INFO - 'Storyboard' was not in tree (index=-1)
+2025-10-10 16:36:38,230 - FFPackageManager - INFO -   Category 'VFX Breakdown' is visible at index 0, incrementing insert_index to 1
+2025-10-10 16:36:38,231 - FFPackageManager - INFO -   Category 'Script' is visible at index 1, incrementing insert_index to 2
+2025-10-10 16:36:38,231 - FFPackageManager - INFO -   Category 'Concept Art' is visible at index 2, incrementing insert_index to 3
+2025-10-10 16:36:38,231 - FFPackageManager - INFO - Inserting 'Storyboard' at calculated index 3
+2025-10-10 16:36:38,231 - FFPackageManager - INFO - Successfully inserted 'Storyboard' - new index: 3, isHidden: False
+2025-10-10 16:36:41,562 - FFPackageManager - INFO - Version 'mo_04' active state changed to: True
+2025-10-10 16:36:41,562 - FFPackageManager - INFO - Version 'mo_04' active state changed to: True
+2025-10-10 16:36:41,563 - FFPackageManager - INFO - Version 'mo_04' active state changed to: True
+2025-10-10 16:36:42,175 - FFPackageManager - INFO - Version 'mo_11' active state changed to: True
+2025-10-10 16:36:42,176 - FFPackageManager - INFO - Version 'mo_11' active state changed to: True
+2025-10-10 16:36:42,176 - FFPackageManager - INFO - Version 'mo_11' active state changed to: True
+2025-10-10 16:36:42,835 - FFPackageManager - INFO - Version 'mo_03' active state changed to: True
+2025-10-10 16:36:42,836 - FFPackageManager - INFO - Version 'mo_03' active state changed to: True
+2025-10-10 16:36:42,836 - FFPackageManager - INFO - Version 'mo_03' active state changed to: True
+2025-10-10 16:36:43,290 - FFPackageManager - INFO - Version 'mo_02' active state changed to: True
+2025-10-10 16:36:43,290 - FFPackageManager - INFO - Version 'mo_02' active state changed to: True
+2025-10-10 16:36:43,290 - FFPackageManager - INFO - Version 'mo_02' active state changed to: True
+2025-10-10 16:36:44,749 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: True
+2025-10-10 16:36:44,749 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: True
+2025-10-10 16:36:44,750 - FFPackageManager - INFO - Version 'RaidersoftheLostArk' active state changed to: True
+2025-10-10 16:36:46,245 - FFPackageManager - INFO - Version 'storyboard_scenes_86_92' active state changed to: False
+2025-10-10 16:36:46,246 - FFPackageManager - INFO - Version 'storyboard_scenes_86_92' active state changed to: False
+2025-10-10 16:36:46,246 - FFPackageManager - INFO - Version 'storyboard_scenes_86_92' active state changed to: False
+2025-10-10 16:36:46,864 - FFPackageManager - INFO - Version 'storyboard_scenes_86_92' active state changed to: True
+2025-10-10 16:36:46,864 - FFPackageManager - INFO - Version 'storyboard_scenes_86_92' active state changed to: True
+2025-10-10 16:36:46,865 - FFPackageManager - INFO - Version 'storyboard_scenes_86_92' active state changed to: True
+2025-10-10 17:08:30,084 - FFPackageManager - INFO - _create_package() called
+2025-10-10 17:08:30,084 - FFPackageManager - INFO - Creating package for SG project: None
+2025-10-10 17:08:30,085 - FFPackageManager - INFO - Including RFQ: Request for Ballpark
+2025-10-10 17:08:30,085 - FFPackageManager - INFO - Active versions selected: 6
+2025-10-10 17:08:30,085 - FFPackageManager - INFO - Active version IDs: [7882, 7987, 7986, 7985, 7984, 7983]
+2025-10-10 17:08:30,098 - FFPackageManager - INFO - Data types to include: ['vfx_breakdown', 'script', 'concept_art', 'storyboard']
+2025-10-10 17:08:30,107 - FFPackageManager - INFO - Writing package to: C:\Users\gonzalo\shotgrid_packages\None_package_Request for Ballpark_20251010_170830.json
+2025-10-10 17:08:30,108 - FFPackageManager - ERROR - Error creating package: Object of type datetime is not JSON serializable
+Traceback (most recent call last):
+  File "C:\ayon_src\ff_package_manager\client\ff_package_manager\app.py", line 553, in _create_package
+    json.dump(package_data, f, indent=2)
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\json\__init__.py", line 179, in dump
+    for chunk in iterable:
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\json\encoder.py", line 432, in _iterencode
+    yield from _iterencode_dict(o, _current_indent_level)
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\json\encoder.py", line 406, in _iterencode_dict
+    yield from chunks
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\json\encoder.py", line 406, in _iterencode_dict
+    yield from chunks
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\json\encoder.py", line 326, in _iterencode_list
+    yield from chunks
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\json\encoder.py", line 406, in _iterencode_dict
+    yield from chunks
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\json\encoder.py", line 439, in _iterencode
+    o = _default(o)
+        ^^^^^^^^^^^
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\json\encoder.py", line 180, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+TypeError: Object of type datetime is not JSON serializable
+2025-10-10 17:15:19,425 - FFPackageManager - INFO - closeEvent() - Window is being closed

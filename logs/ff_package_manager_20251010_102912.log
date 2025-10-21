@@ -1,0 +1,27 @@
+2025-10-10 10:29:12,050 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff_package_manager\logs\ff_package_manager_20251010_102912.log
+2025-10-10 10:29:12,052 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-10 10:29:12,052 - FFPackageManager - INFO - super().__init__() completed
+2025-10-10 10:29:12,053 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x000001D0F87CF910>
+2025-10-10 10:29:12,066 - FFPackageManager - INFO - _create_content_panel() started
+2025-10-10 10:29:12,071 - FFPackageManager - INFO - _create_content_panel() completed
+2025-10-10 10:29:12,073 - FFPackageManager - INFO - create_panel() started
+2025-10-10 10:29:12,075 - FFPackageManager - INFO - create_panel() completed
+2025-10-10 10:29:12,076 - FFPackageManager - INFO - Building bottom panel...
+2025-10-10 10:29:12,077 - FFPackageManager - INFO - _build_ui() completed successfully
+2025-10-10 10:29:12,204 - FFPackageManager - INFO - showEvent() - Window is being shown
+2025-10-10 10:29:13,623 - FFPackageManager - INFO - _load_sg_projects() started
+2025-10-10 10:29:13,623 - FFPackageManager - INFO - clear() called
+2025-10-10 10:29:13,625 - FFPackageManager - INFO - clear() called
+2025-10-10 10:29:14,239 - FFPackageManager - INFO - _load_sg_projects() completed - 1 projects
+2025-10-10 10:29:17,975 - FFPackageManager - INFO - SG project selected: None (ID: 389)
+2025-10-10 10:29:17,975 - FFPackageManager - INFO - _load_rfqs() started for project 389
+2025-10-10 10:29:17,976 - FFPackageManager - INFO - clear() called
+2025-10-10 10:29:17,976 - FFPackageManager - INFO - clear() called
+2025-10-10 10:29:18,176 - FFPackageManager - INFO - Loaded 1 RFQs for project 389
+2025-10-10 10:29:19,422 - FFPackageManager - INFO - RFQ selected: Request for Ballpark (ID: 3)
+2025-10-10 10:29:19,422 - FFPackageManager - INFO - set_rfq() called with RFQ: Request for Ballpark
+2025-10-10 10:29:19,423 - FFPackageManager - INFO - load_tree_data() started
+2025-10-10 10:29:19,848 - FFPackageManager - INFO - Found 6 versions linked to RFQ ID 3
+2025-10-10 10:29:19,849 - FFPackageManager - INFO - VFX Breakdown field: [{'id': 1, 'name': 'Revised Third Draft - August 1979', 'type': 'CustomEntity01'}]
+2025-10-10 10:29:19,849 - FFPackageManager - INFO - load_tree_data() completed with RFQ data
+2025-10-10 11:54:03,790 - FFPackageManager - INFO - closeEvent() - Window is being closed

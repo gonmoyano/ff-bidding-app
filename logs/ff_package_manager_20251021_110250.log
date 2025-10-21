@@ -1,0 +1,82 @@
+2025-10-21 11:02:50,928 - FFPackageManager - INFO - Standalone mode - logging to: C:\ayon_src\ff-bidding-app\logs\ff_package_manager_20251021_110250.log
+2025-10-21 11:02:50,930 - FFPackageManager - INFO - Dark theme applied to application
+2025-10-21 11:02:50,930 - FFPackageManager - INFO - Calling super().__init__()...
+2025-10-21 11:02:50,931 - FFPackageManager - INFO - super().__init__() completed
+2025-10-21 11:02:50,931 - FFPackageManager - INFO - Shotgrid Session: <shotgrid.ShotgridClient object at 0x0000028A300F64D0>
+2025-10-21 11:02:50,968 - FFPackageManager - INFO - create_panel() started
+2025-10-21 11:02:50,970 - FFPackageManager - INFO - create_panel() completed
+2025-10-21 11:02:50,973 - FFPackageManager - INFO - _build_ui() completed successfully
+2025-10-21 11:02:50,973 - FFPackageManager - INFO - Auto-loading latest project...
+2025-10-21 11:02:50,974 - FFPackageManager - INFO - Attempting to auto-load latest project...
+2025-10-21 11:02:51,516 - FFPackageManager - ERROR - Error auto-loading latest project: Can't authenticate script 'ff_bidding_app'
+Traceback (most recent call last):
+  File "C:\ayon_src\ff-bidding-app\client\ff_bidding_app\app.py", line 726, in _auto_load_latest_project
+    projects = self.sg_session.sg.find(
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\site-packages\shotgun_api3\shotgun.py", line 1142, in find
+    records = self._call_rpc("read", params).get("entities", [])
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\site-packages\shotgun_api3\shotgun.py", line 3758, in _call_rpc
+    self._response_errors(response)
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\site-packages\shotgun_api3\shotgun.py", line 4077, in _response_errors
+    raise AuthenticationFault(
+shotgun_api3.shotgun.AuthenticationFault: Can't authenticate script 'ff_bidding_app'
+2025-10-21 11:02:51,518 - FFPackageManager - INFO - _load_sg_projects() started
+2025-10-21 11:02:51,520 - FFPackageManager - INFO - clear() called
+2025-10-21 11:02:51,520 - FFPackageManager - INFO - clear() called
+2025-10-21 11:02:51,673 - FFPackageManager - ERROR - Error loading projects: Can't authenticate script 'ff_bidding_app'
+Traceback (most recent call last):
+  File "C:\ayon_src\ff-bidding-app\client\ff_bidding_app\app.py", line 726, in _auto_load_latest_project
+    projects = self.sg_session.sg.find(
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\site-packages\shotgun_api3\shotgun.py", line 1142, in find
+    records = self._call_rpc("read", params).get("entities", [])
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\site-packages\shotgun_api3\shotgun.py", line 3758, in _call_rpc
+    self._response_errors(response)
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\site-packages\shotgun_api3\shotgun.py", line 4077, in _response_errors
+    raise AuthenticationFault(
+shotgun_api3.shotgun.AuthenticationFault: Can't authenticate script 'ff_bidding_app'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\ayon_src\ff-bidding-app\client\ff_bidding_app\app.py", line 707, in _load_sg_projects
+    projects = self.sg_session.get_projects(status="Bidding")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ayon_src\ff-bidding-app\client\ff_bidding_app\shotgrid.py", line 97, in get_projects
+    return self.sg.find(
+           ^^^^^^^^^^^^^
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\site-packages\shotgun_api3\shotgun.py", line 1151, in find
+    result = self._call_rpc("read", params)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\site-packages\shotgun_api3\shotgun.py", line 3758, in _call_rpc
+    self._response_errors(response)
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\site-packages\shotgun_api3\shotgun.py", line 4077, in _response_errors
+    raise AuthenticationFault(
+shotgun_api3.shotgun.AuthenticationFault: Can't authenticate script 'ff_bidding_app'
+2025-10-21 11:02:51,809 - FFPackageManager - INFO - showEvent() - Window is being shown
+2025-10-21 11:05:30,508 - FFPackageManager - INFO - _load_sg_projects() started
+2025-10-21 11:05:30,508 - FFPackageManager - INFO - clear() called
+2025-10-21 11:05:30,509 - FFPackageManager - INFO - clear() called
+2025-10-21 11:05:30,510 - FFPackageManager - INFO - clear() called
+2025-10-21 11:05:30,510 - FFPackageManager - INFO - clear() called
+2025-10-21 11:05:30,510 - FFPackageManager - INFO - clear() called
+2025-10-21 11:05:30,511 - FFPackageManager - INFO - clear() called
+2025-10-21 11:05:30,674 - FFPackageManager - ERROR - Error loading projects: Can't authenticate script 'ff_bidding_app'
+Traceback (most recent call last):
+  File "C:\ayon_src\ff-bidding-app\client\ff_bidding_app\app.py", line 707, in _load_sg_projects
+    projects = self.sg_session.get_projects(status="Bidding")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ayon_src\ff-bidding-app\client\ff_bidding_app\shotgrid.py", line 97, in get_projects
+    return self.sg.find(
+           ^^^^^^^^^^^^^
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\site-packages\shotgun_api3\shotgun.py", line 1151, in find
+    result = self._call_rpc("read", params)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\site-packages\shotgun_api3\shotgun.py", line 3758, in _call_rpc
+    self._response_errors(response)
+  File "C:\ProgramData\anaconda3\envs\sg\Lib\site-packages\shotgun_api3\shotgun.py", line 4077, in _response_errors
+    raise AuthenticationFault(
+shotgun_api3.shotgun.AuthenticationFault: Can't authenticate script 'ff_bidding_app'
+2025-10-21 11:21:02,131 - FFPackageManager - INFO - closeEvent() - Window is being closed
