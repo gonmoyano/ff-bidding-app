@@ -296,6 +296,66 @@ class ShotgridClient:
             ]
         )
 
+    def get_vfx_breakdown(self, rfq_id, fields=None):
+        """
+        Get VFX Breakdown items linked to an RFQ.
+
+        Args:
+            rfq_id: RFQ (CustomEntity04) ID
+            fields: List of fields to return. Defaults to common VFX breakdown fields
+
+        Returns:
+            List of VFX breakdown dictionaries linked to the RFQ
+        """
+        # First, get the RFQ with its sg_vfx_breakdown field
+        rfq = self.sg.find_one(
+            "CustomEntity04",
+            [["id", "is", rfq_id]],
+            ["sg_vfx_breakdown"]
+        )
+
+        if not rfq or not rfq.get("sg_vfx_breakdown"):
+            return []
+
+        # Extract breakdown IDs from the sg_vfx_breakdown field
+        breakdown_items = rfq["sg_vfx_breakdown"]
+        if not isinstance(breakdown_items, list):
+            breakdown_items = [breakdown_items]
+
+        breakdown_ids = [item["id"] for item in breakdown_items if item]
+
+        if not breakdown_ids:
+            return []
+
+        # Default fields for VFX Breakdown
+        if fields is None:
+            fields = [
+                "id",
+                "code",
+                "sg_sequence",
+                "sg_shot",
+                "description",
+                "sg_vfx_element",
+                "sg_complexity",
+                "sg_frame_range",
+                "sg_duration",
+                "sg_status_list",
+                "created_at",
+                "updated_at",
+            ]
+
+        # Query the breakdown items
+        # Note: VFX Breakdown could be CustomEntity01, CustomEntity02, etc.
+        # We need to determine the entity type from the first item
+        entity_type = breakdown_items[0].get("type", "CustomEntity01")
+
+        return self.sg.find(
+            entity_type,
+            [["id", "in", breakdown_ids]],
+            fields,
+            order=[{"field_name": "code", "direction": "asc"}]
+        )
+
     def get_version_published_files(self, version_id, fields=None):
         """
         Get all published files linked to a version.

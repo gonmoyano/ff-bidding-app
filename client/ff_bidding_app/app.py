@@ -563,17 +563,55 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         """Create the VFX Breakdown tab content."""
         vfx_breakdown_widget = QtWidgets.QWidget()
         vfx_breakdown_layout = QtWidgets.QVBoxLayout(vfx_breakdown_widget)
+        vfx_breakdown_layout.setContentsMargins(10, 10, 10, 10)
 
-        # Placeholder content
+        # Header
+        header_layout = QtWidgets.QHBoxLayout()
         label = QtWidgets.QLabel("VFX Breakdown")
-        label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 20px;")
-        vfx_breakdown_layout.addWidget(label)
+        label.setStyleSheet("font-size: 16px; font-weight: bold;")
+        header_layout.addWidget(label)
 
-        info_label = QtWidgets.QLabel("VFX Breakdown content will be displayed here.")
-        info_label.setStyleSheet("padding: 20px;")
-        vfx_breakdown_layout.addWidget(info_label)
+        # Refresh button
+        refresh_btn = QtWidgets.QPushButton("Refresh")
+        refresh_btn.setMaximumWidth(100)
+        refresh_btn.clicked.connect(self._refresh_vfx_breakdown)
+        header_layout.addStretch()
+        header_layout.addWidget(refresh_btn)
 
-        vfx_breakdown_layout.addStretch()
+        vfx_breakdown_layout.addLayout(header_layout)
+
+        # Create the table
+        self.vfx_breakdown_table = QtWidgets.QTableWidget()
+        self.vfx_breakdown_table.setColumnCount(8)
+        self.vfx_breakdown_table.setHorizontalHeaderLabels([
+            "ID", "Code", "Sequence", "Shot", "VFX Element",
+            "Complexity", "Frame Range", "Status"
+        ])
+
+        # Configure table properties
+        self.vfx_breakdown_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.vfx_breakdown_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.vfx_breakdown_table.setAlternatingRowColors(True)
+        self.vfx_breakdown_table.setSortingEnabled(True)
+        self.vfx_breakdown_table.verticalHeader().setVisible(False)
+
+        # Set column resize modes
+        header = self.vfx_breakdown_table.horizontalHeader()
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)  # ID
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)  # Code
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)  # Sequence
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)  # Shot
+        header.setSectionResizeMode(4, QtWidgets.QHeaderView.Stretch)  # VFX Element
+        header.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeToContents)  # Complexity
+        header.setSectionResizeMode(6, QtWidgets.QHeaderView.ResizeToContents)  # Frame Range
+        header.setSectionResizeMode(7, QtWidgets.QHeaderView.ResizeToContents)  # Status
+
+        vfx_breakdown_layout.addWidget(self.vfx_breakdown_table)
+
+        # Status label
+        self.vfx_breakdown_status_label = QtWidgets.QLabel("Select an RFQ to load VFX Breakdown data")
+        self.vfx_breakdown_status_label.setStyleSheet("padding: 5px; color: #888;")
+        vfx_breakdown_layout.addWidget(self.vfx_breakdown_status_label)
 
         return vfx_breakdown_widget
 
@@ -818,18 +856,144 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             # Update the package data tree with RFQ data
             self.package_data_tree.set_rfq(rfq)
 
+            # Load VFX Breakdown data
+            self._load_vfx_breakdown(rfq)
+
             # Apply checkbox states after tree is loaded
             QtCore.QTimer.singleShot(0, self._apply_checkbox_states_to_tree)
         else:
             self.rfq_id_label.setText("-")
             self.rfq_status_label.setText("-")
             self.package_data_tree.clear()
+            self._clear_vfx_breakdown_table()
 
     def _apply_checkbox_states_to_tree(self):
         """Apply current checkbox states to the tree view."""
         for category, checkbox in self.entity_type_checkboxes.items():
             is_checked = checkbox.isChecked()
             self.package_data_tree.set_category_visibility(category, is_checked)
+
+    def _load_vfx_breakdown(self, rfq):
+        """Load VFX Breakdown data for the selected RFQ."""
+        if not rfq:
+            self._clear_vfx_breakdown_table()
+            return
+
+        try:
+            rfq_id = rfq['id']
+            rfq_code = rfq.get('code', 'N/A')
+
+            self.vfx_breakdown_status_label.setText(f"Loading VFX Breakdown for {rfq_code}...")
+            logger.info(f"Loading VFX Breakdown for RFQ {rfq_code} (ID: {rfq_id})")
+
+            # Fetch VFX Breakdown data from ShotGrid
+            breakdown_data = self.sg_session.get_vfx_breakdown(rfq_id)
+
+            if not breakdown_data:
+                self._clear_vfx_breakdown_table()
+                self.vfx_breakdown_status_label.setText(f"No VFX Breakdown items found for {rfq_code}")
+                logger.info(f"No VFX Breakdown items found for RFQ {rfq_code}")
+                return
+
+            # Populate the table
+            self._populate_vfx_breakdown_table(breakdown_data)
+
+            count = len(breakdown_data)
+            self.vfx_breakdown_status_label.setText(f"Loaded {count} VFX Breakdown item{'s' if count != 1 else ''} for {rfq_code}")
+            logger.info(f"Loaded {count} VFX Breakdown items for RFQ {rfq_code}")
+
+        except Exception as e:
+            logger.error(f"Error loading VFX Breakdown: {e}", exc_info=True)
+            self.vfx_breakdown_status_label.setText(f"Error loading VFX Breakdown: {str(e)}")
+            self._clear_vfx_breakdown_table()
+
+    def _populate_vfx_breakdown_table(self, breakdown_data):
+        """Populate the VFX Breakdown table with data."""
+        # Disable sorting while populating
+        self.vfx_breakdown_table.setSortingEnabled(False)
+
+        # Set row count
+        self.vfx_breakdown_table.setRowCount(len(breakdown_data))
+
+        for row, item in enumerate(breakdown_data):
+            # ID
+            id_item = QtWidgets.QTableWidgetItem(str(item.get('id', '')))
+            id_item.setFlags(id_item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.vfx_breakdown_table.setItem(row, 0, id_item)
+
+            # Code
+            code_item = QtWidgets.QTableWidgetItem(item.get('code', ''))
+            code_item.setFlags(code_item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.vfx_breakdown_table.setItem(row, 1, code_item)
+
+            # Sequence
+            sequence = item.get('sg_sequence')
+            sequence_name = sequence.get('name', '') if sequence else ''
+            sequence_item = QtWidgets.QTableWidgetItem(sequence_name)
+            sequence_item.setFlags(sequence_item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.vfx_breakdown_table.setItem(row, 2, sequence_item)
+
+            # Shot
+            shot = item.get('sg_shot')
+            shot_name = shot.get('name', '') if shot else ''
+            shot_item = QtWidgets.QTableWidgetItem(shot_name)
+            shot_item.setFlags(shot_item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.vfx_breakdown_table.setItem(row, 3, shot_item)
+
+            # VFX Element
+            vfx_element = item.get('sg_vfx_element', '')
+            vfx_element_item = QtWidgets.QTableWidgetItem(str(vfx_element) if vfx_element else '')
+            vfx_element_item.setFlags(vfx_element_item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.vfx_breakdown_table.setItem(row, 4, vfx_element_item)
+
+            # Complexity
+            complexity = item.get('sg_complexity', '')
+            complexity_item = QtWidgets.QTableWidgetItem(str(complexity) if complexity else '')
+            complexity_item.setFlags(complexity_item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.vfx_breakdown_table.setItem(row, 5, complexity_item)
+
+            # Frame Range
+            frame_range = item.get('sg_frame_range', '')
+            frame_range_item = QtWidgets.QTableWidgetItem(str(frame_range) if frame_range else '')
+            frame_range_item.setFlags(frame_range_item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.vfx_breakdown_table.setItem(row, 6, frame_range_item)
+
+            # Status
+            status = item.get('sg_status_list', '')
+            status_item = QtWidgets.QTableWidgetItem(str(status) if status else '')
+            status_item.setFlags(status_item.flags() & ~QtCore.Qt.ItemIsEditable)
+
+            # Color code status
+            if status:
+                status_lower = status.lower()
+                if status_lower in ['approved', 'final']:
+                    status_item.setForeground(QtGui.QColor("#4ade80"))  # Green
+                elif status_lower in ['in progress', 'ip', 'wip']:
+                    status_item.setForeground(QtGui.QColor("#fbbf24"))  # Yellow
+                elif status_lower in ['waiting', 'pending']:
+                    status_item.setForeground(QtGui.QColor("#fb923c"))  # Orange
+                elif status_lower in ['review', 'rev']:
+                    status_item.setForeground(QtGui.QColor("#60a5fa"))  # Blue
+
+            self.vfx_breakdown_table.setItem(row, 7, status_item)
+
+        # Re-enable sorting
+        self.vfx_breakdown_table.setSortingEnabled(True)
+
+    def _clear_vfx_breakdown_table(self):
+        """Clear the VFX Breakdown table."""
+        self.vfx_breakdown_table.setRowCount(0)
+        self.vfx_breakdown_status_label.setText("Select an RFQ to load VFX Breakdown data")
+
+    def _refresh_vfx_breakdown(self):
+        """Refresh the VFX Breakdown table with current RFQ data."""
+        current_index = self.rfq_combo.currentIndex()
+        rfq = self.rfq_combo.itemData(current_index)
+
+        if rfq:
+            self._load_vfx_breakdown(rfq)
+        else:
+            self._clear_vfx_breakdown_table()
 
     def _browse_output_directory(self):
         """Browse for output directory."""
