@@ -823,8 +823,14 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self.sg_project_status_label.setText(project.get('sg_status', 'Unknown'))
             logger.info(f"SG project selected: {project['code']} (ID: {project['id']})")
 
+            # Store current project for later use
+            self.current_project = project
+
             # Load RFQs for this project
             self._load_rfqs(project['id'])
+
+            # Load VFX Breakdowns for this project
+            self._load_vfx_breakdowns_for_project(project['id'])
         else:
             self.sg_project_id_label.setText("-")
             self.sg_project_status_label.setText("-")
@@ -833,6 +839,9 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self.rfq_id_label.setText("-")
             self.rfq_status_label.setText("-")
             self.package_data_tree.clear()
+            self._clear_vfx_breakdown_table()
+            self._clear_vfx_breakdown_combo()
+            self.current_project = None
 
     def _load_rfqs(self, project_id):
         """Load RFQs for the selected project."""
@@ -875,11 +884,14 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self.rfq_status_label.setText(rfq.get('sg_status_list', 'Unknown'))
             logger.info(f"RFQ selected: {rfq.get('code', 'N/A')} (ID: {rfq['id']})")
 
+            # Store current RFQ for later use
+            self.current_rfq = rfq
+
             # Update the package data tree with RFQ data
             self.package_data_tree.set_rfq(rfq)
 
-            # Load VFX Breakdown data
-            self._load_vfx_breakdown(rfq)
+            # Update VFX Breakdown combobox to show this RFQ's linked breakdown
+            self._update_vfx_breakdown_selection_for_rfq(rfq)
 
             # Apply checkbox states after tree is loaded
             QtCore.QTimer.singleShot(0, self._apply_checkbox_states_to_tree)
@@ -888,6 +900,30 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self.rfq_status_label.setText("-")
             self.package_data_tree.clear()
             self._clear_vfx_breakdown_table()
+            self.current_rfq = None
+
+            # Reset breakdown selection to "-- Select --"
+            if hasattr(self, 'all_breakdowns') and self.all_breakdowns:
+                self._populate_vfx_breakdown_combo(self.all_breakdowns)
+
+    def _update_vfx_breakdown_selection_for_rfq(self, rfq):
+        """Update VFX Breakdown combobox selection based on RFQ's linked breakdown.
+
+        Args:
+            rfq: RFQ entity with sg_vfx_breakdown field
+        """
+        if not hasattr(self, 'all_breakdowns') or not self.all_breakdowns:
+            logger.warning("No breakdowns loaded yet")
+            return
+
+        # Get the breakdown linked to this RFQ
+        rfq_breakdown = rfq.get('sg_vfx_breakdown')
+        rfq_breakdown_id = rfq_breakdown.get('id') if rfq_breakdown else None
+
+        # Re-populate the combobox with green dot on the RFQ's breakdown
+        self._populate_vfx_breakdown_combo(self.all_breakdowns, rfq_breakdown_id)
+
+        logger.info(f"Updated VFX Breakdown selection for RFQ {rfq.get('code')} - linked breakdown ID: {rfq_breakdown_id}")
 
     def _apply_checkbox_states_to_tree(self):
         """Apply current checkbox states to the tree view."""
@@ -895,40 +931,38 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             is_checked = checkbox.isChecked()
             self.package_data_tree.set_category_visibility(category, is_checked)
 
-    def _load_vfx_breakdown(self, rfq):
-        """Load VFX Breakdown entities for the selected RFQ."""
-        if not rfq:
+    def _load_vfx_breakdowns_for_project(self, project_id):
+        """Load all VFX Breakdown entities for the selected project."""
+        if not project_id:
             self._clear_vfx_breakdown_table()
             self._clear_vfx_breakdown_combo()
             return
 
         try:
-            rfq_id = rfq['id']
-            rfq_code = rfq.get('code', 'N/A')
+            project_code = self.current_project.get('code', 'N/A') if hasattr(self, 'current_project') and self.current_project else 'N/A'
 
-            self.vfx_breakdown_status_label.setText(f"Loading VFX Breakdowns for {rfq_code}...")
-            logger.info(f"Loading VFX Breakdowns for RFQ {rfq_code} (ID: {rfq_id})")
+            self.vfx_breakdown_status_label.setText(f"Loading VFX Breakdowns for project {project_code}...")
+            logger.info(f"Loading VFX Breakdowns for project {project_code} (ID: {project_id})")
 
-            # Fetch VFX Breakdown entities from ShotGrid
-            breakdowns, current_breakdown = self.sg_session.get_vfx_breakdowns(rfq_id)
+            # Fetch all VFX Breakdown entities for this project from ShotGrid
+            breakdowns = self.sg_session.get_vfx_breakdowns(project_id)
 
             if not breakdowns:
                 self._clear_vfx_breakdown_table()
                 self._clear_vfx_breakdown_combo()
-                self.vfx_breakdown_status_label.setText(f"No VFX Breakdowns found for {rfq_code}")
-                logger.info(f"No VFX Breakdowns found for RFQ {rfq_code}")
+                self.vfx_breakdown_status_label.setText(f"No VFX Breakdowns found for {project_code}")
+                logger.info(f"No VFX Breakdowns found for project {project_code}")
                 return
 
-            # Store current RFQ for later use
-            self.current_rfq = rfq
-            self.current_breakdown_ref = current_breakdown
+            # Store breakdowns for later use
+            self.all_breakdowns = breakdowns
 
             # Populate the breakdown combobox
-            self._populate_vfx_breakdown_combo(breakdowns, current_breakdown)
+            self._populate_vfx_breakdown_combo(breakdowns)
 
             count = len(breakdowns)
-            self.vfx_breakdown_status_label.setText(f"Loaded {count} VFX Breakdown{'s' if count != 1 else ''} for {rfq_code}")
-            logger.info(f"Loaded {count} VFX Breakdowns for RFQ {rfq_code}")
+            self.vfx_breakdown_status_label.setText(f"Loaded {count} VFX Breakdown{'s' if count != 1 else ''} for {project_code}")
+            logger.info(f"Loaded {count} VFX Breakdowns for project {project_code}")
 
         except Exception as e:
             logger.error(f"Error loading VFX Breakdowns: {e}", exc_info=True)
@@ -1015,23 +1049,32 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         self.vfx_breakdown_status_label.setText("Select an RFQ and VFX Breakdown to view items")
 
     def _refresh_vfx_breakdown(self):
-        """Refresh the VFX Breakdowns with current RFQ data."""
-        current_index = self.rfq_combo.currentIndex()
-        rfq = self.rfq_combo.itemData(current_index)
+        """Refresh the VFX Breakdowns from the current project."""
+        if hasattr(self, 'current_project') and self.current_project:
+            project_id = self.current_project.get('id')
+            self._load_vfx_breakdowns_for_project(project_id)
 
-        if rfq:
-            self._load_vfx_breakdown(rfq)
+            # If there's a current RFQ, update the selection
+            if hasattr(self, 'current_rfq') and self.current_rfq:
+                self._update_vfx_breakdown_selection_for_rfq(self.current_rfq)
         else:
             self._clear_vfx_breakdown_table()
             self._clear_vfx_breakdown_combo()
 
-    def _populate_vfx_breakdown_combo(self, breakdowns, current_breakdown):
-        """Populate the VFX Breakdown combobox with breakdown entities."""
+    def _populate_vfx_breakdown_combo(self, breakdowns, rfq_breakdown_id=None):
+        """Populate the VFX Breakdown combobox with breakdown entities.
+
+        Args:
+            breakdowns: List of breakdown entities
+            rfq_breakdown_id: ID of the breakdown linked to the current RFQ (optional)
+        """
         # Block signals to prevent triggering selection change
         self.vfx_breakdown_combo.blockSignals(True)
         self.vfx_breakdown_combo.clear()
 
-        current_breakdown_id = current_breakdown.get('id') if current_breakdown else None
+        # Add default "-- Select --" option
+        self.vfx_breakdown_combo.addItem("-- Select VFX Breakdown --", None)
+
         select_index = 0
 
         for index, breakdown in enumerate(breakdowns):
@@ -1039,10 +1082,10 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             breakdown_code = breakdown.get('code', f'Breakdown {breakdown_id}')
             breakdown_type = breakdown.get('type', 'CustomEntity01')
 
-            # Add green dot for current breakdown
-            if current_breakdown_id and breakdown_id == current_breakdown_id:
+            # Add green dot for breakdown linked to current RFQ
+            if rfq_breakdown_id and breakdown_id == rfq_breakdown_id:
                 display_text = f"🟢 {breakdown_code}"
-                select_index = index
+                select_index = index + 1  # +1 because of "-- Select --" option
             else:
                 display_text = f"   {breakdown_code}"
 
@@ -1056,16 +1099,17 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
             self.vfx_breakdown_combo.addItem(display_text, breakdown_data)
 
-        # Select the current breakdown or first item
+        # Select the RFQ's breakdown if it exists, otherwise select "-- Select --"
         if self.vfx_breakdown_combo.count() > 0:
             self.vfx_breakdown_combo.setCurrentIndex(select_index)
-            self.set_current_breakdown_btn.setEnabled(True)
+            # Enable button only if we have breakdowns
+            self.set_current_breakdown_btn.setEnabled(len(breakdowns) > 0)
 
-        # Unblock signals and trigger load
+        # Unblock signals
         self.vfx_breakdown_combo.blockSignals(False)
 
-        # Load items for the selected breakdown
-        if self.vfx_breakdown_combo.count() > 0:
+        # Load items for the selected breakdown (if not "-- Select --")
+        if select_index > 0:
             self._on_vfx_breakdown_changed(select_index)
 
     def _clear_vfx_breakdown_combo(self):
@@ -1113,9 +1157,10 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self._clear_vfx_breakdown_table()
 
     def _set_current_vfx_breakdown(self):
-        """Set the selected VFX Breakdown as current for the RFQ."""
+        """Set the selected VFX Breakdown for the current RFQ."""
         if not hasattr(self, 'current_rfq') or not self.current_rfq:
             logger.warning("No RFQ selected")
+            self.vfx_breakdown_status_label.setText("Please select an RFQ first")
             return
 
         current_index = self.vfx_breakdown_combo.currentIndex()
@@ -1123,6 +1168,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
         if not breakdown_data:
             logger.warning("No breakdown selected")
+            self.vfx_breakdown_status_label.setText("Please select a VFX Breakdown")
             return
 
         try:
@@ -1132,27 +1178,35 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             breakdown_code = breakdown_data['code']
             breakdown_type = breakdown_data['type']
 
-            self.vfx_breakdown_status_label.setText(f"Setting {breakdown_code} as current...")
-            logger.info(f"Setting VFX Breakdown {breakdown_code} as current for RFQ {rfq_code}")
+            self.vfx_breakdown_status_label.setText(f"Linking {breakdown_code} to RFQ {rfq_code}...")
+            logger.info(f"Linking VFX Breakdown {breakdown_code} to RFQ {rfq_code}")
 
-            # Update the RFQ
-            result = self.sg_session.set_current_vfx_breakdown(rfq_id, breakdown_id, breakdown_type)
+            # Update the RFQ's sg_vfx_breakdown field
+            result = self.sg_session.set_vfx_breakdown_for_rfq(rfq_id, breakdown_id, breakdown_type)
 
             if result:
-                # Update the current breakdown reference
-                self.current_breakdown_ref = {'id': breakdown_id, 'type': breakdown_type}
+                # Update the current RFQ's sg_vfx_breakdown field locally
+                self.current_rfq['sg_vfx_breakdown'] = {
+                    'id': breakdown_id,
+                    'type': breakdown_type,
+                    'name': breakdown_code
+                }
+
+                # Update the RFQ combobox data
+                current_rfq_index = self.rfq_combo.currentIndex()
+                self.rfq_combo.setItemData(current_rfq_index, self.current_rfq)
 
                 # Refresh the combobox to show the green dot on the new current
-                self._refresh_vfx_breakdown()
+                self._update_vfx_breakdown_selection_for_rfq(self.current_rfq)
 
-                self.vfx_breakdown_status_label.setText(f"Set {breakdown_code} as current VFX Breakdown")
-                logger.info(f"Successfully set {breakdown_code} as current")
+                self.vfx_breakdown_status_label.setText(f"Successfully linked {breakdown_code} to RFQ {rfq_code}")
+                logger.info(f"Successfully linked {breakdown_code} to RFQ {rfq_code}")
             else:
-                self.vfx_breakdown_status_label.setText(f"Failed to set {breakdown_code} as current")
-                logger.error(f"Failed to set {breakdown_code} as current")
+                self.vfx_breakdown_status_label.setText(f"Failed to link {breakdown_code} to RFQ")
+                logger.error(f"Failed to link {breakdown_code} to RFQ {rfq_code}")
 
         except Exception as e:
-            logger.error(f"Error setting current VFX Breakdown: {e}", exc_info=True)
+            logger.error(f"Error linking VFX Breakdown to RFQ: {e}", exc_info=True)
             self.vfx_breakdown_status_label.setText(f"Error: {str(e)}")
 
     def _browse_output_directory(self):
