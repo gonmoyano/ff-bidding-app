@@ -9,6 +9,37 @@ except ImportError:
     logger = logging.getLogger("FFPackageManager")
 
 
+class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
+    """Custom delegate for combo box cells with List field values."""
+
+    def __init__(self, field_name, list_values, parent=None):
+        super().__init__(parent)
+        self.field_name = field_name
+        self.list_values = list_values or []
+
+    def createEditor(self, parent, option, index):
+        """Create a combo box editor."""
+        combo = QtWidgets.QComboBox(parent)
+        combo.addItem("")  # Empty option
+        for value in self.list_values:
+            combo.addItem(value)
+        combo.setFrame(False)
+        return combo
+
+    def setEditorData(self, editor, index):
+        """Set the current value in the combo box."""
+        value = index.model().data(index, QtCore.Qt.EditRole)
+        if value:
+            index_pos = editor.findText(value)
+            if index_pos >= 0:
+                editor.setCurrentIndex(index_pos)
+
+    def setModelData(self, editor, model, index):
+        """Save the selected value back to the model."""
+        value = editor.currentText()
+        model.setData(index, value, QtCore.Qt.EditRole)
+
+
 class EditCommand:
     """Command pattern for undo/redo of cell edits."""
 
@@ -94,6 +125,9 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_field_names = []
         self.vfx_breakdown_field_labels = {}
 
+        # Field schema information (data types and list values)
+        self.field_schema = {}  # {field_name: {"data_type": ..., "properties": {...}}}
+
         # Fields to display for VFX Breakdown, in order
         self.vfx_breakdown_field_allowlist = [
             "id",
@@ -145,6 +179,12 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         # Flag to prevent recursive updates
         self._updating = False
+
+        # Store color animation timers
+        self.color_timers = {}  # {(row, col): QTimer}
+
+        # Store original cell colors
+        self.original_colors = {}  # {(row, col): QColor}
 
         self._build_ui()
 
@@ -238,18 +278,84 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         """Event filter to handle Enter key press."""
         if obj == self.vfx_breakdown_table and event.type() == QtCore.QEvent.KeyPress:
             if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
-                # Enter pressed - update will happen via itemChanged
+                # Enter pressed - trigger update with visual feedback
                 current_item = self.vfx_breakdown_table.currentItem()
                 if current_item:
+                    row = current_item.row()
+                    col = current_item.column()
+
+                    # Start visual feedback
+                    self._start_update_animation(row, col)
+
                     # Move to next row
-                    current_row = current_item.row()
-                    current_col = current_item.column()
-                    next_row = current_row + 1
+                    next_row = row + 1
                     if next_row < self.vfx_breakdown_table.rowCount():
-                        self.vfx_breakdown_table.setCurrentCell(next_row, current_col)
+                        self.vfx_breakdown_table.setCurrentCell(next_row, col)
                 return True
 
         return super().eventFilter(obj, event)
+
+    def _start_update_animation(self, row, col):
+        """Start the color animation for a cell update."""
+        item = self.vfx_breakdown_table.item(row, col)
+        if not item:
+            return
+
+        # Store original background color
+        self.original_colors[(row, col)] = item.background()
+
+        # Set to violet initially
+        item.setBackground(QtGui.QColor("#9966ff"))  # Violet
+
+    def _animate_to_success(self, row, col):
+        """Animate cell to green (success)."""
+        item = self.vfx_breakdown_table.item(row, col)
+        if not item:
+            return
+
+        # Set to green
+        item.setBackground(QtGui.QColor("#66ff66"))  # Green
+
+        # Schedule revert to original color after 2 seconds
+        self._schedule_color_revert(row, col)
+
+    def _animate_to_failure(self, row, col):
+        """Animate cell to red (failure)."""
+        item = self.vfx_breakdown_table.item(row, col)
+        if not item:
+            return
+
+        # Set to red
+        item.setBackground(QtGui.QColor("#ff6666"))  # Red
+
+        # Schedule revert to original color after 2 seconds
+        self._schedule_color_revert(row, col)
+
+    def _schedule_color_revert(self, row, col):
+        """Schedule color revert after 2 seconds."""
+        # Cancel any existing timer for this cell
+        if (row, col) in self.color_timers:
+            self.color_timers[(row, col)].stop()
+            self.color_timers[(row, col)].deleteLater()
+
+        # Create new timer
+        timer = QtCore.QTimer()
+        timer.setSingleShot(True)
+        timer.timeout.connect(lambda: self._revert_cell_color(row, col))
+        timer.start(2000)  # 2 seconds
+
+        self.color_timers[(row, col)] = timer
+
+    def _revert_cell_color(self, row, col):
+        """Revert cell color to original."""
+        item = self.vfx_breakdown_table.item(row, col)
+        if item and (row, col) in self.original_colors:
+            item.setBackground(self.original_colors[(row, col)])
+            del self.original_colors[(row, col)]
+
+        # Clean up timer
+        if (row, col) in self.color_timers:
+            del self.color_timers[(row, col)]
 
     def _undo(self):
         """Undo the last change."""
@@ -321,35 +427,91 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             self.sg_session
         )
 
-        # Execute the command (update ShotGrid)
+        # Execute the command (update ShotGrid) with better error handling
         try:
             self._updating = True
-            command._update_shotgrid(new_value)
-            self._updating = False
 
-            # Add to undo stack
-            self.undo_stack.append(command)
-            # Clear redo stack on new edit
-            self.redo_stack.clear()
+            beat_id = beat_data.get("id")
+            if not beat_id:
+                raise ValueError("No beat ID found for update")
 
-            # Update the beat_data with new value
-            parsed_value = command._parse_value(new_value, field_name)
-            beat_data[field_name] = parsed_value
+            # Convert string value back to appropriate type
+            update_value = command._parse_value(new_value, field_name)
 
-            self._set_vfx_breakdown_status(f"Updated {field_name} on ShotGrid")
+            # Update on ShotGrid and verify
+            logger.info(f"Updating Beat {beat_id} field '{field_name}' to: {update_value}")
+            result = self.sg_session.sg.update("CustomEntity02", beat_id, {field_name: update_value})
+
+            if result:
+                logger.info(f"Successfully updated Beat {beat_id} field '{field_name}'")
+
+                # Add to undo stack
+                self.undo_stack.append(command)
+                # Clear redo stack on new edit
+                self.redo_stack.clear()
+
+                # Update the beat_data with new value
+                parsed_value = command._parse_value(new_value, field_name)
+                beat_data[field_name] = parsed_value
+
+                self._set_vfx_breakdown_status(f"Updated {field_name} on ShotGrid")
+
+                # Animate to success
+                self._animate_to_success(row, col)
+            else:
+                raise Exception("ShotGrid update returned no result")
 
         except Exception as e:
             logger.error(f"Failed to update ShotGrid: {e}", exc_info=True)
+
             # Revert the change in UI
-            self._updating = True
             item.setText(old_value)
-            self._updating = False
+
             self._set_vfx_breakdown_status(f"Failed to update {field_name}", is_error=True)
+
+            # Animate to failure
+            self._animate_to_failure(row, col)
+
+            # Show error dialog
             QtWidgets.QMessageBox.critical(
                 self,
                 "Update Failed",
-                f"Failed to update field '{field_name}':\n{str(e)}"
+                f"Failed to update field '{field_name}':\n{str(e)}\n\nValue has been reverted."
             )
+        finally:
+            self._updating = False
+
+    def _fetch_beats_schema(self):
+        """Fetch schema information for Beat entity (CustomEntity02)."""
+        try:
+            schema = self.sg_session.sg.schema_field_read("CustomEntity02")
+
+            for field_name, field_info in schema.items():
+                data_type = field_info.get("data_type", {})
+                properties = field_info.get("properties", {})
+
+                self.field_schema[field_name] = {
+                    "data_type": data_type.get("value") if isinstance(data_type, dict) else data_type,
+                    "properties": properties
+                }
+
+                # Extract list values if it's a list field
+                if self.field_schema[field_name]["data_type"] == "list":
+                    valid_values = properties.get("valid_values", {})
+                    if isinstance(valid_values, dict):
+                        # Extract just the display values
+                        list_values = list(valid_values.get("value", []))
+                    else:
+                        list_values = []
+                    self.field_schema[field_name]["list_values"] = list_values
+                    logger.info(f"Field '{field_name}' is a list with values: {list_values}")
+
+            logger.info(f"Fetched schema for {len(self.field_schema)} fields")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to fetch schema: {e}", exc_info=True)
+            return False
 
     def _on_set_current_vfx_breakdown(self):
         """Set the selected VFX Breakdown as the current one for the selected RFQ."""
@@ -562,6 +724,13 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.undo_stack.clear()
         self.redo_stack.clear()
 
+        # Clean up color timers
+        for timer in self.color_timers.values():
+            timer.stop()
+            timer.deleteLater()
+        self.color_timers.clear()
+        self.original_colors.clear()
+
     def _on_vfx_breakdown_changed(self, index):
         """Handle VFX Breakdown selection change."""
         breakdown = self.vfx_breakdown_combo.itemData(index)
@@ -676,6 +845,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             self._set_vfx_breakdown_status("Invalid VFX Breakdown selection.", is_error=True)
             return
 
+        # Fetch schema for Beat entity
+        if not self.field_schema:
+            self._fetch_beats_schema()
+
         breakdown_id = int(breakdown["id"])
 
         base_fields = [
@@ -726,6 +899,13 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.undo_stack.clear()
         self.redo_stack.clear()
 
+        # Clean up color timers
+        for timer in self.color_timers.values():
+            timer.stop()
+            timer.deleteLater()
+        self.color_timers.clear()
+        self.original_colors.clear()
+
         if not beats:
             self._set_vfx_breakdown_status("No Beats linked to this VFX Breakdown.")
             self.vfx_breakdown_table.blockSignals(False)
@@ -773,6 +953,16 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     it.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
                 table.setItem(r, c, it)
+
+                # Set item delegate for List fields
+                if field in self.field_schema:
+                    field_info = self.field_schema[field]
+                    if field_info.get("data_type") == "list":
+                        list_values = field_info.get("list_values", [])
+                        if list_values:
+                            delegate = ComboBoxDelegate(field, list_values, self.vfx_breakdown_table)
+                            self.vfx_breakdown_table.setItemDelegateForColumn(c, delegate)
+                            logger.info(f"Set combo box delegate for column {c} ({field}) with values: {list_values}")
 
         # Unblock signals
         self.vfx_breakdown_table.blockSignals(False)
