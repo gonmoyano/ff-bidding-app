@@ -1,4 +1,4 @@
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 import json
 import logging
 from datetime import datetime, date
@@ -7,6 +7,72 @@ try:
     from .logger import logger
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
+
+
+class EditCommand:
+    """Command pattern for undo/redo of cell edits."""
+
+    def __init__(self, table, row, col, old_value, new_value, beat_data, field_name, sg_session):
+        self.table = table
+        self.row = row
+        self.col = col
+        self.old_value = old_value
+        self.new_value = new_value
+        self.beat_data = beat_data
+        self.field_name = field_name
+        self.sg_session = sg_session
+
+    def undo(self):
+        """Undo the edit."""
+        item = self.table.item(self.row, self.col)
+        if item:
+            item.setText(self.old_value)
+            # Update ShotGrid
+            self._update_shotgrid(self.old_value)
+
+    def redo(self):
+        """Redo the edit."""
+        item = self.table.item(self.row, self.col)
+        if item:
+            item.setText(self.new_value)
+            # Update ShotGrid
+            self._update_shotgrid(self.new_value)
+
+    def _update_shotgrid(self, value):
+        """Update ShotGrid with the value."""
+        try:
+            beat_id = self.beat_data.get("id")
+            if not beat_id:
+                logger.error("No beat ID found for update")
+                return
+
+            # Convert string value back to appropriate type
+            update_value = self._parse_value(value, self.field_name)
+
+            # Update on ShotGrid
+            self.sg_session.sg.update("CustomEntity02", beat_id, {self.field_name: update_value})
+            logger.info(f"Updated Beat {beat_id} field '{self.field_name}' to: {update_value}")
+
+        except Exception as e:
+            logger.error(f"Failed to update ShotGrid: {e}", exc_info=True)
+
+    def _parse_value(self, text, field_name):
+        """Parse text value to appropriate type based on field name."""
+        if not text or text == "-" or text == "":
+            return None
+
+        # Number fields
+        if field_name in ("sg_page", "sg_numer_of_shots", "sg_number_of_shots", "sg_beat_id"):
+            try:
+                return int(text)
+            except ValueError:
+                try:
+                    return float(text)
+                except ValueError:
+                    return None
+
+        # Text fields
+        return text
 
 
 class VFXBreakdownTab(QtWidgets.QWidget):
@@ -69,6 +135,16 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_status_label = None
         self.vfx_breakdown_table = None
         self.vfx_beat_columns = []
+
+        # Undo/Redo stack
+        self.undo_stack = []
+        self.redo_stack = []
+
+        # Store beat data for each row
+        self.beat_data_by_row = {}
+
+        # Flag to prevent recursive updates
+        self._updating = False
 
         self._build_ui()
 
@@ -135,7 +211,145 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         hdr.setStretchLastSection(False)
         hdr.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
 
+        # Connect item changed signal
+        self.vfx_breakdown_table.itemChanged.connect(self._on_item_changed)
+
+        # Install event filter to catch Enter key
+        self.vfx_breakdown_table.installEventFilter(self)
+
         layout.addWidget(self.vfx_breakdown_table)
+
+        # Setup keyboard shortcuts
+        self._setup_shortcuts()
+
+    def _setup_shortcuts(self):
+        """Setup keyboard shortcuts for undo/redo."""
+        # Undo shortcut (Ctrl+Z)
+        undo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Z"), self)
+        undo_shortcut.activated.connect(self._undo)
+
+        # Redo shortcut (Ctrl+Y)
+        redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
+        redo_shortcut.activated.connect(self._redo)
+
+        logger.info("Keyboard shortcuts set up: Ctrl+Z (undo), Ctrl+Y (redo)")
+
+    def eventFilter(self, obj, event):
+        """Event filter to handle Enter key press."""
+        if obj == self.vfx_breakdown_table and event.type() == QtCore.QEvent.KeyPress:
+            if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+                # Enter pressed - update will happen via itemChanged
+                current_item = self.vfx_breakdown_table.currentItem()
+                if current_item:
+                    # Move to next row
+                    current_row = current_item.row()
+                    current_col = current_item.column()
+                    next_row = current_row + 1
+                    if next_row < self.vfx_breakdown_table.rowCount():
+                        self.vfx_breakdown_table.setCurrentCell(next_row, current_col)
+                return True
+
+        return super().eventFilter(obj, event)
+
+    def _undo(self):
+        """Undo the last change."""
+        if not self.undo_stack:
+            logger.info("Nothing to undo")
+            return
+
+        command = self.undo_stack.pop()
+        self._updating = True
+        command.undo()
+        self._updating = False
+        self.redo_stack.append(command)
+        logger.info(f"Undone edit at row {command.row}, col {command.col}")
+        self._set_vfx_breakdown_status(f"Undone change to {self.vfx_beat_columns[command.col]}")
+
+    def _redo(self):
+        """Redo the last undone change."""
+        if not self.redo_stack:
+            logger.info("Nothing to redo")
+            return
+
+        command = self.redo_stack.pop()
+        self._updating = True
+        command.redo()
+        self._updating = False
+        self.undo_stack.append(command)
+        logger.info(f"Redone edit at row {command.row}, col {command.col}")
+        self._set_vfx_breakdown_status(f"Redone change to {self.vfx_beat_columns[command.col]}")
+
+    def _on_item_changed(self, item):
+        """Handle item changed in the table."""
+        if self._updating:
+            return
+
+        row = item.row()
+        col = item.column()
+        field_name = self.vfx_beat_columns[col]
+
+        # Get beat data for this row
+        beat_data = self.beat_data_by_row.get(row)
+        if not beat_data:
+            logger.warning(f"No beat data found for row {row}")
+            return
+
+        new_value = item.text()
+
+        # Get old value from beat_data
+        old_value_raw = beat_data.get(field_name)
+        if field_name == "sg_numer_of_shots":
+            if old_value_raw is None:
+                old_value_raw = beat_data.get("sg_number_of_shots")
+        old_value = self._format_sg_value(old_value_raw)
+
+        # Check if value actually changed
+        if new_value == old_value:
+            return
+
+        logger.info(f"Cell changed at row {row}, col {col} ({field_name}): '{old_value}' -> '{new_value}'")
+
+        # Create undo command
+        command = EditCommand(
+            self.vfx_breakdown_table,
+            row,
+            col,
+            old_value,
+            new_value,
+            beat_data,
+            field_name,
+            self.sg_session
+        )
+
+        # Execute the command (update ShotGrid)
+        try:
+            self._updating = True
+            command._update_shotgrid(new_value)
+            self._updating = False
+
+            # Add to undo stack
+            self.undo_stack.append(command)
+            # Clear redo stack on new edit
+            self.redo_stack.clear()
+
+            # Update the beat_data with new value
+            parsed_value = command._parse_value(new_value, field_name)
+            beat_data[field_name] = parsed_value
+
+            self._set_vfx_breakdown_status(f"Updated {field_name} on ShotGrid")
+
+        except Exception as e:
+            logger.error(f"Failed to update ShotGrid: {e}", exc_info=True)
+            # Revert the change in UI
+            self._updating = True
+            item.setText(old_value)
+            self._updating = False
+            self._set_vfx_breakdown_status(f"Failed to update {field_name}", is_error=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Update Failed",
+                f"Failed to update field '{field_name}':\n{str(e)}"
+            )
 
     def _on_set_current_vfx_breakdown(self):
         """Set the selected VFX Breakdown as the current one for the selected RFQ."""
@@ -270,7 +484,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         """Populate the VFX Breakdown combo box.
 
         Args:
-            rfq: RFQ data dict (optional)
+            rfq: RFQ data dict (optional, if None clears the selection)
             auto_select: Whether to auto-select a breakdown (default: True)
         """
         if not self.parent_app:
@@ -279,6 +493,14 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_combo.blockSignals(True)
         self.vfx_breakdown_combo.clear()
         self.vfx_breakdown_combo.addItem("-- Select VFX Breakdown --", None)
+
+        # If no RFQ selected, clear everything and return
+        if not rfq:
+            self.vfx_breakdown_combo.blockSignals(False)
+            self.vfx_breakdown_set_btn.setEnabled(False)
+            self._clear_vfx_breakdown_table()
+            self._set_vfx_breakdown_status("Select an RFQ to view VFX Breakdowns.")
+            return
 
         breakdowns = []
         try:
@@ -299,27 +521,25 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_combo.blockSignals(False)
 
         # Enable Set button only if there are options and an RFQ is selected
-        rfq_selected = bool(self.parent_app.rfq_combo.itemData(self.parent_app.rfq_combo.currentIndex())) if self.parent_app else False
-        self.vfx_breakdown_set_btn.setEnabled(rfq_selected and len(breakdowns) > 0)
+        self.vfx_breakdown_set_btn.setEnabled(len(breakdowns) > 0)
 
         # Status & selection
         if breakdowns:
             self._set_vfx_breakdown_status(f"Loaded {len(breakdowns)} VFX Breakdown(s) in project.")
             # Optionally auto-select the currently linked one if RFQ has it
-            if rfq:
-                linked = rfq.get("sg_vfx_breakdown")
-                linked_id = linked.get("id") if isinstance(linked, dict) else None
-                if isinstance(linked, list) and linked:
-                    linked_id = (linked[0] or {}).get("id")
+            linked = rfq.get("sg_vfx_breakdown")
+            linked_id = linked.get("id") if isinstance(linked, dict) else None
+            if isinstance(linked, list) and linked:
+                linked_id = (linked[0] or {}).get("id")
 
-                if linked_id:
-                    # try select it
-                    if not self._select_vfx_breakdown_by_id(linked_id):
-                        if auto_select and self.vfx_breakdown_combo.count() > 1:
-                            self.vfx_breakdown_combo.setCurrentIndex(1)
-                else:
+            if linked_id:
+                # try select it
+                if not self._select_vfx_breakdown_by_id(linked_id):
                     if auto_select and self.vfx_breakdown_combo.count() > 1:
                         self.vfx_breakdown_combo.setCurrentIndex(1)
+            else:
+                if auto_select and self.vfx_breakdown_combo.count() > 1:
+                    self.vfx_breakdown_combo.setCurrentIndex(1)
         else:
             self._set_vfx_breakdown_status("No VFX Breakdowns found in this project.")
             self._clear_vfx_breakdown_table()
@@ -338,6 +558,9 @@ class VFXBreakdownTab(QtWidgets.QWidget):
     def _clear_vfx_breakdown_table(self):
         """Clear the VFX Breakdown table."""
         self.vfx_breakdown_table.setRowCount(0)
+        self.beat_data_by_row.clear()
+        self.undo_stack.clear()
+        self.redo_stack.clear()
 
     def _on_vfx_breakdown_changed(self, index):
         """Handle VFX Breakdown selection change."""
@@ -494,11 +717,18 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
     def _populate_beats_table(self, beats):
         """Populate the beats table."""
+        # Block signals during population
+        self.vfx_breakdown_table.blockSignals(True)
+
         table = self.vfx_breakdown_table
         table.setRowCount(0)
+        self.beat_data_by_row.clear()
+        self.undo_stack.clear()
+        self.redo_stack.clear()
 
         if not beats:
             self._set_vfx_breakdown_status("No Beats linked to this VFX Breakdown.")
+            self.vfx_breakdown_table.blockSignals(False)
             return
 
         table.setRowCount(len(beats))
@@ -509,7 +739,13 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 val = row.get("sg_number_of_shots")
             return val
 
+        # Read-only columns (should not be editable)
+        readonly_columns = ["id", "updated_at", "updated_by"]
+
         for r, beat in enumerate(beats):
+            # Store beat data for this row
+            self.beat_data_by_row[r] = beat
+
             for c, field in enumerate(self.vfx_beat_columns):
                 if field == "sg_numer_of_shots":
                     value = _shots_value(beat)
@@ -518,7 +754,15 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 text = self._format_sg_value(value)
 
                 it = QtWidgets.QTableWidgetItem(text)
-                it.setFlags(it.flags() ^ QtCore.Qt.ItemIsEditable)
+
+                # Make read-only columns non-editable
+                if field in readonly_columns:
+                    it.setFlags(it.flags() & ~QtCore.Qt.ItemIsEditable)
+                    # Add visual indicator for read-only
+                    it.setForeground(QtGui.QColor("#888888"))
+                else:
+                    # Make editable
+                    it.setFlags(it.flags() | QtCore.Qt.ItemIsEditable)
 
                 # alignment
                 if field in ("id", "sg_page", "sg_numer_of_shots"):
@@ -529,6 +773,9 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     it.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
                 table.setItem(r, c, it)
+
+        # Unblock signals
+        self.vfx_breakdown_table.blockSignals(False)
 
         # Use autosizer
         self._autosize_beat_columns(min_px=80, max_px=700, extra_padding=28)
