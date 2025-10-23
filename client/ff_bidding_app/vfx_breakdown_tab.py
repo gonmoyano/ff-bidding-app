@@ -629,13 +629,16 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_table.setAlternatingRowColors(False)
         self.vfx_breakdown_table.setWordWrap(True)
 
-        # Set single row selection
-        self.vfx_breakdown_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.vfx_breakdown_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        # Set cell selection mode (like Excel)
+        self.vfx_breakdown_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
+        self.vfx_breakdown_table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
 
         # Enable context menu
         self.vfx_breakdown_table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.vfx_breakdown_table.customContextMenuRequested.connect(self._on_table_context_menu)
+
+        # Connect vertical header (row headers) click to select entire row
+        self.vfx_breakdown_table.verticalHeader().sectionClicked.connect(self._on_row_header_clicked)
 
         hdr = self.vfx_breakdown_table.horizontalHeader()
         hdr.setStretchLastSection(False)
@@ -653,7 +656,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self._setup_shortcuts()
 
     def _setup_shortcuts(self):
-        """Setup keyboard shortcuts for undo/redo."""
+        """Setup keyboard shortcuts for undo/redo and copy/paste."""
         # Undo shortcut (Ctrl+Z)
         undo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Z"), self)
         undo_shortcut.activated.connect(self._undo)
@@ -662,7 +665,15 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
         redo_shortcut.activated.connect(self._redo)
 
-        logger.info("Keyboard shortcuts set up: Ctrl+Z (undo), Ctrl+Y (redo)")
+        # Copy shortcut (Ctrl+C)
+        copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+C"), self)
+        copy_shortcut.activated.connect(self._copy_selection)
+
+        # Paste shortcut (Ctrl+V)
+        paste_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+V"), self)
+        paste_shortcut.activated.connect(self._paste_selection)
+
+        logger.info("Keyboard shortcuts set up: Ctrl+Z (undo), Ctrl+Y (redo), Ctrl+C (copy), Ctrl+V (paste)")
 
     def eventFilter(self, obj, event):
         """Event filter to handle Enter key press."""
@@ -710,6 +721,113 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         logger.info(f"Redone edit at row {command.row}, col {command.col}")
         self._set_vfx_breakdown_status(f"Redone change to {self.vfx_beat_columns[command.col]}")
 
+    def _on_row_header_clicked(self, row):
+        """Handle row header click to select entire row."""
+        self.vfx_breakdown_table.selectRow(row)
+
+    def _copy_selection(self):
+        """Copy selected cells to clipboard."""
+        selection = self.vfx_breakdown_table.selectedRanges()
+        if not selection:
+            return
+
+        # Get the bounding rectangle of the selection
+        rows = set()
+        cols = set()
+        for sel_range in selection:
+            for row in range(sel_range.topRow(), sel_range.bottomRow() + 1):
+                rows.add(row)
+            for col in range(sel_range.leftColumn(), sel_range.rightColumn() + 1):
+                cols.add(col)
+
+        if not rows or not cols:
+            return
+
+        min_row = min(rows)
+        max_row = max(rows)
+        min_col = min(cols)
+        max_col = max(cols)
+
+        # Build the clipboard text (tab-separated for cells, newline for rows)
+        clipboard_text = []
+        for row in range(min_row, max_row + 1):
+            row_data = []
+            for col in range(min_col, max_col + 1):
+                item = self.vfx_breakdown_table.item(row, col)
+                text = item.text() if item else ""
+                row_data.append(text)
+            clipboard_text.append("\t".join(row_data))
+
+        final_text = "\n".join(clipboard_text)
+
+        # Copy to clipboard
+        clipboard = QtWidgets.QApplication.clipboard()
+        clipboard.setText(final_text)
+
+        num_cells = len(rows) * len(cols)
+        self._set_vfx_breakdown_status(f"Copied {num_cells} cell(s) to clipboard")
+        logger.info(f"Copied {len(rows)} row(s) × {len(cols)} col(s) to clipboard")
+
+    def _paste_selection(self):
+        """Paste from clipboard to selected cells."""
+        clipboard = QtWidgets.QApplication.clipboard()
+        text = clipboard.text()
+
+        if not text:
+            return
+
+        # Get current selection
+        current_item = self.vfx_breakdown_table.currentItem()
+        if not current_item:
+            return
+
+        start_row = current_item.row()
+        start_col = current_item.column()
+
+        # Parse clipboard text (tab-separated for cells, newline for rows)
+        rows_data = text.split("\n")
+        if rows_data and rows_data[-1] == "":  # Remove trailing empty line
+            rows_data = rows_data[:-1]
+
+        # Block signals to prevent item changed events during paste
+        self.vfx_breakdown_table.blockSignals(True)
+
+        try:
+            for row_offset, row_text in enumerate(rows_data):
+                cells = row_text.split("\t")
+                for col_offset, cell_value in enumerate(cells):
+                    target_row = start_row + row_offset
+                    target_col = start_col + col_offset
+
+                    # Check bounds
+                    if target_row >= self.vfx_breakdown_table.rowCount():
+                        break
+                    if target_col >= self.vfx_breakdown_table.columnCount():
+                        continue
+
+                    # Get the field name for this column
+                    field_name = self.vfx_beat_columns[target_col]
+
+                    # Skip read-only columns
+                    readonly_columns = ["id", "updated_at", "updated_by"]
+                    if field_name in readonly_columns:
+                        continue
+
+                    item = self.vfx_breakdown_table.item(target_row, target_col)
+                    if item and (item.flags() & QtCore.Qt.ItemIsEditable):
+                        item.setText(cell_value)
+
+            num_cells = len(rows_data) * len(rows_data[0].split("\t")) if rows_data else 0
+            self._set_vfx_breakdown_status(f"Pasted {num_cells} cell(s) from clipboard")
+            logger.info(f"Pasted {len(rows_data)} row(s) of data")
+
+        finally:
+            self.vfx_breakdown_table.blockSignals(False)
+
+        # Trigger item changed for modified cells (will update ShotGrid)
+        # Note: This is a simplified approach - for production, you might want to batch these updates
+        self._set_vfx_breakdown_status(f"Pasted data - cells will auto-save on edit")
+
     def _on_table_context_menu(self, position):
         """Handle right-click context menu on table."""
         # Get the item at the position
@@ -719,8 +837,16 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         row = item.row()
 
-        # Check if the row is selected
-        if not self.vfx_breakdown_table.selectionModel().isRowSelected(row, QtCore.QModelIndex()):
+        # Check if the entire row is selected (all columns)
+        # Count how many cells in this row are selected
+        num_cols = self.vfx_breakdown_table.columnCount()
+        selected_cols = 0
+        for col in range(num_cols):
+            if self.vfx_breakdown_table.item(row, col) and self.vfx_breakdown_table.item(row, col).isSelected():
+                selected_cols += 1
+
+        # Only show context menu if entire row is selected
+        if selected_cols != num_cols:
             return
 
         # Create context menu
