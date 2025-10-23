@@ -812,7 +812,39 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             if mode == "empty":
                 new_breakdown = self._create_empty_vfx_breakdown(proj["id"], name)
             else:  # copy
-                new_breakdown = self._copy_vfx_breakdown(source["id"], name, proj["id"])
+                # Show progress dialog for copy operation
+                progress = QtWidgets.QProgressDialog(
+                    "Copying VFX Breakdown...",
+                    "Cancel",
+                    0,
+                    100,
+                    self
+                )
+                progress.setWindowTitle("Copying VFX Breakdown")
+                progress.setWindowModality(QtCore.Qt.WindowModal)
+                progress.setMinimumDuration(0)  # Show immediately
+                progress.setValue(0)
+
+                # Create callback for progress updates
+                def update_progress(current, total, message=""):
+                    if progress.wasCanceled():
+                        return False
+                    percent = int((current / total) * 100) if total > 0 else 0
+                    progress.setValue(percent)
+                    if message:
+                        progress.setLabelText(message)
+                    QtWidgets.QApplication.processEvents()
+                    return True
+
+                new_breakdown = self._copy_vfx_breakdown(
+                    source["id"],
+                    name,
+                    proj["id"],
+                    progress_callback=update_progress
+                )
+
+                progress.setValue(100)
+                progress.close()
 
             logger.info(f"Created VFX Breakdown: {new_breakdown}")
 
@@ -830,12 +862,22 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             )
 
         except Exception as e:
-            logger.error(f"Failed to create VFX Breakdown: {e}", exc_info=True)
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to create VFX Breakdown:\n{str(e)}"
-            )
+            error_msg = str(e)
+            # Check if operation was cancelled
+            if "cancelled by user" in error_msg.lower():
+                logger.info("VFX Breakdown creation cancelled by user")
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Cancelled",
+                    "VFX Breakdown creation was cancelled."
+                )
+            else:
+                logger.error(f"Failed to create VFX Breakdown: {e}", exc_info=True)
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to create VFX Breakdown:\n{error_msg}"
+                )
 
     def _on_remove_vfx_breakdown(self):
         """Handle Remove VFX Breakdown button click."""
@@ -1004,24 +1046,35 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         return result
 
-    def _copy_vfx_breakdown(self, source_id, new_name, project_id):
+    def _copy_vfx_breakdown(self, source_id, new_name, project_id, progress_callback=None):
         """Copy an existing VFX Breakdown with all its Beats.
 
         Args:
             source_id: ID of the VFX Breakdown to copy from
             new_name: Name for the new VFX Breakdown
             project_id: Project ID
+            progress_callback: Optional callback function(current, total, message) -> bool
 
         Returns:
             dict: The created VFX Breakdown entity
         """
         entity_type = self.sg_session.get_vfx_breakdown_entity_type()
 
+        # Report initial progress
+        if progress_callback:
+            if not progress_callback(0, 100, "Creating VFX Breakdown..."):
+                raise Exception("Operation cancelled by user")
+
         # First, create the new VFX Breakdown
         new_breakdown = self._create_empty_vfx_breakdown(project_id, new_name)
         new_breakdown_id = new_breakdown["id"]
 
         logger.info(f"Copying beats from VFX Breakdown {source_id} to {new_breakdown_id}")
+
+        # Report progress after creating breakdown
+        if progress_callback:
+            if not progress_callback(10, 100, "Fetching beats from source..."):
+                raise Exception("Operation cancelled by user")
 
         # Fetch all beats from the source breakdown
         try:
@@ -1036,8 +1089,28 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
             logger.info(f"Found {len(source_beats)} beats to copy")
 
+            total_beats = len(source_beats)
+            if total_beats == 0:
+                if progress_callback:
+                    progress_callback(100, 100, "No beats to copy")
+                return new_breakdown
+
+            # Report progress after fetching beats
+            if progress_callback:
+                if not progress_callback(20, 100, f"Copying {total_beats} beat(s)..."):
+                    raise Exception("Operation cancelled by user")
+
             # Copy each beat
-            for beat in source_beats:
+            for i, beat in enumerate(source_beats):
+                # Check for cancellation
+                if progress_callback:
+                    current_progress = 20 + int((i / total_beats) * 80)
+                    if not progress_callback(
+                        current_progress,
+                        100,
+                        f"Copying beat {i + 1} of {total_beats}..."
+                    ):
+                        raise Exception("Operation cancelled by user")
                 new_beat_data = {
                     "project": {"type": "Project", "id": project_id},
                     "sg_parent": {"type": entity_type, "id": new_breakdown_id}
@@ -1056,6 +1129,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
                 # Create the new beat
                 self.sg_session.sg.create("CustomEntity02", new_beat_data)
+
+            # Report completion
+            if progress_callback:
+                progress_callback(100, 100, f"Successfully copied {total_beats} beat(s)")
 
             logger.info(f"Successfully copied {len(source_beats)} beats")
 
