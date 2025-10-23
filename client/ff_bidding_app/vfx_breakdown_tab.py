@@ -327,6 +327,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
         self.vfx_breakdown_table.setAlternatingRowColors(False)
         self.vfx_breakdown_table.setWordWrap(True)
+        self.vfx_breakdown_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.vfx_breakdown_table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
 
         hdr = self.vfx_breakdown_table.horizontalHeader()
         hdr.setStretchLastSection(False)
@@ -573,7 +575,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_table.blockSignals(False)
 
     def eventFilter(self, obj, event):
-        """Event filter to handle Enter key press."""
+        """Event filter to handle Enter and Delete key presses."""
         if obj == self.vfx_breakdown_table and event.type() == QtCore.QEvent.KeyPress:
             if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
                 # Enter pressed - move to next row
@@ -586,6 +588,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     next_row = row + 1
                     if next_row < self.vfx_breakdown_table.rowCount():
                         self.vfx_breakdown_table.setCurrentCell(next_row, col)
+                return True
+            elif event.key() == QtCore.Qt.Key_Delete:
+                # Delete key pressed - delete selected rows
+                self._delete_selected_beats()
                 return True
 
         return super().eventFilter(obj, event)
@@ -617,6 +623,103 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.undo_stack.append(command)
         logger.info(f"Redone edit at row {command.row}, col {command.col}")
         self._set_vfx_breakdown_status(f"Redone change to {self.vfx_beat_columns[command.col]}")
+
+    def _delete_selected_beats(self):
+        """Delete selected beat rows."""
+        # Get selected rows
+        selected_rows = set()
+        for item in self.vfx_breakdown_table.selectedItems():
+            selected_rows.add(item.row())
+
+        if not selected_rows:
+            logger.info("No rows selected for deletion")
+            return
+
+        # Get the beat data for selected rows
+        beats_to_delete = []
+        for display_row in sorted(selected_rows):
+            # Map display row to data row
+            data_row = self.display_row_to_data_row.get(display_row)
+            if data_row is not None and data_row < len(self.all_beats_data):
+                beat = self.all_beats_data[data_row]
+                if beat:
+                    beats_to_delete.append((data_row, beat))
+
+        if not beats_to_delete:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Beats Found",
+                "No valid beats found in the selected rows."
+            )
+            return
+
+        # Show confirmation dialog
+        count = len(beats_to_delete)
+        beat_word = "beat" if count == 1 else "beats"
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Are you sure you want to delete {count} {beat_word}?\n\nThis action cannot be undone.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+
+        if reply != QtWidgets.QMessageBox.Yes:
+            logger.info("Beat deletion cancelled by user")
+            return
+
+        # Delete beats from ShotGrid
+        deleted_count = 0
+        failed_count = 0
+        successfully_deleted_rows = []
+
+        for data_row, beat in beats_to_delete:
+            beat_id = beat.get("id")
+            if not beat_id:
+                logger.warning(f"No ID found for beat at data row {data_row}")
+                failed_count += 1
+                continue
+
+            try:
+                self.sg_session.sg.delete("CustomEntity02", beat_id)
+                logger.info(f"Deleted beat {beat_id} from ShotGrid")
+                deleted_count += 1
+                successfully_deleted_rows.append(data_row)
+            except Exception as e:
+                logger.error(f"Failed to delete beat {beat_id}: {e}", exc_info=True)
+                failed_count += 1
+
+        # Remove deleted beats from all_beats_data (in reverse order to preserve indices)
+        for data_row in reversed(sorted(successfully_deleted_rows)):
+            try:
+                if data_row < len(self.all_beats_data):
+                    self.all_beats_data.pop(data_row)
+            except IndexError as e:
+                logger.warning(f"Failed to remove beat at index {data_row}: {e}")
+
+        # Refresh the table
+        self._apply_filters()
+
+        # Show result message
+        if failed_count == 0:
+            self._set_vfx_breakdown_status(f"✓ Deleted {deleted_count} {beat_word}")
+            QtWidgets.QMessageBox.information(
+                self,
+                "Delete Successful",
+                f"Successfully deleted {deleted_count} {beat_word}."
+            )
+        else:
+            self._set_vfx_breakdown_status(
+                f"Deleted {deleted_count} {beat_word}, {failed_count} failed",
+                is_error=True
+            )
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Delete Partially Failed",
+                f"Deleted {deleted_count} {beat_word}.\n{failed_count} deletion(s) failed."
+            )
+
+        logger.info(f"Beat deletion complete: {deleted_count} deleted, {failed_count} failed")
 
     def _on_item_changed(self, item):
         """Handle item changed in the table."""
