@@ -533,6 +533,16 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         # Read-only columns
         readonly_columns = ["id", "updated_at", "updated_by"]
 
+        # Set up item delegates for List fields (once per column, not per row)
+        for c, field in enumerate(self.vfx_beat_columns):
+            if field in self.field_schema:
+                field_info = self.field_schema[field]
+                if field_info.get("data_type") == "list":
+                    list_values = field_info.get("list_values", [])
+                    if list_values:
+                        delegate = ComboBoxDelegate(field, list_values, self.vfx_breakdown_table)
+                        self.vfx_breakdown_table.setItemDelegateForColumn(c, delegate)
+
         for display_row, data_idx in enumerate(self.filtered_row_indices):
             # Store mapping
             self.display_row_to_data_row[display_row] = data_idx
@@ -561,15 +571,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     it.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
 
                 table.setItem(display_row, c, it)
-
-                # Set item delegate for List fields
-                if field in self.field_schema:
-                    field_info = self.field_schema[field]
-                    if field_info.get("data_type") == "list":
-                        list_values = field_info.get("list_values", [])
-                        if list_values:
-                            delegate = ComboBoxDelegate(field, list_values, self.vfx_breakdown_table)
-                            self.vfx_breakdown_table.setItemDelegateForColumn(c, delegate)
 
         # Unblock signals
         self.vfx_breakdown_table.blockSignals(False)
