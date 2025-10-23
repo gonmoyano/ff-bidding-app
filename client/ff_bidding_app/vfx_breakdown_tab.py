@@ -223,7 +223,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_table = None
         self.vfx_beat_columns = []
         self.global_search_box = None
-        self.column_filter_widgets = {}
         self.clear_filters_btn = None
         self.row_count_label = None
 
@@ -235,7 +234,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.beat_data_by_row = {}
 
         # Sorting and filtering state
-        self.sort_columns = []  # List of (column_index, direction) tuples
+        self.sort_column = None  # Currently sorted column index
+        self.sort_direction = None  # 'asc' or 'desc'
         self.all_beats_data = []  # Original unfiltered beat data
         self.filtered_row_indices = []  # Indices into all_beats_data that pass filters
         self.display_row_to_data_row = {}  # Maps displayed row -> index in all_beats_data
@@ -285,17 +285,17 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         filter_controls = QtWidgets.QHBoxLayout()
 
         # Global search box
-        search_label = QtWidgets.QLabel("Global Search:")
+        search_label = QtWidgets.QLabel("Search:")
         filter_controls.addWidget(search_label)
 
         self.global_search_box = QtWidgets.QLineEdit()
-        self.global_search_box.setPlaceholderText("Search across all text columns...")
+        self.global_search_box.setPlaceholderText("Search across all columns...")
         self.global_search_box.textChanged.connect(self._apply_filters)
         filter_controls.addWidget(self.global_search_box, stretch=2)
 
-        # Clear all filters button
-        self.clear_filters_btn = QtWidgets.QPushButton("Clear All Filters")
-        self.clear_filters_btn.clicked.connect(self._clear_all_filters)
+        # Clear filters button
+        self.clear_filters_btn = QtWidgets.QPushButton("Clear")
+        self.clear_filters_btn.clicked.connect(self._clear_filters)
         filter_controls.addWidget(self.clear_filters_btn)
 
         # Row count label
@@ -340,13 +340,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         # Install event filter to catch Enter key
         self.vfx_breakdown_table.installEventFilter(self)
 
-        # Create column filter row
-        self._create_column_filters()
-
-        # Add filter row widget if it exists
-        if hasattr(self, 'filter_row_widget'):
-            layout.addWidget(self.filter_row_widget)
-
         layout.addWidget(self.vfx_breakdown_table)
 
         # Setup keyboard shortcuts
@@ -364,217 +357,64 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         logger.info("Keyboard shortcuts set up: Ctrl+Z (undo), Ctrl+Y (redo)")
 
-    def _create_column_filters(self):
-        """Create column filter widgets below the table header."""
-        # Store filter widgets for each column
-        self.column_filter_widgets = {}
-
-        # Create a scroll area to hold the filter widgets
-        filter_scroll = QtWidgets.QScrollArea()
-        filter_scroll.setWidgetResizable(True)
-        filter_scroll.setMaximumHeight(60)
-        filter_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        filter_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-
-        filter_container = QtWidgets.QWidget()
-        filter_layout = QtWidgets.QHBoxLayout(filter_container)
-        filter_layout.setContentsMargins(2, 2, 2, 2)
-        filter_layout.setSpacing(2)
-
-        for col_idx, field_name in enumerate(self.vfx_beat_columns):
-            # Determine filter widget type based on field
-            field_info = self.field_schema.get(field_name, {})
-            data_type = field_info.get("data_type")
-
-            widget = None
-
-            # List fields get a multi-select combo box
-            if data_type == "list":
-                widget = QtWidgets.QComboBox()
-                widget.addItem("(All)")
-                widget.setMinimumWidth(80)
-                widget.currentIndexChanged.connect(self._apply_filters)
-
-            # Numeric fields get min/max inputs
-            elif data_type in ("number", "float") or field_name in ("id", "sg_page", "sg_number_of_shots"):
-                range_widget = QtWidgets.QWidget()
-                range_layout = QtWidgets.QVBoxLayout(range_widget)
-                range_layout.setContentsMargins(0, 0, 0, 0)
-                range_layout.setSpacing(1)
-
-                min_input = QtWidgets.QLineEdit()
-                min_input.setPlaceholderText("Min")
-                min_input.setMaximumWidth(60)
-                min_input.textChanged.connect(self._apply_filters)
-
-                max_input = QtWidgets.QLineEdit()
-                max_input.setPlaceholderText("Max")
-                max_input.setMaximumWidth(60)
-                max_input.textChanged.connect(self._apply_filters)
-
-                range_layout.addWidget(min_input)
-                range_layout.addWidget(max_input)
-
-                widget = range_widget
-                # Store both inputs
-                self.column_filter_widgets[col_idx] = {"min": min_input, "max": max_input, "type": "range"}
-
-            # Date fields get date range
-            elif field_name == "updated_at":
-                date_widget = QtWidgets.QWidget()
-                date_layout = QtWidgets.QVBoxLayout(date_widget)
-                date_layout.setContentsMargins(0, 0, 0, 0)
-                date_layout.setSpacing(1)
-
-                from_date = QtWidgets.QLineEdit()
-                from_date.setPlaceholderText("From")
-                from_date.setMaximumWidth(80)
-                from_date.textChanged.connect(self._apply_filters)
-
-                to_date = QtWidgets.QLineEdit()
-                to_date.setPlaceholderText("To")
-                to_date.setMaximumWidth(80)
-                to_date.textChanged.connect(self._apply_filters)
-
-                date_layout.addWidget(from_date)
-                date_layout.addWidget(to_date)
-
-                widget = date_widget
-                self.column_filter_widgets[col_idx] = {"from": from_date, "to": to_date, "type": "date"}
-
-            # Text fields get a search box
-            else:
-                widget = QtWidgets.QLineEdit()
-                widget.setPlaceholderText("Filter...")
-                widget.setMinimumWidth(60)
-                widget.textChanged.connect(self._apply_filters)
-
-            # Store widget if not a complex type
-            if widget and col_idx not in self.column_filter_widgets:
-                self.column_filter_widgets[col_idx] = widget
-
-            # Add to layout
-            if widget:
-                filter_layout.addWidget(widget)
-
-        filter_scroll.setWidget(filter_container)
-
-        # Insert filter row below the table header (we'll position it manually)
-        # For now, store reference for later positioning
-        self.filter_row_widget = filter_scroll
-
     def _on_header_clicked(self, column_index):
         """Handle header click for sorting.
 
         Args:
             column_index: Index of the clicked column
         """
-        # Check if Ctrl is pressed for multi-column sort
-        modifiers = QtWidgets.QApplication.keyboardModifiers()
-        ctrl_pressed = bool(modifiers & QtCore.Qt.ControlModifier)
-
-        # Find if this column is already in sort list
-        existing_sort_idx = None
-        for idx, (col, direction) in enumerate(self.sort_columns):
-            if col == column_index:
-                existing_sort_idx = idx
-                break
-
-        if ctrl_pressed:
-            # Multi-column sort: add or toggle this column
-            if existing_sort_idx is not None:
-                # Toggle direction
-                _, current_direction = self.sort_columns[existing_sort_idx]
-                new_direction = "desc" if current_direction == "asc" else "asc"
-                self.sort_columns[existing_sort_idx] = (column_index, new_direction)
-            else:
-                # Add new sort column
-                self.sort_columns.append((column_index, "asc"))
+        # Simple single-column sorting
+        if self.sort_column == column_index:
+            # Toggle direction if clicking the same column
+            self.sort_direction = "desc" if self.sort_direction == "asc" else "asc"
         else:
-            # Single column sort: replace all sorts
-            if existing_sort_idx is not None and len(self.sort_columns) == 1:
-                # Toggle direction if it's the only sort
-                _, current_direction = self.sort_columns[0]
-                new_direction = "desc" if current_direction == "asc" else "asc"
-                self.sort_columns = [(column_index, new_direction)]
-            else:
-                # New single column sort
-                self.sort_columns = [(column_index, "asc")]
+            # New column - start with ascending
+            self.sort_column = column_index
+            self.sort_direction = "asc"
 
-        # Update header to show sort indicators
+        # Update header to show sort indicator
         self._update_header_sort_indicators()
 
         # Re-apply filters and sorting
         self._apply_filters()
 
-        logger.info(f"Sort columns updated: {self.sort_columns}")
+        logger.info(f"Sorting by column {column_index} ({self.vfx_beat_columns[column_index]}): {self.sort_direction}")
 
     def _update_header_sort_indicators(self):
         """Update table headers to show sort indicators."""
-        header = self.vfx_breakdown_table.horizontalHeader()
-
         for col_idx in range(self.vfx_breakdown_table.columnCount()):
-            # Find if this column is in sort list
-            sort_info = None
-            sort_priority = None
-
-            for priority, (col, direction) in enumerate(self.sort_columns):
-                if col == col_idx:
-                    sort_info = direction
-                    sort_priority = priority + 1 if len(self.sort_columns) > 1 else None
-                    break
-
-            # Get original header text (without indicators)
             header_item = self.vfx_breakdown_table.horizontalHeaderItem(col_idx)
             if header_item:
+                # Get original text without indicators
                 original_text = header_item.text()
                 # Remove existing indicators
-                for indicator in [" ↑", " ↓", " ¹", " ²", " ³", " ⁴", " ⁵"]:
+                for indicator in [" ↑", " ↓"]:
                     original_text = original_text.replace(indicator, "")
 
-                # Add new indicator
-                if sort_info:
-                    arrow = " ↑" if sort_info == "asc" else " ↓"
-                    priority_text = ""
-                    if sort_priority:
-                        # Use superscript numbers
-                        superscripts = ["⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"]
-                        priority_text = superscripts[sort_priority] if sort_priority < len(superscripts) else str(sort_priority)
-                    header_item.setText(f"{original_text}{arrow}{priority_text}")
+                # Add indicator if this is the sorted column
+                if col_idx == self.sort_column and self.sort_direction:
+                    arrow = " ↑" if self.sort_direction == "asc" else " ↓"
+                    header_item.setText(f"{original_text}{arrow}")
                 else:
                     header_item.setText(original_text)
 
-    def _clear_all_filters(self):
-        """Clear all filters and sorting."""
+    def _clear_filters(self):
+        """Clear search and sorting."""
         # Clear global search
         self.global_search_box.clear()
 
-        # Clear column filters
-        for col_idx, widget in self.column_filter_widgets.items():
-            if isinstance(widget, dict):
-                # Range or date filter
-                if widget["type"] == "range":
-                    widget["min"].clear()
-                    widget["max"].clear()
-                elif widget["type"] == "date":
-                    widget["from"].clear()
-                    widget["to"].clear()
-            elif isinstance(widget, QtWidgets.QLineEdit):
-                widget.clear()
-            elif isinstance(widget, QtWidgets.QComboBox):
-                widget.setCurrentIndex(0)
-
         # Clear sorting
-        self.sort_columns.clear()
+        self.sort_column = None
+        self.sort_direction = None
         self._update_header_sort_indicators()
 
         # Re-apply (which will show all rows)
         self._apply_filters()
 
-        logger.info("All filters and sorting cleared")
+        logger.info("Search and sorting cleared")
 
     def _apply_filters(self):
-        """Apply all filters and sorting to the table."""
+        """Apply search and sorting to the table."""
         if not self.all_beats_data:
             return
 
@@ -589,50 +429,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 if self._matches_global_search(self.all_beats_data[idx], global_search)
             ]
 
-        # Apply column-specific filters
-        for col_idx, widget in self.column_filter_widgets.items():
-            if col_idx >= len(self.vfx_beat_columns):
-                continue
-
-            field_name = self.vfx_beat_columns[col_idx]
-
-            if isinstance(widget, dict):
-                # Range or date filter
-                if widget["type"] == "range":
-                    min_val = widget["min"].text().strip()
-                    max_val = widget["max"].text().strip()
-                    if min_val or max_val:
-                        self.filtered_row_indices = [
-                            idx for idx in self.filtered_row_indices
-                            if self._matches_range_filter(self.all_beats_data[idx], field_name, min_val, max_val)
-                        ]
-                elif widget["type"] == "date":
-                    from_date = widget["from"].text().strip()
-                    to_date = widget["to"].text().strip()
-                    if from_date or to_date:
-                        self.filtered_row_indices = [
-                            idx for idx in self.filtered_row_indices
-                            if self._matches_date_filter(self.all_beats_data[idx], field_name, from_date, to_date)
-                        ]
-
-            elif isinstance(widget, QtWidgets.QLineEdit):
-                filter_text = widget.text().lower().strip()
-                if filter_text:
-                    self.filtered_row_indices = [
-                        idx for idx in self.filtered_row_indices
-                        if self._matches_text_filter(self.all_beats_data[idx], field_name, filter_text)
-                    ]
-
-            elif isinstance(widget, QtWidgets.QComboBox):
-                selected_value = widget.currentText()
-                if selected_value and selected_value != "(All)":
-                    self.filtered_row_indices = [
-                        idx for idx in self.filtered_row_indices
-                        if self._matches_list_filter(self.all_beats_data[idx], field_name, selected_value)
-                    ]
-
         # Apply sorting
-        if self.sort_columns:
+        if self.sort_column is not None and self.sort_direction:
             self.filtered_row_indices.sort(key=lambda idx: self._get_sort_key(self.all_beats_data[idx]))
 
         # Refresh table display
@@ -643,116 +441,57 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         shown_rows = len(self.filtered_row_indices)
         self.row_count_label.setText(f"Showing {shown_rows} of {total_rows} rows")
 
-        logger.info(f"Filters applied: showing {shown_rows} of {total_rows} rows")
+        logger.info(f"Search applied: showing {shown_rows} of {total_rows} rows")
 
     def _matches_global_search(self, beat_data, search_text):
         """Check if beat data matches global search text."""
-        # Search in text fields only
-        text_fields = ["code", "sg_beat_id", "sg_vfx_breakdown_scene", "sg_script_excerpt",
-                      "description", "sg_vfx_description", "sg_vfx_type", "sg_complexity", "sg_category"]
-
-        for field in text_fields:
+        # Search in all fields
+        for field in self.vfx_beat_columns:
             value = beat_data.get(field)
             if value:
-                value_str = str(value).lower()
-                if search_text in value_str:
+                # Handle different value types
+                if isinstance(value, dict):
+                    # Extract readable value from dict (entity references)
+                    value_str = value.get("name", "") or value.get("code", "")
+                else:
+                    value_str = str(value)
+
+                if search_text in value_str.lower():
                     return True
         return False
 
-    def _matches_text_filter(self, beat_data, field_name, filter_text):
-        """Check if beat data matches text filter for a specific field."""
-        value = beat_data.get(field_name)
-        if value is None:
-            return False
-        value_str = str(value).lower()
-        return filter_text in value_str
-
-    def _matches_list_filter(self, beat_data, field_name, selected_value):
-        """Check if beat data matches list filter."""
-        value = beat_data.get(field_name)
-        return str(value) == selected_value
-
-    def _matches_range_filter(self, beat_data, field_name, min_val, max_val):
-        """Check if beat data matches range filter."""
-        value = beat_data.get(field_name)
-        if value is None:
-            return False
-
-        try:
-            numeric_value = float(value)
-            if min_val:
-                if numeric_value < float(min_val):
-                    return False
-            if max_val:
-                if numeric_value > float(max_val):
-                    return False
-            return True
-        except (ValueError, TypeError):
-            return False
-
-    def _matches_date_filter(self, beat_data, field_name, from_date, to_date):
-        """Check if beat data matches date filter."""
-        value = beat_data.get(field_name)
-        if value is None:
-            return False
-
-        try:
-            # Simple string comparison for now (works for ISO format dates)
-            value_str = str(value)
-            if from_date and value_str < from_date:
-                return False
-            if to_date and value_str > to_date:
-                return False
-            return True
-        except Exception:
-            return False
-
     def _get_sort_key(self, beat_data):
-        """Get sort key for a beat based on current sort columns."""
-        key_parts = []
-        for col_idx, direction in self.sort_columns:
-            if col_idx >= len(self.vfx_beat_columns):
-                continue
+        """Get sort key for a beat based on current sort column."""
+        if self.sort_column is None or self.sort_column >= len(self.vfx_beat_columns):
+            return (0,)
 
-            field_name = self.vfx_beat_columns[col_idx]
-            value = beat_data.get(field_name)
+        field_name = self.vfx_beat_columns[self.sort_column]
+        value = beat_data.get(field_name)
 
-            # Convert to sortable type
-            if value is None:
-                sort_value = ("", 0)  # Empty values sort first
-            elif isinstance(value, (int, float)):
-                # For numbers, use negative value for descending sort
-                if direction == "desc":
-                    sort_value = (0, -value)  # 0 = numeric type
-                else:
-                    sort_value = (0, value)
-            elif isinstance(value, datetime):
-                # For dates, convert to timestamp
-                timestamp = value.timestamp() if hasattr(value, 'timestamp') else 0
-                if direction == "desc":
-                    sort_value = (1, -timestamp)  # 1 = datetime type
-                else:
-                    sort_value = (1, timestamp)
-            elif isinstance(value, dict):
-                # For dicts, extract string value
-                str_value = value.get("name", "") or value.get("code", "") or ""
-                # For descending strings, create reversed comparison
-                if direction == "desc":
-                    # Use a custom reversible string wrapper
-                    sort_value = (2, ReverseString(str_value.lower()))  # 2 = dict type
-                else:
-                    sort_value = (2, str_value.lower())
-            else:
-                # For strings
-                str_value = str(value)
-                if direction == "desc":
-                    sort_value = (3, ReverseString(str_value.lower()))  # 3 = string type
-                else:
-                    sort_value = (3, str_value.lower())
+        # Convert to sortable type
+        if value is None:
+            sort_value = ""
+        elif isinstance(value, (int, float)):
+            # For numbers
+            sort_value = value
+        elif isinstance(value, datetime):
+            # For dates, convert to timestamp for sorting
+            sort_value = value.timestamp() if hasattr(value, 'timestamp') else 0
+        elif isinstance(value, dict):
+            # For dicts (entity references), extract string value
+            sort_value = (value.get("name", "") or value.get("code", "") or "").lower()
+        else:
+            # For strings
+            sort_value = str(value).lower()
 
-            key_parts.append(sort_value)
+        # Apply direction
+        if self.sort_direction == "desc":
+            if isinstance(sort_value, (int, float)):
+                sort_value = -sort_value
+            elif isinstance(sort_value, str):
+                sort_value = ReverseString(sort_value)
 
-        return tuple(key_parts) if key_parts else ((0, 0),)
+        return (sort_value,)
 
     def _refresh_table_display(self):
         """Refresh the table display based on filtered and sorted data."""
@@ -1181,7 +920,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.all_beats_data.clear()
         self.filtered_row_indices.clear()
         self.display_row_to_data_row.clear()
-        self.sort_columns.clear()
+        self.sort_column = None
+        self.sort_direction = None
         self.undo_stack.clear()
         self.redo_stack.clear()
         self.row_count_label.setText("Showing 0 of 0 rows")
@@ -1351,9 +1091,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             self.row_count_label.setText("Showing 0 of 0 rows")
             return
 
-        # Populate list filter dropdowns with actual values from data
-        self._populate_list_filters()
-
         # Apply filters and sorting (which will populate the table)
         self._apply_filters()
 
@@ -1362,37 +1099,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         display_name = self.vfx_breakdown_combo.currentText()
         self._set_vfx_breakdown_status(f"Loaded {len(beats)} Beat(s) for '{display_name}'.")
-
-    def _populate_list_filters(self):
-        """Populate list filter dropdowns with actual values from the data."""
-        for col_idx, field_name in enumerate(self.vfx_beat_columns):
-            widget = self.column_filter_widgets.get(col_idx)
-
-            # Check if this is a list field with a combobox
-            if isinstance(widget, QtWidgets.QComboBox):
-                # Get unique values from data
-                unique_values = set()
-                for beat in self.all_beats_data:
-                    value = beat.get(field_name)
-                    if value:
-                        unique_values.add(str(value))
-
-                # Clear and repopulate
-                widget.blockSignals(True)
-                current_text = widget.currentText()
-                widget.clear()
-                widget.addItem("(All)")
-
-                for value in sorted(unique_values):
-                    widget.addItem(value)
-
-                # Restore selection if it still exists
-                if current_text and current_text != "(All)":
-                    index = widget.findText(current_text)
-                    if index >= 0:
-                        widget.setCurrentIndex(index)
-
-                widget.blockSignals(False)
 
     def _format_sg_value(self, value):
         """Format a ShotGrid value for display."""
