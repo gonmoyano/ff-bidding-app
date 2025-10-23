@@ -279,7 +279,7 @@ class RemoveVFXBreakdownDialog(QtWidgets.QDialog):
         confirm_label = QtWidgets.QLabel(
             f"To confirm deletion, type the following string:\n\n{self.confirmation_string}"
         )
-        confirm_label.setStyleSheet("font-weight: bold; padding: 10px; background-color: #f0f0f0;")
+        confirm_label.setStyleSheet("font-weight: bold; padding: 10px;")
         confirm_label.setAlignment(QtCore.Qt.AlignCenter)
         layout.addWidget(confirm_label)
 
