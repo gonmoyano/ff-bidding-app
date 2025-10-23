@@ -468,7 +468,15 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         field_name = self.vfx_beat_columns[self.sort_column]
         value = beat_data.get(field_name)
 
-        # Check if this is a numeric field based on field name or schema
+        # Handle None values
+        if value is None:
+            # Empty values sort first (using negative infinity for numeric comparison)
+            if self.sort_direction == "desc":
+                return (float('inf'),)
+            else:
+                return (float('-inf'),)
+
+        # Check if this is a known numeric field
         is_numeric_field = (
             field_name in ("id", "sg_page", "sg_number_of_shots") or
             (field_name in self.field_schema and
@@ -476,17 +484,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         )
 
         # Convert to sortable type
-        if value is None:
-            # For numeric fields, treat None as negative infinity (sorts first in asc)
-            sort_value = float('-inf') if is_numeric_field else ""
-        elif is_numeric_field:
-            # For numeric fields, convert to float for consistent sorting
-            try:
-                sort_value = float(value)
-            except (ValueError, TypeError):
-                # If conversion fails, treat as 0
-                sort_value = float('-inf')
-        elif isinstance(value, (int, float)):
+        if isinstance(value, (int, float)):
             # Already numeric
             sort_value = float(value)
         elif isinstance(value, datetime):
@@ -496,8 +494,19 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             # For dicts (entity references), extract string value
             sort_value = (value.get("name", "") or value.get("code", "") or "").lower()
         else:
-            # For strings
-            sort_value = str(value).lower()
+            # For strings - try to detect if it's a numeric value
+            str_value = str(value).strip()
+
+            # Try to convert to number for numeric sorting
+            if is_numeric_field or str_value.replace('.', '', 1).replace('-', '', 1).isdigit():
+                try:
+                    sort_value = float(str_value)
+                except (ValueError, TypeError):
+                    # If conversion fails, use string sorting
+                    sort_value = str_value.lower()
+            else:
+                # Use string sorting
+                sort_value = str_value.lower()
 
         # Apply direction
         if self.sort_direction == "desc":
