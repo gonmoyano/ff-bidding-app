@@ -124,6 +124,105 @@ class EditCommand:
         return str(text)
 
 
+class AddVFXBreakdownDialog(QtWidgets.QDialog):
+    """Dialog for creating a new VFX Breakdown."""
+
+    def __init__(self, existing_breakdowns, parent=None):
+        """Initialize the dialog.
+
+        Args:
+            existing_breakdowns: List of existing VFX Breakdown dicts with 'id' and 'code'
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.existing_breakdowns = existing_breakdowns
+        self.setWindowTitle("Add VFX Breakdown")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Creation mode
+        mode_layout = QtWidgets.QHBoxLayout()
+        mode_label = QtWidgets.QLabel("Mode:")
+        mode_layout.addWidget(mode_label)
+
+        self.mode_combo = QtWidgets.QComboBox()
+        self.mode_combo.addItem("Create empty")
+        self.mode_combo.addItem("Copy from existing")
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        mode_layout.addWidget(self.mode_combo, stretch=1)
+
+        layout.addLayout(mode_layout)
+
+        # Name field
+        name_layout = QtWidgets.QHBoxLayout()
+        name_label = QtWidgets.QLabel("Name:")
+        name_layout.addWidget(name_label)
+
+        self.name_field = QtWidgets.QLineEdit()
+        self.name_field.setPlaceholderText("Enter VFX Breakdown name...")
+        name_layout.addWidget(self.name_field, stretch=1)
+
+        layout.addLayout(name_layout)
+
+        # Copy from dropdown
+        copy_layout = QtWidgets.QHBoxLayout()
+        copy_label = QtWidgets.QLabel("Copy from:")
+        copy_layout.addWidget(copy_label)
+
+        self.copy_combo = QtWidgets.QComboBox()
+        self.copy_combo.addItem("-- Select VFX Breakdown --", None)
+        for breakdown in self.existing_breakdowns:
+            label = breakdown.get("code") or breakdown.get("name") or f"ID {breakdown.get('id', 'N/A')}"
+            self.copy_combo.addItem(label, breakdown)
+        copy_layout.addWidget(self.copy_combo, stretch=1)
+
+        layout.addLayout(copy_layout)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        self.ok_button = QtWidgets.QPushButton("OK")
+        self.ok_button.clicked.connect(self.accept)
+        button_layout.addWidget(self.ok_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+        # Initial state
+        self._on_mode_changed(0)
+
+    def _on_mode_changed(self, index):
+        """Handle mode change."""
+        is_copy_mode = (index == 1)
+        self.copy_combo.setEnabled(is_copy_mode)
+
+    def get_result(self):
+        """Get the dialog result.
+
+        Returns:
+            dict: {"mode": "empty" or "copy", "name": str, "source": breakdown_dict or None}
+        """
+        mode = "empty" if self.mode_combo.currentIndex() == 0 else "copy"
+        name = self.name_field.text().strip()
+        source = self.copy_combo.currentData() if mode == "copy" else None
+
+        return {
+            "mode": mode,
+            "name": name,
+            "source": source
+        }
+
+
 class VFXBreakdownTab(QtWidgets.QWidget):
     """VFX Breakdown tab widget for managing VFX Breakdowns and Beats."""
 
@@ -220,6 +319,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_set_btn.setEnabled(False)
         self.vfx_breakdown_set_btn.clicked.connect(self._on_set_current_vfx_breakdown)
         selector_row.addWidget(self.vfx_breakdown_set_btn)
+
+        self.vfx_breakdown_add_btn = QtWidgets.QPushButton("Add")
+        self.vfx_breakdown_add_btn.clicked.connect(self._on_add_vfx_breakdown)
+        selector_row.addWidget(self.vfx_breakdown_add_btn)
 
         self.vfx_breakdown_refresh_btn = QtWidgets.QPushButton("Refresh")
         self.vfx_breakdown_refresh_btn.clicked.connect(self._refresh_vfx_breakdowns)
@@ -494,6 +597,164 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.parent_app._on_rfq_changed(self.parent_app.rfq_combo.currentIndex())
 
         QtWidgets.QMessageBox.information(self, "Updated", "Current VFX Breakdown set for this RFQ.")
+
+    def _on_add_vfx_breakdown(self):
+        """Handle Add VFX Breakdown button click."""
+        if not self.parent_app:
+            return
+
+        # Get current project
+        proj = self.parent_app.sg_project_combo.itemData(self.parent_app.sg_project_combo.currentIndex())
+        if not proj:
+            QtWidgets.QMessageBox.warning(self, "No Project Selected", "Please select a project first.")
+            return
+
+        # Get existing breakdowns for the dialog
+        try:
+            existing_breakdowns = self.sg_session.get_vfx_breakdowns(proj["id"], fields=["id", "code", "name"])
+        except Exception as e:
+            logger.error(f"Failed to fetch existing breakdowns: {e}", exc_info=True)
+            existing_breakdowns = []
+
+        # Show dialog
+        dialog = AddVFXBreakdownDialog(existing_breakdowns, parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+
+        # Get dialog result
+        result = dialog.get_result()
+        name = result["name"]
+        mode = result["mode"]
+        source = result["source"]
+
+        # Validate name
+        if not name:
+            QtWidgets.QMessageBox.warning(self, "Invalid Name", "Please enter a name for the VFX Breakdown.")
+            return
+
+        # Validate source for copy mode
+        if mode == "copy" and not source:
+            QtWidgets.QMessageBox.warning(self, "No Source Selected", "Please select a VFX Breakdown to copy from.")
+            return
+
+        # Create the VFX Breakdown
+        try:
+            if mode == "empty":
+                new_breakdown = self._create_empty_vfx_breakdown(proj["id"], name)
+            else:  # copy
+                new_breakdown = self._copy_vfx_breakdown(source["id"], name, proj["id"])
+
+            logger.info(f"Created VFX Breakdown: {new_breakdown}")
+
+            # Refresh the combo box
+            self._refresh_vfx_breakdowns()
+
+            # Select the newly created breakdown
+            if new_breakdown:
+                self._select_vfx_breakdown_by_id(new_breakdown.get("id"))
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Success",
+                f"VFX Breakdown '{name}' created successfully."
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to create VFX Breakdown: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to create VFX Breakdown:\n{str(e)}"
+            )
+
+    def _create_empty_vfx_breakdown(self, project_id, name):
+        """Create an empty VFX Breakdown.
+
+        Args:
+            project_id: Project ID
+            name: Name for the new VFX Breakdown
+
+        Returns:
+            dict: The created VFX Breakdown entity
+        """
+        entity_type = self.sg_session.get_vfx_breakdown_entity_type()
+
+        data = {
+            "code": name,
+            "project": {"type": "Project", "id": project_id}
+        }
+
+        logger.info(f"Creating empty VFX Breakdown: {data}")
+        result = self.sg_session.sg.create(entity_type, data)
+        logger.info(f"Created VFX Breakdown: {result}")
+
+        return result
+
+    def _copy_vfx_breakdown(self, source_id, new_name, project_id):
+        """Copy an existing VFX Breakdown with all its Beats.
+
+        Args:
+            source_id: ID of the VFX Breakdown to copy from
+            new_name: Name for the new VFX Breakdown
+            project_id: Project ID
+
+        Returns:
+            dict: The created VFX Breakdown entity
+        """
+        entity_type = self.sg_session.get_vfx_breakdown_entity_type()
+
+        # First, create the new VFX Breakdown
+        new_breakdown = self._create_empty_vfx_breakdown(project_id, new_name)
+        new_breakdown_id = new_breakdown["id"]
+
+        logger.info(f"Copying beats from VFX Breakdown {source_id} to {new_breakdown_id}")
+
+        # Fetch all beats from the source breakdown
+        try:
+            source_beats = self.sg_session.get_beats_for_vfx_breakdown(
+                source_id,
+                fields=[
+                    "code", "sg_beat_id", "sg_vfx_breakdown_scene", "sg_page",
+                    "sg_script_excerpt", "description", "sg_vfx_type", "sg_complexity",
+                    "sg_category", "sg_vfx_description", "sg_number_of_shots"
+                ]
+            )
+
+            logger.info(f"Found {len(source_beats)} beats to copy")
+
+            # Copy each beat
+            for beat in source_beats:
+                new_beat_data = {
+                    "project": {"type": "Project", "id": project_id},
+                    "sg_parent": {"type": entity_type, "id": new_breakdown_id}
+                }
+
+                # Copy all fields except id and system fields
+                copy_fields = [
+                    "code", "sg_beat_id", "sg_vfx_breakdown_scene", "sg_page",
+                    "sg_script_excerpt", "description", "sg_vfx_type", "sg_complexity",
+                    "sg_category", "sg_vfx_description", "sg_number_of_shots"
+                ]
+
+                for field in copy_fields:
+                    if field in beat and beat[field] is not None:
+                        new_beat_data[field] = beat[field]
+
+                # Create the new beat
+                self.sg_session.sg.create("CustomEntity02", new_beat_data)
+
+            logger.info(f"Successfully copied {len(source_beats)} beats")
+
+        except Exception as e:
+            logger.error(f"Error copying beats: {e}", exc_info=True)
+            # Even if beat copying fails, we still return the created breakdown
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Partial Success",
+                f"VFX Breakdown created but failed to copy beats:\n{str(e)}"
+            )
+
+        return new_breakdown
 
     def _autosize_beat_columns(self, min_px=60, max_px=600, extra_padding=24):
         """Size each Beats table column to fit its content (header + cells)."""
