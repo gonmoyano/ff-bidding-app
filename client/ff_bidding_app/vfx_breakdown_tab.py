@@ -869,34 +869,28 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         if not text:
             return
 
-        # Get current selection
-        current_item = self.vfx_breakdown_table.currentItem()
-        if not current_item:
-            return
-
-        start_row = current_item.row()
-        start_col = current_item.column()
+        # Get selected items
+        selected_items = self.vfx_breakdown_table.selectedItems()
 
         # Parse clipboard text (tab-separated for cells, newline for rows)
         rows_data = text.split("\n")
         if rows_data and rows_data[-1] == "":  # Remove trailing empty line
             rows_data = rows_data[:-1]
 
+        # Check if clipboard contains a single value (no tabs or newlines)
+        is_single_value = len(rows_data) == 1 and "\t" not in rows_data[0]
+
         # Collect all changes
         changes = []
         num_cells = 0
 
-        for row_offset, row_text in enumerate(rows_data):
-            cells = row_text.split("\t")
-            for col_offset, cell_value in enumerate(cells):
-                target_row = start_row + row_offset
-                target_col = start_col + col_offset
+        # If single value and multiple cells selected, paste to all selected cells
+        if is_single_value and len(selected_items) > 1:
+            paste_value = rows_data[0]
 
-                # Check bounds
-                if target_row >= self.vfx_breakdown_table.rowCount():
-                    break
-                if target_col >= self.vfx_breakdown_table.columnCount():
-                    continue
+            for item in selected_items:
+                target_row = item.row()
+                target_col = item.column()
 
                 # Get the field name for this column
                 field_name = self.vfx_beat_columns[target_col]
@@ -912,15 +906,14 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     logger.warning(f"No beat data found for row {target_row}")
                     continue
 
-                item = self.vfx_breakdown_table.item(target_row, target_col)
-                if not item or not (item.flags() & QtCore.Qt.ItemIsEditable):
+                if not (item.flags() & QtCore.Qt.ItemIsEditable):
                     continue
 
                 # Get old value
                 old_value = item.text()
 
                 # Check if value actually changed
-                if cell_value == old_value:
+                if paste_value == old_value:
                     continue
 
                 # Add to changes list
@@ -929,11 +922,69 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     'row': target_row,
                     'col': target_col,
                     'old_value': old_value,
-                    'new_value': cell_value,
+                    'new_value': paste_value,
                     'beat_data': beat_data,
                     'field_name': field_name
                 })
                 num_cells += 1
+
+        else:
+            # Standard paste behavior: paste starting from current cell
+            current_item = self.vfx_breakdown_table.currentItem()
+            if not current_item:
+                return
+
+            start_row = current_item.row()
+            start_col = current_item.column()
+
+            for row_offset, row_text in enumerate(rows_data):
+                cells = row_text.split("\t")
+                for col_offset, cell_value in enumerate(cells):
+                    target_row = start_row + row_offset
+                    target_col = start_col + col_offset
+
+                    # Check bounds
+                    if target_row >= self.vfx_breakdown_table.rowCount():
+                        break
+                    if target_col >= self.vfx_breakdown_table.columnCount():
+                        continue
+
+                    # Get the field name for this column
+                    field_name = self.vfx_beat_columns[target_col]
+
+                    # Skip read-only columns
+                    readonly_columns = ["id", "updated_at", "updated_by"]
+                    if field_name in readonly_columns:
+                        continue
+
+                    # Get beat data for this row
+                    beat_data = self.beat_data_by_row.get(target_row)
+                    if not beat_data:
+                        logger.warning(f"No beat data found for row {target_row}")
+                        continue
+
+                    item = self.vfx_breakdown_table.item(target_row, target_col)
+                    if not item or not (item.flags() & QtCore.Qt.ItemIsEditable):
+                        continue
+
+                    # Get old value
+                    old_value = item.text()
+
+                    # Check if value actually changed
+                    if cell_value == old_value:
+                        continue
+
+                    # Add to changes list
+                    changes.append({
+                        'table': self.vfx_breakdown_table,
+                        'row': target_row,
+                        'col': target_col,
+                        'old_value': old_value,
+                        'new_value': cell_value,
+                        'beat_data': beat_data,
+                        'field_name': field_name
+                    })
+                    num_cells += 1
 
         if not changes:
             self._set_vfx_breakdown_status("No changes to paste")
