@@ -1005,18 +1005,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
     def _get_sort_key(self, beat_data):
         """Get sort key for a beat based on current sort column."""
         if self.sort_column is None or self.sort_column >= len(self.vfx_beat_columns):
-            return (0,)
+            return (0, 0)
 
         field_name = self.vfx_beat_columns[self.sort_column]
         value = beat_data.get(field_name)
-
-        # Handle None values
-        if value is None:
-            # Empty values sort first (using negative infinity for numeric comparison)
-            if self.sort_direction == "desc":
-                return (float('inf'),)
-            else:
-                return (float('-inf'),)
 
         # Check if this is a known numeric field
         is_numeric_field = (
@@ -1025,39 +1017,72 @@ class VFXBreakdownTab(QtWidgets.QWidget):
              self.field_schema[field_name].get("data_type") in ("number", "float"))
         )
 
-        # Convert to sortable type
-        if isinstance(value, (int, float)):
-            # Already numeric
+        # Determine the type and convert to sortable value
+        if value is None:
+            # None values: use a marker to sort them first or last
+            if is_numeric_field:
+                # For numeric fields, treat as very small or very large number
+                sort_type = 0  # numeric type
+                if self.sort_direction == "desc":
+                    sort_value = float('inf')
+                else:
+                    sort_value = float('-inf')
+            else:
+                # For text fields, empty string sorts first
+                sort_type = 1  # text type
+                if self.sort_direction == "desc":
+                    sort_value = ""  # Empty strings will be reversed to sort last
+                else:
+                    sort_value = ""  # Empty strings sort first
+        elif isinstance(value, (int, float)):
+            # Numeric values
+            sort_type = 0
             sort_value = float(value)
+            if self.sort_direction == "desc":
+                sort_value = -sort_value
         elif isinstance(value, datetime):
-            # For dates, convert to timestamp for sorting
+            # Date values
+            sort_type = 0
             sort_value = value.timestamp() if hasattr(value, 'timestamp') else 0
+            if self.sort_direction == "desc":
+                sort_value = -sort_value
         elif isinstance(value, dict):
-            # For dicts (entity references), extract string value
-            sort_value = (value.get("name", "") or value.get("code", "") or "").lower()
+            # Entity references - extract string value
+            sort_type = 1
+            str_value = (value.get("name", "") or value.get("code", "") or "").lower()
+            if self.sort_direction == "desc":
+                sort_value = ReverseString(str_value)
+            else:
+                sort_value = str_value
         else:
-            # For strings - try to detect if it's a numeric value
+            # Text values - try to detect if it's numeric
+            sort_type = 1
             str_value = str(value).strip()
 
             # Try to convert to number for numeric sorting
             if is_numeric_field or str_value.replace('.', '', 1).replace('-', '', 1).isdigit():
                 try:
+                    # It's a numeric string
+                    sort_type = 0
                     sort_value = float(str_value)
+                    if self.sort_direction == "desc":
+                        sort_value = -sort_value
                 except (ValueError, TypeError):
-                    # If conversion fails, use string sorting
-                    sort_value = str_value.lower()
+                    # Fall back to string sorting
+                    sort_type = 1
+                    if self.sort_direction == "desc":
+                        sort_value = ReverseString(str_value.lower())
+                    else:
+                        sort_value = str_value.lower()
             else:
-                # Use string sorting
-                sort_value = str_value.lower()
+                # String sorting
+                if self.sort_direction == "desc":
+                    sort_value = ReverseString(str_value.lower())
+                else:
+                    sort_value = str_value.lower()
 
-        # Apply direction
-        if self.sort_direction == "desc":
-            if isinstance(sort_value, (int, float)):
-                sort_value = -sort_value
-            elif isinstance(sort_value, str):
-                sort_value = ReverseString(sort_value)
-
-        return (sort_value,)
+        # Return tuple with type marker to ensure consistent comparisons
+        return (sort_type, sort_value)
 
     def _refresh_table_display(self):
         """Refresh the table display based on filtered and sorted data."""
