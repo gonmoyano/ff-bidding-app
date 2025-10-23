@@ -126,6 +126,105 @@ class EditCommand:
         return str(text)
 
 
+class AddBeatCommand:
+    """Command pattern for undo/redo of beat addition."""
+
+    def __init__(self, tab, row, beat_data, sg_beat_id):
+        """Initialize the add beat command.
+
+        Args:
+            tab: VFXBreakdownTab instance
+            row: Row index where beat was inserted
+            beat_data: Beat data dictionary from ShotGrid
+            sg_beat_id: ShotGrid ID of the created beat
+        """
+        self.tab = tab
+        self.row = row
+        self.beat_data = beat_data
+        self.sg_beat_id = sg_beat_id
+
+    def undo(self):
+        """Undo the beat addition (delete it)."""
+        try:
+            # Delete from ShotGrid
+            self.tab.sg_session.sg.delete("CustomEntity02", self.sg_beat_id)
+            logger.info(f"Deleted beat {self.sg_beat_id} from ShotGrid (undo)")
+
+            # Remove from table
+            self.tab.vfx_breakdown_table.blockSignals(True)
+            self.tab.vfx_breakdown_table.removeRow(self.row)
+            self.tab.vfx_breakdown_table.blockSignals(False)
+
+            # Update beat_data_by_row mapping
+            self.tab._rebuild_beat_data_mapping()
+
+        except Exception as e:
+            logger.error(f"Failed to undo beat addition: {e}", exc_info=True)
+
+    def redo(self):
+        """Redo the beat addition."""
+        try:
+            # Re-create in ShotGrid
+            result = self.tab.sg_session.sg.create("CustomEntity02", self.beat_data)
+            self.sg_beat_id = result["id"]
+            logger.info(f"Re-created beat {self.sg_beat_id} in ShotGrid (redo)")
+
+            # Re-insert in table
+            self.tab._insert_beat_row(self.row, result)
+
+        except Exception as e:
+            logger.error(f"Failed to redo beat addition: {e}", exc_info=True)
+
+
+class DeleteBeatCommand:
+    """Command pattern for undo/redo of beat deletion."""
+
+    def __init__(self, tab, row, beat_data):
+        """Initialize the delete beat command.
+
+        Args:
+            tab: VFXBreakdownTab instance
+            row: Row index that was deleted
+            beat_data: Beat data dictionary from ShotGrid
+        """
+        self.tab = tab
+        self.row = row
+        self.beat_data = beat_data
+        self.sg_beat_id = beat_data.get("id")
+
+    def undo(self):
+        """Undo the beat deletion (re-create it)."""
+        try:
+            # Re-create in ShotGrid
+            result = self.tab.sg_session.sg.create("CustomEntity02", self.beat_data)
+            self.sg_beat_id = result["id"]
+            logger.info(f"Re-created beat {self.sg_beat_id} in ShotGrid (undo delete)")
+
+            # Re-insert in table
+            self.tab._insert_beat_row(self.row, result)
+
+        except Exception as e:
+            logger.error(f"Failed to undo beat deletion: {e}", exc_info=True)
+
+    def redo(self):
+        """Redo the beat deletion."""
+        try:
+            # Delete from ShotGrid
+            self.tab.sg_session.sg.delete("CustomEntity02", self.sg_beat_id)
+            logger.info(f"Deleted beat {self.sg_beat_id} from ShotGrid (redo)")
+
+            # Remove from table
+            self.tab.vfx_breakdown_table.blockSignals(True)
+            self.tab.vfx_breakdown_table.removeRow(self.row)
+            self.tab.vfx_breakdown_table.blockSignals(False)
+
+            # Update beat_data_by_row mapping
+            self.tab._rebuild_beat_data_mapping()
+
+        except Exception as e:
+            logger.error(f"Failed to redo beat deletion: {e}", exc_info=True)
+
+
 class AddVFXBreakdownDialog(QtWidgets.QDialog):
     """Dialog for creating a new VFX Breakdown."""
 
@@ -530,6 +629,14 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_table.setAlternatingRowColors(False)
         self.vfx_breakdown_table.setWordWrap(True)
 
+        # Set single row selection
+        self.vfx_breakdown_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.vfx_breakdown_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+
+        # Enable context menu
+        self.vfx_breakdown_table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.vfx_breakdown_table.customContextMenuRequested.connect(self._on_table_context_menu)
+
         hdr = self.vfx_breakdown_table.horizontalHeader()
         hdr.setStretchLastSection(False)
         hdr.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
@@ -602,6 +709,213 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.undo_stack.append(command)
         logger.info(f"Redone edit at row {command.row}, col {command.col}")
         self._set_vfx_breakdown_status(f"Redone change to {self.vfx_beat_columns[command.col]}")
+
+    def _on_table_context_menu(self, position):
+        """Handle right-click context menu on table."""
+        # Get the item at the position
+        item = self.vfx_breakdown_table.itemAt(position)
+        if not item:
+            return
+
+        # Only show menu if clicking on first column (ID column)
+        if item.column() != 0:
+            return
+
+        row = item.row()
+
+        # Create context menu
+        menu = QtWidgets.QMenu(self)
+
+        # Add beat above
+        add_above_action = menu.addAction("Add Beat Above")
+        add_above_action.triggered.connect(lambda: self._add_beat_above(row))
+
+        # Add beat below
+        add_below_action = menu.addAction("Add Beat Below")
+        add_below_action.triggered.connect(lambda: self._add_beat_below(row))
+
+        menu.addSeparator()
+
+        # Delete beat
+        delete_action = menu.addAction("Delete Beat")
+        delete_action.triggered.connect(lambda: self._delete_beat(row))
+
+        # Show menu at cursor position
+        menu.exec(self.vfx_breakdown_table.viewport().mapToGlobal(position))
+
+    def _add_beat_above(self, row):
+        """Add a new beat above the specified row."""
+        self._add_beat_at_row(row)
+
+    def _add_beat_below(self, row):
+        """Add a new beat below the specified row."""
+        self._add_beat_at_row(row + 1)
+
+    def _add_beat_at_row(self, row):
+        """Add a new beat at the specified row."""
+        try:
+            # Get current breakdown
+            breakdown = self.vfx_breakdown_combo.currentData()
+            if not breakdown:
+                QtWidgets.QMessageBox.warning(self, "No Breakdown", "Please select a VFX Breakdown first.")
+                return
+
+            breakdown_id = breakdown["id"]
+            entity_type = self.sg_session.get_vfx_breakdown_entity_type()
+
+            # Get current project
+            proj = self.parent_app.sg_project_combo.itemData(self.parent_app.sg_project_combo.currentIndex()) if self.parent_app else None
+            if not proj:
+                QtWidgets.QMessageBox.warning(self, "No Project", "No project selected.")
+                return
+
+            project_id = proj["id"]
+
+            # Create new beat data
+            new_beat_data = {
+                "project": {"type": "Project", "id": project_id},
+                "sg_parent": {"type": entity_type, "id": breakdown_id},
+                "code": f"New Beat"
+            }
+
+            # Create beat in ShotGrid
+            result = self.sg_session.sg.create("CustomEntity02", new_beat_data)
+            beat_id = result["id"]
+
+            logger.info(f"Created new beat {beat_id} at row {row}")
+
+            # Insert row in table
+            self._insert_beat_row(row, result)
+
+            # Create command for undo/redo
+            command = AddBeatCommand(self, row, new_beat_data, beat_id)
+            self.undo_stack.append(command)
+            self.redo_stack.clear()
+
+            self._set_vfx_breakdown_status(f"Added new beat at row {row + 1}")
+
+        except Exception as e:
+            logger.error(f"Failed to add beat: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to add beat:\n{str(e)}")
+
+    def _delete_beat(self, row):
+        """Delete the beat at the specified row."""
+        try:
+            # Get beat data
+            beat_data = self.beat_data_by_row.get(row)
+            if not beat_data:
+                QtWidgets.QMessageBox.warning(self, "No Beat", "No beat found at this row.")
+                return
+
+            beat_id = beat_data.get("id")
+            beat_name = beat_data.get("code") or f"Beat ID {beat_id}"
+
+            # Confirmation dialog
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Confirm Deletion",
+                f"Are you sure you want to delete beat '{beat_name}'?\n\nThis action can be undone with Ctrl+Z.",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No
+            )
+
+            if reply != QtWidgets.QMessageBox.Yes:
+                return
+
+            # Delete from ShotGrid
+            self.sg_session.sg.delete("CustomEntity02", beat_id)
+            logger.info(f"Deleted beat {beat_id} from ShotGrid")
+
+            # Remove from table
+            self.vfx_breakdown_table.blockSignals(True)
+            self.vfx_breakdown_table.removeRow(row)
+            self.vfx_breakdown_table.blockSignals(False)
+
+            # Update beat_data_by_row mapping
+            self._rebuild_beat_data_mapping()
+
+            # Create command for undo/redo
+            command = DeleteBeatCommand(self, row, beat_data)
+            self.undo_stack.append(command)
+            self.redo_stack.clear()
+
+            self._set_vfx_breakdown_status(f"Deleted beat '{beat_name}'")
+
+        except Exception as e:
+            logger.error(f"Failed to delete beat: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to delete beat:\n{str(e)}")
+
+    def _insert_beat_row(self, row, beat):
+        """Insert a beat row at the specified position.
+
+        Args:
+            row: Row index to insert at
+            beat: Beat data dictionary from ShotGrid
+        """
+        self.vfx_breakdown_table.blockSignals(True)
+
+        self.vfx_breakdown_table.insertRow(row)
+
+        # Populate the row
+        readonly_columns = ["id", "updated_at", "updated_by"]
+
+        for c, field in enumerate(self.vfx_beat_columns):
+            value = beat.get(field)
+            text = self._format_sg_value(value)
+
+            it = QtWidgets.QTableWidgetItem(text)
+
+            # Make read-only columns non-editable
+            if field in readonly_columns:
+                it.setFlags(it.flags() & ~QtCore.Qt.ItemIsEditable)
+                it.setForeground(QtGui.QColor("#888888"))
+            else:
+                it.setFlags(it.flags() | QtCore.Qt.ItemIsEditable)
+
+            # Alignment
+            if field in ("id", "sg_page", "sg_number_of_shots"):
+                it.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            elif field == "updated_at":
+                it.setTextAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignVCenter)
+            else:
+                it.setTextAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+
+            self.vfx_breakdown_table.setItem(row, c, it)
+
+            # Set item delegate for List fields
+            if field in self.field_schema:
+                field_info = self.field_schema[field]
+                if field_info.get("data_type") == "list":
+                    list_values = field_info.get("list_values", [])
+                    if list_values:
+                        delegate = ComboBoxDelegate(field, list_values, self.vfx_breakdown_table)
+                        self.vfx_breakdown_table.setItemDelegateForColumn(c, delegate)
+
+        self.vfx_breakdown_table.blockSignals(False)
+
+        # Update beat_data_by_row mapping
+        self._rebuild_beat_data_mapping()
+
+    def _rebuild_beat_data_mapping(self):
+        """Rebuild the beat_data_by_row mapping after row insertion/deletion."""
+        # Clear existing mapping
+        old_mapping = self.beat_data_by_row.copy()
+        self.beat_data_by_row.clear()
+
+        # Rebuild based on current table rows
+        for row in range(self.vfx_breakdown_table.rowCount()):
+            # Try to find the beat data by ID from the first column
+            id_item = self.vfx_breakdown_table.item(row, 0)
+            if id_item:
+                try:
+                    beat_id = int(id_item.text())
+                    # Find the beat data with this ID from old mapping
+                    for old_row, beat_data in old_mapping.items():
+                        if beat_data.get("id") == beat_id:
+                            self.beat_data_by_row[row] = beat_data
+                            break
+                except ValueError:
+                    pass
 
     def _on_item_changed(self, item):
         """Handle item changed in the table."""
