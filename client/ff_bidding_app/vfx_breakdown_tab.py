@@ -71,21 +71,17 @@ class EditCommand:
 
     def _update_shotgrid(self, value):
         """Update ShotGrid with the value."""
-        try:
-            beat_id = self.beat_data.get("id")
-            if not beat_id:
-                logger.error("No beat ID found for update")
-                return
+        beat_id = self.beat_data.get("id")
+        if not beat_id:
+            logger.error("No beat ID found for update")
+            raise ValueError("No beat ID found for update")
 
-            # Convert string value back to appropriate type
-            update_value = self._parse_value(value, self.field_name)
+        # Convert string value back to appropriate type
+        update_value = self._parse_value(value, self.field_name)
 
-            # Update on ShotGrid
-            self.sg_session.sg.update("CustomEntity02", beat_id, {self.field_name: update_value})
-            logger.info(f"Updated Beat {beat_id} field '{self.field_name}' to: {update_value}")
-
-        except Exception as e:
-            logger.error(f"Failed to update ShotGrid: {e}", exc_info=True)
+        # Update on ShotGrid
+        self.sg_session.sg.update("CustomEntity02", beat_id, {self.field_name: update_value})
+        logger.info(f"Updated Beat {beat_id} field '{self.field_name}' to: {update_value}")
 
     def _parse_value(self, text, field_name):
         """Parse text value to appropriate type based on field name."""
@@ -95,12 +91,17 @@ class EditCommand:
         # Number fields
         if field_name in ("sg_page", "sg_numer_of_shots", "sg_number_of_shots", "sg_beat_id"):
             try:
-                return int(text)
+                value = int(text)
+                logger.debug(f"Parsed '{text}' as int: {value} for field '{field_name}'")
+                return value
             except ValueError:
                 try:
-                    return float(text)
+                    value = float(text)
+                    logger.debug(f"Parsed '{text}' as float: {value} for field '{field_name}'")
+                    return value
                 except ValueError:
-                    return None
+                    logger.warning(f"Failed to parse '{text}' as number for field '{field_name}'")
+                    raise ValueError(f"Invalid number format: '{text}'")
 
         # Text fields
         return text
@@ -340,9 +341,11 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         # Check if value actually changed
         if new_value == old_value:
+            logger.debug(f"No change detected for row {row}, col {col} ({field_name})")
             return
 
         logger.info(f"Cell changed at row {row}, col {col} ({field_name}): '{old_value}' -> '{new_value}'")
+        logger.info(f"Beat ID: {beat_data.get('id')}, Field type: {type(old_value_raw).__name__}")
 
         # Create undo command
         command = EditCommand(
@@ -371,10 +374,11 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             parsed_value = command._parse_value(new_value, field_name)
             beat_data[field_name] = parsed_value
 
-            self._set_vfx_breakdown_status(f"Updated {field_name} on ShotGrid")
+            self._set_vfx_breakdown_status(f"✓ Updated {field_name} on ShotGrid")
+            logger.info(f"Successfully updated Beat {beat_data.get('id')} field '{field_name}' to '{new_value}'")
 
         except Exception as e:
-            logger.error(f"Failed to update ShotGrid: {e}", exc_info=True)
+            logger.error(f"Failed to update ShotGrid field '{field_name}': {e}", exc_info=True)
             # Revert the change in UI
             self._updating = True
             item.setText(old_value)
@@ -383,7 +387,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.critical(
                 self,
                 "Update Failed",
-                f"Failed to update field '{field_name}':\n{str(e)}"
+                f"Failed to update field '{field_name}':\n{str(e)}\n\nValue has been reverted."
             )
 
     def _fetch_beats_schema(self):
