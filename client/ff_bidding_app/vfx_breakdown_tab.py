@@ -43,7 +43,7 @@ class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
 class EditCommand:
     """Command pattern for undo/redo of cell edits."""
 
-    def __init__(self, table, row, col, old_value, new_value, beat_data, field_name, sg_session):
+    def __init__(self, table, row, col, old_value, new_value, beat_data, field_name, sg_session, field_schema=None):
         self.table = table
         self.row = row
         self.col = col
@@ -52,6 +52,7 @@ class EditCommand:
         self.beat_data = beat_data
         self.field_name = field_name
         self.sg_session = sg_session
+        self.field_schema = field_schema or {}
 
     def undo(self):
         """Undo the edit."""
@@ -84,27 +85,43 @@ class EditCommand:
         logger.info(f"Updated Beat {beat_id} field '{self.field_name}' to: {update_value}")
 
     def _parse_value(self, text, field_name):
-        """Parse text value to appropriate type based on field name."""
+        """Parse text value to appropriate type based on ShotGrid schema."""
         if not text or text == "-" or text == "":
             return None
 
-        # Number fields
-        if field_name in ("sg_page", "sg_numer_of_shots", "sg_number_of_shots", "sg_beat_id"):
+        # Get field schema info
+        field_info = self.field_schema.get(field_name, {})
+        data_type = field_info.get("data_type")
+
+        logger.debug(f"Parsing field '{field_name}' with data_type '{data_type}': '{text}'")
+
+        # Parse based on ShotGrid data type
+        if data_type == "number":
             try:
-                value = int(text)
-                logger.debug(f"Parsed '{text}' as int: {value} for field '{field_name}'")
+                # Try int first
+                if '.' not in str(text):
+                    value = int(text)
+                    logger.debug(f"Parsed '{text}' as int: {value}")
+                    return value
+                else:
+                    value = float(text)
+                    logger.debug(f"Parsed '{text}' as float: {value}")
+                    return value
+            except ValueError:
+                logger.warning(f"Failed to parse '{text}' as number for field '{field_name}'")
+                raise ValueError(f"Invalid number format: '{text}'")
+
+        elif data_type == "float":
+            try:
+                value = float(text)
+                logger.debug(f"Parsed '{text}' as float: {value}")
                 return value
             except ValueError:
-                try:
-                    value = float(text)
-                    logger.debug(f"Parsed '{text}' as float: {value} for field '{field_name}'")
-                    return value
-                except ValueError:
-                    logger.warning(f"Failed to parse '{text}' as number for field '{field_name}'")
-                    raise ValueError(f"Invalid number format: '{text}'")
+                logger.warning(f"Failed to parse '{text}' as float for field '{field_name}'")
+                raise ValueError(f"Invalid float format: '{text}'")
 
-        # Text fields
-        return text
+        # For all other types (text, list, entity, etc.), return as string
+        return str(text)
 
 
 class VFXBreakdownTab(QtWidgets.QWidget):
@@ -142,8 +159,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             "sg_complexity",
             "sg_category",
             "sg_vfx_description",
-            "sg_numer_of_shots",  # your original spelling
-            "sg_number_of_shots",  # fallback if schema uses this spelling
+            "sg_number_of_shots",
         ]
 
         # Human-friendly labels for the table
@@ -159,7 +175,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             "sg_complexity": "Complexity",
             "sg_category": "Category",
             "sg_vfx_description": "VFX Description",
-            "sg_numer_of_shots": "# Shots",
             "sg_number_of_shots": "# Shots",
         }
 
@@ -223,7 +238,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_beat_columns = [
             "id", "code", "sg_beat_id", "sg_vfx_breakdown_scene", "sg_page",
             "sg_script_excerpt", "description", "sg_vfx_type", "sg_complexity",
-            "sg_category", "sg_vfx_description", "sg_numer_of_shots",
+            "sg_category", "sg_vfx_description", "sg_number_of_shots",
             "updated_at", "updated_by"
         ]
 
@@ -334,9 +349,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         # Get old value from beat_data
         old_value_raw = beat_data.get(field_name)
-        if field_name == "sg_numer_of_shots":
-            if old_value_raw is None:
-                old_value_raw = beat_data.get("sg_number_of_shots")
         old_value = self._format_sg_value(old_value_raw)
 
         # Check if value actually changed
@@ -356,7 +368,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             new_value,
             beat_data,
             field_name,
-            self.sg_session
+            self.sg_session,
+            field_schema=self.field_schema
         )
 
         # Execute the command (update ShotGrid)
@@ -657,12 +670,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         schema_fields = set(schema.keys())
 
-        shots_field = None
-        if "sg_numer_of_shots" in schema_fields:
-            shots_field = "sg_numer_of_shots"
-        elif "sg_number_of_shots" in schema_fields:
-            shots_field = "sg_number_of_shots"
-
         fields_to_fetch = []
         for f in self.vfx_breakdown_field_allowlist:
             if f == "id":
@@ -670,10 +677,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             if f in schema_fields:
                 fields_to_fetch.append(f)
 
-        if shots_field and shots_field not in fields_to_fetch:
-            fields_to_fetch.append(shots_field)
-
-        return fields_to_fetch, shots_field
+        return fields_to_fetch
 
     def _populate_vfx_breakdown_table_filtered(self, field_map, label_overrides=None):
         """Populate the table with only our selected fields."""
@@ -756,7 +760,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         base_fields = [
             "id", "code", "sg_beat_id", "sg_vfx_breakdown_scene", "sg_page",
             "sg_script_excerpt", "description", "sg_vfx_type", "sg_complexity",
-            "sg_category", "sg_vfx_description", "sg_numer_of_shots", "sg_number_of_shots"
+            "sg_category", "sg_vfx_description", "sg_number_of_shots"
         ]
         extra_fields = ["updated_at", "updated_by"]
         fields = base_fields + extra_fields
@@ -808,12 +812,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         table.setRowCount(len(beats))
 
-        def _shots_value(row):
-            val = row.get("sg_numer_of_shots")
-            if val is None:
-                val = row.get("sg_number_of_shots")
-            return val
-
         # Read-only columns (should not be editable)
         readonly_columns = ["id", "updated_at", "updated_by"]
 
@@ -822,10 +820,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             self.beat_data_by_row[r] = beat
 
             for c, field in enumerate(self.vfx_beat_columns):
-                if field == "sg_numer_of_shots":
-                    value = _shots_value(beat)
-                else:
-                    value = beat.get(field)
+                value = beat.get(field)
                 text = self._format_sg_value(value)
 
                 it = QtWidgets.QTableWidgetItem(text)
@@ -840,7 +835,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     it.setFlags(it.flags() | QtCore.Qt.ItemIsEditable)
 
                 # alignment
-                if field in ("id", "sg_page", "sg_numer_of_shots"):
+                if field in ("id", "sg_page", "sg_number_of_shots"):
                     it.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
                 elif field == "updated_at":
                     it.setTextAlignment(QtCore.Qt.AlignCenter | QtCore.Qt.AlignVCenter)
