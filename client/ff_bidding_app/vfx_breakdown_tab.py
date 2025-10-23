@@ -326,6 +326,65 @@ class RemoveVFXBreakdownDialog(QtWidgets.QDialog):
         return self.breakdown_combo.currentData()
 
 
+class RenameVFXBreakdownDialog(QtWidgets.QDialog):
+    """Dialog for renaming a VFX Breakdown."""
+
+    def __init__(self, current_name, parent=None):
+        """Initialize the dialog.
+
+        Args:
+            current_name: Current name of the VFX Breakdown
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.current_name = current_name
+        self.setWindowTitle("Rename VFX Breakdown")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Name field
+        name_layout = QtWidgets.QHBoxLayout()
+        name_label = QtWidgets.QLabel("New Name:")
+        name_layout.addWidget(name_label)
+
+        self.name_field = QtWidgets.QLineEdit()
+        self.name_field.setText(self.current_name)
+        self.name_field.selectAll()  # Select all text for easy editing
+        self.name_field.setPlaceholderText("Enter new VFX Breakdown name...")
+        name_layout.addWidget(self.name_field, stretch=1)
+
+        layout.addLayout(name_layout)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        self.ok_button = QtWidgets.QPushButton("OK")
+        self.ok_button.clicked.connect(self.accept)
+        self.ok_button.setDefault(True)
+        button_layout.addWidget(self.ok_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+    def get_new_name(self):
+        """Get the new name from the dialog.
+
+        Returns:
+            str: The new name
+        """
+        return self.name_field.text().strip()
+
+
 class VFXBreakdownTab(QtWidgets.QWidget):
     """VFX Breakdown tab widget for managing VFX Breakdowns and Beats."""
 
@@ -430,6 +489,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_remove_btn = QtWidgets.QPushButton("Remove")
         self.vfx_breakdown_remove_btn.clicked.connect(self._on_remove_vfx_breakdown)
         selector_row.addWidget(self.vfx_breakdown_remove_btn)
+
+        self.vfx_breakdown_rename_btn = QtWidgets.QPushButton("Rename")
+        self.vfx_breakdown_rename_btn.clicked.connect(self._on_rename_vfx_breakdown)
+        selector_row.addWidget(self.vfx_breakdown_rename_btn)
 
         self.vfx_breakdown_refresh_btn = QtWidgets.QPushButton("Refresh")
         self.vfx_breakdown_refresh_btn.clicked.connect(self._refresh_vfx_breakdowns)
@@ -840,6 +903,82 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 self,
                 "Error",
                 f"Failed to delete VFX Breakdown:\n{str(e)}"
+            )
+
+    def _on_rename_vfx_breakdown(self):
+        """Handle Rename VFX Breakdown button click."""
+        if not self.parent_app:
+            return
+
+        # Get currently selected breakdown
+        breakdown = self.vfx_breakdown_combo.currentData()
+        if not breakdown:
+            QtWidgets.QMessageBox.warning(self, "No Selection", "Please select a VFX Breakdown to rename.")
+            return
+
+        # Get current name
+        current_name = breakdown.get("code") or breakdown.get("name") or f"ID {breakdown.get('id', 'N/A')}"
+
+        # Show dialog
+        dialog = RenameVFXBreakdownDialog(current_name, parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+
+        # Get new name
+        new_name = dialog.get_new_name()
+        if not new_name:
+            QtWidgets.QMessageBox.warning(self, "Invalid Name", "Please enter a valid name.")
+            return
+
+        # Check if name actually changed
+        if new_name == current_name:
+            return
+
+        # Rename the VFX Breakdown
+        try:
+            breakdown_id = breakdown["id"]
+            entity_type = self.sg_session.get_vfx_breakdown_entity_type()
+
+            logger.info(f"Renaming VFX Breakdown {breakdown_id}: '{current_name}' -> '{new_name}'")
+
+            # Update in ShotGrid
+            self.sg_session.sg.update(entity_type, breakdown_id, {"code": new_name})
+
+            logger.info(f"Successfully renamed VFX Breakdown {breakdown_id}")
+
+            # Refresh the combo box and maintain selection
+            self._refresh_vfx_breakdowns()
+            self._select_vfx_breakdown_by_id(breakdown_id)
+
+            # Update RFQ label if this breakdown is currently set for the RFQ
+            if self.parent_app:
+                rfq = self.parent_app.rfq_combo.itemData(self.parent_app.rfq_combo.currentIndex())
+                if rfq:
+                    linked = rfq.get("sg_vfx_breakdown")
+                    linked_id = None
+                    if isinstance(linked, dict):
+                        linked_id = linked.get("id")
+                    elif isinstance(linked, list) and linked:
+                        linked_id = linked[0].get("id") if linked[0] else None
+
+                    if linked_id == breakdown_id:
+                        # This breakdown is the current one for the RFQ, update the label
+                        if hasattr(self.parent_app, "rfq_vfx_breakdown_label"):
+                            self.parent_app.rfq_vfx_breakdown_label.setText(new_name)
+                        logger.info(f"Updated RFQ label to show new breakdown name: '{new_name}'")
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Success",
+                f"VFX Breakdown renamed to '{new_name}'."
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to rename VFX Breakdown: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to rename VFX Breakdown:\n{str(e)}"
             )
 
     def _create_empty_vfx_breakdown(self, project_id, name):
