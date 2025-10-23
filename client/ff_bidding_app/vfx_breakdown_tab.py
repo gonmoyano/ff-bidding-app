@@ -995,18 +995,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         row = item.row()
 
-        # Check if the entire row is selected (all columns)
-        # Count how many cells in this row are selected
-        num_cols = self.vfx_breakdown_table.columnCount()
-        selected_cols = 0
-        for col in range(num_cols):
-            if self.vfx_breakdown_table.item(row, col) and self.vfx_breakdown_table.item(row, col).isSelected():
-                selected_cols += 1
-
-        # Only show context menu if entire row is selected
-        if selected_cols != num_cols:
-            return
-
         # Create context menu
         menu = QtWidgets.QMenu(self)
 
