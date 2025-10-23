@@ -180,12 +180,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         # Flag to prevent recursive updates
         self._updating = False
 
-        # Store color animation timers
-        self.color_timers = {}  # {(row, col): QTimer}
-
-        # Store original cell colors
-        self.original_colors = {}  # {(row, col): QColor}
-
         self._build_ui()
 
     def _build_ui(self):
@@ -278,14 +272,11 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         """Event filter to handle Enter key press."""
         if obj == self.vfx_breakdown_table and event.type() == QtCore.QEvent.KeyPress:
             if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
-                # Enter pressed - trigger update with visual feedback
+                # Enter pressed - move to next row
                 current_item = self.vfx_breakdown_table.currentItem()
                 if current_item:
                     row = current_item.row()
                     col = current_item.column()
-
-                    # Start visual feedback
-                    self._start_update_animation(row, col)
 
                     # Move to next row
                     next_row = row + 1
@@ -294,68 +285,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 return True
 
         return super().eventFilter(obj, event)
-
-    def _start_update_animation(self, row, col):
-        """Start the color animation for a cell update."""
-        item = self.vfx_breakdown_table.item(row, col)
-        if not item:
-            return
-
-        # Store original background color
-        self.original_colors[(row, col)] = item.background()
-
-        # Set to violet initially
-        item.setBackground(QtGui.QColor("#9966ff"))  # Violet
-
-    def _animate_to_success(self, row, col):
-        """Animate cell to green (success)."""
-        item = self.vfx_breakdown_table.item(row, col)
-        if not item:
-            return
-
-        # Set to green
-        item.setBackground(QtGui.QColor("#66ff66"))  # Green
-
-        # Schedule revert to original color after 2 seconds
-        self._schedule_color_revert(row, col)
-
-    def _animate_to_failure(self, row, col):
-        """Animate cell to red (failure)."""
-        item = self.vfx_breakdown_table.item(row, col)
-        if not item:
-            return
-
-        # Set to red
-        item.setBackground(QtGui.QColor("#ff6666"))  # Red
-
-        # Schedule revert to original color after 2 seconds
-        self._schedule_color_revert(row, col)
-
-    def _schedule_color_revert(self, row, col):
-        """Schedule color revert after 2 seconds."""
-        # Cancel any existing timer for this cell
-        if (row, col) in self.color_timers:
-            self.color_timers[(row, col)].stop()
-            self.color_timers[(row, col)].deleteLater()
-
-        # Create new timer
-        timer = QtCore.QTimer()
-        timer.setSingleShot(True)
-        timer.timeout.connect(lambda: self._revert_cell_color(row, col))
-        timer.start(2000)  # 2 seconds
-
-        self.color_timers[(row, col)] = timer
-
-    def _revert_cell_color(self, row, col):
-        """Revert cell color to original."""
-        item = self.vfx_breakdown_table.item(row, col)
-        if item and (row, col) in self.original_colors:
-            item.setBackground(self.original_colors[(row, col)])
-            del self.original_colors[(row, col)]
-
-        # Clean up timer
-        if (row, col) in self.color_timers:
-            del self.color_timers[(row, col)]
 
     def _undo(self):
         """Undo the last change."""
@@ -427,59 +356,35 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             self.sg_session
         )
 
-        # Execute the command (update ShotGrid) with better error handling
+        # Execute the command (update ShotGrid)
         try:
             self._updating = True
+            command._update_shotgrid(new_value)
+            self._updating = False
 
-            beat_id = beat_data.get("id")
-            if not beat_id:
-                raise ValueError("No beat ID found for update")
+            # Add to undo stack
+            self.undo_stack.append(command)
+            # Clear redo stack on new edit
+            self.redo_stack.clear()
 
-            # Convert string value back to appropriate type
-            update_value = command._parse_value(new_value, field_name)
+            # Update the beat_data with new value
+            parsed_value = command._parse_value(new_value, field_name)
+            beat_data[field_name] = parsed_value
 
-            # Update on ShotGrid and verify
-            logger.info(f"Updating Beat {beat_id} field '{field_name}' to: {update_value}")
-            result = self.sg_session.sg.update("CustomEntity02", beat_id, {field_name: update_value})
-
-            if result:
-                logger.info(f"Successfully updated Beat {beat_id} field '{field_name}'")
-
-                # Add to undo stack
-                self.undo_stack.append(command)
-                # Clear redo stack on new edit
-                self.redo_stack.clear()
-
-                # Update the beat_data with new value
-                parsed_value = command._parse_value(new_value, field_name)
-                beat_data[field_name] = parsed_value
-
-                self._set_vfx_breakdown_status(f"Updated {field_name} on ShotGrid")
-
-                # Animate to success
-                self._animate_to_success(row, col)
-            else:
-                raise Exception("ShotGrid update returned no result")
+            self._set_vfx_breakdown_status(f"Updated {field_name} on ShotGrid")
 
         except Exception as e:
             logger.error(f"Failed to update ShotGrid: {e}", exc_info=True)
-
             # Revert the change in UI
+            self._updating = True
             item.setText(old_value)
-
+            self._updating = False
             self._set_vfx_breakdown_status(f"Failed to update {field_name}", is_error=True)
-
-            # Animate to failure
-            self._animate_to_failure(row, col)
-
-            # Show error dialog
             QtWidgets.QMessageBox.critical(
                 self,
                 "Update Failed",
-                f"Failed to update field '{field_name}':\n{str(e)}\n\nValue has been reverted."
+                f"Failed to update field '{field_name}':\n{str(e)}"
             )
-        finally:
-            self._updating = False
 
     def _fetch_beats_schema(self):
         """Fetch schema information for Beat entity (CustomEntity02)."""
@@ -724,13 +629,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.undo_stack.clear()
         self.redo_stack.clear()
 
-        # Clean up color timers
-        for timer in self.color_timers.values():
-            timer.stop()
-            timer.deleteLater()
-        self.color_timers.clear()
-        self.original_colors.clear()
-
     def _on_vfx_breakdown_changed(self, index):
         """Handle VFX Breakdown selection change."""
         breakdown = self.vfx_breakdown_combo.itemData(index)
@@ -898,13 +796,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.beat_data_by_row.clear()
         self.undo_stack.clear()
         self.redo_stack.clear()
-
-        # Clean up color timers
-        for timer in self.color_timers.values():
-            timer.stop()
-            timer.deleteLater()
-        self.color_timers.clear()
-        self.original_colors.clear()
 
         if not beats:
             self._set_vfx_breakdown_status("No Beats linked to this VFX Breakdown.")
