@@ -468,12 +468,27 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         field_name = self.vfx_beat_columns[self.sort_column]
         value = beat_data.get(field_name)
 
+        # Check if this is a numeric field based on field name or schema
+        is_numeric_field = (
+            field_name in ("id", "sg_page", "sg_number_of_shots") or
+            (field_name in self.field_schema and
+             self.field_schema[field_name].get("data_type") in ("number", "float"))
+        )
+
         # Convert to sortable type
         if value is None:
-            sort_value = ""
+            # For numeric fields, treat None as negative infinity (sorts first in asc)
+            sort_value = float('-inf') if is_numeric_field else ""
+        elif is_numeric_field:
+            # For numeric fields, convert to float for consistent sorting
+            try:
+                sort_value = float(value)
+            except (ValueError, TypeError):
+                # If conversion fails, treat as 0
+                sort_value = float('-inf')
         elif isinstance(value, (int, float)):
-            # For numbers
-            sort_value = value
+            # Already numeric
+            sort_value = float(value)
         elif isinstance(value, datetime):
             # For dates, convert to timestamp for sorting
             sort_value = value.timestamp() if hasattr(value, 'timestamp') else 0
