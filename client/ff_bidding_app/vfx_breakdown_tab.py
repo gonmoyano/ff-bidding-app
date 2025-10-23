@@ -126,6 +126,99 @@ class EditCommand:
         return str(text)
 
 
+class PasteCommand:
+    """Command pattern for undo/redo of paste operations."""
+
+    def __init__(self, changes, sg_session, field_schema=None):
+        """
+        Initialize paste command.
+
+        Args:
+            changes: List of dicts with keys: table, row, col, old_value, new_value, beat_data, field_name
+            sg_session: ShotGrid session object
+            field_schema: Field schema information
+        """
+        self.changes = changes
+        self.sg_session = sg_session
+        self.field_schema = field_schema or {}
+
+    def undo(self):
+        """Undo all paste changes."""
+        for change in self.changes:
+            item = change['table'].item(change['row'], change['col'])
+            if item:
+                item.setText(change['old_value'])
+                # Update ShotGrid
+                self._update_shotgrid(change['old_value'], change['beat_data'], change['field_name'])
+
+    def redo(self):
+        """Redo all paste changes."""
+        for change in self.changes:
+            item = change['table'].item(change['row'], change['col'])
+            if item:
+                item.setText(change['new_value'])
+                # Update ShotGrid
+                self._update_shotgrid(change['new_value'], change['beat_data'], change['field_name'])
+
+    def _update_shotgrid(self, value, beat_data, field_name):
+        """Update ShotGrid with the value."""
+        beat_id = beat_data.get("id")
+        if not beat_id:
+            logger.error("No beat ID found for update")
+            raise ValueError("No beat ID found for update")
+
+        # Convert string value back to appropriate type
+        update_value = self._parse_value(value, field_name)
+
+        # Update on ShotGrid
+        self.sg_session.sg.update("CustomEntity02", beat_id, {field_name: update_value})
+        logger.info(f"Updated Beat {beat_id} field '{field_name}' to: {update_value}")
+
+    def _parse_value(self, text, field_name):
+        """Parse text value to appropriate type based on ShotGrid schema."""
+        if not text or text == "-" or text == "":
+            return None
+
+        # Get field schema info
+        field_info = self.field_schema.get(field_name, {})
+        data_type = field_info.get("data_type")
+
+        logger.debug(f"Parsing field '{field_name}' with data_type '{data_type}': '{text}'")
+
+        # Parse based on ShotGrid data type
+        if data_type == "number":
+            try:
+                if "." in text:
+                    return float(text)
+                else:
+                    return int(text)
+            except ValueError:
+                logger.warning(f"Could not parse '{text}' as number for field '{field_name}'")
+                return None
+
+        elif data_type == "float":
+            try:
+                return float(text)
+            except ValueError:
+                logger.warning(f"Could not parse '{text}' as float for field '{field_name}'")
+                return None
+
+        elif data_type == "checkbox":
+            return text.lower() in ("yes", "true", "1")
+
+        elif data_type == "date":
+            if text == "-" or text == "":
+                return None
+            try:
+                return datetime.strptime(text, "%Y-%m-%d").date()
+            except ValueError:
+                logger.warning(f"Could not parse '{text}' as date for field '{field_name}'")
+                return None
+
+        # Default: return as string
+        return text
+
+
 class AddBeatCommand:
     """Command pattern for undo/redo of beat addition."""
 
@@ -769,7 +862,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         logger.info(f"Copied {len(rows)} row(s) × {len(cols)} col(s) to clipboard")
 
     def _paste_selection(self):
-        """Paste from clipboard to selected cells."""
+        """Paste from clipboard to selected cells with undo/redo support."""
         clipboard = QtWidgets.QApplication.clipboard()
         text = clipboard.text()
 
@@ -789,44 +882,109 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         if rows_data and rows_data[-1] == "":  # Remove trailing empty line
             rows_data = rows_data[:-1]
 
-        # Block signals to prevent item changed events during paste
-        self.vfx_breakdown_table.blockSignals(True)
+        # Collect all changes
+        changes = []
+        num_cells = 0
 
+        for row_offset, row_text in enumerate(rows_data):
+            cells = row_text.split("\t")
+            for col_offset, cell_value in enumerate(cells):
+                target_row = start_row + row_offset
+                target_col = start_col + col_offset
+
+                # Check bounds
+                if target_row >= self.vfx_breakdown_table.rowCount():
+                    break
+                if target_col >= self.vfx_breakdown_table.columnCount():
+                    continue
+
+                # Get the field name for this column
+                field_name = self.vfx_beat_columns[target_col]
+
+                # Skip read-only columns
+                readonly_columns = ["id", "updated_at", "updated_by"]
+                if field_name in readonly_columns:
+                    continue
+
+                # Get beat data for this row
+                beat_data = self.beat_data_by_row.get(target_row)
+                if not beat_data:
+                    logger.warning(f"No beat data found for row {target_row}")
+                    continue
+
+                item = self.vfx_breakdown_table.item(target_row, target_col)
+                if not item or not (item.flags() & QtCore.Qt.ItemIsEditable):
+                    continue
+
+                # Get old value
+                old_value = item.text()
+
+                # Check if value actually changed
+                if cell_value == old_value:
+                    continue
+
+                # Add to changes list
+                changes.append({
+                    'table': self.vfx_breakdown_table,
+                    'row': target_row,
+                    'col': target_col,
+                    'old_value': old_value,
+                    'new_value': cell_value,
+                    'beat_data': beat_data,
+                    'field_name': field_name
+                })
+                num_cells += 1
+
+        if not changes:
+            self._set_vfx_breakdown_status("No changes to paste")
+            return
+
+        # Create paste command
+        command = PasteCommand(changes, self.sg_session, field_schema=self.field_schema)
+
+        # Execute the paste (update UI and ShotGrid)
         try:
-            for row_offset, row_text in enumerate(rows_data):
-                cells = row_text.split("\t")
-                for col_offset, cell_value in enumerate(cells):
-                    target_row = start_row + row_offset
-                    target_col = start_col + col_offset
+            self._updating = True
 
-                    # Check bounds
-                    if target_row >= self.vfx_breakdown_table.rowCount():
-                        break
-                    if target_col >= self.vfx_breakdown_table.columnCount():
-                        continue
+            # Update UI
+            for change in changes:
+                item = change['table'].item(change['row'], change['col'])
+                if item:
+                    item.setText(change['new_value'])
 
-                    # Get the field name for this column
-                    field_name = self.vfx_beat_columns[target_col]
+            # Update ShotGrid for all changes
+            command.redo()
 
-                    # Skip read-only columns
-                    readonly_columns = ["id", "updated_at", "updated_by"]
-                    if field_name in readonly_columns:
-                        continue
+            self._updating = False
 
-                    item = self.vfx_breakdown_table.item(target_row, target_col)
-                    if item and (item.flags() & QtCore.Qt.ItemIsEditable):
-                        item.setText(cell_value)
+            # Add to undo stack
+            self.undo_stack.append(command)
+            # Clear redo stack on new paste
+            self.redo_stack.clear()
 
-            num_cells = len(rows_data) * len(rows_data[0].split("\t")) if rows_data else 0
-            self._set_vfx_breakdown_status(f"Pasted {num_cells} cell(s) from clipboard")
-            logger.info(f"Pasted {len(rows_data)} row(s) of data")
+            # Update beat_data with new values
+            for change in changes:
+                parsed_value = command._parse_value(change['new_value'], change['field_name'])
+                change['beat_data'][change['field_name']] = parsed_value
 
-        finally:
-            self.vfx_breakdown_table.blockSignals(False)
+            self._set_vfx_breakdown_status(f"✓ Pasted {num_cells} cell(s) to ShotGrid")
+            logger.info(f"Successfully pasted {num_cells} cells")
 
-        # Trigger item changed for modified cells (will update ShotGrid)
-        # Note: This is a simplified approach - for production, you might want to batch these updates
-        self._set_vfx_breakdown_status(f"Pasted data - cells will auto-save on edit")
+        except Exception as e:
+            logger.error(f"Failed to paste cells: {e}", exc_info=True)
+            # Revert the changes in UI
+            self._updating = True
+            for change in changes:
+                item = change['table'].item(change['row'], change['col'])
+                if item:
+                    item.setText(change['old_value'])
+            self._updating = False
+            self._set_vfx_breakdown_status(f"Failed to paste cells", is_error=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Paste Failed",
+                f"Failed to paste cells:\n{str(e)}\n\nChanges have been reverted."
+            )
 
     def _on_table_context_menu(self, position):
         """Handle right-click context menu on table."""
