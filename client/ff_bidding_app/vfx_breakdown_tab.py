@@ -1133,6 +1133,11 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         Args:
             column_index: Index of the clicked column
         """
+        # Block single-column sorting if compound sorting is active
+        if self.compound_sort_columns:
+            logger.info("Single-column sorting disabled while compound sorting template is active")
+            return
+
         # Simple single-column sorting
         if self.sort_column == column_index:
             # Toggle direction if clicking the same column
@@ -1226,6 +1231,9 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             if self.compound_sort_columns:
                 self.sort_column = None
                 self.sort_direction = None
+            else:
+                # If no compound sort, reset template dropdown to "(No Template)"
+                self.template_dropdown.setCurrentIndex(0)
 
             # Apply the new sorting
             self._update_header_sort_indicators()
@@ -1236,6 +1244,12 @@ class VFXBreakdownTab(QtWidgets.QWidget):
     def _apply_sort_template(self, template_name):
         """Apply a saved sort template."""
         if template_name == "(No Template)" or not template_name:
+            # Clear compound sorting to allow single-column sorting
+            if self.compound_sort_columns:
+                self.compound_sort_columns = []
+                self._update_header_sort_indicators()
+                self._apply_filters()
+                logger.info("Compound sorting cleared - single-column sorting enabled")
             return
 
         if template_name in self.sort_templates:
