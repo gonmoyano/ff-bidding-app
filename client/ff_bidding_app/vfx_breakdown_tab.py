@@ -614,6 +614,217 @@ class RenameVFXBreakdownDialog(QtWidgets.QDialog):
         return self.name_field.text().strip()
 
 
+class CompoundSortDialog(QtWidgets.QDialog):
+    """Dialog for setting up compound (multi-column) sorting."""
+
+    def __init__(self, column_names, current_sort=None, templates=None, parent=None):
+        """Initialize the compound sort dialog.
+
+        Args:
+            column_names: List of column display names
+            current_sort: Current sort configuration [(col_idx, direction), ...]
+            templates: Dictionary of saved templates {name: [(col_idx, direction), ...]}
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.column_names = column_names
+        self.current_sort = current_sort or []
+        self.templates = templates or {}
+
+        self.setWindowTitle("Compound Sorting")
+        self.setModal(True)
+        self.setMinimumWidth(500)
+
+        self._build_ui()
+        self._load_current_sort()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Template section
+        template_group = QtWidgets.QGroupBox("Sort Templates")
+        template_layout = QtWidgets.QVBoxLayout(template_group)
+
+        # Template selection
+        template_row = QtWidgets.QHBoxLayout()
+        template_label = QtWidgets.QLabel("Template:")
+        template_row.addWidget(template_label)
+
+        self.template_combo = QtWidgets.QComboBox()
+        self.template_combo.addItem("(None)")
+        for template_name in sorted(self.templates.keys()):
+            self.template_combo.addItem(template_name)
+        self.template_combo.currentTextChanged.connect(self._on_template_selected)
+        template_row.addWidget(self.template_combo, stretch=1)
+
+        self.load_template_btn = QtWidgets.QPushButton("Load")
+        self.load_template_btn.clicked.connect(self._load_template)
+        template_row.addWidget(self.load_template_btn)
+
+        self.delete_template_btn = QtWidgets.QPushButton("Delete")
+        self.delete_template_btn.clicked.connect(self._delete_template)
+        template_row.addWidget(self.delete_template_btn)
+
+        template_layout.addLayout(template_row)
+
+        # Save new template
+        save_row = QtWidgets.QHBoxLayout()
+        save_label = QtWidgets.QLabel("Save as:")
+        save_row.addWidget(save_label)
+
+        self.template_name_field = QtWidgets.QLineEdit()
+        self.template_name_field.setPlaceholderText("Enter template name...")
+        save_row.addWidget(self.template_name_field, stretch=1)
+
+        self.save_template_btn = QtWidgets.QPushButton("Save Template")
+        self.save_template_btn.clicked.connect(self._save_template)
+        save_row.addWidget(self.save_template_btn)
+
+        template_layout.addLayout(save_row)
+        layout.addWidget(template_group)
+
+        # Sorting criteria section
+        sort_group = QtWidgets.QGroupBox("Sorting Criteria")
+        sort_layout = QtWidgets.QVBoxLayout(sort_group)
+
+        # Create 3 sort level dropdowns
+        self.sort_widgets = []
+        for i in range(3):
+            level_layout = QtWidgets.QHBoxLayout()
+
+            label = QtWidgets.QLabel(f"Level {i+1}:")
+            label.setFixedWidth(60)
+            level_layout.addWidget(label)
+
+            # Column dropdown
+            column_combo = QtWidgets.QComboBox()
+            column_combo.addItem("(None)")
+            for col_name in self.column_names:
+                column_combo.addItem(col_name)
+            level_layout.addWidget(column_combo, stretch=2)
+
+            # Direction dropdown
+            direction_combo = QtWidgets.QComboBox()
+            direction_combo.addItem("Ascending", "asc")
+            direction_combo.addItem("Descending", "desc")
+            level_layout.addWidget(direction_combo, stretch=1)
+
+            sort_layout.addLayout(level_layout)
+            self.sort_widgets.append((column_combo, direction_combo))
+
+        layout.addWidget(sort_group)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        self.apply_btn = QtWidgets.QPushButton("Apply")
+        self.apply_btn.clicked.connect(self.accept)
+        self.apply_btn.setDefault(True)
+        button_layout.addWidget(self.apply_btn)
+
+        self.cancel_btn = QtWidgets.QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_btn)
+
+        layout.addLayout(button_layout)
+
+    def _load_current_sort(self):
+        """Load the current sort configuration into the dropdowns."""
+        for i, (column_combo, direction_combo) in enumerate(self.sort_widgets):
+            if i < len(self.current_sort):
+                col_idx, direction = self.current_sort[i]
+                # Set column (add 1 because index 0 is "(None)")
+                column_combo.setCurrentIndex(col_idx + 1)
+                # Set direction
+                direction_combo.setCurrentIndex(0 if direction == "asc" else 1)
+            else:
+                column_combo.setCurrentIndex(0)
+                direction_combo.setCurrentIndex(0)
+
+    def _on_template_selected(self, template_name):
+        """Handle template selection."""
+        self.delete_template_btn.setEnabled(template_name != "(None)")
+
+    def _load_template(self):
+        """Load the selected template."""
+        template_name = self.template_combo.currentText()
+        if template_name == "(None)" or template_name not in self.templates:
+            return
+
+        sort_config = self.templates[template_name]
+        for i, (column_combo, direction_combo) in enumerate(self.sort_widgets):
+            if i < len(sort_config):
+                col_idx, direction = sort_config[i]
+                column_combo.setCurrentIndex(col_idx + 1)
+                direction_combo.setCurrentIndex(0 if direction == "asc" else 1)
+            else:
+                column_combo.setCurrentIndex(0)
+                direction_combo.setCurrentIndex(0)
+
+    def _save_template(self):
+        """Save the current configuration as a template."""
+        template_name = self.template_name_field.text().strip()
+        if not template_name:
+            QtWidgets.QMessageBox.warning(self, "No Name", "Please enter a template name.")
+            return
+
+        # Get current sort configuration
+        sort_config = self.get_sort_configuration()
+        if not sort_config:
+            QtWidgets.QMessageBox.warning(self, "No Criteria", "Please configure at least one sort level.")
+            return
+
+        # Save template
+        self.templates[template_name] = sort_config
+
+        # Update combo box
+        if self.template_combo.findText(template_name) == -1:
+            self.template_combo.addItem(template_name)
+
+        self.template_combo.setCurrentText(template_name)
+        self.template_name_field.clear()
+
+        QtWidgets.QMessageBox.information(self, "Saved", f"Template '{template_name}' saved successfully.")
+
+    def _delete_template(self):
+        """Delete the selected template."""
+        template_name = self.template_combo.currentText()
+        if template_name == "(None)" or template_name not in self.templates:
+            return
+
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Delete template '{template_name}'?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if reply == QtWidgets.QMessageBox.Yes:
+            del self.templates[template_name]
+            index = self.template_combo.findText(template_name)
+            if index >= 0:
+                self.template_combo.removeItem(index)
+            self.template_combo.setCurrentIndex(0)
+
+    def get_sort_configuration(self):
+        """Get the configured sort criteria.
+
+        Returns:
+            List of (column_index, direction) tuples
+        """
+        sort_config = []
+        for column_combo, direction_combo in self.sort_widgets:
+            col_idx = column_combo.currentIndex()
+            if col_idx > 0:  # 0 is "(None)"
+                col_idx -= 1  # Adjust for "(None)" item
+                direction = direction_combo.currentData()
+                sort_config.append((col_idx, direction))
+
+        return sort_config
+
+
 class VFXBreakdownTab(QtWidgets.QWidget):
     """VFX Breakdown tab widget for managing VFX Breakdowns and Beats."""
 
@@ -684,8 +895,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.beat_data_by_row = {}
 
         # Sorting and filtering state
-        self.sort_column = None  # Currently sorted column index
-        self.sort_direction = None  # 'asc' or 'desc'
+        self.sort_column = None  # Currently sorted column index (for single-column sort)
+        self.sort_direction = None  # 'asc' or 'desc' (for single-column sort)
+        self.compound_sort_columns = []  # List of (column_index, direction) tuples for compound sorting
+        self.sort_templates = {}  # Dictionary of saved sort templates {name: [(col_idx, direction), ...]}
         self.all_beats_data = []  # Original unfiltered beat data
         self.filtered_row_indices = []  # Indices into all_beats_data that pass filters
         self.display_row_to_data_row = {}  # Maps displayed row -> index in all_beats_data
@@ -693,6 +906,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         # UI widgets for search/filter
         self.global_search_box = None
         self.clear_filters_btn = None
+        self.compound_sort_btn = None
+        self.template_dropdown = None
         self.row_count_label = None
 
         # Flag to prevent recursive updates
@@ -764,6 +979,19 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.clear_filters_btn = QtWidgets.QPushButton("Clear")
         self.clear_filters_btn.clicked.connect(self._clear_filters)
         filter_controls.addWidget(self.clear_filters_btn)
+
+        # Compound Sorting button
+        self.compound_sort_btn = QtWidgets.QPushButton("Compound Sorting")
+        self.compound_sort_btn.clicked.connect(self._open_compound_sort_dialog)
+        filter_controls.addWidget(self.compound_sort_btn)
+
+        # Template dropdown
+        filter_controls.addWidget(QtWidgets.QLabel("Template:"))
+        self.template_dropdown = QtWidgets.QComboBox()
+        self.template_dropdown.addItem("(No Template)")
+        self.template_dropdown.setMinimumWidth(150)
+        self.template_dropdown.currentTextChanged.connect(self._apply_sort_template)
+        filter_controls.addWidget(self.template_dropdown)
 
         # Row count label
         self.row_count_label = QtWidgets.QLabel("Showing 0 of 0 rows")
@@ -929,12 +1157,22 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             if header_item:
                 # Get original text without indicators
                 original_text = header_item.text()
-                # Remove existing indicators
-                for indicator in [" ↑", " ↓"]:
-                    original_text = original_text.replace(indicator, "")
+                # Remove existing indicators (including numbered ones like "1↑")
+                import re
+                original_text = re.sub(r'\s*\d*[↑↓]', '', original_text)
 
-                # Add indicator if this is the sorted column
-                if col_idx == self.sort_column and self.sort_direction:
+                # Check if this column is in compound sorting
+                if self.compound_sort_columns:
+                    for priority, (sort_col, sort_dir) in enumerate(self.compound_sort_columns, 1):
+                        if col_idx == sort_col:
+                            arrow = "↑" if sort_dir == "asc" else "↓"
+                            header_item.setText(f"{original_text} {priority}{arrow}")
+                            break
+                    else:
+                        # Not in compound sort
+                        header_item.setText(original_text)
+                # Check single-column sorting
+                elif col_idx == self.sort_column and self.sort_direction:
                     arrow = " ↑" if self.sort_direction == "asc" else " ↓"
                     header_item.setText(f"{original_text}{arrow}")
                 else:
@@ -948,12 +1186,87 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         # Clear sorting
         self.sort_column = None
         self.sort_direction = None
+        self.compound_sort_columns = []
+        self.template_dropdown.setCurrentIndex(0)  # Reset to "(No Template)"
         self._update_header_sort_indicators()
 
         # Re-apply (which will show all rows)
         self._apply_filters()
 
         logger.info("Search and sorting cleared")
+
+    def _open_compound_sort_dialog(self):
+        """Open the compound sorting dialog."""
+        # Get column headers for the dialog
+        headers = [
+            "ID", "Code", "Beat ID", "Scene", "Page",
+            "Script Excerpt", "Description", "VFX Type", "Complexity",
+            "Category", "VFX Description", "# Shots",
+            "Updated At", "Updated By"
+        ]
+
+        # Open dialog
+        dialog = CompoundSortDialog(
+            column_names=headers,
+            current_sort=self.compound_sort_columns.copy(),
+            templates=self.sort_templates.copy(),
+            parent=self
+        )
+
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            # Get the sort configuration
+            sort_config = dialog.get_sort_configuration()
+            self.compound_sort_columns = sort_config
+
+            # Update templates if they were modified
+            self.sort_templates = dialog.templates.copy()
+            self._update_template_dropdown()
+
+            # Clear single-column sort when using compound sort
+            if self.compound_sort_columns:
+                self.sort_column = None
+                self.sort_direction = None
+
+            # Apply the new sorting
+            self._update_header_sort_indicators()
+            self._apply_filters()
+
+            logger.info(f"Compound sort applied: {len(sort_config)} levels")
+
+    def _apply_sort_template(self, template_name):
+        """Apply a saved sort template."""
+        if template_name == "(No Template)" or not template_name:
+            return
+
+        if template_name in self.sort_templates:
+            self.compound_sort_columns = self.sort_templates[template_name].copy()
+
+            # Clear single-column sort when using template
+            self.sort_column = None
+            self.sort_direction = None
+
+            # Apply the template
+            self._update_header_sort_indicators()
+            self._apply_filters()
+
+            logger.info(f"Sort template applied: {template_name}")
+
+    def _update_template_dropdown(self):
+        """Update the template dropdown with current templates."""
+        current_text = self.template_dropdown.currentText()
+        self.template_dropdown.blockSignals(True)
+        self.template_dropdown.clear()
+        self.template_dropdown.addItem("(No Template)")
+
+        for template_name in sorted(self.sort_templates.keys()):
+            self.template_dropdown.addItem(template_name)
+
+        # Try to restore previous selection
+        index = self.template_dropdown.findText(current_text)
+        if index >= 0:
+            self.template_dropdown.setCurrentIndex(index)
+
+        self.template_dropdown.blockSignals(False)
 
     def _apply_filters(self):
         """Apply search and sorting to the table."""
@@ -971,8 +1284,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 if self._matches_global_search(self.all_beats_data[idx], global_search)
             ]
 
-        # Apply sorting
-        if self.sort_column is not None and self.sort_direction:
+        # Apply sorting (compound sorting takes priority over single-column sorting)
+        if self.compound_sort_columns:
+            self.filtered_row_indices.sort(key=lambda idx: self._get_compound_sort_key(self.all_beats_data[idx]))
+        elif self.sort_column is not None and self.sort_direction:
             self.filtered_row_indices.sort(key=lambda idx: self._get_sort_key(self.all_beats_data[idx]))
 
         # Refresh table display
@@ -1083,6 +1398,35 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         # Return tuple with type marker to ensure consistent comparisons
         return (sort_type, sort_value)
+
+    def _get_compound_sort_key(self, beat_data):
+        """Get compound sort key for a beat based on multiple sort columns.
+
+        Returns a tuple of sort keys, one for each sorting level.
+        """
+        sort_keys = []
+
+        for col_idx, direction in self.compound_sort_columns:
+            if col_idx >= len(self.vfx_beat_columns):
+                continue
+
+            # Temporarily set the sort column and direction to reuse _get_sort_key logic
+            old_column = self.sort_column
+            old_direction = self.sort_direction
+
+            self.sort_column = col_idx
+            self.sort_direction = direction
+
+            # Get the sort key for this column
+            sort_key = self._get_sort_key(beat_data)
+            sort_keys.append(sort_key)
+
+            # Restore original values
+            self.sort_column = old_column
+            self.sort_direction = old_direction
+
+        # Return tuple of all sort keys
+        return tuple(sort_keys) if sort_keys else ((0, 0),)
 
     def _refresh_table_display(self):
         """Refresh the table display based on filtered and sorted data."""
