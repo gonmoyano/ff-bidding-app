@@ -717,11 +717,11 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         if not item:
             return
 
-        # Only show menu if clicking on first column (ID column)
-        if item.column() != 0:
-            return
-
         row = item.row()
+
+        # Check if the row is selected
+        if not self.vfx_breakdown_table.selectionModel().isRowSelected(row, QtCore.QModelIndex()):
+            return
 
         # Create context menu
         menu = QtWidgets.QMenu(self)
