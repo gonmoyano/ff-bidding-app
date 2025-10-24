@@ -745,9 +745,15 @@ class CompoundSortDialog(QtWidgets.QDialog):
     def _on_template_selected(self, template_name):
         """Handle template selection - auto-load the template."""
         self.delete_template_btn.setEnabled(template_name != "(None)")
+
         # Auto-load the template when selected
         if template_name != "(None)" and template_name in self.templates:
             self._load_template_config(self.templates[template_name])
+            # Populate the save field with the template name for easy updating
+            self.template_name_field.setText(template_name)
+        else:
+            # Clear the save field if "(None)" is selected
+            self.template_name_field.clear()
 
     def _load_template_config(self, sort_config):
         """Load a sort configuration into the UI.
@@ -777,18 +783,32 @@ class CompoundSortDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(self, "No Criteria", "Please configure at least one sort level.")
             return
 
-        # Save template
+        # Check if we're updating an existing template
+        is_update = template_name in self.templates
+
+        # Save template (creates new or updates existing)
         self.templates[template_name] = sort_config
 
-        # Update combo box
+        # Update combo box if new template
         if self.template_combo.findText(template_name) == -1:
             self.template_combo.addItem(template_name)
 
+        # Select the template in combo box
+        self.template_combo.blockSignals(True)
         self.template_combo.setCurrentText(template_name)
-        self.template_name_field.clear()
+        self.template_combo.blockSignals(False)
+
+        # Keep the name in the field for easy re-saving after further edits
+        # (Don't clear it like before)
 
         # Mark this template as the one to apply
         self.applied_template_name = template_name
+
+        # Show confirmation message
+        if is_update:
+            logger.info(f"Template '{template_name}' updated")
+        else:
+            logger.info(f"Template '{template_name}' created")
 
     def _delete_template(self):
         """Delete the selected template."""
