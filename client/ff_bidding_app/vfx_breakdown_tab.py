@@ -719,7 +719,7 @@ class CompoundSortDialog(QtWidgets.QDialog):
         button_layout.addStretch()
 
         self.apply_btn = QtWidgets.QPushButton("Apply")
-        self.apply_btn.clicked.connect(self.accept)
+        self.apply_btn.clicked.connect(self._on_apply_clicked)
         self.apply_btn.setDefault(True)
         button_layout.addWidget(self.apply_btn)
 
@@ -741,6 +741,80 @@ class CompoundSortDialog(QtWidgets.QDialog):
             else:
                 column_combo.setCurrentIndex(0)
                 direction_combo.setCurrentIndex(0)
+
+    def _on_apply_clicked(self):
+        """Handle Apply button click - check if criteria should be saved."""
+        # Get current sort configuration
+        sort_config = self.get_sort_configuration()
+
+        if not sort_config:
+            # No sorting criteria configured, just close
+            self.accept()
+            return
+
+        # Check if this configuration matches any existing template
+        config_is_saved = False
+        for template_name, template_config in self.templates.items():
+            if template_config == sort_config:
+                config_is_saved = True
+                self.applied_template_name = template_name
+                break
+
+        # If not saved, ask user if they want to save it
+        if not config_is_saved:
+            reply = QtWidgets.QMessageBox.question(
+                self,
+                "Save Sorting Criteria?",
+                "This sorting criteria hasn't been saved as a template.\n\n"
+                "Would you like to save it before applying?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel
+            )
+
+            if reply == QtWidgets.QMessageBox.Cancel:
+                # User cancelled, don't apply
+                return
+            elif reply == QtWidgets.QMessageBox.Yes:
+                # User wants to save - prompt for name
+                template_name = self.template_name_field.text().strip()
+
+                if not template_name:
+                    # No name in field, ask for one
+                    template_name, ok = QtWidgets.QInputDialog.getText(
+                        self,
+                        "Save Template",
+                        "Enter a name for this template:",
+                        QtWidgets.QLineEdit.Normal,
+                        ""
+                    )
+
+                    if not ok or not template_name.strip():
+                        # User cancelled the name input, don't apply
+                        return
+
+                    template_name = template_name.strip()
+
+                # Save the template
+                self.templates[template_name] = sort_config
+
+                # Update combo box if new template
+                if self.template_combo.findText(template_name) == -1:
+                    self.template_combo.addItem(template_name)
+
+                # Select the template in combo box
+                self.template_combo.blockSignals(True)
+                self.template_combo.setCurrentText(template_name)
+                self.template_combo.blockSignals(False)
+
+                # Update the save field
+                self.template_name_field.setText(template_name)
+
+                # Mark this template as the one to apply
+                self.applied_template_name = template_name
+
+                logger.info(f"Template '{template_name}' saved on apply")
+
+        # Accept the dialog
+        self.accept()
 
     def _on_template_selected(self, template_name):
         """Handle template selection - auto-load the template."""
