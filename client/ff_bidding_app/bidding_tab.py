@@ -5,6 +5,11 @@ Contains nested tabs for VFX Breakdown, Assets, Scene, Rates, and Summary.
 
 from PySide6 import QtWidgets, QtCore
 
+try:
+    from .vfx_breakdown_widget import VFXBreakdownWidget
+except ImportError:
+    from vfx_breakdown_widget import VFXBreakdownWidget
+
 
 class BiddingTab(QtWidgets.QWidget):
     """
@@ -53,22 +58,13 @@ class BiddingTab(QtWidgets.QWidget):
         main_layout.addWidget(self.nested_tab_widget)
 
     def _create_vfx_breakdown_tab(self):
-        """Create the VFX Breakdown nested tab content."""
-        widget = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(widget)
+        """Create the VFX Breakdown nested tab content using reusable widget."""
+        # Use the reusable VFXBreakdownWidget
+        # show_toolbar=True to include search/filter controls
+        widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
 
-        # Title
-        title_label = QtWidgets.QLabel("VFX Breakdown")
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 20px;")
-        layout.addWidget(title_label)
-
-        # Placeholder content
-        info_label = QtWidgets.QLabel("VFX Breakdown content will be displayed here.\nThis tab will contain detailed VFX breakdown information for bidding purposes.")
-        info_label.setStyleSheet("padding: 20px;")
-        info_label.setWordWrap(True)
-        layout.addWidget(info_label)
-
-        layout.addStretch()
+        # You can optionally connect to status messages if needed
+        # widget.statusMessageChanged.connect(self._on_status_message)
 
         return widget
 
