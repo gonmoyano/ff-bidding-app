@@ -37,16 +37,14 @@ class CollapsibleGroupBox(QtWidgets.QWidget):
         self.toggle_button.setStyleSheet("""
             QPushButton {
                 text-align: left;
-                border: 1px solid #999;
+                border: 1px solid #b0b0b0;
                 border-radius: 3px;
                 padding: 5px;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                            stop:0 #f6f7fa, stop:1 #dadbde);
+                background: #e8e8e8;
                 font-weight: bold;
             }
             QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                            stop:0 #fafbfc, stop:1 #e0e1e4);
+                background: #f0f0f0;
             }
         """)
         self.toggle_button.clicked.connect(self._on_toggle)
