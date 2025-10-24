@@ -7,8 +7,13 @@ from PySide6 import QtWidgets, QtCore
 
 try:
     from .vfx_breakdown_tab import VFXBreakdownTab
+    from .bid_selector_widget import BidSelectorWidget
+    from .logger import logger
 except ImportError:
     from vfx_breakdown_tab import VFXBreakdownTab
+    from bid_selector_widget import BidSelectorWidget
+    import logging
+    logger = logging.getLogger("FFPackageManager")
 
 
 class BiddingTab(QtWidgets.QWidget):
@@ -28,6 +33,11 @@ class BiddingTab(QtWidgets.QWidget):
         self.sg_session = sg_session
         self.parent_app = parent
 
+        # Store current selections
+        self.current_rfq = None
+        self.current_bid = None
+        self.current_project_id = None
+
         # Initialize UI
         self._build_ui()
 
@@ -35,6 +45,12 @@ class BiddingTab(QtWidgets.QWidget):
         """Build the UI for the Bidding tab with nested tabs."""
         main_layout = QtWidgets.QVBoxLayout(self)
         main_layout.setContentsMargins(10, 10, 10, 10)
+
+        # Add Bid selector widget at the top
+        self.bid_selector = BidSelectorWidget(self.sg_session, parent=self)
+        self.bid_selector.bidChanged.connect(self._on_bid_changed)
+        self.bid_selector.statusMessageChanged.connect(self._on_bid_status_message)
+        main_layout.addWidget(self.bid_selector)
 
         # Create nested tab widget
         self.nested_tab_widget = QtWidgets.QTabWidget()
@@ -154,10 +170,53 @@ class BiddingTab(QtWidgets.QWidget):
         Args:
             rfq_data: Dictionary containing RFQ information
         """
-        # This method can be called by the parent app when RFQ changes
         # Store RFQ data for use in nested tabs
         self.current_rfq = rfq_data
 
-        # Update VFX Breakdown tab with RFQ data
-        if hasattr(self, 'vfx_breakdown_tab'):
-            self.vfx_breakdown_tab.populate_vfx_breakdown_combo(rfq_data, auto_select=True)
+        # Get project ID from parent app
+        if self.parent_app and hasattr(self.parent_app, 'sg_project_combo'):
+            proj = self.parent_app.sg_project_combo.itemData(self.parent_app.sg_project_combo.currentIndex())
+            self.current_project_id = proj.get('id') if proj else None
+
+        # Populate bid selector with bids for the project
+        if hasattr(self, 'bid_selector') and self.current_project_id:
+            self.bid_selector.populate_bids(rfq_data, self.current_project_id, auto_select=True)
+
+    def _on_bid_changed(self, bid_data):
+        """Handle bid selection change.
+
+        Args:
+            bid_data: Selected bid dictionary or None
+        """
+        self.current_bid = bid_data
+        logger.info(f"Bid changed in Bidding tab: {bid_data.get('code') if bid_data else 'None'}")
+
+        # When a bid is selected, load its VFX breakdown
+        if bid_data and hasattr(self, 'vfx_breakdown_tab'):
+            # Get the VFX breakdown linked to this bid
+            vfx_breakdown = bid_data.get("sg_vfx_breakdown")
+
+            # Populate VFX breakdown combo with all breakdowns in project
+            # (will auto-select the one linked to the bid if present)
+            if self.current_rfq:
+                self.vfx_breakdown_tab.populate_vfx_breakdown_combo(self.current_rfq, auto_select=False)
+
+                # Auto-select the breakdown linked to this bid
+                if vfx_breakdown and isinstance(vfx_breakdown, dict):
+                    breakdown_id = vfx_breakdown.get('id')
+                    if breakdown_id:
+                        self.vfx_breakdown_tab._select_vfx_breakdown_by_id(breakdown_id)
+        else:
+            # No bid selected, just populate breakdowns without auto-select
+            if hasattr(self, 'vfx_breakdown_tab') and self.current_rfq:
+                self.vfx_breakdown_tab.populate_vfx_breakdown_combo(self.current_rfq, auto_select=True)
+
+    def _on_bid_status_message(self, message, is_error):
+        """Handle status messages from bid selector.
+
+        Args:
+            message: Status message
+            is_error: Whether this is an error message
+        """
+        logger.info(f"Bid selector status: {message}")
+        # Could forward this to parent app status bar if needed

@@ -2050,13 +2050,17 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             return False
 
     def _on_set_current_vfx_breakdown(self):
-        """Set the selected VFX Breakdown as the current one for the selected RFQ."""
+        """Set the selected VFX Breakdown as the current one for the selected Bid."""
         if not self.parent_app:
             return
 
-        rfq = self.parent_app.rfq_combo.itemData(self.parent_app.rfq_combo.currentIndex())
-        if not rfq:
-            QtWidgets.QMessageBox.warning(self, "No RFQ selected", "Please select an RFQ first.")
+        # Get the current bid from the bidding tab
+        bid = None
+        if hasattr(self.parent_app, 'bidding_tab') and hasattr(self.parent_app.bidding_tab, 'current_bid'):
+            bid = self.parent_app.bidding_tab.current_bid
+
+        if not bid:
+            QtWidgets.QMessageBox.warning(self, "No Bid selected", "Please select a Bid first from the Bidding tab.")
             return
 
         idx = self.vfx_breakdown_combo.currentIndex()
@@ -2065,49 +2069,43 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "No Breakdown selected", "Please select a VFX Breakdown from the list.")
             return
 
-        rfq_id = rfq["id"]
+        bid_id = bid["id"]
         br_id = breakdown.get("id")
         br_type = breakdown.get("type", "CustomEntity01")
-        logger.info(f"Updating RFQ {rfq_id} sg_vfx_breakdown -> {br_type}({br_id})")
+        logger.info(f"Updating Bid {bid_id} sg_vfx_breakdown -> {br_type}({br_id})")
 
         try:
-            # Update on ShotGrid
-            self.sg_session.update_rfq_vfx_breakdown(rfq_id, breakdown)
+            # Update Bid's sg_vfx_breakdown field on ShotGrid
+            self.sg_session.update_bid_vfx_breakdown(bid_id, breakdown)
         except Exception as e:
-            logger.error(f"Failed to update RFQ sg_vfx_breakdown: {e}", exc_info=True)
+            logger.error(f"Failed to update Bid sg_vfx_breakdown: {e}", exc_info=True)
             QtWidgets.QMessageBox.critical(self, "Error", f"Failed to set current VFX Breakdown:\n{e}")
             return
 
-        # Refresh this RFQ from SG to keep local data accurate
+        # Refresh the bid from SG to keep local data accurate
         try:
-            updated_rfq = self.sg_session.get_entity_by_id(
-                "CustomEntity04",
-                rfq_id,
-                fields=["id", "code", "sg_vfx_breakdown", "sg_status_list", "created_at"]
+            updated_bid = self.sg_session.sg.find_one(
+                "CustomEntity06",
+                [["id", "is", bid_id]],
+                ["id", "code", "sg_bid_type", "sg_vfx_breakdown"]
             )
-            # Replace combo item data with the fresh dict
-            self.parent_app.rfq_combo.setItemData(self.parent_app.rfq_combo.currentIndex(), updated_rfq)
-            rfq = updated_rfq  # use fresh one below
-            logger.info(f"RFQ {rfq_id} refreshed with latest sg_vfx_breakdown link.")
+            # Update the current bid in bidding tab
+            if updated_bid and hasattr(self.parent_app, 'bidding_tab'):
+                self.parent_app.bidding_tab.current_bid = updated_bid
+                # Update bid selector's combo box data
+                if hasattr(self.parent_app.bidding_tab, 'bid_selector'):
+                    # Find and update the item in the combo
+                    combo = self.parent_app.bidding_tab.bid_selector.bid_combo
+                    for i in range(combo.count()):
+                        item_bid = combo.itemData(i)
+                        if isinstance(item_bid, dict) and item_bid.get('id') == bid_id:
+                            combo.setItemData(i, updated_bid)
+                            break
+            logger.info(f"Bid {bid_id} refreshed with latest sg_vfx_breakdown link.")
         except Exception as e:
-            logger.warning(f"Failed to refresh RFQ after update: {e}")
+            logger.warning(f"Failed to refresh Bid after update: {e}")
 
-        # Update label under RFQ combo
-        linked = rfq.get("sg_vfx_breakdown")
-        if isinstance(linked, dict):
-            label_text = linked.get("code") or linked.get("name") or f"ID {linked.get('id')}"
-        elif isinstance(linked, list) and linked:
-            item = linked[0]
-            label_text = item.get("code") or item.get("name") or f"ID {item.get('id')}"
-        else:
-            label_text = "-"
-        if hasattr(self.parent_app, "rfq_vfx_breakdown_label"):
-            self.parent_app.rfq_vfx_breakdown_label.setText(label_text)
-
-        # Re-run the RFQ change flow to sync combo default selection & Beats table
-        self.parent_app._on_rfq_changed(self.parent_app.rfq_combo.currentIndex())
-
-        QtWidgets.QMessageBox.information(self, "Updated", "Current VFX Breakdown set for this RFQ.")
+        QtWidgets.QMessageBox.information(self, "Updated", f"VFX Breakdown set for Bid '{bid.get('code', 'N/A')}'.")
 
     def _on_add_vfx_breakdown(self):
         """Handle Add VFX Breakdown button click."""

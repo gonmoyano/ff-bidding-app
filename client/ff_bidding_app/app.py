@@ -696,7 +696,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
         try:
             rfqs = self.sg_session.get_rfqs(project_id,
-                                            fields=["id", "code", "sg_status_list", "sg_bid", "created_at"])
+                                            fields=["id", "code", "sg_status_list", "sg_early_bid", "sg_turnover_bid", "created_at"])
 
             for rfq in rfqs:
                 display_text = f"{rfq.get('code', 'N/A')}"
@@ -728,7 +728,11 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self.rfq_status_label.setText(rfq.get("sg_status_list", "Unknown"))
 
             # Show currently linked Bid under the RFQ selector
-            linked_bid = rfq.get("sg_bid")
+            # Check Early Bid first, then Turnover Bid
+            linked_bid = rfq.get("sg_early_bid")
+            if not linked_bid:
+                linked_bid = rfq.get("sg_turnover_bid")
+
             if isinstance(linked_bid, dict):
                 bid_name = linked_bid.get("code") or f"Bid {linked_bid.get('id')}"
                 bid_type = linked_bid.get("sg_bid_type", "")
