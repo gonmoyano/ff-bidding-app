@@ -928,6 +928,9 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         self._build_ui()
 
+        # Populate template dropdown with loaded templates
+        self._update_template_dropdown()
+
     def _build_ui(self):
         """Build the VFX Breakdown tab UI."""
         layout = QtWidgets.QVBoxLayout(self)
