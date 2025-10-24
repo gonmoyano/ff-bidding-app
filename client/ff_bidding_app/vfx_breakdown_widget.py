@@ -1,0 +1,609 @@
+"""
+VFX Breakdown Widget
+Reusable widget component for displaying and editing VFX beats data using Qt Model/View pattern.
+"""
+
+from PySide6 import QtWidgets, QtCore, QtGui
+import logging
+
+try:
+    from .logger import logger
+    from .vfx_breakdown_model import VFXBreakdownModel, PasteCommand
+except ImportError:
+    logger = logging.getLogger("FFPackageManager")
+    from vfx_breakdown_model import VFXBreakdownModel, PasteCommand
+
+
+class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
+    """Custom delegate for combo box cells with List field values."""
+
+    def __init__(self, field_name, list_values, parent=None):
+        super().__init__(parent)
+        self.field_name = field_name
+        self.list_values = list_values or []
+
+    def createEditor(self, parent, option, index):
+        """Create a combo box editor."""
+        combo = QtWidgets.QComboBox(parent)
+        combo.addItem("")  # Empty option
+        for value in self.list_values:
+            combo.addItem(value)
+        combo.setFrame(False)
+        return combo
+
+    def setEditorData(self, editor, index):
+        """Set the current value in the combo box."""
+        value = index.model().data(index, QtCore.Qt.EditRole)
+        if value:
+            index_pos = editor.findText(value)
+            if index_pos >= 0:
+                editor.setCurrentIndex(index_pos)
+
+    def setModelData(self, editor, model, index):
+        """Save the selected value back to the model."""
+        value = editor.currentText()
+        model.setData(index, value, QtCore.Qt.EditRole)
+
+
+class VFXBreakdownWidget(QtWidgets.QWidget):
+    """
+    Reusable widget for displaying and editing VFX Breakdown beats.
+    Uses Qt Model/View pattern with VFXBreakdownModel.
+    """
+
+    # Signals
+    statusMessageChanged = QtCore.Signal(str, bool)  # message, is_error
+
+    def __init__(self, sg_session, show_toolbar=True, parent=None):
+        """Initialize the widget.
+
+        Args:
+            sg_session: ShotGrid session for API access
+            show_toolbar: Whether to show the search/filter toolbar
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.sg_session = sg_session
+        self.show_toolbar = show_toolbar
+
+        # Create the model
+        self.model = VFXBreakdownModel(sg_session, parent=self)
+
+        # Connect model signals
+        self.model.statusMessageChanged.connect(self._on_model_status_changed)
+        self.model.rowCountChanged.connect(self._on_model_row_count_changed)
+
+        # UI widgets
+        self.table_view = None
+        self.global_search_box = None
+        self.clear_filters_btn = None
+        self.compound_sort_btn = None
+        self.template_dropdown = None
+        self.row_count_label = None
+
+        # Build UI
+        self._build_ui()
+        self._setup_shortcuts()
+
+    def _build_ui(self):
+        """Build the widget UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Toolbar (search and filter controls)
+        if self.show_toolbar:
+            toolbar_layout = QtWidgets.QHBoxLayout()
+
+            # Global search box
+            search_label = QtWidgets.QLabel("Search:")
+            toolbar_layout.addWidget(search_label)
+
+            self.global_search_box = QtWidgets.QLineEdit()
+            self.global_search_box.setPlaceholderText("Search across all columns...")
+            self.global_search_box.textChanged.connect(self._on_search_changed)
+            toolbar_layout.addWidget(self.global_search_box, stretch=2)
+
+            # Clear filters button
+            self.clear_filters_btn = QtWidgets.QPushButton("Clear")
+            self.clear_filters_btn.clicked.connect(self._clear_filters)
+            toolbar_layout.addWidget(self.clear_filters_btn)
+
+            # Compound Sorting button
+            self.compound_sort_btn = QtWidgets.QPushButton("Compound Sorting")
+            self.compound_sort_btn.clicked.connect(self._open_compound_sort_dialog)
+            toolbar_layout.addWidget(self.compound_sort_btn)
+
+            # Template dropdown
+            toolbar_layout.addWidget(QtWidgets.QLabel("Template:"))
+            self.template_dropdown = QtWidgets.QComboBox()
+            self.template_dropdown.addItem("(No Template)")
+            self.template_dropdown.setMinimumWidth(150)
+            self.template_dropdown.currentTextChanged.connect(self._apply_sort_template)
+            toolbar_layout.addWidget(self.template_dropdown)
+
+            # Row count label
+            self.row_count_label = QtWidgets.QLabel("Showing 0 of 0 rows")
+            self.row_count_label.setStyleSheet("color: #606060; padding: 2px 4px;")
+            toolbar_layout.addWidget(self.row_count_label)
+
+            layout.addLayout(toolbar_layout)
+
+        # Table view
+        self.table_view = QtWidgets.QTableView()
+        self.table_view.setModel(self.model)
+
+        # Configure table view
+        self.table_view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
+        self.table_view.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.table_view.setAlternatingRowColors(False)
+        self.table_view.setWordWrap(True)
+
+        # Configure headers
+        h_header = self.table_view.horizontalHeader()
+        h_header.setStretchLastSection(False)
+        h_header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        h_header.setSectionsClickable(True)
+        h_header.sectionClicked.connect(self._on_header_clicked)
+
+        v_header = self.table_view.verticalHeader()
+        v_header.sectionClicked.connect(self._on_row_header_clicked)
+
+        # Context menu
+        self.table_view.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.table_view.customContextMenuRequested.connect(self._on_context_menu)
+
+        # Install event filter
+        self.table_view.installEventFilter(self)
+
+        layout.addWidget(self.table_view)
+
+        # Update template dropdown
+        self._update_template_dropdown()
+
+    def _setup_shortcuts(self):
+        """Setup keyboard shortcuts for undo/redo and copy/paste."""
+        # Undo shortcut (Ctrl+Z)
+        undo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Z"), self)
+        undo_shortcut.activated.connect(self._undo)
+
+        # Redo shortcut (Ctrl+Y)
+        redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
+        redo_shortcut.activated.connect(self._redo)
+
+        # Copy shortcut (Ctrl+C)
+        copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+C"), self)
+        copy_shortcut.activated.connect(self._copy_selection)
+
+        # Paste shortcut (Ctrl+V)
+        paste_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+V"), self)
+        paste_shortcut.activated.connect(self._paste_selection)
+
+        logger.info("Keyboard shortcuts set up: Ctrl+Z (undo), Ctrl+Y (redo), Ctrl+C (copy), Ctrl+V (paste)")
+
+    def eventFilter(self, obj, event):
+        """Event filter to handle Enter and Delete key presses."""
+        if obj == self.table_view and event.type() == QtCore.QEvent.KeyPress:
+            if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+                # Enter pressed - move to next row
+                current_index = self.table_view.currentIndex()
+                if current_index.isValid():
+                    next_row = current_index.row() + 1
+                    if next_row < self.model.rowCount():
+                        next_index = self.model.index(next_row, current_index.column())
+                        self.table_view.setCurrentIndex(next_index)
+                return True
+            elif event.key() == QtCore.Qt.Key_Delete:
+                # Delete key pressed - delete selected rows
+                selected_rows = set()
+                for index in self.table_view.selectedIndexes():
+                    selected_rows.add(index.row())
+                if selected_rows:
+                    self._delete_beat(min(selected_rows))
+                return True
+
+        return super().eventFilter(obj, event)
+
+    def load_beats(self, beats, field_schema=None):
+        """Load beats data into the widget.
+
+        Args:
+            beats: List of beat dictionaries from ShotGrid
+            field_schema: Optional field schema for type conversions
+        """
+        if field_schema:
+            self.model.set_field_schema(field_schema)
+
+            # Set up delegates for list fields
+            for col_idx, field_name in enumerate(self.model.column_fields):
+                if field_name in field_schema:
+                    field_info = field_schema[field_name]
+                    if field_info.get("data_type") == "list":
+                        list_values = field_info.get("list_values", [])
+                        if list_values:
+                            delegate = ComboBoxDelegate(field_name, list_values, self.table_view)
+                            self.table_view.setItemDelegateForColumn(col_idx, delegate)
+
+        self.model.load_beats(beats)
+        self._autosize_columns()
+
+    def clear_data(self):
+        """Clear all data from the widget."""
+        self.model.clear_data()
+        if self.row_count_label:
+            self.row_count_label.setText("Showing 0 of 0 rows")
+
+    def _on_search_changed(self, text):
+        """Handle search text change."""
+        self.model.set_global_search(text)
+
+    def _on_header_clicked(self, column_index):
+        """Handle header click for sorting."""
+        # Block single-column sorting if compound sorting is active
+        if self.model.compound_sort_columns:
+            logger.info("Single-column sorting disabled while compound sorting template is active")
+            return
+
+        # Toggle sort direction
+        if self.model.sort_column == column_index:
+            direction = "desc" if self.model.sort_direction == "asc" else "asc"
+        else:
+            direction = "asc"
+
+        self.model.set_sort(column_index, direction)
+        self._update_header_sort_indicators()
+
+        logger.info(f"Sorting by column {column_index}: {direction}")
+
+    def _update_header_sort_indicators(self):
+        """Update table headers to show sort indicators."""
+        import re
+
+        for col_idx in range(self.model.columnCount()):
+            header_text = self.model.headerData(col_idx, QtCore.Qt.Horizontal, QtCore.Qt.DisplayRole)
+
+            # Remove existing indicators
+            original_text = re.sub(r'\s*\d*[↑↓]', '', header_text)
+
+            # Add indicators for compound sorting
+            if self.model.compound_sort_columns:
+                for priority, (sort_col, sort_dir) in enumerate(self.model.compound_sort_columns, 1):
+                    if col_idx == sort_col:
+                        arrow = "↑" if sort_dir == "asc" else "↓"
+                        header_text = f"{original_text} {priority}{arrow}"
+                        break
+                else:
+                    header_text = original_text
+            # Add indicator for single-column sorting
+            elif col_idx == self.model.sort_column and self.model.sort_direction:
+                arrow = " ↑" if self.model.sort_direction == "asc" else " ↓"
+                header_text = f"{original_text}{arrow}"
+            else:
+                header_text = original_text
+
+            self.model.setHeaderData(col_idx, QtCore.Qt.Horizontal, header_text, QtCore.Qt.DisplayRole)
+
+    def _clear_filters(self):
+        """Clear search and sorting."""
+        if self.global_search_box:
+            self.global_search_box.clear()
+
+        self.model.clear_sorting()
+
+        if self.template_dropdown:
+            self.template_dropdown.setCurrentIndex(0)
+
+        self._update_header_sort_indicators()
+        logger.info("Search and sorting cleared")
+
+    def _open_compound_sort_dialog(self):
+        """Open the compound sorting dialog."""
+        # Import here to avoid circular dependency
+        from vfx_breakdown_tab import CompoundSortDialog
+
+        # Open dialog
+        dialog = CompoundSortDialog(
+            column_names=self.model.column_headers,
+            current_sort=self.model.compound_sort_columns.copy(),
+            templates=self.model.get_sort_templates(),
+            parent=self
+        )
+
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            # Get the sort configuration
+            sort_config = dialog.get_sort_configuration()
+
+            # Update model
+            if sort_config:
+                self.model.set_compound_sort(sort_config)
+            else:
+                self.model.clear_sorting()
+
+            # Update templates
+            self.model.set_sort_templates(dialog.templates)
+            self._update_template_dropdown()
+
+            # Check if a template was applied
+            applied_template = dialog.get_applied_template_name()
+            if applied_template and self.template_dropdown:
+                index = self.template_dropdown.findText(applied_template)
+                if index >= 0:
+                    self.template_dropdown.blockSignals(True)
+                    self.template_dropdown.setCurrentIndex(index)
+                    self.template_dropdown.blockSignals(False)
+
+            # Update header indicators
+            self._update_header_sort_indicators()
+
+            logger.info(f"Compound sort applied: {len(sort_config)} levels")
+
+    def _apply_sort_template(self, template_name):
+        """Apply a saved sort template."""
+        if template_name == "(No Template)" or not template_name:
+            if self.model.compound_sort_columns:
+                self.model.clear_sorting()
+                self._update_header_sort_indicators()
+                logger.info("Compound sorting cleared")
+            return
+
+        templates = self.model.get_sort_templates()
+        if template_name in templates:
+            self.model.set_compound_sort(templates[template_name])
+            self._update_header_sort_indicators()
+            logger.info(f"Sort template applied: {template_name}")
+
+    def _update_template_dropdown(self):
+        """Update the template dropdown with current templates."""
+        if not self.template_dropdown:
+            return
+
+        current_text = self.template_dropdown.currentText()
+        self.template_dropdown.blockSignals(True)
+        self.template_dropdown.clear()
+        self.template_dropdown.addItem("(No Template)")
+
+        templates = self.model.get_sort_templates()
+        for template_name in sorted(templates.keys()):
+            self.template_dropdown.addItem(template_name)
+
+        # Try to restore previous selection
+        index = self.template_dropdown.findText(current_text)
+        if index >= 0:
+            self.template_dropdown.setCurrentIndex(index)
+
+        self.template_dropdown.blockSignals(False)
+
+    def _on_row_header_clicked(self, row):
+        """Handle row header click to select entire row."""
+        self.table_view.selectRow(row)
+
+    def _undo(self):
+        """Undo the last change."""
+        self.model.undo()
+
+    def _redo(self):
+        """Redo the last undone change."""
+        self.model.redo()
+
+    def _copy_selection(self):
+        """Copy selected cells to clipboard."""
+        selection = self.table_view.selectedIndexes()
+        if not selection:
+            return
+
+        # Get bounding rectangle
+        rows = set(idx.row() for idx in selection)
+        cols = set(idx.column() for idx in selection)
+
+        if not rows or not cols:
+            return
+
+        min_row = min(rows)
+        max_row = max(rows)
+        min_col = min(cols)
+        max_col = max(cols)
+
+        # Build clipboard text
+        clipboard_text = []
+        for row in range(min_row, max_row + 1):
+            row_data = []
+            for col in range(min_col, max_col + 1):
+                index = self.model.index(row, col)
+                text = self.model.data(index, QtCore.Qt.DisplayRole) or ""
+                row_data.append(text)
+            clipboard_text.append("\t".join(row_data))
+
+        final_text = "\n".join(clipboard_text)
+
+        # Copy to clipboard
+        clipboard = QtWidgets.QApplication.clipboard()
+        clipboard.setText(final_text)
+
+        num_cells = len(rows) * len(cols)
+        self.statusMessageChanged.emit(f"Copied {num_cells} cell(s) to clipboard", False)
+        logger.info(f"Copied {len(rows)} row(s) × {len(cols)} col(s) to clipboard")
+
+    def _paste_selection(self):
+        """Paste from clipboard to selected cells."""
+        clipboard = QtWidgets.QApplication.clipboard()
+        text = clipboard.text()
+
+        if not text:
+            return
+
+        # Parse clipboard
+        rows_data = text.split("\n")
+        if rows_data and rows_data[-1] == "":
+            rows_data = rows_data[:-1]
+
+        is_single_value = len(rows_data) == 1 and "\t" not in rows_data[0]
+
+        # Collect changes
+        changes = []
+        selected_indexes = self.table_view.selectedIndexes()
+
+        # Single value to multiple cells
+        if is_single_value and len(selected_indexes) > 1:
+            paste_value = rows_data[0]
+            for index in selected_indexes:
+                if not (self.model.flags(index) & QtCore.Qt.ItemIsEditable):
+                    continue
+
+                old_value = self.model.data(index, QtCore.Qt.EditRole) or ""
+                if paste_value == old_value:
+                    continue
+
+                beat_data = self.model.get_beat_data_for_row(index.row())
+                if not beat_data:
+                    continue
+
+                field_name = self.model.column_fields[index.column()]
+                changes.append({
+                    'row': index.row(),
+                    'col': index.column(),
+                    'old_value': old_value,
+                    'new_value': paste_value,
+                    'beat_data': beat_data,
+                    'field_name': field_name
+                })
+
+        else:
+            # Standard paste
+            current_index = self.table_view.currentIndex()
+            if not current_index.isValid():
+                return
+
+            start_row = current_index.row()
+            start_col = current_index.column()
+
+            for row_offset, row_text in enumerate(rows_data):
+                cells = row_text.split("\t")
+                for col_offset, cell_value in enumerate(cells):
+                    target_row = start_row + row_offset
+                    target_col = start_col + col_offset
+
+                    if target_row >= self.model.rowCount():
+                        break
+                    if target_col >= self.model.columnCount():
+                        continue
+
+                    index = self.model.index(target_row, target_col)
+                    if not (self.model.flags(index) & QtCore.Qt.ItemIsEditable):
+                        continue
+
+                    old_value = self.model.data(index, QtCore.Qt.EditRole) or ""
+                    if cell_value == old_value:
+                        continue
+
+                    beat_data = self.model.get_beat_data_for_row(target_row)
+                    if not beat_data:
+                        continue
+
+                    field_name = self.model.column_fields[target_col]
+                    changes.append({
+                        'row': target_row,
+                        'col': target_col,
+                        'old_value': old_value,
+                        'new_value': cell_value,
+                        'beat_data': beat_data,
+                        'field_name': field_name
+                    })
+
+        if not changes:
+            self.statusMessageChanged.emit("No changes to paste", False)
+            return
+
+        # Create paste command
+        command = PasteCommand(changes, self.model, self.sg_session, field_schema=self.model.field_schema)
+
+        try:
+            # Execute paste
+            command.redo()
+
+            # Add to undo stack
+            self.model.undo_stack.append(command)
+            self.model.redo_stack.clear()
+
+            self.statusMessageChanged.emit(f"✓ Pasted {len(changes)} cell(s) to ShotGrid", False)
+            logger.info(f"Successfully pasted {len(changes)} cells")
+
+        except Exception as e:
+            logger.error(f"Failed to paste cells: {e}", exc_info=True)
+            self.statusMessageChanged.emit(f"Failed to paste cells", True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Paste Failed",
+                f"Failed to paste cells:\n{str(e)}"
+            )
+
+    def _on_context_menu(self, position):
+        """Handle right-click context menu."""
+        index = self.table_view.indexAt(position)
+        if not index.isValid():
+            return
+
+        row = index.row()
+
+        # Create context menu
+        menu = QtWidgets.QMenu(self)
+
+        # Add beat above
+        add_above_action = menu.addAction("Add Beat Above")
+        add_above_action.triggered.connect(lambda: self._add_beat_above(row))
+
+        # Add beat below
+        add_below_action = menu.addAction("Add Beat Below")
+        add_below_action.triggered.connect(lambda: self._add_beat_below(row))
+
+        menu.addSeparator()
+
+        # Delete beat
+        delete_action = menu.addAction("Delete Beat")
+        delete_action.triggered.connect(lambda: self._delete_beat(row))
+
+        # Show menu
+        menu.exec(self.table_view.viewport().mapToGlobal(position))
+
+    def _add_beat_above(self, row):
+        """Add a new beat above the specified row."""
+        # This requires access to parent context (project, breakdown, etc.)
+        # Signal to parent to handle
+        self.statusMessageChanged.emit("Add beat functionality requires parent tab context", False)
+
+    def _add_beat_below(self, row):
+        """Add a new beat below the specified row."""
+        # This requires access to parent context
+        self.statusMessageChanged.emit("Add beat functionality requires parent tab context", False)
+
+    def _delete_beat(self, row):
+        """Delete the specified beat."""
+        # This requires access to parent context
+        self.statusMessageChanged.emit("Delete beat functionality requires parent tab context", False)
+
+    def _autosize_columns(self, min_px=80, max_px=700, extra_padding=28):
+        """Auto-size columns to fit content."""
+        fm = self.table_view.fontMetrics()
+        h_header = self.table_view.horizontalHeader()
+
+        for col in range(self.model.columnCount()):
+            # Start with header width
+            header_text = self.model.headerData(col, QtCore.Qt.Horizontal, QtCore.Qt.DisplayRole) or ""
+            max_w = fm.horizontalAdvance(header_text)
+
+            # Check visible rows
+            for row in range(min(self.model.rowCount(), 100)):  # Limit to first 100 rows for performance
+                index = self.model.index(row, col)
+                text = self.model.data(index, QtCore.Qt.DisplayRole) or ""
+                for line in text.splitlines() or [""]:
+                    max_w = max(max_w, fm.horizontalAdvance(line))
+
+            target = max(min_px, min(max_w + extra_padding, max_px))
+            self.table_view.setColumnWidth(col, target)
+
+    def _on_model_status_changed(self, message, is_error):
+        """Handle status message from model."""
+        self.statusMessageChanged.emit(message, is_error)
+
+    def _on_model_row_count_changed(self, shown_rows, total_rows):
+        """Handle row count change from model."""
+        if self.row_count_label:
+            self.row_count_label.setText(f"Showing {shown_rows} of {total_rows} rows")

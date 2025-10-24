@@ -8,9 +8,13 @@ from datetime import datetime, date
 try:
     from .logger import logger
     from .settings import AppSettings
+    from .vfx_breakdown_model import VFXBreakdownModel
+    from .vfx_breakdown_widget import VFXBreakdownWidget
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
+    from vfx_breakdown_model import VFXBreakdownModel
+    from vfx_breakdown_widget import VFXBreakdownWidget
 
 
 class ReverseString:
@@ -983,47 +987,16 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             "sg_number_of_shots": "# Shots",
         }
 
-        # UI widgets
+        # UI widgets for breakdown selector
         self.vfx_breakdown_combo = None
         self.vfx_breakdown_set_btn = None
         self.vfx_breakdown_refresh_btn = None
         self.vfx_breakdown_status_label = None
-        self.vfx_breakdown_table = None
-        self.vfx_beat_columns = []
 
-        # Undo/Redo stack
-        self.undo_stack = []
-        self.redo_stack = []
-
-        # Store beat data for each row
-        self.beat_data_by_row = {}
-
-        # Settings manager for persistent storage
-        self.app_settings = AppSettings()
-
-        # Sorting and filtering state
-        self.sort_column = None  # Currently sorted column index (for single-column sort)
-        self.sort_direction = None  # 'asc' or 'desc' (for single-column sort)
-        self.compound_sort_columns = []  # List of (column_index, direction) tuples for compound sorting
-        self.sort_templates = self.app_settings.get_sort_templates()  # Load saved templates from settings
-        self.all_beats_data = []  # Original unfiltered beat data
-        self.filtered_row_indices = []  # Indices into all_beats_data that pass filters
-        self.display_row_to_data_row = {}  # Maps displayed row -> index in all_beats_data
-
-        # UI widgets for search/filter
-        self.global_search_box = None
-        self.clear_filters_btn = None
-        self.compound_sort_btn = None
-        self.template_dropdown = None
-        self.row_count_label = None
-
-        # Flag to prevent recursive updates
-        self._updating = False
+        # Reusable breakdown widget (replaces direct table management)
+        self.breakdown_widget = None
 
         self._build_ui()
-
-        # Populate template dropdown with loaded templates
-        self._update_template_dropdown()
 
     def _build_ui(self):
         """Build the VFX Breakdown tab UI."""
@@ -1073,93 +1046,17 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         layout.addWidget(selector_group)
 
-        # Global search and filter controls
-        filter_controls = QtWidgets.QHBoxLayout()
+        # Create reusable VFX Breakdown widget
+        self.breakdown_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
 
-        # Global search box
-        search_label = QtWidgets.QLabel("Search:")
-        filter_controls.addWidget(search_label)
+        # Connect widget signals
+        self.breakdown_widget.statusMessageChanged.connect(self._on_widget_status_changed)
 
-        self.global_search_box = QtWidgets.QLineEdit()
-        self.global_search_box.setPlaceholderText("Search across all columns...")
-        self.global_search_box.textChanged.connect(self._apply_filters)
-        filter_controls.addWidget(self.global_search_box, stretch=2)
+        layout.addWidget(self.breakdown_widget)
 
-        # Clear filters button
-        self.clear_filters_btn = QtWidgets.QPushButton("Clear")
-        self.clear_filters_btn.clicked.connect(self._clear_filters)
-        filter_controls.addWidget(self.clear_filters_btn)
-
-        # Compound Sorting button
-        self.compound_sort_btn = QtWidgets.QPushButton("Compound Sorting")
-        self.compound_sort_btn.clicked.connect(self._open_compound_sort_dialog)
-        filter_controls.addWidget(self.compound_sort_btn)
-
-        # Template dropdown
-        filter_controls.addWidget(QtWidgets.QLabel("Template:"))
-        self.template_dropdown = QtWidgets.QComboBox()
-        self.template_dropdown.addItem("(No Template)")
-        self.template_dropdown.setMinimumWidth(150)
-        self.template_dropdown.currentTextChanged.connect(self._apply_sort_template)
-        filter_controls.addWidget(self.template_dropdown)
-
-        # Row count label
-        self.row_count_label = QtWidgets.QLabel("Showing 0 of 0 rows")
-        self.row_count_label.setStyleSheet("color: #606060; padding: 2px 4px;")
-        filter_controls.addWidget(self.row_count_label)
-
-        layout.addLayout(filter_controls)
-
-        # Table for beats
-        self.vfx_beat_columns = [
-            "id", "code", "sg_beat_id", "sg_vfx_breakdown_scene", "sg_page",
-            "sg_script_excerpt", "description", "sg_vfx_type", "sg_complexity",
-            "sg_category", "sg_vfx_description", "sg_number_of_shots",
-            "updated_at", "updated_by"
-        ]
-
-        headers = [
-            "ID", "Code", "Beat ID", "Scene", "Page",
-            "Script Excerpt", "Description", "VFX Type", "Complexity",
-            "Category", "VFX Description", "# Shots",
-            "Updated At", "Updated By"
-        ]
-
-        self.vfx_breakdown_table = QtWidgets.QTableWidget()
-        self.vfx_breakdown_table.setColumnCount(len(self.vfx_beat_columns))
-        self.vfx_breakdown_table.setHorizontalHeaderLabels(headers)
-        self.vfx_breakdown_table.horizontalHeader().setStretchLastSection(False)
-        self.vfx_breakdown_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
-        self.vfx_breakdown_table.setAlternatingRowColors(False)
-        self.vfx_breakdown_table.setWordWrap(True)
-
-        # Set cell selection mode (like Excel)
-        self.vfx_breakdown_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
-        self.vfx_breakdown_table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-
-        # Enable context menu
-        self.vfx_breakdown_table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        self.vfx_breakdown_table.customContextMenuRequested.connect(self._on_table_context_menu)
-
-        # Connect vertical header (row headers) click to select entire row
-        self.vfx_breakdown_table.verticalHeader().sectionClicked.connect(self._on_row_header_clicked)
-
-        hdr = self.vfx_breakdown_table.horizontalHeader()
-        hdr.setStretchLastSection(False)
-        hdr.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
-        hdr.setSectionsClickable(True)
-        hdr.sectionClicked.connect(self._on_header_clicked)
-
-        # Connect item changed signal
-        self.vfx_breakdown_table.itemChanged.connect(self._on_item_changed)
-
-        # Install event filter to catch Enter key
-        self.vfx_breakdown_table.installEventFilter(self)
-
-        layout.addWidget(self.vfx_breakdown_table)
-
-        # Setup keyboard shortcuts
-        self._setup_shortcuts()
+    def _on_widget_status_changed(self, message, is_error):
+        """Handle status message from breakdown widget."""
+        self._set_vfx_breakdown_status(message, is_error)
 
     def _setup_shortcuts(self):
         """Setup keyboard shortcuts for undo/redo and copy/paste."""
@@ -2737,17 +2634,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
     def _clear_vfx_breakdown_table(self):
         """Clear the VFX Breakdown table."""
-        self.vfx_breakdown_table.setRowCount(0)
-        self.beat_data_by_row.clear()
-        self.all_beats_data.clear()
-        self.filtered_row_indices.clear()
-        self.display_row_to_data_row.clear()
-        self.sort_column = None
-        self.sort_direction = None
-        self.undo_stack.clear()
-        self.redo_stack.clear()
-        self.row_count_label.setText("Showing 0 of 0 rows")
-        self._update_header_sort_indicators()
+        self.breakdown_widget.clear_data()
 
     def _on_vfx_breakdown_changed(self, index):
         """Handle VFX Breakdown selection change."""
@@ -2898,29 +2785,15 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self._populate_beats_table(beats)
 
     def _populate_beats_table(self, beats):
-        """Populate the beats table."""
-        # Clear existing data
-        self.all_beats_data = beats.copy() if beats else []
-        self.filtered_row_indices.clear()
-        self.display_row_to_data_row.clear()
-        self.beat_data_by_row.clear()
-        self.undo_stack.clear()
-        self.redo_stack.clear()
-
-        if not beats:
-            self._set_vfx_breakdown_status("No Beats linked to this VFX Breakdown.")
-            self.vfx_breakdown_table.setRowCount(0)
-            self.row_count_label.setText("Showing 0 of 0 rows")
-            return
-
-        # Apply filters and sorting (which will populate the table)
-        self._apply_filters()
-
-        # Use autosizer
-        self._autosize_beat_columns(min_px=80, max_px=700, extra_padding=28)
+        """Populate the beats table using the breakdown widget."""
+        # Use the breakdown widget to load beats
+        self.breakdown_widget.load_beats(beats, field_schema=self.field_schema)
 
         display_name = self.vfx_breakdown_combo.currentText()
-        self._set_vfx_breakdown_status(f"Loaded {len(beats)} Beat(s) for '{display_name}'.")
+        if beats:
+            self._set_vfx_breakdown_status(f"Loaded {len(beats)} Beat(s) for '{display_name}'.")
+        else:
+            self._set_vfx_breakdown_status("No Beats linked to this VFX Breakdown.")
 
     def _format_sg_value(self, value):
         """Format a ShotGrid value for display."""
