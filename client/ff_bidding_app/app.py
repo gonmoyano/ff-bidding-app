@@ -11,6 +11,7 @@ try:
     from .package_data_treeview import PackageTreeView, CustomCheckBox
     from .vfx_breakdown_tab import VFXBreakdownTab
     from .packages_tab import PackagesTab
+    from .bidding_tab import BiddingTab
     from .logger import logger
 except ImportError:
     # Standalone mode - add to path and import
@@ -24,6 +25,7 @@ except ImportError:
     from package_data_treeview import PackageTreeView, CustomCheckBox
     from vfx_breakdown_tab import VFXBreakdownTab
     from packages_tab import PackagesTab
+    from bidding_tab import BiddingTab
 
     # Setup basic logger for standalone mode
     try:
@@ -487,6 +489,10 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             packages_tab = self._create_packages_tab()
             self.tab_widget.addTab(packages_tab, "Packages")
 
+            # Create Bidding tab (new tab with nested tabs)
+            bidding_tab = self._create_bidding_tab()
+            self.tab_widget.addTab(bidding_tab, "Bidding")
+
             # Create Delivery tab (right of Packages)
             delivery_tab = self._create_delivery_tab()
             self.tab_widget.addTab(delivery_tab, "Delivery")
@@ -599,6 +605,11 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         delivery_layout.addStretch()
 
         return delivery_widget
+
+    def _create_bidding_tab(self):
+        """Create the Bidding tab content."""
+        self.bidding_tab = BiddingTab(self.sg_session, parent=self)
+        return self.bidding_tab
 
     def _load_sg_projects(self):
         """Load Shotgrid projects."""
@@ -748,6 +759,10 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             # Update the package data tree with RFQ data
             if hasattr(self, "packages_tab"):
                 self.packages_tab.set_rfq(rfq)
+
+            # Update the bidding tab with RFQ data
+            if hasattr(self, "bidding_tab"):
+                self.bidding_tab.set_rfq(rfq)
         else:
             self.rfq_id_label.setText("-")
             self.rfq_status_label.setText("-")
