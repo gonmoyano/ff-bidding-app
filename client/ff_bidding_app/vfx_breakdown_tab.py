@@ -7,8 +7,10 @@ from datetime import datetime, date
 
 try:
     from .logger import logger
+    from .settings import AppSettings
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
+    from settings import AppSettings
 
 
 class ReverseString:
@@ -630,6 +632,7 @@ class CompoundSortDialog(QtWidgets.QDialog):
         self.column_names = column_names
         self.current_sort = current_sort or []
         self.templates = templates or {}
+        self.applied_template_name = None  # Track which template was applied
 
         self.setWindowTitle("Compound Sorting")
         self.setModal(True)
@@ -657,10 +660,6 @@ class CompoundSortDialog(QtWidgets.QDialog):
             self.template_combo.addItem(template_name)
         self.template_combo.currentTextChanged.connect(self._on_template_selected)
         template_row.addWidget(self.template_combo, stretch=1)
-
-        self.load_template_btn = QtWidgets.QPushButton("Load")
-        self.load_template_btn.clicked.connect(self._load_template)
-        template_row.addWidget(self.load_template_btn)
 
         self.delete_template_btn = QtWidgets.QPushButton("Delete")
         self.delete_template_btn.clicked.connect(self._delete_template)
@@ -744,16 +743,18 @@ class CompoundSortDialog(QtWidgets.QDialog):
                 direction_combo.setCurrentIndex(0)
 
     def _on_template_selected(self, template_name):
-        """Handle template selection."""
+        """Handle template selection - auto-load the template."""
         self.delete_template_btn.setEnabled(template_name != "(None)")
+        # Auto-load the template when selected
+        if template_name != "(None)" and template_name in self.templates:
+            self._load_template_config(self.templates[template_name])
 
-    def _load_template(self):
-        """Load the selected template."""
-        template_name = self.template_combo.currentText()
-        if template_name == "(None)" or template_name not in self.templates:
-            return
+    def _load_template_config(self, sort_config):
+        """Load a sort configuration into the UI.
 
-        sort_config = self.templates[template_name]
+        Args:
+            sort_config: List of (col_idx, direction) tuples
+        """
         for i, (column_combo, direction_combo) in enumerate(self.sort_widgets):
             if i < len(sort_config):
                 col_idx, direction = sort_config[i]
@@ -786,7 +787,8 @@ class CompoundSortDialog(QtWidgets.QDialog):
         self.template_combo.setCurrentText(template_name)
         self.template_name_field.clear()
 
-        QtWidgets.QMessageBox.information(self, "Saved", f"Template '{template_name}' saved successfully.")
+        # Mark this template as the one to apply
+        self.applied_template_name = template_name
 
     def _delete_template(self):
         """Delete the selected template."""
@@ -823,6 +825,14 @@ class CompoundSortDialog(QtWidgets.QDialog):
                 sort_config.append((col_idx, direction))
 
         return sort_config
+
+    def get_applied_template_name(self):
+        """Get the name of the template that was applied.
+
+        Returns:
+            Template name or None
+        """
+        return self.applied_template_name
 
 
 class VFXBreakdownTab(QtWidgets.QWidget):
@@ -894,11 +904,14 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         # Store beat data for each row
         self.beat_data_by_row = {}
 
+        # Settings manager for persistent storage
+        self.app_settings = AppSettings()
+
         # Sorting and filtering state
         self.sort_column = None  # Currently sorted column index (for single-column sort)
         self.sort_direction = None  # 'asc' or 'desc' (for single-column sort)
         self.compound_sort_columns = []  # List of (column_index, direction) tuples for compound sorting
-        self.sort_templates = {}  # Dictionary of saved sort templates {name: [(col_idx, direction), ...]}
+        self.sort_templates = self.app_settings.get_sort_templates()  # Load saved templates from settings
         self.all_beats_data = []  # Original unfiltered beat data
         self.filtered_row_indices = []  # Indices into all_beats_data that pass filters
         self.display_row_to_data_row = {}  # Maps displayed row -> index in all_beats_data
@@ -1223,9 +1236,21 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             sort_config = dialog.get_sort_configuration()
             self.compound_sort_columns = sort_config
 
-            # Update templates if they were modified
+            # Update templates if they were modified and save to persistent storage
             self.sort_templates = dialog.templates.copy()
+            self.app_settings.set_sort_templates(self.sort_templates)
             self._update_template_dropdown()
+
+            # Check if a template was applied in the dialog
+            applied_template = dialog.get_applied_template_name()
+            if applied_template:
+                # Select the applied template in the main dropdown
+                index = self.template_dropdown.findText(applied_template)
+                if index >= 0:
+                    self.template_dropdown.blockSignals(True)
+                    self.template_dropdown.setCurrentIndex(index)
+                    self.template_dropdown.blockSignals(False)
+                logger.info(f"Applied template: {applied_template}")
 
             # Clear single-column sort when using compound sort
             if self.compound_sort_columns:
