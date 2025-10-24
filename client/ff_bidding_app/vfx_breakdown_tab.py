@@ -10,11 +10,13 @@ try:
     from .settings import AppSettings
     from .vfx_breakdown_model import VFXBreakdownModel
     from .vfx_breakdown_widget import VFXBreakdownWidget
+    from .bid_selector_widget import CollapsibleGroupBox
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
     from vfx_breakdown_model import VFXBreakdownModel
     from vfx_breakdown_widget import VFXBreakdownWidget
+    from bid_selector_widget import CollapsibleGroupBox
 
 
 class ReverseString:
@@ -1003,11 +1005,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
 
-        # Selector group
-        selector_group = QtWidgets.QGroupBox("VFX Breakdowns")
-        selector_group.setCheckable(True)  # Makes it collapsible
-        selector_group.setChecked(True)  # Expanded by default
-        selector_layout = QtWidgets.QVBoxLayout(selector_group)
+        # Selector group (collapsible)
+        selector_group = CollapsibleGroupBox("VFX Breakdowns")
 
         selector_row = QtWidgets.QHBoxLayout()
         selector_label = QtWidgets.QLabel("Select VFX Breakdown:")
@@ -1039,12 +1038,12 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_refresh_btn.clicked.connect(self._refresh_vfx_breakdowns)
         selector_row.addWidget(self.vfx_breakdown_refresh_btn)
 
-        selector_layout.addLayout(selector_row)
+        selector_group.addLayout(selector_row)
 
         self.vfx_breakdown_status_label = QtWidgets.QLabel("Select an RFQ to view VFX Breakdowns.")
         self.vfx_breakdown_status_label.setObjectName("vfxBreakdownStatusLabel")
         self.vfx_breakdown_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        selector_layout.addWidget(self.vfx_breakdown_status_label)
+        selector_group.addWidget(self.vfx_breakdown_status_label)
 
         layout.addWidget(selector_group)
 

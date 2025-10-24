@@ -12,6 +12,77 @@ except ImportError:
     logger = logging.getLogger("FFPackageManager")
 
 
+class CollapsibleGroupBox(QtWidgets.QWidget):
+    """A collapsible group box that hides/shows content without disabling it."""
+
+    def __init__(self, title="", parent=None):
+        """Initialize the collapsible group box.
+
+        Args:
+            title: The title for the group
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.is_collapsed = False
+
+        # Main layout
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Toggle button with arrow
+        self.toggle_button = QtWidgets.QPushButton()
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setChecked(True)
+        self.toggle_button.setStyleSheet("""
+            QPushButton {
+                text-align: left;
+                border: 1px solid #999;
+                border-radius: 3px;
+                padding: 5px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                            stop:0 #f6f7fa, stop:1 #dadbde);
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                            stop:0 #fafbfc, stop:1 #e0e1e4);
+            }
+        """)
+        self.toggle_button.clicked.connect(self._on_toggle)
+        self._update_button_text(title)
+        main_layout.addWidget(self.toggle_button)
+
+        # Content frame
+        self.content_frame = QtWidgets.QFrame()
+        self.content_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self.content_layout = QtWidgets.QVBoxLayout(self.content_frame)
+        main_layout.addWidget(self.content_frame)
+
+    def _update_button_text(self, title):
+        """Update button text with arrow indicator."""
+        arrow = "▼" if not self.is_collapsed else "▶"
+        self.toggle_button.setText(f"{arrow} {title}")
+
+    def _on_toggle(self):
+        """Toggle the visibility of the content."""
+        self.is_collapsed = not self.is_collapsed
+        self.content_frame.setVisible(not self.is_collapsed)
+        self._update_button_text(self.toggle_button.text().split(" ", 1)[1])
+
+    def setTitle(self, title):
+        """Set the title of the group box."""
+        self._update_button_text(title)
+
+    def addWidget(self, widget):
+        """Add a widget to the content area."""
+        self.content_layout.addWidget(widget)
+
+    def addLayout(self, layout):
+        """Add a layout to the content area."""
+        self.content_layout.addLayout(layout)
+
+
 class AddBidDialog(QtWidgets.QDialog):
     """Dialog for adding a new Bid."""
 
@@ -146,6 +217,10 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self.sg_session = sg_session
         self.parent_app = parent
 
+        # Current state
+        self.current_rfq = None
+        self.current_project_id = None
+
         # UI widgets
         self.bid_combo = None
         self.set_current_btn = None
@@ -159,11 +234,8 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
     def _build_ui(self):
         """Build the bid selector UI."""
-        # Main group box (collapsible)
-        group = QtWidgets.QGroupBox("Bids")
-        group.setCheckable(True)
-        group.setChecked(True)  # Expanded by default
-        layout = QtWidgets.QVBoxLayout(group)
+        # Main collapsible group
+        group = CollapsibleGroupBox("Bids")
 
         # Selector row
         selector_row = QtWidgets.QHBoxLayout()
@@ -201,12 +273,12 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self.refresh_btn.setToolTip("Refresh the Bid list")
         selector_row.addWidget(self.refresh_btn)
 
-        layout.addLayout(selector_row)
+        group.addLayout(selector_row)
 
         # Status label
         self.status_label = QtWidgets.QLabel("Select an RFQ to view Bids.")
         self.status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        layout.addWidget(self.status_label)
+        group.addWidget(self.status_label)
 
         # Add group to main layout
         main_layout = QtWidgets.QVBoxLayout(self)
@@ -221,6 +293,10 @@ class BidSelectorWidget(QtWidgets.QWidget):
             project_id: Project ID to load bids from
             auto_select: Whether to auto-select a bid (default: True)
         """
+        # Store current RFQ and project for button handlers
+        self.current_rfq = rfq
+        self.current_project_id = project_id
+
         self.bid_combo.blockSignals(True)
         self.bid_combo.clear()
         self.bid_combo.addItem("-- Select Bid --", None)
@@ -336,15 +412,12 @@ class BidSelectorWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "No Bid Selected", "Please select a Bid from the list.")
             return
 
-        # Get current RFQ from parent app
-        if not self.parent_app or not hasattr(self.parent_app, 'rfq_combo'):
-            QtWidgets.QMessageBox.warning(self, "Error", "Cannot access RFQ information.")
-            return
-
-        rfq = self.parent_app.rfq_combo.itemData(self.parent_app.rfq_combo.currentIndex())
-        if not rfq:
+        # Get current RFQ
+        if not self.current_rfq:
             QtWidgets.QMessageBox.warning(self, "No RFQ Selected", "Please select an RFQ first.")
             return
+
+        rfq = self.current_rfq
 
         bid_name = bid.get('code', f"Bid {bid.get('id')}")
         bid_type = bid.get('sg_bid_type', '')
@@ -394,12 +467,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
     def _on_add_bid(self):
         """Handle Add Bid button click."""
         # Get current project
-        if not self.parent_app or not hasattr(self.parent_app, 'sg_project_combo'):
-            QtWidgets.QMessageBox.warning(self, "Error", "Cannot access project information.")
-            return
-
-        proj = self.parent_app.sg_project_combo.itemData(self.parent_app.sg_project_combo.currentIndex())
-        if not proj:
+        if not self.current_project_id:
             QtWidgets.QMessageBox.warning(self, "No Project Selected", "Please select a project first.")
             return
 
@@ -415,7 +483,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
             try:
                 # Create the bid
-                new_bid = self.sg_session.create_bid(proj['id'], bid_name, bid_type)
+                new_bid = self.sg_session.create_bid(self.current_project_id, bid_name, bid_type)
 
                 logger.info(f"Created new bid: {bid_name} (ID: {new_bid['id']})")
 
@@ -516,21 +584,8 @@ class BidSelectorWidget(QtWidgets.QWidget):
         if current_bid:
             current_bid_id = current_bid.get('id')
 
-        # Get RFQ and project from parent
-        rfq = None
-        project_id = None
-
-        if self.parent_app:
-            if hasattr(self.parent_app, 'rfq_combo'):
-                rfq = self.parent_app.rfq_combo.itemData(self.parent_app.rfq_combo.currentIndex())
-
-            if hasattr(self.parent_app, 'sg_project_combo'):
-                proj = self.parent_app.sg_project_combo.itemData(self.parent_app.sg_project_combo.currentIndex())
-                if proj:
-                    project_id = proj.get('id')
-
-        # Repopulate bids
-        self.populate_bids(rfq, project_id, auto_select=False)
+        # Repopulate bids using stored RFQ and project
+        self.populate_bids(self.current_rfq, self.current_project_id, auto_select=False)
 
         # Restore selection if possible
         if current_bid_id:
