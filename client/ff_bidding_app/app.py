@@ -748,12 +748,14 @@ class PackageManagerApp(QtWidgets.QMainWindow):
                     logger.info(f"DEBUG: linked_bid['sg_bid_type'] = {linked_bid.get('sg_bid_type')}")
 
             if isinstance(linked_bid, dict):
-                bid_name = linked_bid.get("code") or f"Bid {linked_bid.get('id')}"
+                # ShotGrid returns 'name' field for linked entities, not 'code'
+                bid_name = linked_bid.get("name") or linked_bid.get("code") or f"Bid {linked_bid.get('id')}"
                 bid_type = linked_bid.get("sg_bid_type", "")
                 label_text = f"{bid_name} ({bid_type})" if bid_type else bid_name
             elif isinstance(linked_bid, list) and linked_bid:
                 item = linked_bid[0]
-                bid_name = item.get("code") or f"Bid {item.get('id')}"
+                # ShotGrid returns 'name' field for linked entities, not 'code'
+                bid_name = item.get("name") or item.get("code") or f"Bid {item.get('id')}"
                 bid_type = item.get("sg_bid_type", "")
                 label_text = f"{bid_name} ({bid_type})" if bid_type else bid_name
             else:
