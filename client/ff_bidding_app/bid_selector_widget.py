@@ -312,7 +312,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         try:
             logger.info(f"Loading Bids for Project ID {project_id}")
             # Get all bids for the project
-            bids = self.sg_session.get_bids(project_id, fields=["id", "code", "sg_bid_type", "sg_vfx_breakdown"])
+            bids = self.sg_session.get_bids(project_id, fields=["id", "code", "name", "sg_bid_type", "sg_vfx_breakdown"])
         except Exception as e:
             logger.error(f"Error loading Bids: {e}", exc_info=True)
             bids = []
@@ -452,14 +452,23 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
             self.sg_session.sg.update("CustomEntity04", rfq_id, update_data)
 
-            # Refresh RFQ data in parent
+            # Update the Current Bid label directly in parent app
+            if hasattr(self.parent_app, 'rfq_bid_label'):
+                # Use the bid's name for display
+                bid_display_name = bid.get('name') or bid.get('code') or bid_name
+                label_text = f"{bid_display_name} ({bid_type})" if bid_type else bid_display_name
+                self.parent_app.rfq_bid_label.setText(label_text)
+                logger.info(f"Updated Current Bid label to: {label_text}")
+
+            # Refresh RFQ data in parent to keep everything in sync
             if hasattr(self.parent_app, '_load_rfqs') and hasattr(self.parent_app, 'sg_project_combo'):
                 proj = self.parent_app.sg_project_combo.itemData(self.parent_app.sg_project_combo.currentIndex())
                 if proj:
                     current_rfq_index = self.parent_app.rfq_combo.currentIndex()
                     self.parent_app._load_rfqs(proj['id'])
-                    # Try to restore RFQ selection
-                    self.parent_app.rfq_combo.setCurrentIndex(current_rfq_index)
+                    # Restore RFQ selection - this will trigger _on_rfq_changed
+                    if current_rfq_index > 0:  # Don't select the "-- Select RFQ --" item
+                        self.parent_app.rfq_combo.setCurrentIndex(current_rfq_index)
 
             self.statusMessageChanged.emit(f"✓ Set '{bid_name}' as current bid for RFQ", False)
             QtWidgets.QMessageBox.information(self, "Success", f"'{bid_name}' is now the current {bid_type} for this RFQ.")
