@@ -9,7 +9,6 @@ import sys
 try:
     from .shotgrid import ShotgridClient
     from .package_data_treeview import PackageTreeView, CustomCheckBox
-    from .vfx_breakdown_tab import VFXBreakdownTab
     from .packages_tab import PackagesTab
     from .bidding_tab import BiddingTab
     from .logger import logger
@@ -23,7 +22,6 @@ except ImportError:
 
     from shotgrid import ShotgridClient
     from package_data_treeview import PackageTreeView, CustomCheckBox
-    from vfx_breakdown_tab import VFXBreakdownTab
     from packages_tab import PackagesTab
     from bidding_tab import BiddingTab
 
@@ -481,19 +479,15 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             # Tabbed section
             self.tab_widget = QtWidgets.QTabWidget()
 
-            # Create VFX Breakdown tab (left of Packages)
-            vfx_breakdown_tab = self._create_vfx_breakdown_tab()
-            self.tab_widget.addTab(vfx_breakdown_tab, "VFX Breakdown")
-
-            # Create Packages tab (middle)
-            packages_tab = self._create_packages_tab()
-            self.tab_widget.addTab(packages_tab, "Packages")
-
-            # Create Bidding tab (new tab with nested tabs)
+            # Create Bidding tab (contains VFX Breakdown as nested tab)
             bidding_tab = self._create_bidding_tab()
             self.tab_widget.addTab(bidding_tab, "Bidding")
 
-            # Create Delivery tab (right of Packages)
+            # Create Packages tab
+            packages_tab = self._create_packages_tab()
+            self.tab_widget.addTab(packages_tab, "Packages")
+
+            # Create Delivery tab
             delivery_tab = self._create_delivery_tab()
             self.tab_widget.addTab(delivery_tab, "Delivery")
 
@@ -575,11 +569,6 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         rfq_layout.addLayout(rfq_info_layout)
 
         return rfq_group
-
-    def _create_vfx_breakdown_tab(self):
-        """Create the VFX Breakdown tab content."""
-        self.vfx_breakdown_tab = VFXBreakdownTab(self.sg_session, parent=self)
-        return self.vfx_breakdown_tab
 
     def _create_packages_tab(self):
         """Create the Packages tab content."""
@@ -732,10 +721,6 @@ class PackageManagerApp(QtWidgets.QMainWindow):
     def _on_rfq_changed(self, index):
         """Handle RFQ selection: update labels, tree, and default-select its linked Breakdown."""
         rfq = self.rfq_combo.itemData(index)
-
-        # Update VFX Breakdown combo (loads ALL breakdowns in project; selects linked one if present)
-        if hasattr(self, "vfx_breakdown_tab"):
-            self.vfx_breakdown_tab.populate_vfx_breakdown_combo(rfq, auto_select=True)
 
         if rfq:
             # Labels

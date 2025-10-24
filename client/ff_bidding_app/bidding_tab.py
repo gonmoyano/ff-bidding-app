@@ -6,9 +6,9 @@ Contains nested tabs for VFX Breakdown, Assets, Scene, Rates, and Summary.
 from PySide6 import QtWidgets, QtCore
 
 try:
-    from .vfx_breakdown_widget import VFXBreakdownWidget
+    from .vfx_breakdown_tab import VFXBreakdownTab
 except ImportError:
-    from vfx_breakdown_widget import VFXBreakdownWidget
+    from vfx_breakdown_tab import VFXBreakdownTab
 
 
 class BiddingTab(QtWidgets.QWidget):
@@ -58,15 +58,14 @@ class BiddingTab(QtWidgets.QWidget):
         main_layout.addWidget(self.nested_tab_widget)
 
     def _create_vfx_breakdown_tab(self):
-        """Create the VFX Breakdown nested tab content using reusable widget."""
-        # Use the reusable VFXBreakdownWidget
-        # show_toolbar=True to include search/filter controls
-        widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
+        """Create the VFX Breakdown nested tab content with full functionality."""
+        # Use the full VFXBreakdownTab (includes selector, Add/Remove/Rename buttons, etc.)
+        tab = VFXBreakdownTab(self.sg_session, parent=self.parent_app)
 
-        # You can optionally connect to status messages if needed
-        # widget.statusMessageChanged.connect(self._on_status_message)
+        # Store reference to use in set_rfq if needed
+        self.vfx_breakdown_tab = tab
 
-        return widget
+        return tab
 
     def _create_assets_tab(self):
         """Create the Assets nested tab content."""
@@ -158,4 +157,7 @@ class BiddingTab(QtWidgets.QWidget):
         # This method can be called by the parent app when RFQ changes
         # Store RFQ data for use in nested tabs
         self.current_rfq = rfq_data
-        # TODO: Update nested tabs with RFQ-specific data when implemented
+
+        # Update VFX Breakdown tab with RFQ data
+        if hasattr(self, 'vfx_breakdown_tab'):
+            self.vfx_breakdown_tab.populate_vfx_breakdown_combo(rfq_data, auto_select=True)
