@@ -741,6 +741,11 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
             logger.info(f"DEBUG: linked_bid = {linked_bid}")
             logger.info(f"DEBUG: linked_bid type = {type(linked_bid)}")
+            if linked_bid:
+                if isinstance(linked_bid, dict):
+                    logger.info(f"DEBUG: linked_bid keys = {list(linked_bid.keys())}")
+                    logger.info(f"DEBUG: linked_bid['code'] = {linked_bid.get('code')}")
+                    logger.info(f"DEBUG: linked_bid['sg_bid_type'] = {linked_bid.get('sg_bid_type')}")
 
             if isinstance(linked_bid, dict):
                 bid_name = linked_bid.get("code") or f"Bid {linked_bid.get('id')}"
