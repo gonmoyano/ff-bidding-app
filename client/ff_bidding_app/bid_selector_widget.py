@@ -12,6 +12,119 @@ except ImportError:
     logger = logging.getLogger("FFPackageManager")
 
 
+class AddBidDialog(QtWidgets.QDialog):
+    """Dialog for adding a new Bid."""
+
+    def __init__(self, parent=None):
+        """Initialize the dialog."""
+        super().__init__(parent)
+        self.setWindowTitle("Add New Bid")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Bid name field
+        name_layout = QtWidgets.QHBoxLayout()
+        name_label = QtWidgets.QLabel("Bid Name:")
+        name_layout.addWidget(name_label)
+
+        self.name_field = QtWidgets.QLineEdit()
+        self.name_field.setPlaceholderText("Enter bid name...")
+        name_layout.addWidget(self.name_field, stretch=1)
+
+        layout.addLayout(name_layout)
+
+        # Bid type selection
+        type_layout = QtWidgets.QHBoxLayout()
+        type_label = QtWidgets.QLabel("Bid Type:")
+        type_layout.addWidget(type_label)
+
+        self.type_combo = QtWidgets.QComboBox()
+        self.type_combo.addItem("Early Bid")
+        self.type_combo.addItem("Turnover Bid")
+        type_layout.addWidget(self.type_combo, stretch=1)
+
+        layout.addLayout(type_layout)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        self.ok_button = QtWidgets.QPushButton("Create")
+        self.ok_button.clicked.connect(self.accept)
+        self.ok_button.setDefault(True)
+        button_layout.addWidget(self.ok_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+    def get_bid_name(self):
+        """Get the bid name from the dialog."""
+        return self.name_field.text().strip()
+
+    def get_bid_type(self):
+        """Get the selected bid type."""
+        return self.type_combo.currentText()
+
+
+class RenameBidDialog(QtWidgets.QDialog):
+    """Dialog for renaming a Bid."""
+
+    def __init__(self, current_name, parent=None):
+        """Initialize the dialog."""
+        super().__init__(parent)
+        self.current_name = current_name
+        self.setWindowTitle("Rename Bid")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Name field
+        name_layout = QtWidgets.QHBoxLayout()
+        name_label = QtWidgets.QLabel("New Name:")
+        name_layout.addWidget(name_label)
+
+        self.name_field = QtWidgets.QLineEdit()
+        self.name_field.setText(self.current_name)
+        self.name_field.selectAll()  # Select all text for easy editing
+        self.name_field.setPlaceholderText("Enter new bid name...")
+        name_layout.addWidget(self.name_field, stretch=1)
+
+        layout.addLayout(name_layout)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        self.ok_button = QtWidgets.QPushButton("OK")
+        self.ok_button.clicked.connect(self.accept)
+        self.ok_button.setDefault(True)
+        button_layout.addWidget(self.ok_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+    def get_new_name(self):
+        """Get the new name from the dialog."""
+        return self.name_field.text().strip()
+
+
 class BidSelectorWidget(QtWidgets.QWidget):
     """
     Reusable widget for selecting and managing Bids.
@@ -46,8 +159,10 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
     def _build_ui(self):
         """Build the bid selector UI."""
-        # Main group box
+        # Main group box (collapsible)
         group = QtWidgets.QGroupBox("Bids")
+        group.setCheckable(True)
+        group.setChecked(True)  # Expanded by default
         layout = QtWidgets.QVBoxLayout(group)
 
         # Selector row
@@ -215,41 +330,214 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self.bidChanged.emit(bid)
 
     def _on_set_current_bid(self):
-        """Handle Set as Current button click."""
-        # This will be implemented to update RFQ.sg_bid
+        """Handle Set as Current button click - link bid to RFQ."""
         bid = self.get_current_bid()
         if not bid:
             QtWidgets.QMessageBox.warning(self, "No Bid Selected", "Please select a Bid from the list.")
             return
 
-        # Signal to parent or handle directly
-        # For now, emit a message
-        self.statusMessageChanged.emit("Set as Current functionality needs parent implementation", False)
-        logger.info(f"Set as Current clicked for Bid ID: {bid.get('id')}")
+        # Get current RFQ from parent app
+        if not self.parent_app or not hasattr(self.parent_app, 'rfq_combo'):
+            QtWidgets.QMessageBox.warning(self, "Error", "Cannot access RFQ information.")
+            return
+
+        rfq = self.parent_app.rfq_combo.itemData(self.parent_app.rfq_combo.currentIndex())
+        if not rfq:
+            QtWidgets.QMessageBox.warning(self, "No RFQ Selected", "Please select an RFQ first.")
+            return
+
+        bid_name = bid.get('code', f"Bid {bid.get('id')}")
+        bid_type = bid.get('sg_bid_type', '')
+        rfq_code = rfq.get('code', 'N/A')
+
+        # Confirm with user
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Set Current Bid",
+            f"Set '{bid_name}' ({bid_type}) as the current bid for RFQ '{rfq_code}'?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        try:
+            # Determine which field to update based on bid type
+            bid_type_value = bid.get('sg_bid_type', 'Early Bid')
+            if bid_type_value == 'Turnover Bid':
+                field_name = 'sg_turnover_bid'
+            else:
+                field_name = 'sg_early_bid'
+
+            # Update RFQ to link this bid
+            rfq_id = rfq['id']
+            update_data = {field_name: {"type": "CustomEntity06", "id": bid['id']}}
+
+            self.sg_session.sg.update("CustomEntity04", rfq_id, update_data)
+
+            # Refresh RFQ data in parent
+            if hasattr(self.parent_app, '_load_rfqs') and hasattr(self.parent_app, 'sg_project_combo'):
+                proj = self.parent_app.sg_project_combo.itemData(self.parent_app.sg_project_combo.currentIndex())
+                if proj:
+                    current_rfq_index = self.parent_app.rfq_combo.currentIndex()
+                    self.parent_app._load_rfqs(proj['id'])
+                    # Try to restore RFQ selection
+                    self.parent_app.rfq_combo.setCurrentIndex(current_rfq_index)
+
+            self.statusMessageChanged.emit(f"✓ Set '{bid_name}' as current bid for RFQ", False)
+            QtWidgets.QMessageBox.information(self, "Success", f"'{bid_name}' is now the current {bid_type} for this RFQ.")
+
+        except Exception as e:
+            logger.error(f"Failed to set current bid: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to set current bid:\n{str(e)}")
 
     def _on_add_bid(self):
         """Handle Add Bid button click."""
-        # TODO: Show dialog to create new bid
-        self.statusMessageChanged.emit("Add Bid functionality not yet implemented", False)
-        logger.info("Add Bid clicked")
+        # Get current project
+        if not self.parent_app or not hasattr(self.parent_app, 'sg_project_combo'):
+            QtWidgets.QMessageBox.warning(self, "Error", "Cannot access project information.")
+            return
+
+        proj = self.parent_app.sg_project_combo.itemData(self.parent_app.sg_project_combo.currentIndex())
+        if not proj:
+            QtWidgets.QMessageBox.warning(self, "No Project Selected", "Please select a project first.")
+            return
+
+        # Show dialog to get bid name and type
+        dialog = AddBidDialog(parent=self)
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            bid_name = dialog.get_bid_name()
+            bid_type = dialog.get_bid_type()
+
+            if not bid_name:
+                QtWidgets.QMessageBox.warning(self, "Invalid Input", "Please enter a bid name.")
+                return
+
+            try:
+                # Create the bid
+                new_bid = self.sg_session.create_bid(proj['id'], bid_name, bid_type)
+
+                logger.info(f"Created new bid: {bid_name} (ID: {new_bid['id']})")
+
+                # Refresh the bid list
+                self._refresh_bids()
+
+                # Select the newly created bid
+                self._select_bid_by_id(new_bid['id'])
+
+                self.statusMessageChanged.emit(f"✓ Created bid '{bid_name}'", False)
+                QtWidgets.QMessageBox.information(self, "Success", f"Bid '{bid_name}' created successfully.")
+
+            except Exception as e:
+                logger.error(f"Failed to create bid: {e}", exc_info=True)
+                QtWidgets.QMessageBox.critical(self, "Error", f"Failed to create bid:\n{str(e)}")
 
     def _on_remove_bid(self):
         """Handle Remove Bid button click."""
-        # TODO: Show dialog to confirm and delete bid
-        self.statusMessageChanged.emit("Remove Bid functionality not yet implemented", False)
-        logger.info("Remove Bid clicked")
+        bid = self.get_current_bid()
+        if not bid:
+            QtWidgets.QMessageBox.warning(self, "No Bid Selected", "Please select a Bid from the list.")
+            return
+
+        bid_name = bid.get('code', f"Bid {bid.get('id')}")
+
+        # Confirm deletion
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Delete",
+            f"Are you sure you want to delete bid '{bid_name}'?\n\nThis cannot be undone.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        try:
+            # Delete the bid
+            self.sg_session.delete_bid(bid['id'])
+
+            logger.info(f"Deleted bid: {bid_name} (ID: {bid['id']})")
+
+            # Refresh the bid list
+            self._refresh_bids()
+
+            self.statusMessageChanged.emit(f"✓ Deleted bid '{bid_name}'", False)
+            QtWidgets.QMessageBox.information(self, "Success", f"Bid '{bid_name}' deleted successfully.")
+
+        except Exception as e:
+            logger.error(f"Failed to delete bid: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to delete bid:\n{str(e)}")
 
     def _on_rename_bid(self):
         """Handle Rename Bid button click."""
-        # TODO: Show dialog to rename bid
-        self.statusMessageChanged.emit("Rename Bid functionality not yet implemented", False)
-        logger.info("Rename Bid clicked")
+        bid = self.get_current_bid()
+        if not bid:
+            QtWidgets.QMessageBox.warning(self, "No Bid Selected", "Please select a Bid from the list.")
+            return
+
+        current_name = bid.get('code', '')
+
+        # Show dialog to get new name
+        dialog = RenameBidDialog(current_name, parent=self)
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            new_name = dialog.get_new_name()
+
+            if not new_name or new_name == current_name:
+                return
+
+            try:
+                # Update the bid name
+                self.sg_session.update_bid(bid['id'], {"code": new_name})
+
+                logger.info(f"Renamed bid from '{current_name}' to '{new_name}' (ID: {bid['id']})")
+
+                # Refresh the bid list
+                self._refresh_bids()
+
+                # Select the renamed bid
+                self._select_bid_by_id(bid['id'])
+
+                self.statusMessageChanged.emit(f"✓ Renamed bid to '{new_name}'", False)
+                QtWidgets.QMessageBox.information(self, "Success", f"Bid renamed to '{new_name}'.")
+
+            except Exception as e:
+                logger.error(f"Failed to rename bid: {e}", exc_info=True)
+                QtWidgets.QMessageBox.critical(self, "Error", f"Failed to rename bid:\n{str(e)}")
 
     def _on_refresh_bids(self):
         """Handle Refresh button click."""
-        # Need parent context to know current project/RFQ
-        self.statusMessageChanged.emit("Refresh functionality needs parent implementation", False)
-        logger.info("Refresh Bids clicked")
+        self._refresh_bids()
+
+    def _refresh_bids(self):
+        """Refresh the bid list from ShotGrid."""
+        # Get current selections to restore after refresh
+        current_bid_id = None
+        current_bid = self.get_current_bid()
+        if current_bid:
+            current_bid_id = current_bid.get('id')
+
+        # Get RFQ and project from parent
+        rfq = None
+        project_id = None
+
+        if self.parent_app:
+            if hasattr(self.parent_app, 'rfq_combo'):
+                rfq = self.parent_app.rfq_combo.itemData(self.parent_app.rfq_combo.currentIndex())
+
+            if hasattr(self.parent_app, 'sg_project_combo'):
+                proj = self.parent_app.sg_project_combo.itemData(self.parent_app.sg_project_combo.currentIndex())
+                if proj:
+                    project_id = proj.get('id')
+
+        # Repopulate bids
+        self.populate_bids(rfq, project_id, auto_select=False)
+
+        # Restore selection if possible
+        if current_bid_id:
+            self._select_bid_by_id(current_bid_id)
+
+        self.statusMessageChanged.emit("✓ Bid list refreshed", False)
+        logger.info("Bid list refreshed")
 
     def _set_status(self, message, is_error=False):
         """Set the status message.

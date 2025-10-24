@@ -1005,6 +1005,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         # Selector group
         selector_group = QtWidgets.QGroupBox("VFX Breakdowns")
+        selector_group.setCheckable(True)  # Makes it collapsible
+        selector_group.setChecked(True)  # Expanded by default
         selector_layout = QtWidgets.QVBoxLayout(selector_group)
 
         selector_row = QtWidgets.QHBoxLayout()
