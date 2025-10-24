@@ -335,7 +335,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
             # Auto-select the bid linked to the RFQ if present
             if rfq and auto_select:
-                linked_bid = rfq.get("sg_bid")
+                # Check Early Bid first, then Turnover Bid
+                linked_bid = rfq.get("sg_early_bid")
+                if not linked_bid:
+                    linked_bid = rfq.get("sg_turnover_bid")
+
                 linked_bid_id = None
                 if isinstance(linked_bid, dict):
                     linked_bid_id = linked_bid.get("id")
