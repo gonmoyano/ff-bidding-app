@@ -452,23 +452,40 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
             self.sg_session.sg.update("CustomEntity04", rfq_id, update_data)
 
-            # Update the Current Bid label directly in parent app
-            if hasattr(self.parent_app, 'rfq_bid_label'):
+            logger.info(f"DEBUG: Successfully updated ShotGrid - RFQ {rfq_id} {field_name} = Bid {bid['id']}")
+            logger.info(f"DEBUG: self.parent_app = {self.parent_app}")
+            logger.info(f"DEBUG: type(self.parent_app) = {type(self.parent_app)}")
+            logger.info(f"DEBUG: hasattr(self.parent_app, 'parent_app') = {hasattr(self.parent_app, 'parent_app')}")
+            logger.info(f"DEBUG: hasattr(self.parent_app, 'rfq_bid_label') = {hasattr(self.parent_app, 'rfq_bid_label')}")
+
+            # Update the Current Bid label directly in main app
+            # Need to go through parent_app.parent_app since:
+            # BidSelectorWidget.parent_app = BiddingTab
+            # BiddingTab.parent_app = MainApp (which has rfq_bid_label)
+            main_app = None
+            if hasattr(self.parent_app, 'parent_app'):
+                main_app = self.parent_app.parent_app
+                logger.info(f"DEBUG: main_app = {main_app}")
+                logger.info(f"DEBUG: hasattr(main_app, 'rfq_bid_label') = {hasattr(main_app, 'rfq_bid_label')}")
+
+            if main_app and hasattr(main_app, 'rfq_bid_label'):
                 # Use the bid's name for display
                 bid_display_name = bid.get('name') or bid.get('code') or bid_name
                 label_text = f"{bid_display_name} ({bid_type})" if bid_type else bid_display_name
-                self.parent_app.rfq_bid_label.setText(label_text)
-                logger.info(f"Updated Current Bid label to: {label_text}")
+                main_app.rfq_bid_label.setText(label_text)
+                logger.info(f"✓ Updated Current Bid label to: {label_text}")
+            else:
+                logger.warning("Could not update Current Bid label - main_app or rfq_bid_label not found")
 
             # Refresh RFQ data in parent to keep everything in sync
-            if hasattr(self.parent_app, '_load_rfqs') and hasattr(self.parent_app, 'sg_project_combo'):
-                proj = self.parent_app.sg_project_combo.itemData(self.parent_app.sg_project_combo.currentIndex())
+            if main_app and hasattr(main_app, '_load_rfqs') and hasattr(main_app, 'sg_project_combo'):
+                proj = main_app.sg_project_combo.itemData(main_app.sg_project_combo.currentIndex())
                 if proj:
-                    current_rfq_index = self.parent_app.rfq_combo.currentIndex()
-                    self.parent_app._load_rfqs(proj['id'])
+                    current_rfq_index = main_app.rfq_combo.currentIndex()
+                    main_app._load_rfqs(proj['id'])
                     # Restore RFQ selection - this will trigger _on_rfq_changed
                     if current_rfq_index > 0:  # Don't select the "-- Select RFQ --" item
-                        self.parent_app.rfq_combo.setCurrentIndex(current_rfq_index)
+                        main_app.rfq_combo.setCurrentIndex(current_rfq_index)
 
             self.statusMessageChanged.emit(f"✓ Set '{bid_name}' as current bid for RFQ", False)
             QtWidgets.QMessageBox.information(self, "Success", f"'{bid_name}' is now the current {bid_type} for this RFQ.")
