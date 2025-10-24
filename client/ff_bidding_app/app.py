@@ -701,6 +701,9 @@ class PackageManagerApp(QtWidgets.QMainWindow):
                                                     "sg_turnover_bid", "sg_turnover_bid.code", "sg_turnover_bid.sg_bid_type",
                                                     "created_at"])
 
+            if rfqs:
+                logger.info(f"DEBUG: First RFQ data = {rfqs[0]}")
+
             for rfq in rfqs:
                 display_text = f"{rfq.get('code', 'N/A')}"
                 self.rfq_combo.addItem(display_text, rfq)
@@ -735,6 +738,9 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             linked_bid = rfq.get("sg_early_bid")
             if not linked_bid:
                 linked_bid = rfq.get("sg_turnover_bid")
+
+            logger.info(f"DEBUG: linked_bid = {linked_bid}")
+            logger.info(f"DEBUG: linked_bid type = {type(linked_bid)}")
 
             if isinstance(linked_bid, dict):
                 bid_name = linked_bid.get("code") or f"Bid {linked_bid.get('id')}"
