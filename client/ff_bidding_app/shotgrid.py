@@ -319,6 +319,124 @@ class ShotgridClient:
         filters = [["project", "is", {"type": "Project", "id": int(project_id)}]]
         return self.sg.find(entity, filters, fields, order=order)
 
+    def get_bids(self, project_id, fields=None, order=None):
+        """
+        Get Bids (CustomEntity06) for a project.
+
+        Args:
+            project_id: Project ID
+            fields: List of fields to return
+            order: List of order dicts
+
+        Returns:
+            List of Bid dictionaries
+        """
+        if fields is None:
+            fields = ["id", "code", "sg_bid_type", "sg_vfx_breakdown", "created_at", "updated_at"]
+        if order is None:
+            order = [{"field_name": "created_at", "direction": "desc"}]
+
+        filters = [["project", "is", {"type": "Project", "id": int(project_id)}]]
+        return self.sg.find("CustomEntity06", filters, fields, order=order)
+
+    def create_bid(self, project_id, code, bid_type="Early Bid", vfx_breakdown=None):
+        """
+        Create a new Bid (CustomEntity06).
+
+        Args:
+            project_id: Project ID
+            code: Bid name/code
+            bid_type: Bid type (default: "Early Bid")
+            vfx_breakdown: VFX Breakdown entity dict (optional)
+
+        Returns:
+            Created Bid entity dictionary
+        """
+        data = {
+            "code": code,
+            "project": {"type": "Project", "id": int(project_id)},
+            "sg_bid_type": bid_type
+        }
+
+        if vfx_breakdown:
+            data["sg_vfx_breakdown"] = vfx_breakdown
+
+        result = self.sg.create("CustomEntity06", data)
+        return result
+
+    def update_bid(self, bid_id, data):
+        """
+        Update a Bid (CustomEntity06).
+
+        Args:
+            bid_id: Bid ID
+            data: Dictionary of fields to update
+
+        Returns:
+            Updated Bid entity dictionary
+        """
+        result = self.sg.update("CustomEntity06", int(bid_id), data)
+        return result
+
+    def delete_bid(self, bid_id):
+        """
+        Delete a Bid (CustomEntity06).
+
+        Args:
+            bid_id: Bid ID
+
+        Returns:
+            bool: True if successful
+        """
+        result = self.sg.delete("CustomEntity06", int(bid_id))
+        return result
+
+    def update_rfq_bid(self, rfq_id, bid):
+        """
+        Update the Bid linked to an RFQ.
+
+        Args:
+            rfq_id: RFQ ID
+            bid: Bid entity dict (e.g., {"type": "CustomEntity06", "id": 123})
+
+        Returns:
+            Updated RFQ entity dictionary
+        """
+        # Normalize link
+        if isinstance(bid, int):
+            bid_link = {"type": "CustomEntity06", "id": int(bid)}
+        elif isinstance(bid, dict) and "id" in bid:
+            bid_link = {"type": bid.get("type", "CustomEntity06"), "id": int(bid["id"])}
+        else:
+            raise ValueError("Invalid bid argument; expected id or SG link dict.")
+
+        data = {"sg_bid": bid_link}
+        result = self.sg.update("CustomEntity04", int(rfq_id), data)
+        return result
+
+    def update_bid_vfx_breakdown(self, bid_id, breakdown):
+        """
+        Set sg_vfx_breakdown on Bid (CustomEntity06) to the given breakdown link.
+
+        Args:
+            bid_id: Bid ID
+            breakdown: VFX Breakdown entity dict or ID
+
+        Returns:
+            Updated Bid entity dictionary
+        """
+        # Normalize link
+        if isinstance(breakdown, int):
+            br_link = {"type": "CustomEntity01", "id": int(breakdown)}
+        elif isinstance(breakdown, dict) and "id" in breakdown:
+            br_link = {"type": breakdown.get("type", "CustomEntity01"), "id": int(breakdown["id"])}
+        else:
+            raise ValueError("Invalid breakdown argument; expected id or SG link dict.")
+
+        data = {"sg_vfx_breakdown": br_link}
+        result = self.sg.update("CustomEntity06", int(bid_id), data)
+        return result
+
     def update_rfq_vfx_breakdown(self, rfq_id, breakdown):
         """
         Set sg_vfx_breakdown on RFQ (CustomEntity04) to the given breakdown link.

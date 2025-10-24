@@ -563,8 +563,8 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         self.rfq_status_label = QtWidgets.QLabel("-")
         rfq_info_layout.addRow("RFQ Status:", self.rfq_status_label)
 
-        self.rfq_vfx_breakdown_label = QtWidgets.QLabel("-")
-        rfq_info_layout.addRow("VFX Breakdown:", self.rfq_vfx_breakdown_label)
+        self.rfq_bid_label = QtWidgets.QLabel("-")
+        rfq_info_layout.addRow("Current Bid:", self.rfq_bid_label)
 
         rfq_layout.addLayout(rfq_info_layout)
 
@@ -696,7 +696,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
         try:
             rfqs = self.sg_session.get_rfqs(project_id,
-                                            fields=["id", "code", "sg_status_list", "sg_vfx_breakdown", "created_at"])
+                                            fields=["id", "code", "sg_status_list", "sg_bid", "created_at"])
 
             for rfq in rfqs:
                 display_text = f"{rfq.get('code', 'N/A')}"
@@ -727,17 +727,21 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self.rfq_id_label.setText(str(rfq["id"]))
             self.rfq_status_label.setText(rfq.get("sg_status_list", "Unknown"))
 
-            # Show currently linked Breakdown under the RFQ selector
-            linked = rfq.get("sg_vfx_breakdown")
-            if isinstance(linked, dict):
-                label_text = linked.get("code") or linked.get("name") or f"ID {linked.get('id')}"
-            elif isinstance(linked, list) and linked:
-                item = linked[0]
-                label_text = item.get("code") or item.get("name") or f"ID {item.get('id')}"
+            # Show currently linked Bid under the RFQ selector
+            linked_bid = rfq.get("sg_bid")
+            if isinstance(linked_bid, dict):
+                bid_name = linked_bid.get("code") or f"Bid {linked_bid.get('id')}"
+                bid_type = linked_bid.get("sg_bid_type", "")
+                label_text = f"{bid_name} ({bid_type})" if bid_type else bid_name
+            elif isinstance(linked_bid, list) and linked_bid:
+                item = linked_bid[0]
+                bid_name = item.get("code") or f"Bid {item.get('id')}"
+                bid_type = item.get("sg_bid_type", "")
+                label_text = f"{bid_name} ({bid_type})" if bid_type else bid_name
             else:
                 label_text = "-"
-            if hasattr(self, "rfq_vfx_breakdown_label"):
-                self.rfq_vfx_breakdown_label.setText(label_text)
+            if hasattr(self, "rfq_bid_label"):
+                self.rfq_bid_label.setText(label_text)
 
             logger.info(f"RFQ selected: {rfq.get('code', 'N/A')} (ID: {rfq['id']})")
 
@@ -751,8 +755,8 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         else:
             self.rfq_id_label.setText("-")
             self.rfq_status_label.setText("-")
-            if hasattr(self, "rfq_vfx_breakdown_label"):
-                self.rfq_vfx_breakdown_label.setText("-")
+            if hasattr(self, "rfq_bid_label"):
+                self.rfq_bid_label.setText("-")
             if hasattr(self, "packages_tab"):
                 self.packages_tab.clear()
 
