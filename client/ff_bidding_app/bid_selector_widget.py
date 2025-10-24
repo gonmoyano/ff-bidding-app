@@ -39,10 +39,11 @@ class CollapsibleGroupBox(QtWidgets.QWidget):
                 text-align: left;
                 border: 1px solid #555555;
                 border-radius: 4px;
-                padding: 5px;
+                padding: 3px 5px;
                 background-color: #353535;
                 color: #e0e0e0;
                 font-weight: bold;
+                font-size: 11px;
             }
             QPushButton:hover {
                 background-color: #404040;
