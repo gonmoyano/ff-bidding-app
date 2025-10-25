@@ -52,9 +52,10 @@ class CollapsibleGroupBox(QtWidgets.QWidget):
 
         # Content frame
         self.content_frame = QtWidgets.QFrame()
+        self.content_frame.setObjectName("collapsibleContent")
         self.content_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
         self.content_frame.setStyleSheet("""
-            QFrame {
+            QFrame#collapsibleContent {
                 border: 1px solid #555555;
                 border-radius: 4px;
             }
