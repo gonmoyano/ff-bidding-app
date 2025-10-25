@@ -50,6 +50,82 @@ except ImportError:
         logger = logging.getLogger("FFPackageManager")
 
 
+class ProjectDetailsDialog(QtWidgets.QDialog):
+    """Dialog showing project and RFQ details."""
+
+    def __init__(self, project, rfq, parent=None):
+        """Initialize the dialog.
+
+        Args:
+            project: Project data dict or None
+            rfq: RFQ data dict or None
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.project = project
+        self.rfq = rfq
+
+        self.setWindowTitle("Project Details")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Create form layout for details
+        form_layout = QtWidgets.QFormLayout()
+
+        # Project details
+        if self.project:
+            project_id = QtWidgets.QLabel(str(self.project.get('id', '-')))
+            form_layout.addRow("Project ID:", project_id)
+
+            project_name = QtWidgets.QLabel(self.project.get('name', '-'))
+            form_layout.addRow("Project Name:", project_name)
+
+            project_status = QtWidgets.QLabel(self.project.get('sg_status', '-'))
+            form_layout.addRow("Project Status:", project_status)
+        else:
+            no_project = QtWidgets.QLabel("No project selected")
+            form_layout.addRow("", no_project)
+
+        # Separator
+        separator = QtWidgets.QFrame()
+        separator.setFrameShape(QtWidgets.QFrame.HLine)
+        separator.setFrameShadow(QtWidgets.QFrame.Sunken)
+        form_layout.addRow(separator)
+
+        # RFQ details
+        if self.rfq:
+            rfq_id = QtWidgets.QLabel(str(self.rfq.get('id', '-')))
+            form_layout.addRow("RFQ ID:", rfq_id)
+
+            rfq_code = QtWidgets.QLabel(self.rfq.get('code', '-'))
+            form_layout.addRow("RFQ Code:", rfq_code)
+
+            rfq_status = QtWidgets.QLabel(self.rfq.get('sg_status_list', '-'))
+            form_layout.addRow("RFQ Status:", rfq_status)
+        else:
+            no_rfq = QtWidgets.QLabel("No RFQ selected")
+            form_layout.addRow("", no_rfq)
+
+        layout.addLayout(form_layout)
+
+        # Close button
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        close_btn.setDefault(True)
+        button_layout.addWidget(close_btn)
+
+        layout.addLayout(button_layout)
+
+
 class PackageManagerApp(QtWidgets.QMainWindow):
     """Main application window."""
 
@@ -469,10 +545,6 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             top_bar = self._create_top_bar()
             main_layout.addWidget(top_bar)
 
-            # Collapsible details section
-            details_group = self._create_details_group()
-            main_layout.addWidget(details_group)
-
             # Tabbed section
             self.tab_widget = QtWidgets.QTabWidget()
 
@@ -499,6 +571,12 @@ class PackageManagerApp(QtWidgets.QMainWindow):
     def _create_top_bar(self):
         """Create compact top bar with Project, RFQ dropdowns and Current Bid."""
         bar_widget = QtWidgets.QWidget()
+        bar_widget.setStyleSheet("""
+            QWidget {
+                border: 1px solid #555555;
+                border-radius: 4px;
+            }
+        """)
         bar_layout = QtWidgets.QHBoxLayout(bar_widget)
         bar_layout.setContentsMargins(6, 6, 6, 6)
 
@@ -540,32 +618,21 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
         bar_layout.addStretch()
 
+        # Project Details button
+        details_btn = QtWidgets.QPushButton("Project Details")
+        details_btn.clicked.connect(self._show_project_details)
+        bar_layout.addWidget(details_btn)
+
         return bar_widget
 
-    def _create_details_group(self):
-        """Create collapsible details group for IDs and other properties."""
-        details_group = CollapsibleGroupBox("Details")
+    def _show_project_details(self):
+        """Show the project details dialog."""
+        # Get current project and RFQ data
+        project = self.sg_project_combo.itemData(self.sg_project_combo.currentIndex())
+        rfq = self.rfq_combo.itemData(self.rfq_combo.currentIndex())
 
-        # Content layout
-        content_layout = QtWidgets.QFormLayout()
-
-        # Project details
-        self.sg_project_id_label = QtWidgets.QLabel("-")
-        content_layout.addRow("Project ID:", self.sg_project_id_label)
-
-        self.sg_project_status_label = QtWidgets.QLabel("-")
-        content_layout.addRow("Project Status:", self.sg_project_status_label)
-
-        # RFQ details
-        self.rfq_id_label = QtWidgets.QLabel("-")
-        content_layout.addRow("RFQ ID:", self.rfq_id_label)
-
-        self.rfq_status_label = QtWidgets.QLabel("-")
-        content_layout.addRow("RFQ Status:", self.rfq_status_label)
-
-        details_group.addLayout(content_layout)
-
-        return details_group
+        dialog = ProjectDetailsDialog(project, rfq, parent=self)
+        dialog.exec()
 
     def _create_packages_tab(self):
         """Create the Packages tab content."""
@@ -663,19 +730,13 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         project = self.sg_project_combo.itemData(index)
 
         if project:
-            self.sg_project_id_label.setText(str(project['id']))
-            self.sg_project_status_label.setText(project.get('sg_status', 'Unknown'))
             logger.info(f"SG project selected: {project['code']} (ID: {project['id']})")
 
             # Load RFQs for this project
             self._load_rfqs(project['id'])
         else:
-            self.sg_project_id_label.setText("-")
-            self.sg_project_status_label.setText("-")
             self.rfq_combo.clear()
             self.rfq_combo.addItem("-- Select RFQ --", None)
-            self.rfq_id_label.setText("-")
-            self.rfq_status_label.setText("-")
             if hasattr(self, "packages_tab"):
                 self.packages_tab.clear()
 
@@ -726,10 +787,6 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         rfq = self.rfq_combo.itemData(index)
 
         if rfq:
-            # Labels
-            self.rfq_id_label.setText(str(rfq["id"]))
-            self.rfq_status_label.setText(rfq.get("sg_status_list", "Unknown"))
-
             # Show currently linked Bid under the RFQ selector
             # Check Early Bid first, then Turnover Bid
             linked_bid = rfq.get("sg_early_bid")
@@ -770,8 +827,6 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             if hasattr(self, "bidding_tab"):
                 self.bidding_tab.set_rfq(rfq)
         else:
-            self.rfq_id_label.setText("-")
-            self.rfq_status_label.setText("-")
             if hasattr(self, "rfq_bid_label"):
                 self.rfq_bid_label.setText("-")
             if hasattr(self, "packages_tab"):
