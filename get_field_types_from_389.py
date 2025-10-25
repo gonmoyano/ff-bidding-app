@@ -24,29 +24,34 @@ Environment variables required:
 import sys
 import os
 from pathlib import Path
+import importlib.util
 
-# Add the client directory to the path so we can import the module
-# This allows running standalone without AYON
+# Get the path to shotgrid.py directly (bypass package __init__.py to avoid AYON dependency)
 client_dir = Path(__file__).parent / "client"
-sys.path.insert(0, str(client_dir))
+shotgrid_path = client_dir / "ff_bidding_app" / "shotgrid.py"
 
 print("=" * 80, file=sys.stderr)
 print("CustomEntity02 Field Type Extractor - Standalone Mode", file=sys.stderr)
 print("=" * 80, file=sys.stderr)
 print(file=sys.stderr)
 
-# Import the ShotgridClient
+# Import the ShotgridClient directly without loading the package __init__.py
+# This avoids the AYON dependency in addon.py
 try:
     print("Importing ShotgridClient...", file=sys.stderr)
-    from ff_bidding_app.shotgrid import ShotgridClient
+    spec = importlib.util.spec_from_file_location("shotgrid", shotgrid_path)
+    shotgrid_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(shotgrid_module)
+    ShotgridClient = shotgrid_module.ShotgridClient
     print("✓ ShotgridClient imported successfully", file=sys.stderr)
     print(file=sys.stderr)
-except ImportError as e:
+except Exception as e:
     print(f"✗ Failed to import ShotgridClient: {e}", file=sys.stderr)
     import traceback
-    traceback.print_exc()
+    traceback.print_exc(file=sys.stderr)
     print(file=sys.stderr)
     print("Please ensure you're running from the project directory.", file=sys.stderr)
+    print(f"Looking for: {shotgrid_path}", file=sys.stderr)
     sys.exit(1)
 
 # Fields to check

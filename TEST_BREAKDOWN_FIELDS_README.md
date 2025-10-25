@@ -2,7 +2,7 @@
 
 This guide explains how to use the utility function to check if all required fields exist in CustomEntity02 (Breakdown Item) for your ShotGrid instance.
 
-**Note:** These scripts run **standalone** without requiring AYON or any other dependencies besides `shotgun_api3`. They can be run directly from the command line.
+**Note:** These scripts run **standalone** without requiring AYON or any other dependencies besides `shotgun_api3`. They use `importlib` to directly import `shotgrid.py`, bypassing the package's `__init__.py` which has AYON dependencies. This allows them to run from the command line without any addon framework.
 
 ## What It Does
 
@@ -122,12 +122,20 @@ python test_breakdown_fields.py --project-code YOUR_PROJECT_CODE
 
 Note: The project code is only used for labeling in the report. The schema check is done at the entity level since ShotGrid schemas are shared across all projects.
 
-### Option 2: Using Python Interactively
+### Option 2: Using Python Interactively (Standalone)
 
-You can also use the function directly in a Python script or interactive session:
+You can also use the function directly in a Python script or interactive session. When running standalone (without AYON), you need to import using `importlib`:
 
 ```python
-from client.ff_bidding_app.shotgrid import ShotgridClient
+import importlib.util
+from pathlib import Path
+
+# Import shotgrid.py directly (bypasses AYON dependencies)
+shotgrid_path = Path("client/ff_bidding_app/shotgrid.py")
+spec = importlib.util.spec_from_file_location("shotgrid", shotgrid_path)
+shotgrid_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(shotgrid_module)
+ShotgridClient = shotgrid_module.ShotgridClient
 
 # Create and connect to ShotGrid
 with ShotgridClient() as client:
@@ -146,21 +154,28 @@ with ShotgridClient() as client:
     client.print_breakdown_item_fields_report(project_code="YOUR_PROJECT")
 ```
 
-### Option 3: Quick One-liner
-
-```bash
-python -c "from client.ff_bidding_app.shotgrid import ShotgridClient; ShotgridClient().print_breakdown_item_fields_report()"
-```
-
-### Option 4: View the Static Template Dictionary
+### Option 3: View the Static Template Dictionary
 
 You can view the template dictionary without connecting to ShotGrid:
 
 ```python
-from client.ff_bidding_app.shotgrid import ShotgridClient
+import importlib.util
+from pathlib import Path
+
+# Import shotgrid.py directly
+shotgrid_path = Path("client/ff_bidding_app/shotgrid.py")
+spec = importlib.util.spec_from_file_location("shotgrid", shotgrid_path)
+shotgrid_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(shotgrid_module)
+ShotgridClient = shotgrid_module.ShotgridClient
 
 # View the static template (no connection required)
 print(ShotgridClient.BREAKDOWN_ITEM_REQUIRED_FIELDS)
+```
+
+**Note:** If you're running within AYON (where `ayon_core` is available), you can use regular imports:
+```python
+from ff_bidding_app.shotgrid import ShotgridClient
 ```
 
 ## Understanding the Output
@@ -215,6 +230,24 @@ This is useful for CI/CD pipelines or automated checks.
 
 ## Troubleshooting
 
+### Error: "No module named 'ayon_core'"
+This means the script is trying to load the package's `__init__.py` which imports AYON dependencies. The updated scripts use `importlib` to bypass this. Make sure you're using the latest version of the scripts.
+
+**If you still get this error**, it means an older version of the script is being used. The fix:
+```python
+# OLD WAY (doesn't work standalone):
+from ff_bidding_app.shotgrid import ShotgridClient
+
+# NEW WAY (works standalone):
+import importlib.util
+from pathlib import Path
+shotgrid_path = Path("client/ff_bidding_app/shotgrid.py")
+spec = importlib.util.spec_from_file_location("shotgrid", shotgrid_path)
+shotgrid_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(shotgrid_module)
+ShotgridClient = shotgrid_module.ShotgridClient
+```
+
 ### Error: "shotgun_api3 not installed"
 Install the ShotGrid Python API:
 ```bash
@@ -239,13 +272,43 @@ chmod +x test_breakdown_fields.py
 
 ## Integration with Your Code
 
-You can integrate this check into your application:
+You can integrate this check into your application.
 
+**Within AYON** (ayon_core is available):
 ```python
-from client.ff_bidding_app.shotgrid import ShotgridClient
+from ff_bidding_app.shotgrid import ShotgridClient
 
 def validate_project_schema(project_code):
     """Validate that a project has all required CustomEntity02 fields."""
+    client = ShotgridClient()
+    client.connect()
+
+    result = client.check_breakdown_item_fields(project_code)
+
+    if result['missing_fields']:
+        print(f"WARNING: Project {project_code} is missing {len(result['missing_fields'])} fields:")
+        for field in result['missing_fields']:
+            print(f"  - {field}")
+        return False
+
+    print(f"Project {project_code} has all required fields.")
+    return True
+```
+
+**Standalone** (without AYON):
+```python
+import importlib.util
+from pathlib import Path
+
+def validate_project_schema(project_code, shotgrid_py_path="client/ff_bidding_app/shotgrid.py"):
+    """Validate that a project has all required CustomEntity02 fields."""
+    # Import shotgrid.py directly
+    shotgrid_path = Path(shotgrid_py_path)
+    spec = importlib.util.spec_from_file_location("shotgrid", shotgrid_path)
+    shotgrid_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(shotgrid_module)
+    ShotgridClient = shotgrid_module.ShotgridClient
+
     client = ShotgridClient()
     client.connect()
 
