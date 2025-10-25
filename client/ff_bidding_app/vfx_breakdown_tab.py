@@ -8,9 +8,15 @@ from datetime import datetime, date
 try:
     from .logger import logger
     from .settings import AppSettings
+    from .vfx_breakdown_model import VFXBreakdownModel
+    from .vfx_breakdown_widget import VFXBreakdownWidget
+    from .bid_selector_widget import CollapsibleGroupBox
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
+    from vfx_breakdown_model import VFXBreakdownModel
+    from vfx_breakdown_widget import VFXBreakdownWidget
+    from bid_selector_widget import CollapsibleGroupBox
 
 
 class ReverseString:
@@ -983,56 +989,24 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             "sg_number_of_shots": "# Shots",
         }
 
-        # UI widgets
+        # UI widgets for breakdown selector
         self.vfx_breakdown_combo = None
         self.vfx_breakdown_set_btn = None
         self.vfx_breakdown_refresh_btn = None
         self.vfx_breakdown_status_label = None
-        self.vfx_breakdown_table = None
-        self.vfx_beat_columns = []
 
-        # Undo/Redo stack
-        self.undo_stack = []
-        self.redo_stack = []
-
-        # Store beat data for each row
-        self.beat_data_by_row = {}
-
-        # Settings manager for persistent storage
-        self.app_settings = AppSettings()
-
-        # Sorting and filtering state
-        self.sort_column = None  # Currently sorted column index (for single-column sort)
-        self.sort_direction = None  # 'asc' or 'desc' (for single-column sort)
-        self.compound_sort_columns = []  # List of (column_index, direction) tuples for compound sorting
-        self.sort_templates = self.app_settings.get_sort_templates()  # Load saved templates from settings
-        self.all_beats_data = []  # Original unfiltered beat data
-        self.filtered_row_indices = []  # Indices into all_beats_data that pass filters
-        self.display_row_to_data_row = {}  # Maps displayed row -> index in all_beats_data
-
-        # UI widgets for search/filter
-        self.global_search_box = None
-        self.clear_filters_btn = None
-        self.compound_sort_btn = None
-        self.template_dropdown = None
-        self.row_count_label = None
-
-        # Flag to prevent recursive updates
-        self._updating = False
+        # Reusable breakdown widget (replaces direct table management)
+        self.breakdown_widget = None
 
         self._build_ui()
-
-        # Populate template dropdown with loaded templates
-        self._update_template_dropdown()
 
     def _build_ui(self):
         """Build the VFX Breakdown tab UI."""
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
 
-        # Selector group
-        selector_group = QtWidgets.QGroupBox("VFX Breakdowns")
-        selector_layout = QtWidgets.QVBoxLayout(selector_group)
+        # Selector group (collapsible)
+        selector_group = CollapsibleGroupBox("VFX Breakdowns")
 
         selector_row = QtWidgets.QHBoxLayout()
         selector_label = QtWidgets.QLabel("Select VFX Breakdown:")
@@ -1064,102 +1038,26 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_refresh_btn.clicked.connect(self._refresh_vfx_breakdowns)
         selector_row.addWidget(self.vfx_breakdown_refresh_btn)
 
-        selector_layout.addLayout(selector_row)
+        selector_group.addLayout(selector_row)
 
         self.vfx_breakdown_status_label = QtWidgets.QLabel("Select an RFQ to view VFX Breakdowns.")
         self.vfx_breakdown_status_label.setObjectName("vfxBreakdownStatusLabel")
         self.vfx_breakdown_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        selector_layout.addWidget(self.vfx_breakdown_status_label)
+        selector_group.addWidget(self.vfx_breakdown_status_label)
 
         layout.addWidget(selector_group)
 
-        # Global search and filter controls
-        filter_controls = QtWidgets.QHBoxLayout()
+        # Create reusable VFX Breakdown widget
+        self.breakdown_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
 
-        # Global search box
-        search_label = QtWidgets.QLabel("Search:")
-        filter_controls.addWidget(search_label)
+        # Connect widget signals
+        self.breakdown_widget.statusMessageChanged.connect(self._on_widget_status_changed)
 
-        self.global_search_box = QtWidgets.QLineEdit()
-        self.global_search_box.setPlaceholderText("Search across all columns...")
-        self.global_search_box.textChanged.connect(self._apply_filters)
-        filter_controls.addWidget(self.global_search_box, stretch=2)
+        layout.addWidget(self.breakdown_widget)
 
-        # Clear filters button
-        self.clear_filters_btn = QtWidgets.QPushButton("Clear")
-        self.clear_filters_btn.clicked.connect(self._clear_filters)
-        filter_controls.addWidget(self.clear_filters_btn)
-
-        # Compound Sorting button
-        self.compound_sort_btn = QtWidgets.QPushButton("Compound Sorting")
-        self.compound_sort_btn.clicked.connect(self._open_compound_sort_dialog)
-        filter_controls.addWidget(self.compound_sort_btn)
-
-        # Template dropdown
-        filter_controls.addWidget(QtWidgets.QLabel("Template:"))
-        self.template_dropdown = QtWidgets.QComboBox()
-        self.template_dropdown.addItem("(No Template)")
-        self.template_dropdown.setMinimumWidth(150)
-        self.template_dropdown.currentTextChanged.connect(self._apply_sort_template)
-        filter_controls.addWidget(self.template_dropdown)
-
-        # Row count label
-        self.row_count_label = QtWidgets.QLabel("Showing 0 of 0 rows")
-        self.row_count_label.setStyleSheet("color: #606060; padding: 2px 4px;")
-        filter_controls.addWidget(self.row_count_label)
-
-        layout.addLayout(filter_controls)
-
-        # Table for beats
-        self.vfx_beat_columns = [
-            "id", "code", "sg_beat_id", "sg_vfx_breakdown_scene", "sg_page",
-            "sg_script_excerpt", "description", "sg_vfx_type", "sg_complexity",
-            "sg_category", "sg_vfx_description", "sg_number_of_shots",
-            "updated_at", "updated_by"
-        ]
-
-        headers = [
-            "ID", "Code", "Beat ID", "Scene", "Page",
-            "Script Excerpt", "Description", "VFX Type", "Complexity",
-            "Category", "VFX Description", "# Shots",
-            "Updated At", "Updated By"
-        ]
-
-        self.vfx_breakdown_table = QtWidgets.QTableWidget()
-        self.vfx_breakdown_table.setColumnCount(len(self.vfx_beat_columns))
-        self.vfx_breakdown_table.setHorizontalHeaderLabels(headers)
-        self.vfx_breakdown_table.horizontalHeader().setStretchLastSection(False)
-        self.vfx_breakdown_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
-        self.vfx_breakdown_table.setAlternatingRowColors(False)
-        self.vfx_breakdown_table.setWordWrap(True)
-
-        # Set cell selection mode (like Excel)
-        self.vfx_breakdown_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
-        self.vfx_breakdown_table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-
-        # Enable context menu
-        self.vfx_breakdown_table.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        self.vfx_breakdown_table.customContextMenuRequested.connect(self._on_table_context_menu)
-
-        # Connect vertical header (row headers) click to select entire row
-        self.vfx_breakdown_table.verticalHeader().sectionClicked.connect(self._on_row_header_clicked)
-
-        hdr = self.vfx_breakdown_table.horizontalHeader()
-        hdr.setStretchLastSection(False)
-        hdr.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
-        hdr.setSectionsClickable(True)
-        hdr.sectionClicked.connect(self._on_header_clicked)
-
-        # Connect item changed signal
-        self.vfx_breakdown_table.itemChanged.connect(self._on_item_changed)
-
-        # Install event filter to catch Enter key
-        self.vfx_breakdown_table.installEventFilter(self)
-
-        layout.addWidget(self.vfx_breakdown_table)
-
-        # Setup keyboard shortcuts
-        self._setup_shortcuts()
+    def _on_widget_status_changed(self, message, is_error):
+        """Handle status message from breakdown widget."""
+        self._set_vfx_breakdown_status(message, is_error)
 
     def _setup_shortcuts(self):
         """Setup keyboard shortcuts for undo/redo and copy/paste."""
@@ -2153,13 +2051,17 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             return False
 
     def _on_set_current_vfx_breakdown(self):
-        """Set the selected VFX Breakdown as the current one for the selected RFQ."""
+        """Set the selected VFX Breakdown as the current one for the selected Bid."""
         if not self.parent_app:
             return
 
-        rfq = self.parent_app.rfq_combo.itemData(self.parent_app.rfq_combo.currentIndex())
-        if not rfq:
-            QtWidgets.QMessageBox.warning(self, "No RFQ selected", "Please select an RFQ first.")
+        # Get the current bid from the bidding tab
+        bid = None
+        if hasattr(self.parent_app, 'bidding_tab') and hasattr(self.parent_app.bidding_tab, 'current_bid'):
+            bid = self.parent_app.bidding_tab.current_bid
+
+        if not bid:
+            QtWidgets.QMessageBox.warning(self, "No Bid selected", "Please select a Bid first from the Bidding tab.")
             return
 
         idx = self.vfx_breakdown_combo.currentIndex()
@@ -2168,49 +2070,43 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "No Breakdown selected", "Please select a VFX Breakdown from the list.")
             return
 
-        rfq_id = rfq["id"]
+        bid_id = bid["id"]
         br_id = breakdown.get("id")
         br_type = breakdown.get("type", "CustomEntity01")
-        logger.info(f"Updating RFQ {rfq_id} sg_vfx_breakdown -> {br_type}({br_id})")
+        logger.info(f"Updating Bid {bid_id} sg_vfx_breakdown -> {br_type}({br_id})")
 
         try:
-            # Update on ShotGrid
-            self.sg_session.update_rfq_vfx_breakdown(rfq_id, breakdown)
+            # Update Bid's sg_vfx_breakdown field on ShotGrid
+            self.sg_session.update_bid_vfx_breakdown(bid_id, breakdown)
         except Exception as e:
-            logger.error(f"Failed to update RFQ sg_vfx_breakdown: {e}", exc_info=True)
+            logger.error(f"Failed to update Bid sg_vfx_breakdown: {e}", exc_info=True)
             QtWidgets.QMessageBox.critical(self, "Error", f"Failed to set current VFX Breakdown:\n{e}")
             return
 
-        # Refresh this RFQ from SG to keep local data accurate
+        # Refresh the bid from SG to keep local data accurate
         try:
-            updated_rfq = self.sg_session.get_entity_by_id(
-                "CustomEntity04",
-                rfq_id,
-                fields=["id", "code", "sg_vfx_breakdown", "sg_status_list", "created_at"]
+            updated_bid = self.sg_session.sg.find_one(
+                "CustomEntity06",
+                [["id", "is", bid_id]],
+                ["id", "code", "sg_bid_type", "sg_vfx_breakdown"]
             )
-            # Replace combo item data with the fresh dict
-            self.parent_app.rfq_combo.setItemData(self.parent_app.rfq_combo.currentIndex(), updated_rfq)
-            rfq = updated_rfq  # use fresh one below
-            logger.info(f"RFQ {rfq_id} refreshed with latest sg_vfx_breakdown link.")
+            # Update the current bid in bidding tab
+            if updated_bid and hasattr(self.parent_app, 'bidding_tab'):
+                self.parent_app.bidding_tab.current_bid = updated_bid
+                # Update bid selector's combo box data
+                if hasattr(self.parent_app.bidding_tab, 'bid_selector'):
+                    # Find and update the item in the combo
+                    combo = self.parent_app.bidding_tab.bid_selector.bid_combo
+                    for i in range(combo.count()):
+                        item_bid = combo.itemData(i)
+                        if isinstance(item_bid, dict) and item_bid.get('id') == bid_id:
+                            combo.setItemData(i, updated_bid)
+                            break
+            logger.info(f"Bid {bid_id} refreshed with latest sg_vfx_breakdown link.")
         except Exception as e:
-            logger.warning(f"Failed to refresh RFQ after update: {e}")
+            logger.warning(f"Failed to refresh Bid after update: {e}")
 
-        # Update label under RFQ combo
-        linked = rfq.get("sg_vfx_breakdown")
-        if isinstance(linked, dict):
-            label_text = linked.get("code") or linked.get("name") or f"ID {linked.get('id')}"
-        elif isinstance(linked, list) and linked:
-            item = linked[0]
-            label_text = item.get("code") or item.get("name") or f"ID {item.get('id')}"
-        else:
-            label_text = "-"
-        if hasattr(self.parent_app, "rfq_vfx_breakdown_label"):
-            self.parent_app.rfq_vfx_breakdown_label.setText(label_text)
-
-        # Re-run the RFQ change flow to sync combo default selection & Beats table
-        self.parent_app._on_rfq_changed(self.parent_app.rfq_combo.currentIndex())
-
-        QtWidgets.QMessageBox.information(self, "Updated", "Current VFX Breakdown set for this RFQ.")
+        QtWidgets.QMessageBox.information(self, "Updated", f"VFX Breakdown set for Bid '{bid.get('code', 'N/A')}'.")
 
     def _on_add_vfx_breakdown(self):
         """Handle Add VFX Breakdown button click."""
@@ -2737,17 +2633,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
     def _clear_vfx_breakdown_table(self):
         """Clear the VFX Breakdown table."""
-        self.vfx_breakdown_table.setRowCount(0)
-        self.beat_data_by_row.clear()
-        self.all_beats_data.clear()
-        self.filtered_row_indices.clear()
-        self.display_row_to_data_row.clear()
-        self.sort_column = None
-        self.sort_direction = None
-        self.undo_stack.clear()
-        self.redo_stack.clear()
-        self.row_count_label.setText("Showing 0 of 0 rows")
-        self._update_header_sort_indicators()
+        self.breakdown_widget.clear_data()
 
     def _on_vfx_breakdown_changed(self, index):
         """Handle VFX Breakdown selection change."""
@@ -2898,29 +2784,15 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self._populate_beats_table(beats)
 
     def _populate_beats_table(self, beats):
-        """Populate the beats table."""
-        # Clear existing data
-        self.all_beats_data = beats.copy() if beats else []
-        self.filtered_row_indices.clear()
-        self.display_row_to_data_row.clear()
-        self.beat_data_by_row.clear()
-        self.undo_stack.clear()
-        self.redo_stack.clear()
-
-        if not beats:
-            self._set_vfx_breakdown_status("No Beats linked to this VFX Breakdown.")
-            self.vfx_breakdown_table.setRowCount(0)
-            self.row_count_label.setText("Showing 0 of 0 rows")
-            return
-
-        # Apply filters and sorting (which will populate the table)
-        self._apply_filters()
-
-        # Use autosizer
-        self._autosize_beat_columns(min_px=80, max_px=700, extra_padding=28)
+        """Populate the beats table using the breakdown widget."""
+        # Use the breakdown widget to load beats
+        self.breakdown_widget.load_beats(beats, field_schema=self.field_schema)
 
         display_name = self.vfx_breakdown_combo.currentText()
-        self._set_vfx_breakdown_status(f"Loaded {len(beats)} Beat(s) for '{display_name}'.")
+        if beats:
+            self._set_vfx_breakdown_status(f"Loaded {len(beats)} Beat(s) for '{display_name}'.")
+        else:
+            self._set_vfx_breakdown_status("No Beats linked to this VFX Breakdown.")
 
     def _format_sg_value(self, value):
         """Format a ShotGrid value for display."""

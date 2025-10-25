@@ -9,8 +9,9 @@ import sys
 try:
     from .shotgrid import ShotgridClient
     from .package_data_treeview import PackageTreeView, CustomCheckBox
-    from .vfx_breakdown_tab import VFXBreakdownTab
     from .packages_tab import PackagesTab
+    from .bidding_tab import BiddingTab
+    from .bid_selector_widget import CollapsibleGroupBox
     from .logger import logger
 except ImportError:
     # Standalone mode - add to path and import
@@ -22,8 +23,9 @@ except ImportError:
 
     from shotgrid import ShotgridClient
     from package_data_treeview import PackageTreeView, CustomCheckBox
-    from vfx_breakdown_tab import VFXBreakdownTab
     from packages_tab import PackagesTab
+    from bidding_tab import BiddingTab
+    from bid_selector_widget import CollapsibleGroupBox
 
     # Setup basic logger for standalone mode
     try:
@@ -46,6 +48,82 @@ except ImportError:
         print(f"Could not setup file logging: {e}")
         logging.basicConfig(level=logging.DEBUG)
         logger = logging.getLogger("FFPackageManager")
+
+
+class ProjectDetailsDialog(QtWidgets.QDialog):
+    """Dialog showing project and RFQ details."""
+
+    def __init__(self, project, rfq, parent=None):
+        """Initialize the dialog.
+
+        Args:
+            project: Project data dict or None
+            rfq: RFQ data dict or None
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.project = project
+        self.rfq = rfq
+
+        self.setWindowTitle("Project Details")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Create form layout for details
+        form_layout = QtWidgets.QFormLayout()
+
+        # Project details
+        if self.project:
+            project_id = QtWidgets.QLabel(str(self.project.get('id', '-')))
+            form_layout.addRow("Project ID:", project_id)
+
+            project_name = QtWidgets.QLabel(self.project.get('name', '-'))
+            form_layout.addRow("Project Name:", project_name)
+
+            project_status = QtWidgets.QLabel(self.project.get('sg_status', '-'))
+            form_layout.addRow("Project Status:", project_status)
+        else:
+            no_project = QtWidgets.QLabel("No project selected")
+            form_layout.addRow("", no_project)
+
+        # Separator
+        separator = QtWidgets.QFrame()
+        separator.setFrameShape(QtWidgets.QFrame.HLine)
+        separator.setFrameShadow(QtWidgets.QFrame.Sunken)
+        form_layout.addRow(separator)
+
+        # RFQ details
+        if self.rfq:
+            rfq_id = QtWidgets.QLabel(str(self.rfq.get('id', '-')))
+            form_layout.addRow("RFQ ID:", rfq_id)
+
+            rfq_code = QtWidgets.QLabel(self.rfq.get('code', '-'))
+            form_layout.addRow("RFQ Code:", rfq_code)
+
+            rfq_status = QtWidgets.QLabel(self.rfq.get('sg_status_list', '-'))
+            form_layout.addRow("RFQ Status:", rfq_status)
+        else:
+            no_rfq = QtWidgets.QLabel("No RFQ selected")
+            form_layout.addRow("", no_rfq)
+
+        layout.addLayout(form_layout)
+
+        # Close button
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        close_btn.setDefault(True)
+        button_layout.addWidget(close_btn)
+
+        layout.addLayout(button_layout)
 
 
 class PackageManagerApp(QtWidgets.QMainWindow):
@@ -463,31 +541,22 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             header_layout.addStretch()
             main_layout.addLayout(header_layout)
 
-            # Top section: SG Project and RFQ side by side
-            top_section_layout = QtWidgets.QHBoxLayout()
-
-            # Shotgrid Project Group
-            sg_project_group = self._create_sg_project_group()
-            top_section_layout.addWidget(sg_project_group)
-
-            # Request for Quotation Group
-            rfq_group = self._create_rfq_group()
-            top_section_layout.addWidget(rfq_group)
-
-            main_layout.addLayout(top_section_layout)
+            # Compact top bar with dropdowns and Current Bid (always visible)
+            top_bar = self._create_top_bar()
+            main_layout.addWidget(top_bar)
 
             # Tabbed section
             self.tab_widget = QtWidgets.QTabWidget()
 
-            # Create VFX Breakdown tab (left of Packages)
-            vfx_breakdown_tab = self._create_vfx_breakdown_tab()
-            self.tab_widget.addTab(vfx_breakdown_tab, "VFX Breakdown")
+            # Create Bidding tab (contains VFX Breakdown as nested tab)
+            bidding_tab = self._create_bidding_tab()
+            self.tab_widget.addTab(bidding_tab, "Bidding")
 
-            # Create Packages tab (middle)
+            # Create Packages tab
             packages_tab = self._create_packages_tab()
             self.tab_widget.addTab(packages_tab, "Packages")
 
-            # Create Delivery tab (right of Packages)
+            # Create Delivery tab
             delivery_tab = self._create_delivery_tab()
             self.tab_widget.addTab(delivery_tab, "Delivery")
 
@@ -499,81 +568,72 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             logger.error(f"Error in _build_ui: {e}", exc_info=True)
             raise
 
-    def _create_sg_project_group(self):
-        """Create the Shotgrid Project group."""
-        sg_group = QtWidgets.QGroupBox("Shotgrid Project")
-        sg_layout = QtWidgets.QVBoxLayout(sg_group)
+    def _create_top_bar(self):
+        """Create compact top bar with Project, RFQ dropdowns and Current Bid."""
+        bar_widget = QtWidgets.QWidget()
+        bar_widget.setObjectName("topBar")
+        bar_widget.setStyleSheet("""
+            QWidget#topBar {
+                border: 1px solid #555555;
+                border-radius: 4px;
+            }
+        """)
+        bar_layout = QtWidgets.QHBoxLayout(bar_widget)
+        bar_layout.setContentsMargins(6, 6, 6, 6)
 
-        # Project selector row
-        project_row = QtWidgets.QHBoxLayout()
-
-        project_label = QtWidgets.QLabel("Select Project:")
-        project_row.addWidget(project_label)
+        # Project section
+        project_label = QtWidgets.QLabel("Project:")
+        bar_layout.addWidget(project_label)
 
         self.sg_project_combo = QtWidgets.QComboBox()
         self.sg_project_combo.setMinimumWidth(200)
         self.sg_project_combo.currentIndexChanged.connect(self._on_sg_project_changed)
-        project_row.addWidget(self.sg_project_combo)
+        bar_layout.addWidget(self.sg_project_combo)
 
         load_sg_btn = QtWidgets.QPushButton("Load from SG")
         load_sg_btn.clicked.connect(self._load_sg_projects)
-        project_row.addWidget(load_sg_btn)
+        bar_layout.addWidget(load_sg_btn)
 
-        project_row.addStretch()
-        sg_layout.addLayout(project_row)
+        # Spacer
+        bar_layout.addSpacing(20)
 
-        # Project info display
-        info_layout = QtWidgets.QFormLayout()
-
-        self.sg_project_id_label = QtWidgets.QLabel("-")
-        info_layout.addRow("Project ID:", self.sg_project_id_label)
-
-        self.sg_project_status_label = QtWidgets.QLabel("-")
-        info_layout.addRow("Status:", self.sg_project_status_label)
-
-        sg_layout.addLayout(info_layout)
-
-        return sg_group
-
-    def _create_rfq_group(self):
-        """Create the Request for Quotation group."""
-        rfq_group = QtWidgets.QGroupBox("Request for Quotation")
-        rfq_layout = QtWidgets.QVBoxLayout(rfq_group)
-
-        # RFQ selector row
-        rfq_row = QtWidgets.QHBoxLayout()
-
-        rfq_label = QtWidgets.QLabel("Select RFQ:")
-        rfq_row.addWidget(rfq_label)
+        # RFQ section
+        rfq_label = QtWidgets.QLabel("RFQ:")
+        bar_layout.addWidget(rfq_label)
 
         self.rfq_combo = QtWidgets.QComboBox()
         self.rfq_combo.setMinimumWidth(200)
         self.rfq_combo.currentIndexChanged.connect(self._on_rfq_changed)
-        rfq_row.addWidget(self.rfq_combo)
+        bar_layout.addWidget(self.rfq_combo)
 
-        rfq_row.addStretch()
-        rfq_layout.addLayout(rfq_row)
+        # Spacer
+        bar_layout.addSpacing(20)
 
-        # RFQ info display
-        rfq_info_layout = QtWidgets.QFormLayout()
+        # Current Bid section
+        current_bid_label = QtWidgets.QLabel("Current Bid:")
+        bar_layout.addWidget(current_bid_label)
 
-        self.rfq_id_label = QtWidgets.QLabel("-")
-        rfq_info_layout.addRow("RFQ ID:", self.rfq_id_label)
+        self.rfq_bid_label = QtWidgets.QLabel("-")
+        self.rfq_bid_label.setStyleSheet("font-weight: bold; border: none;")
+        bar_layout.addWidget(self.rfq_bid_label)
 
-        self.rfq_status_label = QtWidgets.QLabel("-")
-        rfq_info_layout.addRow("RFQ Status:", self.rfq_status_label)
+        bar_layout.addStretch()
 
-        self.rfq_vfx_breakdown_label = QtWidgets.QLabel("-")
-        rfq_info_layout.addRow("VFX Breakdown:", self.rfq_vfx_breakdown_label)
+        # Project Details button
+        details_btn = QtWidgets.QPushButton("Project Details")
+        details_btn.clicked.connect(self._show_project_details)
+        bar_layout.addWidget(details_btn)
 
-        rfq_layout.addLayout(rfq_info_layout)
+        return bar_widget
 
-        return rfq_group
+    def _show_project_details(self):
+        """Show the project details dialog."""
+        # Get current project and RFQ data
+        project = self.sg_project_combo.itemData(self.sg_project_combo.currentIndex())
+        rfq = self.rfq_combo.itemData(self.rfq_combo.currentIndex())
 
-    def _create_vfx_breakdown_tab(self):
-        """Create the VFX Breakdown tab content."""
-        self.vfx_breakdown_tab = VFXBreakdownTab(self.sg_session, parent=self)
-        return self.vfx_breakdown_tab
+        dialog = ProjectDetailsDialog(project, rfq, parent=self)
+        dialog.exec()
 
     def _create_packages_tab(self):
         """Create the Packages tab content."""
@@ -599,6 +659,11 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         delivery_layout.addStretch()
 
         return delivery_widget
+
+    def _create_bidding_tab(self):
+        """Create the Bidding tab content."""
+        self.bidding_tab = BiddingTab(self.sg_session, parent=self)
+        return self.bidding_tab
 
     def _load_sg_projects(self):
         """Load Shotgrid projects."""
@@ -666,19 +731,13 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         project = self.sg_project_combo.itemData(index)
 
         if project:
-            self.sg_project_id_label.setText(str(project['id']))
-            self.sg_project_status_label.setText(project.get('sg_status', 'Unknown'))
             logger.info(f"SG project selected: {project['code']} (ID: {project['id']})")
 
             # Load RFQs for this project
             self._load_rfqs(project['id'])
         else:
-            self.sg_project_id_label.setText("-")
-            self.sg_project_status_label.setText("-")
             self.rfq_combo.clear()
             self.rfq_combo.addItem("-- Select RFQ --", None)
-            self.rfq_id_label.setText("-")
-            self.rfq_status_label.setText("-")
             if hasattr(self, "packages_tab"):
                 self.packages_tab.clear()
 
@@ -696,7 +755,13 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
         try:
             rfqs = self.sg_session.get_rfqs(project_id,
-                                            fields=["id", "code", "sg_status_list", "sg_vfx_breakdown", "created_at"])
+                                            fields=["id", "code", "sg_status_list",
+                                                    "sg_early_bid", "sg_early_bid.code", "sg_early_bid.sg_bid_type",
+                                                    "sg_turnover_bid", "sg_turnover_bid.code", "sg_turnover_bid.sg_bid_type",
+                                                    "created_at"])
+
+            if rfqs:
+                logger.info(f"DEBUG: First RFQ data = {rfqs[0]}")
 
             for rfq in rfqs:
                 display_text = f"{rfq.get('code', 'N/A')}"
@@ -722,37 +787,49 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         """Handle RFQ selection: update labels, tree, and default-select its linked Breakdown."""
         rfq = self.rfq_combo.itemData(index)
 
-        # Update VFX Breakdown combo (loads ALL breakdowns in project; selects linked one if present)
-        if hasattr(self, "vfx_breakdown_tab"):
-            self.vfx_breakdown_tab.populate_vfx_breakdown_combo(rfq, auto_select=True)
-
         if rfq:
-            # Labels
-            self.rfq_id_label.setText(str(rfq["id"]))
-            self.rfq_status_label.setText(rfq.get("sg_status_list", "Unknown"))
+            # Show currently linked Bid under the RFQ selector
+            # Check Early Bid first, then Turnover Bid
+            linked_bid = rfq.get("sg_early_bid")
+            if not linked_bid:
+                linked_bid = rfq.get("sg_turnover_bid")
 
-            # Show currently linked Breakdown under the RFQ selector
-            linked = rfq.get("sg_vfx_breakdown")
-            if isinstance(linked, dict):
-                label_text = linked.get("code") or linked.get("name") or f"ID {linked.get('id')}"
-            elif isinstance(linked, list) and linked:
-                item = linked[0]
-                label_text = item.get("code") or item.get("name") or f"ID {item.get('id')}"
+            logger.info(f"DEBUG: linked_bid = {linked_bid}")
+            logger.info(f"DEBUG: linked_bid type = {type(linked_bid)}")
+            if linked_bid:
+                if isinstance(linked_bid, dict):
+                    logger.info(f"DEBUG: linked_bid keys = {list(linked_bid.keys())}")
+                    logger.info(f"DEBUG: linked_bid['code'] = {linked_bid.get('code')}")
+                    logger.info(f"DEBUG: linked_bid['sg_bid_type'] = {linked_bid.get('sg_bid_type')}")
+
+            if isinstance(linked_bid, dict):
+                # ShotGrid returns 'name' field for linked entities, not 'code'
+                bid_name = linked_bid.get("name") or linked_bid.get("code") or f"Bid {linked_bid.get('id')}"
+                bid_type = linked_bid.get("sg_bid_type", "")
+                label_text = f"{bid_name} ({bid_type})" if bid_type else bid_name
+            elif isinstance(linked_bid, list) and linked_bid:
+                item = linked_bid[0]
+                # ShotGrid returns 'name' field for linked entities, not 'code'
+                bid_name = item.get("name") or item.get("code") or f"Bid {item.get('id')}"
+                bid_type = item.get("sg_bid_type", "")
+                label_text = f"{bid_name} ({bid_type})" if bid_type else bid_name
             else:
                 label_text = "-"
-            if hasattr(self, "rfq_vfx_breakdown_label"):
-                self.rfq_vfx_breakdown_label.setText(label_text)
+            if hasattr(self, "rfq_bid_label"):
+                self.rfq_bid_label.setText(label_text)
 
             logger.info(f"RFQ selected: {rfq.get('code', 'N/A')} (ID: {rfq['id']})")
 
             # Update the package data tree with RFQ data
             if hasattr(self, "packages_tab"):
                 self.packages_tab.set_rfq(rfq)
+
+            # Update the bidding tab with RFQ data
+            if hasattr(self, "bidding_tab"):
+                self.bidding_tab.set_rfq(rfq)
         else:
-            self.rfq_id_label.setText("-")
-            self.rfq_status_label.setText("-")
-            if hasattr(self, "rfq_vfx_breakdown_label"):
-                self.rfq_vfx_breakdown_label.setText("-")
+            if hasattr(self, "rfq_bid_label"):
+                self.rfq_bid_label.setText("-")
             if hasattr(self, "packages_tab"):
                 self.packages_tab.clear()
 
