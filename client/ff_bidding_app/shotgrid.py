@@ -34,6 +34,30 @@ class ShotgridClient:
         rfqs = client.get_rfqs(project_id=123)
     """
 
+    # Static dictionary of required fields for CustomEntity02 (Breakdown Item)
+    # Datatypes based on project 389 template
+    BREAKDOWN_ITEM_REQUIRED_FIELDS = {
+        "code": "text",
+        "sg_complexity": "list",
+        "sg_interior_exterior": "list",
+        "sg_number_of_shots": "number",
+        "sg_on_set_vfx_needs": "text",
+        "sg_page_eights": "number",
+        "sg_previs": "checkbox",
+        "sg_script_excerpt": "text",
+        "sg_set": "text",
+        "sg_sim": "checkbox",
+        "sg_sorting_priority": "number",
+        "sg_team_notes": "text",
+        "sg_time_of_day": "list",
+        "sg_unit": "text",
+        "sg_vfx_assumptions": "text",
+        "sg_vfx_breakdown_scene": "text",
+        "sg_vfx_questions": "text",
+        "sg_vfx_supervisor_notes": "text",
+        "sg_vfx_type": "list",
+    }
+
     def __init__(self, site_url=None, script_name=None, api_key=None):
         """
         Initialize Shotgrid client.
@@ -492,79 +516,40 @@ class ShotgridClient:
         filters = [["id", "is", entity_id]]
         return self.sg.find_one(entity_type, filters, fields)
 
-    def check_breakdown_item_fields(self, project_code=None, template_project_code="389"):
+    def check_breakdown_item_fields(self, project_code=None):
         """
-        Check if required fields exist in CustomEntity02 (Breakdown Item) for a project.
+        Check if required fields exist in CustomEntity02 (Breakdown Item).
 
-        Uses project 389 as the template for expected field datatypes. Compares the fields
-        in the template project with those in the target project (or all projects if
-        project_code is None).
+        Compares the current ShotGrid schema against the static BREAKDOWN_ITEM_REQUIRED_FIELDS
+        dictionary (based on project 389 template) to identify missing fields.
 
         Args:
-            project_code: Project code to check fields for. If None, checks entity-level schema.
-            template_project_code: Project code to use as template for field datatypes (default: "389")
+            project_code: Project code (for reporting purposes only - schema is entity-level)
 
         Returns:
             dict: Contains:
-                - 'template_fields': dict of field_name -> datatype from template project
-                - 'missing_fields': list of field names that don't exist in target project
-                - 'existing_fields': dict of field_name -> datatype that exist in target
-                - 'project_code': the project code checked (or 'entity-level' if None)
+                - 'template_fields': dict of field_name -> datatype from static template
+                - 'missing_fields': list of field names that don't exist in current schema
+                - 'existing_fields': dict of field_name -> datatype that exist
+                - 'project_code': the project code (or 'entity-level' if None)
         """
-        # List of required fields to check
-        required_fields = [
-            "sg_vfx_breakdown_scene",
-            "sg_interior_exterior",
-            "sg_set",
-            "sg_time_of_day",
-            "code",
-            "sg_previs",
-            "sg_sim",
-            "sg_script_excerpt",
-            "sg_vfx_type",
-            "sg_number_of_shots",
-            "sg_complexity",
-            "sg_vfx_assumptions",
-            "sg_vfx_questions",
-            "sg_team_notes",
-            "sg_vfx_supervisor_notes",
-            "sg_on_set_vfx_needs",
-            "sg_page_eights",
-            "sg_unit",
-            "sg_sorting_priority",
-        ]
-
         entity_type = "CustomEntity02"
 
-        # Get schema for template project (389) - this gives us the expected datatypes
-        # Note: ShotGrid schema is typically the same across all projects for an entity type,
-        # but we'll use project-level checks if needed
-        template_schema = self.get_entity_schema(entity_type)
+        # Use the static dictionary as the template
+        template_fields = self.BREAKDOWN_ITEM_REQUIRED_FIELDS.copy()
 
-        # Build template fields dictionary with datatypes
-        template_fields = {}
-        for field_name in required_fields:
-            if field_name in template_schema:
-                field_info = template_schema[field_name]
-                datatype = field_info.get("data_type", {})
-                # Handle case where data_type might be a dict with 'value' key or just a string
-                if isinstance(datatype, dict):
-                    datatype = datatype.get("value", str(datatype))
-                template_fields[field_name] = datatype
-
-        # Get schema for target project (if specified, otherwise use same schema)
-        # In ShotGrid, schema is typically entity-level, not project-level
-        # But we'll check which fields actually exist
-        target_schema = template_schema  # Schema is entity-level in SG
+        # Get current schema for CustomEntity02
+        current_schema = self.get_entity_schema(entity_type)
 
         # Check which fields exist and which are missing
         existing_fields = {}
         missing_fields = []
 
-        for field_name in required_fields:
-            if field_name in target_schema:
-                field_info = target_schema[field_name]
+        for field_name in template_fields.keys():
+            if field_name in current_schema:
+                field_info = current_schema[field_name]
                 datatype = field_info.get("data_type", {})
+                # Handle case where data_type might be a dict with 'value' key or just a string
                 if isinstance(datatype, dict):
                     datatype = datatype.get("value", str(datatype))
                 existing_fields[field_name] = datatype
@@ -580,31 +565,33 @@ class ShotgridClient:
 
         return result
 
-    def print_breakdown_item_fields_report(self, project_code=None, template_project_code="389"):
+    def print_breakdown_item_fields_report(self, project_code=None):
         """
         Print a formatted report of CustomEntity02 field existence check.
 
+        Uses the static BREAKDOWN_ITEM_REQUIRED_FIELDS dictionary (based on project 389)
+        as the template for comparison.
+
         Args:
-            project_code: Project code to check fields for. If None, checks entity-level schema.
-            template_project_code: Project code to use as template (default: "389")
+            project_code: Project code (for reporting purposes only - schema is entity-level)
 
         Returns:
             dict: Same as check_breakdown_item_fields()
         """
-        result = self.check_breakdown_item_fields(project_code, template_project_code)
+        result = self.check_breakdown_item_fields(project_code)
 
         print("=" * 80)
         print(f"CustomEntity02 (Breakdown Item) Field Check Report")
         print(f"Project: {result['project_code']}")
-        print(f"Template Project: {template_project_code}")
+        print(f"Template: Based on project 389 (static dictionary)")
         print("=" * 80)
 
-        print(f"\nTemplate Fields (from project {template_project_code}):")
+        print(f"\nRequired Fields (from template - project 389):")
         print("-" * 80)
         for field_name, datatype in sorted(result["template_fields"].items()):
             print(f"  {field_name:40} -> {datatype}")
 
-        print(f"\n\nExisting Fields in target project:")
+        print(f"\n\nExisting Fields in current schema:")
         print("-" * 80)
         if result["existing_fields"]:
             for field_name, datatype in sorted(result["existing_fields"].items()):
@@ -612,7 +599,7 @@ class ShotgridClient:
         else:
             print("  None")
 
-        print(f"\n\nMissing Fields in target project:")
+        print(f"\n\nMissing Fields in current schema:")
         print("-" * 80)
         if result["missing_fields"]:
             for field_name in sorted(result["missing_fields"]):

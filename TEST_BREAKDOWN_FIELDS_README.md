@@ -1,31 +1,34 @@
 # Testing CustomEntity02 (Breakdown Item) Fields
 
-This guide explains how to use the utility function to check if all required fields exist in CustomEntity02 (Breakdown Item) for your ShotGrid project.
+This guide explains how to use the utility function to check if all required fields exist in CustomEntity02 (Breakdown Item) for your ShotGrid instance.
 
 ## What It Does
 
-The utility checks for the following fields in CustomEntity02:
-- `sg_vfx_breakdown_scene`
-- `sg_interior_exterior`
-- `sg_set`
-- `sg_time_of_day`
-- `code`
-- `sg_previs`
-- `sg_sim`
-- `sg_script_excerpt`
-- `sg_vfx_type`
-- `sg_number_of_shots`
-- `sg_complexity`
-- `sg_vfx_assumptions`
-- `sg_vfx_questions`
-- `sg_team_notes`
-- `sg_vfx_supervisor_notes`
-- `sg_on_set_vfx_needs`
-- `sg_page_eights`
-- `sg_unit`
-- `sg_sorting_priority`
+The utility checks for the following fields in CustomEntity02 and compares them against a static template dictionary (based on project 389):
 
-The utility uses **project 389** as the template for field datatypes and reports which fields are missing in your target project.
+| Field Name | Datatype |
+|------------|----------|
+| `code` | text |
+| `sg_complexity` | list |
+| `sg_interior_exterior` | list |
+| `sg_number_of_shots` | number |
+| `sg_on_set_vfx_needs` | text |
+| `sg_page_eights` | number |
+| `sg_previs` | checkbox |
+| `sg_script_excerpt` | text |
+| `sg_set` | text |
+| `sg_sim` | checkbox |
+| `sg_sorting_priority` | number |
+| `sg_team_notes` | text |
+| `sg_time_of_day` | list |
+| `sg_unit` | text |
+| `sg_vfx_assumptions` | text |
+| `sg_vfx_breakdown_scene` | text |
+| `sg_vfx_questions` | text |
+| `sg_vfx_supervisor_notes` | text |
+| `sg_vfx_type` | list |
+
+The utility uses a **static dictionary** (`BREAKDOWN_ITEM_REQUIRED_FIELDS`) based on project 389's schema. This dictionary is defined in the `ShotgridClient` class and can be easily updated if needed.
 
 ## Prerequisites
 
@@ -80,15 +83,14 @@ This will check the entity-level schema for CustomEntity02 and display a detaile
 #### Command-line Options
 
 ```bash
-# Check for a specific project
+# Basic check (entity-level)
+python test_breakdown_fields.py
+
+# Check with a project code label (for reporting purposes)
 python test_breakdown_fields.py --project-code YOUR_PROJECT_CODE
-
-# Use a different template project (default is 389)
-python test_breakdown_fields.py --template-project 389
-
-# Combine options
-python test_breakdown_fields.py --project-code YOUR_PROJECT_CODE --template-project 389
 ```
+
+Note: The project code is only used for labeling in the report. The schema check is done at the entity level since ShotGrid schemas are shared across all projects.
 
 ### Option 2: Using Python Interactively
 
@@ -104,10 +106,13 @@ with ShotgridClient() as client:
     print(f"Missing fields: {result['missing_fields']}")
     print(f"Existing fields: {result['existing_fields']}")
 
+    # Access the static template dictionary
+    print(f"Template fields: {client.BREAKDOWN_ITEM_REQUIRED_FIELDS}")
+
     # Option 2: Print a formatted report
     client.print_breakdown_item_fields_report()
 
-    # Option 3: Check for a specific project
+    # Option 3: Check with a project code label
     client.print_breakdown_item_fields_report(project_code="YOUR_PROJECT")
 ```
 
@@ -117,35 +122,48 @@ with ShotgridClient() as client:
 python -c "from client.ff_bidding_app.shotgrid import ShotgridClient; ShotgridClient().print_breakdown_item_fields_report()"
 ```
 
+### Option 4: View the Static Template Dictionary
+
+You can view the template dictionary without connecting to ShotGrid:
+
+```python
+from client.ff_bidding_app.shotgrid import ShotgridClient
+
+# View the static template (no connection required)
+print(ShotgridClient.BREAKDOWN_ITEM_REQUIRED_FIELDS)
+```
+
 ## Understanding the Output
 
 The test will output a detailed report with three sections:
 
-### 1. Template Fields
-Shows all fields with their expected datatypes from project 389:
+### 1. Required Fields (from template - project 389)
+Shows all fields with their expected datatypes from the static template dictionary:
 ```
-Template Fields (from project 389):
+Required Fields (from template - project 389):
 --------------------------------------------------------------------------------
   code                                     -> text
   sg_complexity                            -> list
-  sg_interior_exterior                     -> text
+  sg_interior_exterior                     -> list
+  sg_number_of_shots                       -> number
   ...
 ```
 
-### 2. Existing Fields
-Lists fields that exist in your target project:
+### 2. Existing Fields in current schema
+Lists fields that exist in your ShotGrid instance:
 ```
-Existing Fields in target project:
+Existing Fields in current schema:
 --------------------------------------------------------------------------------
   code                                     -> text
+  sg_complexity                            -> list
   sg_vfx_breakdown_scene                   -> text
   ...
 ```
 
-### 3. Missing Fields
+### 3. Missing Fields in current schema
 Shows fields that are missing (these need to be created in ShotGrid):
 ```
-Missing Fields in target project:
+Missing Fields in current schema:
 --------------------------------------------------------------------------------
   sg_page_eights                           (expected type: number)
   sg_unit                                  (expected type: text)
@@ -213,13 +231,39 @@ def validate_project_schema(project_code):
     return True
 ```
 
+## Updating the Template Dictionary
+
+If you need to update the static template dictionary with actual datatypes from your ShotGrid instance:
+
+1. **Option 1: Manual Update**
+   - Edit `client/ff_bidding_app/shotgrid.py`
+   - Find the `BREAKDOWN_ITEM_REQUIRED_FIELDS` dictionary (around line 39)
+   - Update the field names and datatypes as needed
+
+2. **Option 2: Generate from ShotGrid**
+   - Use the helper script to get actual datatypes:
+   ```bash
+   python get_field_types_from_389.py > field_types.txt
+   ```
+   - Copy the output dictionary to replace `BREAKDOWN_ITEM_REQUIRED_FIELDS` in `shotgrid.py`
+
 ## Notes
 
-- **Entity-level vs Project-level**: In ShotGrid, custom entity schemas are typically entity-level (shared across all projects), not project-specific. The function checks the entity schema, which should be consistent across your ShotGrid site.
+- **Entity-level Schema**: In ShotGrid, custom entity schemas are entity-level (shared across all projects), not project-specific. The function checks the entity schema, which is consistent across your entire ShotGrid site.
 
-- **Template Project 389**: This project is used as a reference to get the expected field datatypes. If your site uses a different project as the template, specify it using the `--template-project` argument.
+- **Static Dictionary**: The `BREAKDOWN_ITEM_REQUIRED_FIELDS` dictionary is based on project 389's schema. This provides a stable reference point for field validation without requiring dynamic queries.
 
-- **Field Creation**: If fields are missing, you'll need to create them in ShotGrid's site preferences under the CustomEntity02 configuration.
+- **Field Creation**: If fields are missing, you'll need to create them in ShotGrid's site preferences under the CustomEntity02 (Breakdown Item) configuration.
+
+- **Datatype Reference**: Common ShotGrid datatypes include:
+  - `text`: Short text field
+  - `number`: Numeric field
+  - `list`: Dropdown/multi-select list
+  - `checkbox`: Boolean checkbox
+  - `entity`: Link to another entity
+  - `multi_entity`: Link to multiple entities
+  - `date`: Date field
+  - `date_time`: Date and time field
 
 ## Support
 

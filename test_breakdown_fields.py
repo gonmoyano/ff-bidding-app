@@ -3,17 +3,15 @@
 Test script for checking CustomEntity02 (Breakdown Item) fields in ShotGrid.
 
 This script connects to ShotGrid and checks if all required fields exist
-in CustomEntity02 (Breakdown Item) for the specified project.
+in CustomEntity02 (Breakdown Item). Uses a static template dictionary based
+on project 389 for field datatypes.
 
 Usage:
-    # Check fields using entity-level schema (recommended)
+    # Check fields using entity-level schema
     python test_breakdown_fields.py
 
-    # Check fields for a specific project
+    # Check fields for a specific project (for reporting purposes)
     python test_breakdown_fields.py --project-code PROJECT_CODE
-
-    # Use a different template project (default is 389)
-    python test_breakdown_fields.py --template-project 389
 
 Environment variables required:
     SG_URL: ShotGrid site URL (e.g., https://your-studio.shotgrid.com)
@@ -37,13 +35,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "client"))
 from ff_bidding_app.shotgrid import ShotgridClient
 
 
-def test_breakdown_item_fields(project_code=None, template_project_code="389"):
+def test_breakdown_item_fields(project_code=None):
     """
     Test function to check CustomEntity02 (Breakdown Item) fields.
 
+    Uses the static BREAKDOWN_ITEM_REQUIRED_FIELDS dictionary (based on project 389)
+    as the template for comparison.
+
     Args:
-        project_code: Project code to check. If None, checks entity-level schema.
-        template_project_code: Template project code for datatypes (default: "389")
+        project_code: Project code (for reporting purposes only - schema is entity-level)
 
     Returns:
         bool: True if all fields exist, False if any are missing
@@ -58,10 +58,7 @@ def test_breakdown_item_fields(project_code=None, template_project_code="389"):
             print()
 
             # Run the field check with formatted output
-            result = client.print_breakdown_item_fields_report(
-                project_code=project_code,
-                template_project_code=template_project_code
-            )
+            result = client.print_breakdown_item_fields_report(project_code=project_code)
 
             # Return success/failure based on missing fields
             return len(result["missing_fields"]) == 0
@@ -84,13 +81,7 @@ def main():
         "--project-code",
         type=str,
         default=None,
-        help="Project code to check (default: entity-level check)"
-    )
-    parser.add_argument(
-        "--template-project",
-        type=str,
-        default="389",
-        help="Template project code for field datatypes (default: 389)"
+        help="Project code (for reporting purposes only - schema is entity-level)"
     )
 
     args = parser.parse_args()
@@ -111,10 +102,7 @@ def main():
         sys.exit(1)
 
     # Run the test
-    success = test_breakdown_item_fields(
-        project_code=args.project_code,
-        template_project_code=args.template_project
-    )
+    success = test_breakdown_item_fields(project_code=args.project_code)
 
     # Exit with appropriate code
     sys.exit(0 if success else 1)
