@@ -545,7 +545,19 @@ class ShotgridClient:
 
         if verbose:
             print(f"\nDEBUG: Total fields in {entity_type} schema: {len(current_schema)}")
-            print(f"DEBUG: First 10 field names in schema: {list(current_schema.keys())[:10]}")
+            print(f"DEBUG: First 20 field names in schema:")
+            for i, field_name in enumerate(list(current_schema.keys())[:20], 1):
+                print(f"  {i:2}. {field_name}")
+
+            # Look for fields that might match our required fields
+            print(f"\nDEBUG: Looking for fields matching our requirements...")
+            for req_field in list(template_fields.keys())[:5]:  # Check first 5
+                # Try to find similar field names
+                matching = [f for f in current_schema.keys() if req_field.lower() in f.lower()]
+                if matching:
+                    print(f"  '{req_field}' -> Found similar: {matching[:3]}")
+                else:
+                    print(f"  '{req_field}' -> No similar fields found")
 
         # Check which fields exist and which are missing
         existing_fields = {}
