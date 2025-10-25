@@ -10,18 +10,23 @@ This script runs standalone without requiring AYON or any other dependencies
 besides shotgun_api3.
 
 Usage:
-    # Check fields using entity-level schema
+    # Check fields using entity-level schema (uses default credentials)
     python test_breakdown_fields.py
 
     # Check fields for a specific project (for reporting purposes)
     python test_breakdown_fields.py --project-code PROJECT_CODE
 
-Environment variables required:
-    SG_URL: ShotGrid site URL (e.g., https://your-studio.shotgrid.com)
-    SG_SCRIPT: ShotGrid script name
-    SG_KEY: ShotGrid API key
+Default Credentials:
+    Uses the same ShotGrid credentials as run_standalone.py
+    - URL: https://fireframe.shotgrid.autodesk.com/
+    - Script: ff_bidding_app
 
-Example:
+Environment variables (optional overrides):
+    SG_URL: Override ShotGrid site URL
+    SG_SCRIPT: Override ShotGrid script name
+    SG_KEY: Override ShotGrid API key
+
+Example with custom credentials:
     export SG_URL=https://your-studio.shotgrid.com
     export SG_SCRIPT=your_script_name
     export SG_KEY=your_api_key
@@ -76,13 +81,35 @@ def test_breakdown_item_fields(project_code=None):
     Returns:
         bool: True if all fields exist, False if any are missing
     """
-    sg_url = os.getenv('SG_URL', '')
+    # Default credentials from run_standalone.py
+    # Can be overridden with environment variables
+    default_url = "https://fireframe.shotgrid.autodesk.com/"
+    default_script = "ff_bidding_app"
+    default_key = "tiviqwk^jeZqaon8aeemdnnnk"
+
+    sg_url = os.getenv('SG_URL', default_url)
+    sg_script = os.getenv('SG_SCRIPT', default_script)
+    sg_key = os.getenv('SG_KEY', default_key)
+
+    using_defaults = (
+        os.getenv('SG_URL') is None and
+        os.getenv('SG_SCRIPT') is None and
+        os.getenv('SG_KEY') is None
+    )
+
     print("Connecting to ShotGrid...")
-    print(f"Site: {sg_url or 'Not set'}")
+    print(f"Site: {sg_url}")
+    if using_defaults:
+        print("(Using default credentials from run_standalone.py)")
     print()
 
     try:
-        with ShotgridClient() as client:
+        client = ShotgridClient(
+            site_url=sg_url,
+            script_name=sg_script,
+            api_key=sg_key
+        )
+        with client:
             print("✓ Connected successfully!")
             print()
 
@@ -118,12 +145,17 @@ def main():
         description="Check CustomEntity02 (Breakdown Item) fields in ShotGrid",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Environment Variables:
-  SG_URL      ShotGrid site URL (e.g., https://your-studio.shotgrid.com)
-  SG_SCRIPT   ShotGrid script name
-  SG_KEY      ShotGrid API key
+Default Credentials:
+  Uses the same ShotGrid credentials as run_standalone.py
+  - URL: https://fireframe.shotgrid.autodesk.com/
+  - Script: ff_bidding_app
 
-Example:
+Environment Variables (optional overrides):
+  SG_URL      Override ShotGrid site URL
+  SG_SCRIPT   Override ShotGrid script name
+  SG_KEY      Override ShotGrid API key
+
+Example with custom credentials:
   export SG_URL=https://your-studio.shotgrid.com
   export SG_SCRIPT=your_script_name
   export SG_KEY=your_api_key
@@ -139,33 +171,7 @@ Example:
 
     args = parser.parse_args()
 
-    # Check environment variables
-    required_env_vars = ["SG_URL", "SG_SCRIPT", "SG_KEY"]
-    missing_vars = [var for var in required_env_vars if not os.getenv(var)]
-
-    if missing_vars:
-        print("=" * 80)
-        print("ERROR: Missing required environment variables")
-        print("=" * 80)
-        print()
-        for var in missing_vars:
-            print(f"  ✗ {var}")
-        print()
-        print("Please set the following environment variables:")
-        print()
-        print("  export SG_URL=https://your-studio.shotgrid.com")
-        print("  export SG_SCRIPT=your_script_name")
-        print("  export SG_KEY=your_api_key")
-        print()
-        print("Or on Windows (Command Prompt):")
-        print()
-        print("  set SG_URL=https://your-studio.shotgrid.com")
-        print("  set SG_SCRIPT=your_script_name")
-        print("  set SG_KEY=your_api_key")
-        print()
-        sys.exit(1)
-
-    # Run the test
+    # Run the test (uses defaults from run_standalone.py if env vars not set)
     success = test_breakdown_item_fields(project_code=args.project_code)
 
     # Exit with appropriate code

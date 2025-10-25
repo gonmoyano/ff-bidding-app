@@ -15,10 +15,15 @@ Usage:
     # Save to file
     python get_field_types_from_389.py > field_types.txt
 
-Environment variables required:
-    SG_URL: ShotGrid site URL
-    SG_SCRIPT: ShotGrid script name
-    SG_KEY: ShotGrid API key
+Default Credentials:
+    Uses the same ShotGrid credentials as run_standalone.py
+    - URL: https://fireframe.shotgrid.autodesk.com/
+    - Script: ff_bidding_app
+
+Environment variables (optional overrides):
+    SG_URL: Override ShotGrid site URL
+    SG_SCRIPT: Override ShotGrid script name
+    SG_KEY: Override ShotGrid API key
 """
 
 import sys
@@ -77,12 +82,34 @@ fields = [
     "sg_sorting_priority",
 ]
 
-sg_url = os.getenv('SG_URL', '')
-print(f"Connecting to ShotGrid: {sg_url or 'Not set'}", file=sys.stderr)
+# Default credentials from run_standalone.py
+# Can be overridden with environment variables
+default_url = "https://fireframe.shotgrid.autodesk.com/"
+default_script = "ff_bidding_app"
+default_key = "tiviqwk^jeZqaon8aeemdnnnk"
+
+sg_url = os.getenv('SG_URL', default_url)
+sg_script = os.getenv('SG_SCRIPT', default_script)
+sg_key = os.getenv('SG_KEY', default_key)
+
+using_defaults = (
+    os.getenv('SG_URL') is None and
+    os.getenv('SG_SCRIPT') is None and
+    os.getenv('SG_KEY') is None
+)
+
+print(f"Connecting to ShotGrid: {sg_url}", file=sys.stderr)
+if using_defaults:
+    print("(Using default credentials from run_standalone.py)", file=sys.stderr)
 print(file=sys.stderr)
 
 try:
-    with ShotgridClient() as client:
+    client = ShotgridClient(
+        site_url=sg_url,
+        script_name=sg_script,
+        api_key=sg_key
+    )
+    with client:
         print("✓ Connected successfully!", file=sys.stderr)
         print(file=sys.stderr)
         print("Fetching CustomEntity02 schema...", file=sys.stderr)

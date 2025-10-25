@@ -40,31 +40,43 @@ The utility uses a **static dictionary** (`BREAKDOWN_ITEM_REQUIRED_FIELDS`) base
    pip install shotgun_api3
    ```
 
-3. **ShotGrid API credentials** - You need:
-   - Site URL
-   - Script name
-   - API key
+3. **No AYON required** - These scripts run standalone without AYON or any addon framework
 
-4. **No AYON required** - These scripts run standalone without AYON or any addon framework
+4. **ShotGrid API credentials** - Built-in defaults:
+   - Uses the same credentials as `run_standalone.py` by default
+   - URL: `https://fireframe.shotgrid.autodesk.com/`
+   - Script: `ff_bidding_app`
+   - Can be overridden with environment variables if needed
 
 ## Setup
 
-Set up your ShotGrid credentials as environment variables:
+### Quick Start (No setup required!)
 
+Just run the script - it will use the default credentials from `run_standalone.py`:
+
+```bash
+python test_breakdown_fields.py
+```
+
+### Custom Credentials (Optional)
+
+If you need to use different ShotGrid credentials, set environment variables to override the defaults:
+
+**Linux/Mac:**
 ```bash
 export SG_URL=https://your-studio.shotgrid.com
 export SG_SCRIPT=your_script_name
 export SG_KEY=your_api_key
 ```
 
-Or on Windows (Command Prompt):
+**Windows (Command Prompt):**
 ```cmd
 set SG_URL=https://your-studio.shotgrid.com
 set SG_SCRIPT=your_script_name
 set SG_KEY=your_api_key
 ```
 
-Or on Windows (PowerShell):
+**Windows (PowerShell):**
 ```powershell
 $env:SG_URL="https://your-studio.shotgrid.com"
 $env:SG_SCRIPT="your_script_name"
@@ -94,7 +106,8 @@ Importing ShotgridClient...
 ✓ ShotgridClient imported successfully
 
 Connecting to ShotGrid...
-Site: https://your-studio.shotgrid.com
+Site: https://fireframe.shotgrid.autodesk.com/
+(Using default credentials from run_standalone.py)
 
 ✓ Connected successfully!
 
@@ -254,15 +267,17 @@ Install the ShotGrid Python API:
 pip install shotgun_api3
 ```
 
-### Error: "Missing credentials"
-Make sure you've set the environment variables:
+### Using Custom Credentials
+By default, the scripts use the same credentials as `run_standalone.py`. If you need to connect to a different ShotGrid instance, set the environment variables:
 ```bash
-echo $SG_URL
-echo $SG_SCRIPT
-echo $SG_KEY
+export SG_URL=https://your-studio.shotgrid.com
+export SG_SCRIPT=your_script_name
+export SG_KEY=your_api_key
 ```
 
-If any are empty, set them following the setup instructions above.
+To verify which credentials are being used, check the output:
+- If you see `(Using default credentials from run_standalone.py)` - using defaults
+- If not shown - using custom environment variables
 
 ### Error: "Permission denied"
 Make sure the test script is executable:
