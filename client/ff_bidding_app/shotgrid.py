@@ -280,12 +280,32 @@ class ShotgridClient:
             self._field_schema_cache[cache_key] = schema.get(field_name, {})
         return self._field_schema_cache[cache_key]
 
-    def get_entity_schema(self, entity_type):
-        """Read and cache the schema for an entity type."""
+    def get_entity_schema(self, entity_type, project_entity=None):
+        """
+        Read and cache the schema for an entity type.
 
-        if entity_type not in self._entity_schema_cache:
-            self._entity_schema_cache[entity_type] = self.sg.schema_read(entity_type)
-        return self._entity_schema_cache[entity_type]
+        Args:
+            entity_type: Entity type (e.g., "CustomEntity02")
+            project_entity: Optional dict like {"type": "Project", "id": 123} for project-specific schema
+
+        Returns:
+            dict: Schema for the entity type
+        """
+        # Use project-specific cache key if project is specified
+        cache_key = (entity_type, project_entity['id'] if project_entity else None)
+
+        if cache_key not in self._entity_schema_cache:
+            if project_entity:
+                # Get project-specific schema using schema_entity_read
+                self._entity_schema_cache[cache_key] = self.sg.schema_entity_read(
+                    entity_type,
+                    project_entity=project_entity
+                )
+            else:
+                # Get global schema
+                self._entity_schema_cache[cache_key] = self.sg.schema_read(entity_type)
+
+        return self._entity_schema_cache[cache_key]
 
     def get_beats_for_vfx_breakdown(self, vfx_breakdown_id, fields=None, order=None):
         """
@@ -516,7 +536,7 @@ class ShotgridClient:
         filters = [["id", "is", entity_id]]
         return self.sg.find_one(entity_type, filters, fields)
 
-    def check_breakdown_item_fields(self, project_code=None, verbose=False):
+    def check_breakdown_item_fields(self, project_id=None, project_code=None, verbose=False):
         """
         Check if required fields exist in CustomEntity02 (Breakdown Item).
 
@@ -524,7 +544,8 @@ class ShotgridClient:
         dictionary (based on project 389 template) to identify missing fields.
 
         Args:
-            project_code: Project code (for reporting purposes only - schema is entity-level)
+            project_id: Project ID to check project-specific schema (recommended!)
+            project_code: Project code (for display purposes only)
             verbose: If True, print debug information about the schema
 
         Returns:
@@ -540,11 +561,16 @@ class ShotgridClient:
         # Use the static dictionary as the template
         template_fields = self.BREAKDOWN_ITEM_REQUIRED_FIELDS.copy()
 
-        # Get current schema for CustomEntity02
-        current_schema = self.get_entity_schema(entity_type)
+        # Get current schema for CustomEntity02 (project-specific if project_id provided)
+        project_entity = {"type": "Project", "id": int(project_id)} if project_id else None
+        current_schema = self.get_entity_schema(entity_type, project_entity=project_entity)
 
         if verbose:
-            print(f"\nDEBUG: Total fields in {entity_type} schema: {len(current_schema)}")
+            if project_id:
+                print(f"\nDEBUG: Checking project-specific schema for project ID {project_id}")
+            else:
+                print(f"\nDEBUG: Checking global schema (no project specified)")
+            print(f"DEBUG: Total fields in {entity_type} schema: {len(current_schema)}")
             print(f"DEBUG: First 20 field names in schema:")
             for i, field_name in enumerate(list(current_schema.keys())[:20], 1):
                 print(f"  {i:2}. {field_name}")
@@ -597,7 +623,7 @@ class ShotgridClient:
 
         return result
 
-    def print_breakdown_item_fields_report(self, project_code=None, verbose=False):
+    def print_breakdown_item_fields_report(self, project_id=None, project_code=None, verbose=False):
         """
         Print a formatted report of CustomEntity02 field existence check.
 
@@ -605,13 +631,26 @@ class ShotgridClient:
         as the template for comparison.
 
         Args:
-            project_code: Project code (for reporting purposes only - schema is entity-level)
+            project_id: Project ID to check project-specific schema (recommended!)
+            project_code: Project code (for display, or to look up project ID)
             verbose: If True, print debug information about the schema
 
         Returns:
             dict: Same as check_breakdown_item_fields()
         """
-        result = self.check_breakdown_item_fields(project_code, verbose=verbose)
+        # If project_code is provided but not project_id, try to look up the project
+        if project_code and not project_id:
+            try:
+                projects = self.sg.find("Project", [["code", "is", project_code]], ["id"])
+                if projects:
+                    project_id = projects[0]["id"]
+                    if verbose:
+                        print(f"DEBUG: Found project '{project_code}' with ID {project_id}")
+            except Exception as e:
+                if verbose:
+                    print(f"DEBUG: Could not look up project by code: {e}")
+
+        result = self.check_breakdown_item_fields(project_id=project_id, project_code=project_code, verbose=verbose)
 
         print("=" * 80)
         print(f"CustomEntity02 (Breakdown Item) Field Check Report")

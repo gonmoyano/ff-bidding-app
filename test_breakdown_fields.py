@@ -115,6 +115,7 @@ def test_breakdown_item_fields(project_code=None, verbose=False):
             print()
 
             # Run the field check with formatted output
+            # project_code will be used to look up project_id automatically
             result = client.print_breakdown_item_fields_report(
                 project_code=project_code,
                 verbose=verbose
