@@ -68,7 +68,7 @@ except Exception as e:
     sys.exit(1)
 
 
-def test_breakdown_item_fields(project_code=None):
+def test_breakdown_item_fields(project_code=None, verbose=False):
     """
     Test function to check CustomEntity02 (Breakdown Item) fields.
 
@@ -77,6 +77,7 @@ def test_breakdown_item_fields(project_code=None):
 
     Args:
         project_code: Project code (for reporting purposes only - schema is entity-level)
+        verbose: If True, print debug information about the schema
 
     Returns:
         bool: True if all fields exist, False if any are missing
@@ -114,7 +115,10 @@ def test_breakdown_item_fields(project_code=None):
             print()
 
             # Run the field check with formatted output
-            result = client.print_breakdown_item_fields_report(project_code=project_code)
+            result = client.print_breakdown_item_fields_report(
+                project_code=project_code,
+                verbose=verbose
+            )
 
             print()
             print("=" * 80)
@@ -168,11 +172,19 @@ Example with custom credentials:
         default=None,
         help="Project code (for reporting purposes only - schema is entity-level)"
     )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Enable verbose debug output showing schema details"
+    )
 
     args = parser.parse_args()
 
     # Run the test (uses defaults from run_standalone.py if env vars not set)
-    success = test_breakdown_item_fields(project_code=args.project_code)
+    success = test_breakdown_item_fields(
+        project_code=args.project_code,
+        verbose=args.verbose
+    )
 
     # Exit with appropriate code
     sys.exit(0 if success else 1)

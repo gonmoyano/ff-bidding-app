@@ -516,7 +516,7 @@ class ShotgridClient:
         filters = [["id", "is", entity_id]]
         return self.sg.find_one(entity_type, filters, fields)
 
-    def check_breakdown_item_fields(self, project_code=None):
+    def check_breakdown_item_fields(self, project_code=None, verbose=False):
         """
         Check if required fields exist in CustomEntity02 (Breakdown Item).
 
@@ -525,6 +525,7 @@ class ShotgridClient:
 
         Args:
             project_code: Project code (for reporting purposes only - schema is entity-level)
+            verbose: If True, print debug information about the schema
 
         Returns:
             dict: Contains:
@@ -532,6 +533,7 @@ class ShotgridClient:
                 - 'missing_fields': list of field names that don't exist in current schema
                 - 'existing_fields': dict of field_name -> datatype that exist
                 - 'project_code': the project code (or 'entity-level' if None)
+                - 'total_schema_fields': total number of fields in the schema (debug)
         """
         entity_type = "CustomEntity02"
 
@@ -540,6 +542,10 @@ class ShotgridClient:
 
         # Get current schema for CustomEntity02
         current_schema = self.get_entity_schema(entity_type)
+
+        if verbose:
+            print(f"\nDEBUG: Total fields in {entity_type} schema: {len(current_schema)}")
+            print(f"DEBUG: First 10 field names in schema: {list(current_schema.keys())[:10]}")
 
         # Check which fields exist and which are missing
         existing_fields = {}
@@ -553,19 +559,26 @@ class ShotgridClient:
                 if isinstance(datatype, dict):
                     datatype = datatype.get("value", str(datatype))
                 existing_fields[field_name] = datatype
+
+                if verbose:
+                    print(f"DEBUG: Found field '{field_name}' with type '{datatype}'")
             else:
                 missing_fields.append(field_name)
+
+                if verbose:
+                    print(f"DEBUG: Missing field '{field_name}'")
 
         result = {
             "template_fields": template_fields,
             "missing_fields": missing_fields,
             "existing_fields": existing_fields,
             "project_code": project_code if project_code else "entity-level",
+            "total_schema_fields": len(current_schema),
         }
 
         return result
 
-    def print_breakdown_item_fields_report(self, project_code=None):
+    def print_breakdown_item_fields_report(self, project_code=None, verbose=False):
         """
         Print a formatted report of CustomEntity02 field existence check.
 
@@ -574,11 +587,12 @@ class ShotgridClient:
 
         Args:
             project_code: Project code (for reporting purposes only - schema is entity-level)
+            verbose: If True, print debug information about the schema
 
         Returns:
             dict: Same as check_breakdown_item_fields()
         """
-        result = self.check_breakdown_item_fields(project_code)
+        result = self.check_breakdown_item_fields(project_code, verbose=verbose)
 
         print("=" * 80)
         print(f"CustomEntity02 (Breakdown Item) Field Check Report")
@@ -610,6 +624,8 @@ class ShotgridClient:
 
         print("\n" + "=" * 80)
         print(f"Summary: {len(result['existing_fields'])} exist, {len(result['missing_fields'])} missing")
+        if verbose or len(result['existing_fields']) == 0:
+            print(f"Total fields in CustomEntity02 schema: {result.get('total_schema_fields', 'unknown')}")
         print("=" * 80)
 
         return result
