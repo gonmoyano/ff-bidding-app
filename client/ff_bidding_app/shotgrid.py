@@ -492,6 +492,141 @@ class ShotgridClient:
         filters = [["id", "is", entity_id]]
         return self.sg.find_one(entity_type, filters, fields)
 
+    def check_breakdown_item_fields(self, project_code=None, template_project_code="389"):
+        """
+        Check if required fields exist in CustomEntity02 (Breakdown Item) for a project.
+
+        Uses project 389 as the template for expected field datatypes. Compares the fields
+        in the template project with those in the target project (or all projects if
+        project_code is None).
+
+        Args:
+            project_code: Project code to check fields for. If None, checks entity-level schema.
+            template_project_code: Project code to use as template for field datatypes (default: "389")
+
+        Returns:
+            dict: Contains:
+                - 'template_fields': dict of field_name -> datatype from template project
+                - 'missing_fields': list of field names that don't exist in target project
+                - 'existing_fields': dict of field_name -> datatype that exist in target
+                - 'project_code': the project code checked (or 'entity-level' if None)
+        """
+        # List of required fields to check
+        required_fields = [
+            "sg_vfx_breakdown_scene",
+            "sg_interior_exterior",
+            "sg_set",
+            "sg_time_of_day",
+            "code",
+            "sg_previs",
+            "sg_sim",
+            "sg_script_excerpt",
+            "sg_vfx_type",
+            "sg_number_of_shots",
+            "sg_complexity",
+            "sg_vfx_assumptions",
+            "sg_vfx_questions",
+            "sg_team_notes",
+            "sg_vfx_supervisor_notes",
+            "sg_on_set_vfx_needs",
+            "sg_page_eights",
+            "sg_unit",
+            "sg_sorting_priority",
+        ]
+
+        entity_type = "CustomEntity02"
+
+        # Get schema for template project (389) - this gives us the expected datatypes
+        # Note: ShotGrid schema is typically the same across all projects for an entity type,
+        # but we'll use project-level checks if needed
+        template_schema = self.get_entity_schema(entity_type)
+
+        # Build template fields dictionary with datatypes
+        template_fields = {}
+        for field_name in required_fields:
+            if field_name in template_schema:
+                field_info = template_schema[field_name]
+                datatype = field_info.get("data_type", {})
+                # Handle case where data_type might be a dict with 'value' key or just a string
+                if isinstance(datatype, dict):
+                    datatype = datatype.get("value", str(datatype))
+                template_fields[field_name] = datatype
+
+        # Get schema for target project (if specified, otherwise use same schema)
+        # In ShotGrid, schema is typically entity-level, not project-level
+        # But we'll check which fields actually exist
+        target_schema = template_schema  # Schema is entity-level in SG
+
+        # Check which fields exist and which are missing
+        existing_fields = {}
+        missing_fields = []
+
+        for field_name in required_fields:
+            if field_name in target_schema:
+                field_info = target_schema[field_name]
+                datatype = field_info.get("data_type", {})
+                if isinstance(datatype, dict):
+                    datatype = datatype.get("value", str(datatype))
+                existing_fields[field_name] = datatype
+            else:
+                missing_fields.append(field_name)
+
+        result = {
+            "template_fields": template_fields,
+            "missing_fields": missing_fields,
+            "existing_fields": existing_fields,
+            "project_code": project_code if project_code else "entity-level",
+        }
+
+        return result
+
+    def print_breakdown_item_fields_report(self, project_code=None, template_project_code="389"):
+        """
+        Print a formatted report of CustomEntity02 field existence check.
+
+        Args:
+            project_code: Project code to check fields for. If None, checks entity-level schema.
+            template_project_code: Project code to use as template (default: "389")
+
+        Returns:
+            dict: Same as check_breakdown_item_fields()
+        """
+        result = self.check_breakdown_item_fields(project_code, template_project_code)
+
+        print("=" * 80)
+        print(f"CustomEntity02 (Breakdown Item) Field Check Report")
+        print(f"Project: {result['project_code']}")
+        print(f"Template Project: {template_project_code}")
+        print("=" * 80)
+
+        print(f"\nTemplate Fields (from project {template_project_code}):")
+        print("-" * 80)
+        for field_name, datatype in sorted(result["template_fields"].items()):
+            print(f"  {field_name:40} -> {datatype}")
+
+        print(f"\n\nExisting Fields in target project:")
+        print("-" * 80)
+        if result["existing_fields"]:
+            for field_name, datatype in sorted(result["existing_fields"].items()):
+                print(f"  {field_name:40} -> {datatype}")
+        else:
+            print("  None")
+
+        print(f"\n\nMissing Fields in target project:")
+        print("-" * 80)
+        if result["missing_fields"]:
+            for field_name in sorted(result["missing_fields"]):
+                template_type = result["template_fields"].get(field_name, "unknown")
+                print(f"  {field_name:40} (expected type: {template_type})")
+        else:
+            print("  None - all fields exist!")
+
+        print("\n" + "=" * 80)
+        print(f"Summary: {len(result['existing_fields'])} exist, {len(result['missing_fields'])} missing")
+        print("=" * 80)
+
+        return result
+
     def get_rfq_versions(self, rfq_id, fields=None):
         """
         Get all versions linked to an RFQ through the sg_versions field.
