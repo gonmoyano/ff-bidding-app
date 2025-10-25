@@ -2,6 +2,8 @@
 
 This guide explains how to use the utility function to check if all required fields exist in CustomEntity02 (Breakdown Item) for your ShotGrid instance.
 
+**Note:** These scripts run **standalone** without requiring AYON or any other dependencies besides `shotgun_api3`. They can be run directly from the command line.
+
 ## What It Does
 
 The utility checks for the following fields in CustomEntity02 and compares them against a static template dictionary (based on project 389):
@@ -43,6 +45,8 @@ The utility uses a **static dictionary** (`BREAKDOWN_ITEM_REQUIRED_FIELDS`) base
    - Script name
    - API key
 
+4. **No AYON required** - These scripts run standalone without AYON or any addon framework
+
 ## Setup
 
 Set up your ShotGrid credentials as environment variables:
@@ -79,6 +83,32 @@ python test_breakdown_fields.py
 ```
 
 This will check the entity-level schema for CustomEntity02 and display a detailed report.
+
+**Example Output:**
+```
+================================================================================
+CustomEntity02 (Breakdown Item) Field Checker - Standalone Mode
+================================================================================
+
+Importing ShotgridClient...
+✓ ShotgridClient imported successfully
+
+Connecting to ShotGrid...
+Site: https://your-studio.shotgrid.com
+
+✓ Connected successfully!
+
+================================================================================
+CustomEntity02 (Breakdown Item) Field Check Report
+Project: entity-level
+Template: Based on project 389 (static dictionary)
+================================================================================
+[... field report ...]
+
+================================================================================
+SUCCESS! All required fields exist.
+================================================================================
+```
 
 #### Command-line Options
 
@@ -245,7 +275,19 @@ If you need to update the static template dictionary with actual datatypes from 
    ```bash
    python get_field_types_from_389.py > field_types.txt
    ```
-   - Copy the output dictionary to replace `BREAKDOWN_ITEM_REQUIRED_FIELDS` in `shotgrid.py`
+   - The script runs standalone (no AYON required) and outputs status to stderr, dictionary to stdout
+   - Copy the output dictionary from `field_types.txt` to replace `BREAKDOWN_ITEM_REQUIRED_FIELDS` in `shotgrid.py`
+
+   **Example:**
+   ```bash
+   # Run the helper script
+   python get_field_types_from_389.py > field_types.txt
+
+   # View the generated dictionary
+   cat field_types.txt
+
+   # Copy the dictionary and paste it into shotgrid.py
+   ```
 
 ## Notes
 
