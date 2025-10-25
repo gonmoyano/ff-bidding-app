@@ -11,6 +11,7 @@ try:
     from .package_data_treeview import PackageTreeView, CustomCheckBox
     from .packages_tab import PackagesTab
     from .bidding_tab import BiddingTab
+    from .bid_selector_widget import CollapsibleGroupBox
     from .logger import logger
 except ImportError:
     # Standalone mode - add to path and import
@@ -24,6 +25,7 @@ except ImportError:
     from package_data_treeview import PackageTreeView, CustomCheckBox
     from packages_tab import PackagesTab
     from bidding_tab import BiddingTab
+    from bid_selector_widget import CollapsibleGroupBox
 
     # Setup basic logger for standalone mode
     try:
@@ -463,18 +465,13 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             header_layout.addStretch()
             main_layout.addLayout(header_layout)
 
-            # Top section: SG Project and RFQ side by side
-            top_section_layout = QtWidgets.QHBoxLayout()
+            # Compact top bar with dropdowns and Current Bid (always visible)
+            top_bar = self._create_top_bar()
+            main_layout.addWidget(top_bar)
 
-            # Shotgrid Project Group
-            sg_project_group = self._create_sg_project_group()
-            top_section_layout.addWidget(sg_project_group)
-
-            # Request for Quotation Group
-            rfq_group = self._create_rfq_group()
-            top_section_layout.addWidget(rfq_group)
-
-            main_layout.addLayout(top_section_layout)
+            # Collapsible details section
+            details_group = self._create_details_group()
+            main_layout.addWidget(details_group)
 
             # Tabbed section
             self.tab_widget = QtWidgets.QTabWidget()
@@ -499,76 +496,76 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             logger.error(f"Error in _build_ui: {e}", exc_info=True)
             raise
 
-    def _create_sg_project_group(self):
-        """Create the Shotgrid Project group."""
-        sg_group = QtWidgets.QGroupBox("Shotgrid Project")
-        sg_layout = QtWidgets.QVBoxLayout(sg_group)
+    def _create_top_bar(self):
+        """Create compact top bar with Project, RFQ dropdowns and Current Bid."""
+        bar_widget = QtWidgets.QWidget()
+        bar_layout = QtWidgets.QHBoxLayout(bar_widget)
+        bar_layout.setContentsMargins(6, 6, 6, 6)
 
-        # Project selector row
-        project_row = QtWidgets.QHBoxLayout()
-
-        project_label = QtWidgets.QLabel("Select Project:")
-        project_row.addWidget(project_label)
+        # Project section
+        project_label = QtWidgets.QLabel("Project:")
+        bar_layout.addWidget(project_label)
 
         self.sg_project_combo = QtWidgets.QComboBox()
         self.sg_project_combo.setMinimumWidth(200)
         self.sg_project_combo.currentIndexChanged.connect(self._on_sg_project_changed)
-        project_row.addWidget(self.sg_project_combo)
+        bar_layout.addWidget(self.sg_project_combo)
 
         load_sg_btn = QtWidgets.QPushButton("Load from SG")
         load_sg_btn.clicked.connect(self._load_sg_projects)
-        project_row.addWidget(load_sg_btn)
+        bar_layout.addWidget(load_sg_btn)
 
-        project_row.addStretch()
-        sg_layout.addLayout(project_row)
+        # Spacer
+        bar_layout.addSpacing(20)
 
-        # Project info display
-        info_layout = QtWidgets.QFormLayout()
-
-        self.sg_project_id_label = QtWidgets.QLabel("-")
-        info_layout.addRow("Project ID:", self.sg_project_id_label)
-
-        self.sg_project_status_label = QtWidgets.QLabel("-")
-        info_layout.addRow("Status:", self.sg_project_status_label)
-
-        sg_layout.addLayout(info_layout)
-
-        return sg_group
-
-    def _create_rfq_group(self):
-        """Create the Request for Quotation group."""
-        rfq_group = QtWidgets.QGroupBox("Request for Quotation")
-        rfq_layout = QtWidgets.QVBoxLayout(rfq_group)
-
-        # RFQ selector row
-        rfq_row = QtWidgets.QHBoxLayout()
-
-        rfq_label = QtWidgets.QLabel("Select RFQ:")
-        rfq_row.addWidget(rfq_label)
+        # RFQ section
+        rfq_label = QtWidgets.QLabel("RFQ:")
+        bar_layout.addWidget(rfq_label)
 
         self.rfq_combo = QtWidgets.QComboBox()
         self.rfq_combo.setMinimumWidth(200)
         self.rfq_combo.currentIndexChanged.connect(self._on_rfq_changed)
-        rfq_row.addWidget(self.rfq_combo)
+        bar_layout.addWidget(self.rfq_combo)
 
-        rfq_row.addStretch()
-        rfq_layout.addLayout(rfq_row)
+        # Spacer
+        bar_layout.addSpacing(20)
 
-        # RFQ info display
-        rfq_info_layout = QtWidgets.QFormLayout()
-
-        self.rfq_id_label = QtWidgets.QLabel("-")
-        rfq_info_layout.addRow("RFQ ID:", self.rfq_id_label)
-
-        self.rfq_status_label = QtWidgets.QLabel("-")
-        rfq_info_layout.addRow("RFQ Status:", self.rfq_status_label)
+        # Current Bid section
+        current_bid_label = QtWidgets.QLabel("Current Bid:")
+        bar_layout.addWidget(current_bid_label)
 
         self.rfq_bid_label = QtWidgets.QLabel("-")
-        rfq_info_layout.addRow("Current Bid:", self.rfq_bid_label)
+        self.rfq_bid_label.setStyleSheet("font-weight: bold;")
+        bar_layout.addWidget(self.rfq_bid_label)
 
-        rfq_layout.addLayout(rfq_info_layout)
+        bar_layout.addStretch()
 
-        return rfq_group
+        return bar_widget
+
+    def _create_details_group(self):
+        """Create collapsible details group for IDs and other properties."""
+        details_group = CollapsibleGroupBox("Details")
+
+        # Content layout
+        content_layout = QtWidgets.QFormLayout()
+
+        # Project details
+        self.sg_project_id_label = QtWidgets.QLabel("-")
+        content_layout.addRow("Project ID:", self.sg_project_id_label)
+
+        self.sg_project_status_label = QtWidgets.QLabel("-")
+        content_layout.addRow("Project Status:", self.sg_project_status_label)
+
+        # RFQ details
+        self.rfq_id_label = QtWidgets.QLabel("-")
+        content_layout.addRow("RFQ ID:", self.rfq_id_label)
+
+        self.rfq_status_label = QtWidgets.QLabel("-")
+        content_layout.addRow("RFQ Status:", self.rfq_status_label)
+
+        details_group.addLayout(content_layout)
+
+        return details_group
 
     def _create_packages_tab(self):
         """Create the Packages tab content."""
