@@ -571,8 +571,9 @@ class PackageManagerApp(QtWidgets.QMainWindow):
     def _create_top_bar(self):
         """Create compact top bar with Project, RFQ dropdowns and Current Bid."""
         bar_widget = QtWidgets.QWidget()
+        bar_widget.setObjectName("topBar")
         bar_widget.setStyleSheet("""
-            QWidget {
+            QWidget#topBar {
                 border: 1px solid #555555;
                 border-radius: 4px;
             }
@@ -613,7 +614,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         bar_layout.addWidget(current_bid_label)
 
         self.rfq_bid_label = QtWidgets.QLabel("-")
-        self.rfq_bid_label.setStyleSheet("font-weight: bold;")
+        self.rfq_bid_label.setStyleSheet("font-weight: bold; border: none;")
         bar_layout.addWidget(self.rfq_bid_label)
 
         bar_layout.addStretch()
