@@ -263,9 +263,9 @@ class ShotgridClient:
             self._entity_schema_cache[entity_type] = self.sg.schema_read(entity_type)
         return self._entity_schema_cache[entity_type]
 
-    def get_beats_for_vfx_breakdown(self, vfx_breakdown_id, fields=None, order=None):
+    def get_bidding_scenes_for_vfx_breakdown(self, vfx_breakdown_id, fields=None, order=None):
         """
-        Return all Beats (CustomEntity02) whose sg_parent references the given VFX Breakdown (CustomEntity01).
+        Return all Bidding Scenes (CustomEntity02) whose sg_parent references the given VFX Breakdown (CustomEntity01).
         """
         if fields is None:
             fields = [

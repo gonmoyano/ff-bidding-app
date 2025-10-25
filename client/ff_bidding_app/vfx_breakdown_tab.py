@@ -90,13 +90,13 @@ class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
 class EditCommand:
     """Command pattern for undo/redo of cell edits."""
 
-    def __init__(self, table, row, col, old_value, new_value, beat_data, field_name, sg_session, field_schema=None):
+    def __init__(self, table, row, col, old_value, new_value, bidding_scene_data, field_name, sg_session, field_schema=None):
         self.table = table
         self.row = row
         self.col = col
         self.old_value = old_value
         self.new_value = new_value
-        self.beat_data = beat_data
+        self.bidding_scene_data = bidding_scene_data
         self.field_name = field_name
         self.sg_session = sg_session
         self.field_schema = field_schema or {}
@@ -119,17 +119,17 @@ class EditCommand:
 
     def _update_shotgrid(self, value):
         """Update ShotGrid with the value."""
-        beat_id = self.beat_data.get("id")
-        if not beat_id:
-            logger.error("No beat ID found for update")
-            raise ValueError("No beat ID found for update")
+        bidding_scene_id = self.bidding_scene_data.get("id")
+        if not bidding_scene_id:
+            logger.error("No bidding scene ID found for update")
+            raise ValueError("No bidding scene ID found for update")
 
         # Convert string value back to appropriate type
         update_value = self._parse_value(value, self.field_name)
 
         # Update on ShotGrid
-        self.sg_session.sg.update("CustomEntity02", beat_id, {self.field_name: update_value})
-        logger.info(f"Updated Beat {beat_id} field '{self.field_name}' to: {update_value}")
+        self.sg_session.sg.update("CustomEntity02", bidding_scene_id, {self.field_name: update_value})
+        logger.info(f"Updated Bidding Scene {bidding_scene_id} field '{self.field_name}' to: {update_value}")
 
     def _parse_value(self, text, field_name):
         """Parse text value to appropriate type based on ShotGrid schema."""
@@ -179,7 +179,7 @@ class PasteCommand:
         Initialize paste command.
 
         Args:
-            changes: List of dicts with keys: table, row, col, old_value, new_value, beat_data, field_name
+            changes: List of dicts with keys: table, row, col, old_value, new_value, bidding_scene_data, field_name
             sg_session: ShotGrid session object
             field_schema: Field schema information
         """
@@ -194,7 +194,7 @@ class PasteCommand:
             if item:
                 item.setText(change['old_value'])
                 # Update ShotGrid
-                self._update_shotgrid(change['old_value'], change['beat_data'], change['field_name'])
+                self._update_shotgrid(change['old_value'], change['bidding_scene_data'], change['field_name'])
 
     def redo(self):
         """Redo all paste changes."""
@@ -203,21 +203,21 @@ class PasteCommand:
             if item:
                 item.setText(change['new_value'])
                 # Update ShotGrid
-                self._update_shotgrid(change['new_value'], change['beat_data'], change['field_name'])
+                self._update_shotgrid(change['new_value'], change['bidding_scene_data'], change['field_name'])
 
-    def _update_shotgrid(self, value, beat_data, field_name):
+    def _update_shotgrid(self, value, bidding_scene_data, field_name):
         """Update ShotGrid with the value."""
-        beat_id = beat_data.get("id")
-        if not beat_id:
-            logger.error("No beat ID found for update")
-            raise ValueError("No beat ID found for update")
+        bidding_scene_id = bidding_scene_data.get("id")
+        if not bidding_scene_id:
+            logger.error("No bidding scene ID found for update")
+            raise ValueError("No bidding scene ID found for update")
 
         # Convert string value back to appropriate type
         update_value = self._parse_value(value, field_name)
 
         # Update on ShotGrid
-        self.sg_session.sg.update("CustomEntity02", beat_id, {field_name: update_value})
-        logger.info(f"Updated Beat {beat_id} field '{field_name}' to: {update_value}")
+        self.sg_session.sg.update("CustomEntity02", bidding_scene_id, {field_name: update_value})
+        logger.info(f"Updated Bidding Scene {bidding_scene_id} field '{field_name}' to: {update_value}")
 
     def _parse_value(self, text, field_name):
         """Parse text value to appropriate type based on ShotGrid schema."""
@@ -264,103 +264,103 @@ class PasteCommand:
         return text
 
 
-class AddBeatCommand:
-    """Command pattern for undo/redo of beat addition."""
+class AddBiddingSceneCommand:
+    """Command pattern for undo/redo of bidding scene addition."""
 
-    def __init__(self, tab, row, beat_data, sg_beat_id):
-        """Initialize the add beat command.
+    def __init__(self, tab, row, bidding_scene_data, sg_bidding_scene_id):
+        """Initialize the add bidding scene command.
 
         Args:
             tab: VFXBreakdownTab instance
-            row: Row index where beat was inserted
-            beat_data: Beat data dictionary from ShotGrid
-            sg_beat_id: ShotGrid ID of the created beat
+            row: Row index where bidding scene was inserted
+            bidding_scene_data: Bidding scene data dictionary from ShotGrid
+            sg_bidding_scene_id: ShotGrid ID of the created bidding scene
         """
         self.tab = tab
         self.row = row
-        self.beat_data = beat_data
-        self.sg_beat_id = sg_beat_id
+        self.bidding_scene_data = bidding_scene_data
+        self.sg_bidding_scene_id = sg_bidding_scene_id
 
     def undo(self):
-        """Undo the beat addition (delete it)."""
+        """Undo the bidding scene addition (delete it)."""
         try:
             # Delete from ShotGrid
-            self.tab.sg_session.sg.delete("CustomEntity02", self.sg_beat_id)
-            logger.info(f"Deleted beat {self.sg_beat_id} from ShotGrid (undo)")
+            self.tab.sg_session.sg.delete("CustomEntity02", self.sg_bidding_scene_id)
+            logger.info(f"Deleted bidding scene {self.sg_bidding_scene_id} from ShotGrid (undo)")
 
             # Remove from table
             self.tab.vfx_breakdown_table.blockSignals(True)
             self.tab.vfx_breakdown_table.removeRow(self.row)
             self.tab.vfx_breakdown_table.blockSignals(False)
 
-            # Update beat_data_by_row mapping
-            self.tab._rebuild_beat_data_mapping()
+            # Update bidding_scene_data_by_row mapping
+            self.tab._rebuild_bidding_scene_data_mapping()
 
         except Exception as e:
-            logger.error(f"Failed to undo beat addition: {e}", exc_info=True)
+            logger.error(f"Failed to undo bidding scene addition: {e}", exc_info=True)
 
     def redo(self):
-        """Redo the beat addition."""
+        """Redo the bidding scene addition."""
         try:
             # Re-create in ShotGrid
-            result = self.tab.sg_session.sg.create("CustomEntity02", self.beat_data)
-            self.sg_beat_id = result["id"]
-            logger.info(f"Re-created beat {self.sg_beat_id} in ShotGrid (redo)")
+            result = self.tab.sg_session.sg.create("CustomEntity02", self.bidding_scene_data)
+            self.sg_bidding_scene_id = result["id"]
+            logger.info(f"Re-created bidding scene {self.sg_bidding_scene_id} in ShotGrid (redo)")
 
             # Re-insert in table
-            self.tab._insert_beat_row(self.row, result)
+            self.tab._insert_bidding_scene_row(self.row, result)
 
         except Exception as e:
-            logger.error(f"Failed to redo beat addition: {e}", exc_info=True)
+            logger.error(f"Failed to redo bidding scene addition: {e}", exc_info=True)
 
 
-class DeleteBeatCommand:
-    """Command pattern for undo/redo of beat deletion."""
+class DeleteBiddingSceneCommand:
+    """Command pattern for undo/redo of bidding scene deletion."""
 
-    def __init__(self, tab, row, beat_data):
-        """Initialize the delete beat command.
+    def __init__(self, tab, row, bidding_scene_data):
+        """Initialize the delete bidding scene command.
 
         Args:
             tab: VFXBreakdownTab instance
             row: Row index that was deleted
-            beat_data: Beat data dictionary from ShotGrid
+            bidding_scene_data: Bidding scene data dictionary from ShotGrid
         """
         self.tab = tab
         self.row = row
-        self.beat_data = beat_data
-        self.sg_beat_id = beat_data.get("id")
+        self.bidding_scene_data = bidding_scene_data
+        self.sg_bidding_scene_id = bidding_scene_data.get("id")
 
     def undo(self):
-        """Undo the beat deletion (re-create it)."""
+        """Undo the bidding scene deletion (re-create it)."""
         try:
             # Re-create in ShotGrid
-            result = self.tab.sg_session.sg.create("CustomEntity02", self.beat_data)
-            self.sg_beat_id = result["id"]
-            logger.info(f"Re-created beat {self.sg_beat_id} in ShotGrid (undo delete)")
+            result = self.tab.sg_session.sg.create("CustomEntity02", self.bidding_scene_data)
+            self.sg_bidding_scene_id = result["id"]
+            logger.info(f"Re-created bidding scene {self.sg_bidding_scene_id} in ShotGrid (undo delete)")
 
             # Re-insert in table
-            self.tab._insert_beat_row(self.row, result)
+            self.tab._insert_bidding_scene_row(self.row, result)
 
         except Exception as e:
-            logger.error(f"Failed to undo beat deletion: {e}", exc_info=True)
+            logger.error(f"Failed to undo bidding scene deletion: {e}", exc_info=True)
 
     def redo(self):
-        """Redo the beat deletion."""
+        """Redo the bidding scene deletion."""
         try:
             # Delete from ShotGrid
-            self.tab.sg_session.sg.delete("CustomEntity02", self.sg_beat_id)
-            logger.info(f"Deleted beat {self.sg_beat_id} from ShotGrid (redo)")
+            self.tab.sg_session.sg.delete("CustomEntity02", self.sg_bidding_scene_id)
+            logger.info(f"Deleted bidding scene {self.sg_bidding_scene_id} from ShotGrid (redo)")
 
             # Remove from table
             self.tab.vfx_breakdown_table.blockSignals(True)
             self.tab.vfx_breakdown_table.removeRow(self.row)
             self.tab.vfx_breakdown_table.blockSignals(False)
 
-            # Update beat_data_by_row mapping
-            self.tab._rebuild_beat_data_mapping()
+            # Update bidding_scene_data_by_row mapping
+            self.tab._rebuild_bidding_scene_data_mapping()
 
         except Exception as e:
-            logger.error(f"Failed to redo beat deletion: {e}", exc_info=True)
+            logger.error(f"Failed to redo bidding scene deletion: {e}", exc_info=True)
 
 
 class AddVFXBreakdownDialog(QtWidgets.QDialog):
@@ -490,7 +490,7 @@ class RemoveVFXBreakdownDialog(QtWidgets.QDialog):
         # Warning message
         warning_label = QtWidgets.QLabel(
             "⚠️ WARNING: This action cannot be undone!\n"
-            "Deleting a VFX Breakdown will also delete all associated Beats."
+            "Deleting a VFX Breakdown will also delete all associated Bidding Scenes."
         )
         warning_label.setStyleSheet("color: #ff6666; font-weight: bold; padding: 10px;")
         warning_label.setWordWrap(True)
@@ -936,7 +936,7 @@ class CompoundSortDialog(QtWidgets.QDialog):
 
 
 class VFXBreakdownTab(QtWidgets.QWidget):
-    """VFX Breakdown tab widget for managing VFX Breakdowns and Beats."""
+    """VFX Breakdown tab widget for managing VFX Breakdowns and Bidding Scenes."""
 
     def __init__(self, sg_session, parent=None):
         """Initialize the VFX Breakdown tab.
@@ -977,7 +977,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_label_overrides = {
             "id": "ID",
             "code": "Code",
-            "sg_beat_id": "Beat ID",
+            "sg_beat_id": "Bidding Scene ID",
             "sg_vfx_breakdown_scene": "Scene",
             "sg_page": "Page",
             "sg_script_excerpt": "Script Excerpt",
@@ -1212,7 +1212,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         """Open the compound sorting dialog."""
         # Get column headers for the dialog
         headers = [
-            "ID", "Code", "Beat ID", "Scene", "Page",
+            "ID", "Code", "Bidding Scene ID", "Scene", "Page",
             "Script Excerpt", "Description", "VFX Type", "Complexity",
             "Category", "VFX Description", "# Shots",
             "Updated At", "Updated By"
@@ -1335,7 +1335,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         logger.info(f"Search applied: showing {shown_rows} of {total_rows} rows")
 
     def _matches_global_search(self, beat_data, search_text):
-        """Check if beat data matches global search text."""
+        """Check if bidding scene data matches global search text."""
         # Search in all fields
         for field in self.vfx_beat_columns:
             value = beat_data.get(field)
@@ -1352,7 +1352,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         return False
 
     def _get_sort_key(self, beat_data):
-        """Get sort key for a beat based on current sort column."""
+        """Get sort key for a bidding scene based on current sort column."""
         if self.sort_column is None or self.sort_column >= len(self.vfx_beat_columns):
             return (0, 0)
 
@@ -1434,7 +1434,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         return (sort_type, sort_value)
 
     def _get_compound_sort_key(self, beat_data):
-        """Get compound sort key for a beat based on multiple sort columns.
+        """Get compound sort key for a bidding scene based on multiple sort columns.
 
         Returns a tuple of sort keys, one for each sorting level.
         """
@@ -1491,10 +1491,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             self.display_row_to_data_row[display_row] = data_idx
             self.beat_data_by_row[display_row] = self.all_beats_data[data_idx]
 
-            beat = self.all_beats_data[data_idx]
+            bidding_scene = self.all_bidding_scenes_data[data_idx]
 
             for c, field in enumerate(self.vfx_beat_columns):
-                value = beat.get(field)
+                value = bidding_scene.get(field)
                 text = self._format_sg_value(value)
 
                 it = QtWidgets.QTableWidgetItem(text)
@@ -1605,10 +1605,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 if field_name in readonly_columns:
                     continue
 
-                # Get beat data for this row
+                # Get bidding scene data for this row
                 beat_data = self.beat_data_by_row.get(target_row)
                 if not beat_data:
-                    logger.warning(f"No beat data found for row {target_row}")
+                    logger.warning(f"No bidding scene data found for row {target_row}")
                     continue
 
                 if not (item.flags() & QtCore.Qt.ItemIsEditable):
@@ -1662,10 +1662,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     if field_name in readonly_columns:
                         continue
 
-                    # Get beat data for this row
+                    # Get bidding scene data for this row
                     beat_data = self.beat_data_by_row.get(target_row)
                     if not beat_data:
-                        logger.warning(f"No beat data found for row {target_row}")
+                        logger.warning(f"No bidding scene data found for row {target_row}")
                         continue
 
                     item = self.vfx_breakdown_table.item(target_row, target_col)
@@ -1754,33 +1754,33 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         # Create context menu
         menu = QtWidgets.QMenu(self)
 
-        # Add beat above
-        add_above_action = menu.addAction("Add Beat Above")
-        add_above_action.triggered.connect(lambda: self._add_beat_above(row))
+        # Add bidding scene above
+        add_above_action = menu.addAction("Add Bidding Scene Above")
+        add_above_action.triggered.connect(lambda: self._add_bidding_scene_above(row))
 
-        # Add beat below
-        add_below_action = menu.addAction("Add Beat Below")
-        add_below_action.triggered.connect(lambda: self._add_beat_below(row))
+        # Add bidding scene below
+        add_below_action = menu.addAction("Add Bidding Scene Below")
+        add_below_action.triggered.connect(lambda: self._add_bidding_scene_below(row))
 
         menu.addSeparator()
 
-        # Delete beat
-        delete_action = menu.addAction("Delete Beat")
-        delete_action.triggered.connect(lambda: self._delete_beat(row))
+        # Delete bidding scene
+        delete_action = menu.addAction("Delete Bidding Scene")
+        delete_action.triggered.connect(lambda: self._delete_bidding_scene(row))
 
         # Show menu at cursor position
         menu.exec(self.vfx_breakdown_table.viewport().mapToGlobal(position))
 
     def _add_beat_above(self, row):
-        """Add a new beat above the specified row."""
+        """Add a new bidding scene above the specified row."""
         self._add_beat_at_row(row)
 
     def _add_beat_below(self, row):
-        """Add a new beat below the specified row."""
+        """Add a new bidding scene below the specified row."""
         self._add_beat_at_row(row + 1)
 
     def _add_beat_at_row(self, row):
-        """Add a new beat at the specified row."""
+        """Add a new bidding scene at the specified row."""
         try:
             # Get current breakdown
             breakdown = self.vfx_breakdown_combo.currentData()
@@ -1799,18 +1799,18 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
             project_id = proj["id"]
 
-            # Create new beat data
+            # Create new bidding scene data
             new_beat_data = {
                 "project": {"type": "Project", "id": project_id},
                 "sg_parent": {"type": entity_type, "id": breakdown_id},
-                "code": f"New Beat"
+                "code": f"New Bidding Scene"
             }
 
-            # Create beat in ShotGrid
+            # Create bidding scene in ShotGrid
             result = self.sg_session.sg.create("CustomEntity02", new_beat_data)
             beat_id = result["id"]
 
-            logger.info(f"Created new beat {beat_id} at row {row}")
+            logger.info(f"Created new bidding scene {bidding_scene_id} at row {row}")
 
             # Insert row in table
             self._insert_beat_row(row, result)
@@ -1820,29 +1820,29 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             self.undo_stack.append(command)
             self.redo_stack.clear()
 
-            self._set_vfx_breakdown_status(f"Added new beat at row {row + 1}")
+            self._set_vfx_breakdown_status(f"Added new bidding scene at row {row + 1}")
 
         except Exception as e:
-            logger.error(f"Failed to add beat: {e}", exc_info=True)
-            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to add beat:\n{str(e)}")
+            logger.error(f"Failed to add bidding scene: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to add bidding scene:\n{str(e)}")
 
-    def _delete_beat(self, row):
-        """Delete the beat at the specified row."""
+    def _delete_bidding_scene(self, row):
+        """Delete the bidding scene at the specified row."""
         try:
-            # Get beat data
+            # Get bidding scene data
             beat_data = self.beat_data_by_row.get(row)
             if not beat_data:
-                QtWidgets.QMessageBox.warning(self, "No Beat", "No beat found at this row.")
+                QtWidgets.QMessageBox.warning(self, "No Bidding Scene", "No bidding scene found at this row.")
                 return
 
             beat_id = beat_data.get("id")
-            beat_name = beat_data.get("code") or f"Beat ID {beat_id}"
+            bidding_scene_name = bidding_scene_data.get("code") or f"Bidding Scene ID {bidding_scene_id}"
 
             # Confirmation dialog
             reply = QtWidgets.QMessageBox.question(
                 self,
                 "Confirm Deletion",
-                f"Are you sure you want to delete beat '{beat_name}'?\n\nThis action can be undone with Ctrl+Z.",
+                f"Are you sure you want to delete bidding scene '{bidding_scene_name}'?\n\nThis action can be undone with Ctrl+Z.",
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                 QtWidgets.QMessageBox.No
             )
@@ -1852,7 +1852,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
             # Delete from ShotGrid
             self.sg_session.sg.delete("CustomEntity02", beat_id)
-            logger.info(f"Deleted beat {beat_id} from ShotGrid")
+            logger.info(f"Deleted bidding scene {bidding_scene_id} from ShotGrid")
 
             # Remove from table
             self.vfx_breakdown_table.blockSignals(True)
@@ -1867,18 +1867,18 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             self.undo_stack.append(command)
             self.redo_stack.clear()
 
-            self._set_vfx_breakdown_status(f"Deleted beat '{beat_name}'")
+            self._set_vfx_breakdown_status(f"Deleted bidding scene '{bidding_scene_name}'")
 
         except Exception as e:
-            logger.error(f"Failed to delete beat: {e}", exc_info=True)
-            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to delete beat:\n{str(e)}")
+            logger.error(f"Failed to delete bidding scene: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to delete bidding scene:\n{str(e)}")
 
-    def _insert_beat_row(self, row, beat):
-        """Insert a beat row at the specified position.
+    def _insert_bidding_scene_row(self, row, bidding_scene):
+        """Insert a bidding scene row at the specified position.
 
         Args:
             row: Row index to insert at
-            beat: Beat data dictionary from ShotGrid
+            bidding_scene: Bidding scene data dictionary from ShotGrid
         """
         self.vfx_breakdown_table.blockSignals(True)
 
@@ -1888,7 +1888,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         readonly_columns = ["id", "updated_at", "updated_by"]
 
         for c, field in enumerate(self.vfx_beat_columns):
-            value = beat.get(field)
+            value = bidding_scene.get(field)
             text = self._format_sg_value(value)
 
             it = QtWidgets.QTableWidgetItem(text)
@@ -1932,12 +1932,12 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         # Rebuild based on current table rows
         for row in range(self.vfx_breakdown_table.rowCount()):
-            # Try to find the beat data by ID from the first column
+            # Try to find the bidding scene data by ID from the first column
             id_item = self.vfx_breakdown_table.item(row, 0)
             if id_item:
                 try:
                     beat_id = int(id_item.text())
-                    # Find the beat data with this ID from old mapping
+                    # Find the bidding scene data with this ID from old mapping
                     for old_row, beat_data in old_mapping.items():
                         if beat_data.get("id") == beat_id:
                             self.beat_data_by_row[row] = beat_data
@@ -1954,10 +1954,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         col = item.column()
         field_name = self.vfx_beat_columns[col]
 
-        # Get beat data for this row
+        # Get bidding scene data for this row
         beat_data = self.beat_data_by_row.get(row)
         if not beat_data:
-            logger.warning(f"No beat data found for row {row}")
+            logger.warning(f"No bidding scene data found for row {row}")
             return
 
         new_value = item.text()
@@ -1972,7 +1972,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             return
 
         logger.info(f"Cell changed at row {row}, col {col} ({field_name}): '{old_value}' -> '{new_value}'")
-        logger.info(f"Beat ID: {beat_data.get('id')}, Field type: {type(old_value_raw).__name__}")
+        logger.info(f"Bidding Scene ID: {bidding_scene_data.get('id')}, Field type: {type(old_value_raw).__name__}")
 
         # Create undo command
         command = EditCommand(
@@ -2003,7 +2003,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             beat_data[field_name] = parsed_value
 
             self._set_vfx_breakdown_status(f"✓ Updated {field_name} on ShotGrid")
-            logger.info(f"Successfully updated Beat {beat_data.get('id')} field '{field_name}' to '{new_value}'")
+            logger.info(f"Successfully updated Bidding Scene {bidding_scene_data.get('id')} field '{field_name}' to '{new_value}'")
 
         except Exception as e:
             logger.error(f"Failed to update ShotGrid field '{field_name}': {e}", exc_info=True)
@@ -2019,7 +2019,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             )
 
     def _fetch_beats_schema(self):
-        """Fetch schema information for Beat entity (CustomEntity02)."""
+        """Fetch schema information for Bidding Scene entity (CustomEntity02)."""
         try:
             schema = self.sg_session.sg.schema_field_read("CustomEntity02")
 
@@ -2387,7 +2387,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         return result
 
     def _copy_vfx_breakdown(self, source_id, new_name, project_id, progress_callback=None):
-        """Copy an existing VFX Breakdown with all its Beats.
+        """Copy an existing VFX Breakdown with all its Bidding Scenes.
 
         Args:
             source_id: ID of the VFX Breakdown to copy from
@@ -2409,14 +2409,14 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         new_breakdown = self._create_empty_vfx_breakdown(project_id, new_name)
         new_breakdown_id = new_breakdown["id"]
 
-        logger.info(f"Copying beats from VFX Breakdown {source_id} to {new_breakdown_id}")
+        logger.info(f"Copying bidding scenes from VFX Breakdown {source_id} to {new_breakdown_id}")
 
         # Report progress after creating breakdown
         if progress_callback:
-            if not progress_callback(10, 100, "Fetching beats from source..."):
+            if not progress_callback(10, 100, "Fetching bidding scenes from source..."):
                 raise Exception("Operation cancelled by user")
 
-        # Fetch all beats from the source breakdown
+        # Fetch all bidding scenes from the source breakdown
         try:
             source_beats = self.sg_session.get_beats_for_vfx_breakdown(
                 source_id,
@@ -2427,28 +2427,28 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 ]
             )
 
-            logger.info(f"Found {len(source_beats)} beats to copy")
+            logger.info(f"Found {len(source_bidding_scenes)} bidding scenes to copy")
 
-            total_beats = len(source_beats)
-            if total_beats == 0:
+            total_bidding_scenes = len(source_bidding_scenes)
+            if total_bidding_scenes == 0:
                 if progress_callback:
-                    progress_callback(100, 100, "No beats to copy")
+                    progress_callback(100, 100, "No bidding scenes to copy")
                 return new_breakdown
 
-            # Report progress after fetching beats
+            # Report progress after fetching bidding scenes
             if progress_callback:
-                if not progress_callback(20, 100, f"Copying {total_beats} beat(s)..."):
+                if not progress_callback(20, 100, f"Copying {total_bidding_scenes} bidding scene(s)..."):
                     raise Exception("Operation cancelled by user")
 
-            # Copy each beat
-            for i, beat in enumerate(source_beats):
+            # Copy each bidding scene
+            for i, bidding_scene in enumerate(source_bidding_scenes):
                 # Check for cancellation
                 if progress_callback:
                     current_progress = 20 + int((i / total_beats) * 80)
                     if not progress_callback(
                         current_progress,
                         100,
-                        f"Copying beat {i + 1} of {total_beats}..."
+                        f"Copying bidding scene {i + 1} of {total_bidding_scenes}..."
                     ):
                         raise Exception("Operation cancelled by user")
                 new_beat_data = {
@@ -2464,31 +2464,31 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 ]
 
                 for field in copy_fields:
-                    if field in beat and beat[field] is not None:
-                        new_beat_data[field] = beat[field]
+                    if field in bidding_scene and bidding_scene[field] is not None:
+                        new_bidding_scene_data[field] = bidding_scene[field]
 
-                # Create the new beat
-                self.sg_session.sg.create("CustomEntity02", new_beat_data)
+                # Create the new bidding scene
+                self.sg_session.sg.create("CustomEntity02", new_bidding_scene_data)
 
             # Report completion
             if progress_callback:
-                progress_callback(100, 100, f"Successfully copied {total_beats} beat(s)")
+                progress_callback(100, 100, f"Successfully copied {total_bidding_scenes} bidding scene(s)")
 
-            logger.info(f"Successfully copied {len(source_beats)} beats")
+            logger.info(f"Successfully copied {len(source_bidding_scenes)} bidding scenes")
 
         except Exception as e:
-            logger.error(f"Error copying beats: {e}", exc_info=True)
-            # Even if beat copying fails, we still return the created breakdown
+            logger.error(f"Error copying bidding scenes: {e}", exc_info=True)
+            # Even if bidding scene copying fails, we still return the created breakdown
             QtWidgets.QMessageBox.warning(
                 self,
                 "Partial Success",
-                f"VFX Breakdown created but failed to copy beats:\n{str(e)}"
+                f"VFX Breakdown created but failed to copy bidding scenes:\n{str(e)}"
             )
 
         return new_breakdown
 
     def _autosize_beat_columns(self, min_px=60, max_px=600, extra_padding=24):
-        """Size each Beats table column to fit its content (header + cells)."""
+        """Size each Bidding Scenes table column to fit its content (header + cells)."""
         table = self.vfx_breakdown_table
         fm = table.fontMetrics()
         header = table.horizontalHeader()
@@ -2734,13 +2734,13 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         return self.vfx_breakdown_entity_type
 
     def _load_vfx_breakdown_details(self, breakdown):
-        """Load VFX Breakdown details (beats)."""
+        """Load VFX Breakdown details (bidding scenes)."""
         if not breakdown or "id" not in breakdown:
             self._clear_vfx_breakdown_table()
             self._set_vfx_breakdown_status("Invalid VFX Breakdown selection.", is_error=True)
             return
 
-        # Fetch schema for Beat entity
+        # Fetch schema for Bidding Scene entity
         if not self.field_schema:
             self._fetch_beats_schema()
 
@@ -2761,38 +2761,38 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         # Log query
         logger.info("=" * 60)
-        logger.info("Fetching Beats for VFX Breakdown…")
+        logger.info("Fetching Bidding Scenes for VFX Breakdown…")
         logger.info(f"  Entity      : CustomEntity02")
         logger.info(f"  Parent field: sg_parent -> CustomEntity01({breakdown_id})")
         logger.info(f"  Fields      : {fields}")
         logger.info(f"  Order       : {order}")
         logger.info("=" * 60)
 
-        beats = []
+        bidding_scenes = []
         try:
-            beats = self.sg_session.get_beats_for_vfx_breakdown(breakdown_id, fields=fields, order=order)
+            bidding_scenes = self.sg_session.get_bidding_scenes_for_vfx_breakdown(breakdown_id, fields=fields, order=order)
         except Exception as e:
             logger.warning(f"Primary query failed ({e}). Retrying without extra fields…")
             try:
-                beats = self.sg_session.get_beats_for_vfx_breakdown(breakdown_id, fields=base_fields, order=order)
+                bidding_scenes = self.sg_session.get_bidding_scenes_for_vfx_breakdown(breakdown_id, fields=base_fields, order=order)
             except Exception as e2:
-                logger.error(f"ShotGrid query for Beats failed: {e2}", exc_info=True)
+                logger.error(f"ShotGrid query for Bidding Scenes failed: {e2}", exc_info=True)
                 self._clear_vfx_breakdown_table()
-                self._set_vfx_breakdown_status("Failed to load Beats for this Breakdown.", is_error=True)
+                self._set_vfx_breakdown_status("Failed to load Bidding Scenes for this Breakdown.", is_error=True)
                 return
 
-        self._populate_beats_table(beats)
+        self._populate_bidding_scenes_table(bidding_scenes)
 
-    def _populate_beats_table(self, beats):
-        """Populate the beats table using the breakdown widget."""
-        # Use the breakdown widget to load beats
-        self.breakdown_widget.load_beats(beats, field_schema=self.field_schema)
+    def _populate_bidding_scenes_table(self, bidding_scenes):
+        """Populate the bidding scenes table using the breakdown widget."""
+        # Use the breakdown widget to load bidding scenes
+        self.breakdown_widget.load_bidding_scenes(bidding_scenes, field_schema=self.field_schema)
 
         display_name = self.vfx_breakdown_combo.currentText()
-        if beats:
-            self._set_vfx_breakdown_status(f"Loaded {len(beats)} Beat(s) for '{display_name}'.")
+        if bidding_scenes:
+            self._set_vfx_breakdown_status(f"Loaded {len(bidding_scenes)} Bidding Scene(s) for '{display_name}'.")
         else:
-            self._set_vfx_breakdown_status("No Beats linked to this VFX Breakdown.")
+            self._set_vfx_breakdown_status("No Bidding Scenes linked to this VFX Breakdown.")
 
     def _format_sg_value(self, value):
         """Format a ShotGrid value for display."""

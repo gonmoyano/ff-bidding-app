@@ -1,6 +1,6 @@
 """
 VFX Breakdown Widget
-Reusable widget component for displaying and editing VFX beats data using Qt Model/View pattern.
+Reusable widget component for displaying and editing VFX bidding scenes data using Qt Model/View pattern.
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
@@ -47,7 +47,7 @@ class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
 
 class VFXBreakdownWidget(QtWidgets.QWidget):
     """
-    Reusable widget for displaying and editing VFX Breakdown beats.
+    Reusable widget for displaying and editing VFX Breakdown bidding scenes.
     Uses Qt Model/View pattern with VFXBreakdownModel.
     """
 
@@ -198,16 +198,16 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 for index in self.table_view.selectedIndexes():
                     selected_rows.add(index.row())
                 if selected_rows:
-                    self._delete_beat(min(selected_rows))
+                    self._delete_bidding_scene(min(selected_rows))
                 return True
 
         return super().eventFilter(obj, event)
 
-    def load_beats(self, beats, field_schema=None):
-        """Load beats data into the widget.
+    def load_bidding_scenes(self, bidding_scenes, field_schema=None):
+        """Load bidding scenes data into the widget.
 
         Args:
-            beats: List of beat dictionaries from ShotGrid
+            bidding_scenes: List of bidding scene dictionaries from ShotGrid
             field_schema: Optional field schema for type conversions
         """
         if field_schema:
@@ -223,7 +223,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                             delegate = ComboBoxDelegate(field_name, list_values, self.table_view)
                             self.table_view.setItemDelegateForColumn(col_idx, delegate)
 
-        self.model.load_beats(beats)
+        self.model.load_bidding_scenes(bidding_scenes)
         self._autosize_columns()
 
     def clear_data(self):
@@ -452,8 +452,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 if paste_value == old_value:
                     continue
 
-                beat_data = self.model.get_beat_data_for_row(index.row())
-                if not beat_data:
+                bidding_scene_data = self.model.get_bidding_scene_data_for_row(index.row())
+                if not bidding_scene_data:
                     continue
 
                 field_name = self.model.column_fields[index.column()]
@@ -462,7 +462,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                     'col': index.column(),
                     'old_value': old_value,
                     'new_value': paste_value,
-                    'beat_data': beat_data,
+                    'bidding_scene_data': bidding_scene_data,
                     'field_name': field_name
                 })
 
@@ -494,8 +494,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                     if cell_value == old_value:
                         continue
 
-                    beat_data = self.model.get_beat_data_for_row(target_row)
-                    if not beat_data:
+                    bidding_scene_data = self.model.get_bidding_scene_data_for_row(target_row)
+                    if not bidding_scene_data:
                         continue
 
                     field_name = self.model.column_fields[target_col]
@@ -504,7 +504,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                         'col': target_col,
                         'old_value': old_value,
                         'new_value': cell_value,
-                        'beat_data': beat_data,
+                        'bidding_scene_data': bidding_scene_data,
                         'field_name': field_name
                     })
 
@@ -546,38 +546,38 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Create context menu
         menu = QtWidgets.QMenu(self)
 
-        # Add beat above
-        add_above_action = menu.addAction("Add Beat Above")
-        add_above_action.triggered.connect(lambda: self._add_beat_above(row))
+        # Add bidding scene above
+        add_above_action = menu.addAction("Add Bidding Scene Above")
+        add_above_action.triggered.connect(lambda: self._add_bidding_scene_above(row))
 
-        # Add beat below
-        add_below_action = menu.addAction("Add Beat Below")
-        add_below_action.triggered.connect(lambda: self._add_beat_below(row))
+        # Add bidding scene below
+        add_below_action = menu.addAction("Add Bidding Scene Below")
+        add_below_action.triggered.connect(lambda: self._add_bidding_scene_below(row))
 
         menu.addSeparator()
 
-        # Delete beat
-        delete_action = menu.addAction("Delete Beat")
-        delete_action.triggered.connect(lambda: self._delete_beat(row))
+        # Delete bidding scene
+        delete_action = menu.addAction("Delete Bidding Scene")
+        delete_action.triggered.connect(lambda: self._delete_bidding_scene(row))
 
         # Show menu
         menu.exec(self.table_view.viewport().mapToGlobal(position))
 
-    def _add_beat_above(self, row):
-        """Add a new beat above the specified row."""
+    def _add_bidding_scene_above(self, row):
+        """Add a new bidding scene above the specified row."""
         # This requires access to parent context (project, breakdown, etc.)
         # Signal to parent to handle
-        self.statusMessageChanged.emit("Add beat functionality requires parent tab context", False)
+        self.statusMessageChanged.emit("Add bidding scene functionality requires parent tab context", False)
 
-    def _add_beat_below(self, row):
-        """Add a new beat below the specified row."""
+    def _add_bidding_scene_below(self, row):
+        """Add a new bidding scene below the specified row."""
         # This requires access to parent context
-        self.statusMessageChanged.emit("Add beat functionality requires parent tab context", False)
+        self.statusMessageChanged.emit("Add bidding scene functionality requires parent tab context", False)
 
-    def _delete_beat(self, row):
-        """Delete the specified beat."""
+    def _delete_bidding_scene(self, row):
+        """Delete the specified bidding scene."""
         # This requires access to parent context
-        self.statusMessageChanged.emit("Delete beat functionality requires parent tab context", False)
+        self.statusMessageChanged.emit("Delete bidding scene functionality requires parent tab context", False)
 
     def _autosize_columns(self, min_px=80, max_px=700, extra_padding=28):
         """Auto-size columns to fit content."""

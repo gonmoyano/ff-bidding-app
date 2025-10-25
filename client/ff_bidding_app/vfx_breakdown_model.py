@@ -56,13 +56,13 @@ class ReverseString:
 class EditCommand:
     """Command pattern for undo/redo of cell edits."""
 
-    def __init__(self, model, row, col, old_value, new_value, beat_data, field_name, sg_session, field_schema=None):
+    def __init__(self, model, row, col, old_value, new_value, bidding_scene_data, field_name, sg_session, field_schema=None):
         self.model = model
         self.row = row
         self.col = col
         self.old_value = old_value
         self.new_value = new_value
-        self.beat_data = beat_data
+        self.bidding_scene_data = bidding_scene_data
         self.field_name = field_name
         self.sg_session = sg_session
         self.field_schema = field_schema or {}
@@ -83,17 +83,17 @@ class EditCommand:
 
     def _update_shotgrid(self, value):
         """Update ShotGrid with the value."""
-        beat_id = self.beat_data.get("id")
-        if not beat_id:
-            logger.error("No beat ID found for update")
-            raise ValueError("No beat ID found for update")
+        bidding_scene_id = self.bidding_scene_data.get("id")
+        if not bidding_scene_id:
+            logger.error("No bidding scene ID found for update")
+            raise ValueError("No bidding scene ID found for update")
 
         # Convert string value back to appropriate type
         update_value = self._parse_value(value, self.field_name)
 
         # Update on ShotGrid
-        self.sg_session.sg.update("CustomEntity02", beat_id, {self.field_name: update_value})
-        logger.info(f"Updated Beat {beat_id} field '{self.field_name}' to: {update_value}")
+        self.sg_session.sg.update("CustomEntity02", bidding_scene_id, {self.field_name: update_value})
+        logger.info(f"Updated Bidding Scene {bidding_scene_id} field '{self.field_name}' to: {update_value}")
 
     def _parse_value(self, text, field_name):
         """Parse text value to appropriate type based on ShotGrid schema."""
@@ -143,7 +143,7 @@ class PasteCommand:
         Initialize paste command.
 
         Args:
-            changes: List of dicts with keys: row, col, old_value, new_value, beat_data, field_name
+            changes: List of dicts with keys: row, col, old_value, new_value, bidding_scene_data, field_name
             model: VFXBreakdownModel instance
             sg_session: ShotGrid session object
             field_schema: Field schema information
@@ -158,28 +158,28 @@ class PasteCommand:
         for change in self.changes:
             self.model.setData(self.model.index(change['row'], change['col']), change['old_value'], QtCore.Qt.EditRole)
             # Update ShotGrid
-            self._update_shotgrid(change['old_value'], change['beat_data'], change['field_name'])
+            self._update_shotgrid(change['old_value'], change['bidding_scene_data'], change['field_name'])
 
     def redo(self):
         """Redo all paste changes."""
         for change in self.changes:
             self.model.setData(self.model.index(change['row'], change['col']), change['new_value'], QtCore.Qt.EditRole)
             # Update ShotGrid
-            self._update_shotgrid(change['new_value'], change['beat_data'], change['field_name'])
+            self._update_shotgrid(change['new_value'], change['bidding_scene_data'], change['field_name'])
 
-    def _update_shotgrid(self, value, beat_data, field_name):
+    def _update_shotgrid(self, value, bidding_scene_data, field_name):
         """Update ShotGrid with the value."""
-        beat_id = beat_data.get("id")
-        if not beat_id:
-            logger.error("No beat ID found for update")
-            raise ValueError("No beat ID found for update")
+        bidding_scene_id = bidding_scene_data.get("id")
+        if not bidding_scene_id:
+            logger.error("No bidding scene ID found for update")
+            raise ValueError("No bidding scene ID found for update")
 
         # Convert string value back to appropriate type
         update_value = self._parse_value(value, field_name)
 
         # Update on ShotGrid
-        self.sg_session.sg.update("CustomEntity02", beat_id, {field_name: update_value})
-        logger.info(f"Updated Beat {beat_id} field '{field_name}' to: {update_value}")
+        self.sg_session.sg.update("CustomEntity02", bidding_scene_id, {field_name: update_value})
+        logger.info(f"Updated Bidding Scene {bidding_scene_id} field '{field_name}' to: {update_value}")
 
     def _parse_value(self, text, field_name):
         """Parse text value to appropriate type based on ShotGrid schema."""
@@ -227,7 +227,7 @@ class PasteCommand:
 
 
 class VFXBreakdownModel(QtCore.QAbstractTableModel):
-    """Model for VFX Breakdown beats data using Qt Model/View pattern."""
+    """Model for VFX Breakdown bidding scenes data using Qt Model/View pattern."""
 
     # Custom signals
     statusMessageChanged = QtCore.Signal(str, bool)  # message, is_error
@@ -245,14 +245,14 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
         # Column configuration
         self.column_fields = [
-            "id", "code", "sg_beat_id", "sg_vfx_breakdown_scene", "sg_page",
+            "id", "code", "sg_bidding_scene_id", "sg_vfx_breakdown_scene", "sg_page",
             "sg_script_excerpt", "description", "sg_vfx_type", "sg_complexity",
             "sg_category", "sg_vfx_description", "sg_number_of_shots",
             "updated_at", "updated_by"
         ]
 
         self.column_headers = [
-            "ID", "Code", "Beat ID", "Scene", "Page",
+            "ID", "Code", "Bidding Scene ID", "Scene", "Page",
             "Script Excerpt", "Description", "VFX Type", "Complexity",
             "Category", "VFX Description", "# Shots",
             "Updated At", "Updated By"
@@ -262,9 +262,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         self.readonly_columns = ["id", "updated_at", "updated_by"]
 
         # Data storage
-        self.all_beats_data = []  # Original unfiltered beat data
-        self.filtered_row_indices = []  # Indices into all_beats_data that pass filters
-        self.display_row_to_data_row = {}  # Maps displayed row -> index in all_beats_data
+        self.all_bidding_scenes_data = []  # Original unfiltered bidding scene data
+        self.filtered_row_indices = []  # Indices into all_bidding_scenes_data that pass filters
+        self.display_row_to_data_row = {}  # Maps displayed row -> index in all_bidding_scenes_data
 
         # Field schema information
         self.field_schema = {}
@@ -289,7 +289,7 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         self._updating = False
 
     def rowCount(self, parent=QtCore.QModelIndex()):
-        """Return the number of rows (filtered beats)."""
+        """Return the number of rows (filtered bidding scenes)."""
         if parent.isValid():
             return 0
         return len(self.filtered_row_indices)
@@ -313,9 +313,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
         # Get the actual data row
         data_row = self.filtered_row_indices[row]
-        beat_data = self.all_beats_data[data_row]
+        bidding_scene_data = self.all_bidding_scenes_data[data_row]
         field_name = self.column_fields[col]
-        value = beat_data.get(field_name)
+        value = bidding_scene_data.get(field_name)
 
         if role == QtCore.Qt.DisplayRole or role == QtCore.Qt.EditRole:
             return self._format_sg_value(value)
@@ -353,10 +353,10 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
         # Get the actual data row
         data_row = self.filtered_row_indices[row]
-        beat_data = self.all_beats_data[data_row]
+        bidding_scene_data = self.all_bidding_scenes_data[data_row]
 
         # Get old value
-        old_value_raw = beat_data.get(field_name)
+        old_value_raw = bidding_scene_data.get(field_name)
         old_value = self._format_sg_value(old_value_raw)
 
         new_value = value
@@ -372,7 +372,7 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
             col,
             old_value,
             new_value,
-            beat_data,
+            bidding_scene_data,
             field_name,
             self.sg_session,
             field_schema=self.field_schema
@@ -383,9 +383,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
             self._updating = True
             command._update_shotgrid(new_value)
 
-            # Update the beat_data with new value
+            # Update the bidding_scene_data with new value
             parsed_value = command._parse_value(new_value, field_name)
-            beat_data[field_name] = parsed_value
+            bidding_scene_data[field_name] = parsed_value
 
             # Emit data changed
             self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
@@ -398,7 +398,7 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
             self._updating = False
 
             self.statusMessageChanged.emit(f"✓ Updated {field_name} on ShotGrid", False)
-            logger.info(f"Successfully updated Beat {beat_data.get('id')} field '{field_name}' to '{new_value}'")
+            logger.info(f"Successfully updated Bidding Scene {bidding_scene_data.get('id')} field '{field_name}' to '{new_value}'")
 
             return True
 
@@ -429,15 +429,15 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         else:
             return QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEditable
 
-    def load_beats(self, beats):
-        """Load beats data into the model.
+    def load_bidding_scenes(self, bidding_scenes):
+        """Load bidding scenes data into the model.
 
         Args:
-            beats: List of beat dictionaries from ShotGrid
+            bidding_scenes: List of bidding scene dictionaries from ShotGrid
         """
         self.beginResetModel()
 
-        self.all_beats_data = beats.copy() if beats else []
+        self.all_bidding_scenes_data = bidding_scenes.copy() if bidding_scenes else []
         self.filtered_row_indices.clear()
         self.display_row_to_data_row.clear()
         self.undo_stack.clear()
@@ -448,17 +448,17 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
         self.endResetModel()
 
-        self.rowCountChanged.emit(len(self.filtered_row_indices), len(self.all_beats_data))
+        self.rowCountChanged.emit(len(self.filtered_row_indices), len(self.all_bidding_scenes_data))
 
-        if beats:
-            self.statusMessageChanged.emit(f"Loaded {len(beats)} Beat(s)", False)
+        if bidding_scenes:
+            self.statusMessageChanged.emit(f"Loaded {len(bidding_scenes)} Bidding Scene(s)", False)
         else:
-            self.statusMessageChanged.emit("No Beats found", False)
+            self.statusMessageChanged.emit("No Bidding Scenes found", False)
 
     def clear_data(self):
         """Clear all data from the model."""
         self.beginResetModel()
-        self.all_beats_data.clear()
+        self.all_bidding_scenes_data.clear()
         self.filtered_row_indices.clear()
         self.display_row_to_data_row.clear()
         self.undo_stack.clear()
@@ -517,7 +517,7 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
     def apply_filters(self):
         """Apply search and sorting to the data."""
-        if not self.all_beats_data:
+        if not self.all_bidding_scenes_data:
             self.beginResetModel()
             self.filtered_row_indices = []
             self.display_row_to_data_row.clear()
@@ -526,20 +526,20 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
             return
 
         # Start with all rows
-        self.filtered_row_indices = list(range(len(self.all_beats_data)))
+        self.filtered_row_indices = list(range(len(self.all_bidding_scenes_data)))
 
         # Apply global search filter
         if self.global_search_text:
             self.filtered_row_indices = [
                 idx for idx in self.filtered_row_indices
-                if self._matches_global_search(self.all_beats_data[idx], self.global_search_text)
+                if self._matches_global_search(self.all_bidding_scenes_data[idx], self.global_search_text)
             ]
 
         # Apply sorting
         if self.compound_sort_columns:
-            self.filtered_row_indices.sort(key=lambda idx: self._get_compound_sort_key(self.all_beats_data[idx]))
+            self.filtered_row_indices.sort(key=lambda idx: self._get_compound_sort_key(self.all_bidding_scenes_data[idx]))
         elif self.sort_column is not None and self.sort_direction:
-            self.filtered_row_indices.sort(key=lambda idx: self._get_sort_key(self.all_beats_data[idx]))
+            self.filtered_row_indices.sort(key=lambda idx: self._get_sort_key(self.all_bidding_scenes_data[idx]))
 
         # Rebuild display mapping
         self.display_row_to_data_row.clear()
@@ -551,16 +551,16 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         self.endResetModel()
 
         # Emit row count changed
-        total_rows = len(self.all_beats_data)
+        total_rows = len(self.all_bidding_scenes_data)
         shown_rows = len(self.filtered_row_indices)
         self.rowCountChanged.emit(shown_rows, total_rows)
 
         logger.info(f"Filters applied: showing {shown_rows} of {total_rows} rows")
 
-    def _matches_global_search(self, beat_data, search_text):
-        """Check if beat data matches global search text."""
+    def _matches_global_search(self, bidding_scene_data, search_text):
+        """Check if bidding scene data matches global search text."""
         for field in self.column_fields:
-            value = beat_data.get(field)
+            value = bidding_scene_data.get(field)
             if value:
                 if isinstance(value, dict):
                     value_str = value.get("name", "") or value.get("code", "")
@@ -571,13 +571,13 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
                     return True
         return False
 
-    def _get_sort_key(self, beat_data):
-        """Get sort key for a beat based on current sort column."""
+    def _get_sort_key(self, bidding_scene_data):
+        """Get sort key for a bidding scene based on current sort column."""
         if self.sort_column is None or self.sort_column >= len(self.column_fields):
             return (0, 0)
 
         field_name = self.column_fields[self.sort_column]
-        value = beat_data.get(field_name)
+        value = bidding_scene_data.get(field_name)
 
         # Check if this is a numeric field
         is_numeric_field = (
@@ -639,8 +639,8 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
         return (sort_type, sort_value)
 
-    def _get_compound_sort_key(self, beat_data):
-        """Get compound sort key for a beat based on multiple sort columns."""
+    def _get_compound_sort_key(self, bidding_scene_data):
+        """Get compound sort key for a bidding scene based on multiple sort columns."""
         sort_keys = []
 
         for col_idx, direction in self.compound_sort_columns:
@@ -655,7 +655,7 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
             self.sort_direction = direction
 
             # Get the sort key for this column
-            sort_key = self._get_sort_key(beat_data)
+            sort_key = self._get_sort_key(bidding_scene_data)
             sort_keys.append(sort_key)
 
             # Restore original values
@@ -698,20 +698,20 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
         return str(value)
 
-    def get_beat_data_for_row(self, row):
-        """Get the beat data dictionary for a display row.
+    def get_bidding_scene_data_for_row(self, row):
+        """Get the bidding scene data dictionary for a display row.
 
         Args:
             row: Display row index
 
         Returns:
-            dict: Beat data dictionary or None
+            dict: Bidding scene data dictionary or None
         """
         if row < 0 or row >= len(self.filtered_row_indices):
             return None
 
         data_row = self.filtered_row_indices[row]
-        return self.all_beats_data[data_row]
+        return self.all_bidding_scenes_data[data_row]
 
     def undo(self):
         """Undo the last change."""
