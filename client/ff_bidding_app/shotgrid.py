@@ -559,6 +559,13 @@ class ShotgridClient:
                 else:
                     print(f"  '{req_field}' -> No similar fields found")
 
+            # Print full schema for first few fields
+            print(f"\nDEBUG: Full schema details for first 3 fields:")
+            import json
+            for i, (field_name, field_data) in enumerate(list(current_schema.items())[:3], 1):
+                print(f"\n  Field {i}: {field_name}")
+                print(f"  {json.dumps(field_data, indent=4, default=str)}")
+
         # Check which fields exist and which are missing
         existing_fields = {}
         missing_fields = []

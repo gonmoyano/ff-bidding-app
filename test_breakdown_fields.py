@@ -177,8 +177,51 @@ Example with custom credentials:
         action="store_true",
         help="Enable verbose debug output showing schema details"
     )
+    parser.add_argument(
+        "--dump-schema",
+        action="store_true",
+        help="Dump complete schema to schema_dump.json file"
+    )
 
     args = parser.parse_args()
+
+    # If dump-schema is requested, dump it and exit
+    if args.dump_schema:
+        print("Dumping complete CustomEntity02 schema...")
+        print()
+
+        # Use same credential logic
+        default_url = "https://fireframe.shotgrid.autodesk.com/"
+        default_script = "ff_bidding_app"
+        default_key = "tiviqwk^jeZqaon8aeemdnnnk"
+
+        sg_url = os.getenv('SG_URL', default_url)
+        sg_script = os.getenv('SG_SCRIPT', default_script)
+        sg_key = os.getenv('SG_KEY', default_key)
+
+        try:
+            client = ShotgridClient(
+                site_url=sg_url,
+                script_name=sg_script,
+                api_key=sg_key
+            )
+            with client:
+                schema = client.get_entity_schema("CustomEntity02")
+
+                import json
+                with open("schema_dump.json", "w") as f:
+                    json.dump(schema, f, indent=2, default=str)
+
+                print(f"✓ Schema dumped to schema_dump.json")
+                print(f"  Total fields: {len(schema)}")
+                print(f"  Field names: {list(schema.keys())[:20]}...")
+                print()
+                sys.exit(0)
+        except Exception as e:
+            print(f"✗ Failed to dump schema: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
 
     # Run the test (uses defaults from run_standalone.py if env vars not set)
     success = test_breakdown_item_fields(
