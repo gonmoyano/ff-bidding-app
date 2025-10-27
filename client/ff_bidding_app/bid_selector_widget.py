@@ -201,19 +201,29 @@ class RenameBidDialog(QtWidgets.QDialog):
 
 
 class ImportBidDialog(QtWidgets.QDialog):
-    """Dialog for importing bid data from an Excel file."""
+    """Dialog for importing bid data from an Excel file with tabs for different data types."""
 
     def __init__(self, parent=None):
         """Initialize the dialog."""
         super().__init__(parent)
         self.setWindowTitle("Import Bid Data")
         self.setModal(True)
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(900, 700)
 
         # Data storage
         self.excel_file_path = None
-        self.excel_data = None
         self.sheet_names = []
+
+        # Tab configuration: tab_name -> (sheet_match_keywords, data)
+        self.tab_config = {
+            "VFX Breakdown": (["vfx", "breakdown", "break"], None),
+            "Assets": (["asset", "assets"], None),
+            "Scene": (["scene", "scenes"], None),
+            "Rates": (["rate", "rates", "pricing", "price"], None)
+        }
+
+        # UI components for each tab
+        self.tab_widgets = {}  # tab_name -> {"combo": combo, "table": table}
 
         self._build_ui()
 
@@ -226,32 +236,16 @@ class ImportBidDialog(QtWidgets.QDialog):
         self.drop_area.fileDropped.connect(self._on_file_dropped)
         layout.addWidget(self.drop_area)
 
-        # Sheet selection (initially hidden)
-        self.sheet_widget = QtWidgets.QWidget()
-        sheet_layout = QtWidgets.QHBoxLayout(self.sheet_widget)
-        sheet_layout.setContentsMargins(0, 0, 0, 0)
+        # Tab widget (initially hidden)
+        self.tab_widget = QtWidgets.QTabWidget()
+        self.tab_widget.hide()
 
-        sheet_label = QtWidgets.QLabel("Select Sheet:")
-        sheet_layout.addWidget(sheet_label)
+        # Create tabs
+        for tab_name in self.tab_config.keys():
+            tab = self._create_tab(tab_name)
+            self.tab_widget.addTab(tab, tab_name)
 
-        self.sheet_combo = QtWidgets.QComboBox()
-        self.sheet_combo.currentIndexChanged.connect(self._on_sheet_changed)
-        sheet_layout.addWidget(self.sheet_combo, stretch=1)
-
-        self.sheet_widget.hide()
-        layout.addWidget(self.sheet_widget)
-
-        # Table for displaying data
-        self.table = QtWidgets.QTableWidget()
-        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
-        self.table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-        self.table.setAlternatingRowColors(False)
-        self.table.setWordWrap(True)
-        self.table.horizontalHeader().setStretchLastSection(False)
-        self.table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
-        self.table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
-        self.table.hide()
-        layout.addWidget(self.table, stretch=1)
+        layout.addWidget(self.tab_widget, stretch=1)
 
         # Status label
         self.status_label = QtWidgets.QLabel("")
@@ -281,6 +275,85 @@ class ImportBidDialog(QtWidgets.QDialog):
 
         layout.addLayout(button_layout)
 
+    def _create_tab(self, tab_name):
+        """Create a tab with sheet selector and table."""
+        tab_widget = QtWidgets.QWidget()
+        tab_layout = QtWidgets.QVBoxLayout(tab_widget)
+
+        # Sheet selection row
+        sheet_layout = QtWidgets.QHBoxLayout()
+        sheet_label = QtWidgets.QLabel("Select Sheet:")
+        sheet_layout.addWidget(sheet_label)
+
+        sheet_combo = QtWidgets.QComboBox()
+        sheet_combo.currentIndexChanged.connect(lambda idx, tn=tab_name: self._on_sheet_changed(tn, idx))
+        sheet_layout.addWidget(sheet_combo, stretch=1)
+
+        tab_layout.addLayout(sheet_layout)
+
+        # Table for displaying data
+        table = QtWidgets.QTableWidget()
+        table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
+        table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        table.setAlternatingRowColors(False)
+        table.setWordWrap(True)
+        table.horizontalHeader().setStretchLastSection(False)
+        table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        tab_layout.addWidget(table, stretch=1)
+
+        # Store references
+        self.tab_widgets[tab_name] = {
+            "combo": sheet_combo,
+            "table": table
+        }
+
+        return tab_widget
+
+    def _find_best_match_sheet(self, tab_name):
+        """Find the best matching sheet name for a tab using fuzzy matching.
+
+        Args:
+            tab_name: The tab name to match against
+
+        Returns:
+            str: Best matching sheet name or None
+        """
+        if not self.sheet_names:
+            return None
+
+        keywords, _ = self.tab_config[tab_name]
+
+        # Try exact match first (case insensitive)
+        tab_lower = tab_name.lower()
+        for sheet in self.sheet_names:
+            sheet_lower = sheet.lower()
+            if sheet_lower == tab_lower:
+                return sheet
+
+        # Try keyword matching
+        best_match = None
+        best_score = 0
+
+        for sheet in self.sheet_names:
+            sheet_lower = sheet.lower()
+            score = 0
+
+            # Check if any keyword is in the sheet name
+            for keyword in keywords:
+                if keyword in sheet_lower:
+                    score += len(keyword)
+
+            # Check if sheet name is in tab name
+            if sheet_lower in tab_lower or tab_lower in sheet_lower:
+                score += 10
+
+            if score > best_score:
+                best_score = score
+                best_match = sheet
+
+        return best_match if best_score > 0 else None
+
     def _on_file_dropped(self, file_path):
         """Handle file drop event."""
         if not file_path.lower().endswith(('.xlsx', '.xls')):
@@ -298,21 +371,31 @@ class ImportBidDialog(QtWidgets.QDialog):
             excel_file = pd.ExcelFile(file_path)
             self.sheet_names = excel_file.sheet_names
 
-            # Populate sheet combo
-            self.sheet_combo.blockSignals(True)
-            self.sheet_combo.clear()
-            for sheet in self.sheet_names:
-                self.sheet_combo.addItem(sheet)
-            self.sheet_combo.blockSignals(False)
+            # Populate all sheet combos and auto-select best matches
+            for tab_name, widgets in self.tab_widgets.items():
+                combo = widgets["combo"]
+                combo.blockSignals(True)
+                combo.clear()
+                combo.addItem("-- Select Sheet --", None)
+                for sheet in self.sheet_names:
+                    combo.addItem(sheet)
+                combo.blockSignals(False)
 
-            # Show sheet selection
-            self.sheet_widget.show()
+                # Auto-select best match
+                best_match = self._find_best_match_sheet(tab_name)
+                if best_match:
+                    index = combo.findText(best_match)
+                    if index >= 0:
+                        combo.setCurrentIndex(index)
+                        # Load the sheet
+                        self._load_sheet_for_tab(tab_name, best_match)
 
-            # Load first sheet by default
-            if self.sheet_names:
-                self._load_sheet(self.sheet_names[0])
+            # Show tabs and hide drop area
+            self.tab_widget.show()
+            self.drop_area.hide()
+            self.import_button.setEnabled(True)
 
-            self._set_status(f"Loaded: {file_path}")
+            self._set_status(f"Loaded: {file_path} ({len(self.sheet_names)} sheets)")
 
         except ImportError:
             self._set_status("Error: pandas library not installed. Please install with: pip install pandas openpyxl", is_error=True)
@@ -320,45 +403,50 @@ class ImportBidDialog(QtWidgets.QDialog):
             self._set_status(f"Error loading file: {str(e)}", is_error=True)
             logger.error(f"Error loading Excel file: {e}", exc_info=True)
 
-    def _on_sheet_changed(self, index):
-        """Handle sheet selection change."""
-        if index >= 0 and index < len(self.sheet_names):
-            sheet_name = self.sheet_names[index]
-            self._load_sheet(sheet_name)
+    def _on_sheet_changed(self, tab_name, index):
+        """Handle sheet selection change for a specific tab."""
+        widgets = self.tab_widgets.get(tab_name)
+        if not widgets:
+            return
 
-    def _load_sheet(self, sheet_name):
-        """Load and display a specific sheet."""
+        combo = widgets["combo"]
+        sheet_name = combo.currentText()
+
+        if sheet_name and sheet_name != "-- Select Sheet --":
+            self._load_sheet_for_tab(tab_name, sheet_name)
+
+    def _load_sheet_for_tab(self, tab_name, sheet_name):
+        """Load and display a specific sheet in a specific tab."""
         try:
             import pandas as pd
 
             # Read the specific sheet
             df = pd.read_excel(self.excel_file_path, sheet_name=sheet_name)
-            self.excel_data = df
+
+            # Store data
+            keywords, _ = self.tab_config[tab_name]
+            self.tab_config[tab_name] = (keywords, df)
 
             # Display in table
-            self._populate_table(df)
+            widgets = self.tab_widgets[tab_name]
+            self._populate_table(widgets["table"], df)
 
-            # Enable import button and hide drop area
-            self.import_button.setEnabled(True)
-            self.table.show()
-            self.drop_area.hide()
-
-            self._set_status(f"Loaded sheet '{sheet_name}' with {len(df)} rows and {len(df.columns)} columns")
+            logger.info(f"Loaded sheet '{sheet_name}' for tab '{tab_name}': {len(df)} rows, {len(df.columns)} columns")
 
         except Exception as e:
             self._set_status(f"Error loading sheet: {str(e)}", is_error=True)
-            logger.error(f"Error loading sheet {sheet_name}: {e}", exc_info=True)
+            logger.error(f"Error loading sheet {sheet_name} for tab {tab_name}: {e}", exc_info=True)
 
-    def _populate_table(self, df):
-        """Populate the table widget with dataframe data."""
+    def _populate_table(self, table, df):
+        """Populate a table widget with dataframe data."""
         import pandas as pd
 
         # Set dimensions
-        self.table.setRowCount(len(df))
-        self.table.setColumnCount(len(df.columns))
+        table.setRowCount(len(df))
+        table.setColumnCount(len(df.columns))
 
         # Set headers
-        self.table.setHorizontalHeaderLabels([str(col) for col in df.columns])
+        table.setHorizontalHeaderLabels([str(col) for col in df.columns])
 
         # Populate data
         for i in range(len(df)):
@@ -372,10 +460,10 @@ class ImportBidDialog(QtWidgets.QDialog):
 
                 item = QtWidgets.QTableWidgetItem(value)
                 item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)  # Make read-only
-                self.table.setItem(i, j, item)
+                table.setItem(i, j, item)
 
         # Resize columns to content
-        self.table.resizeColumnsToContents()
+        table.resizeColumnsToContents()
 
     def _set_status(self, message, is_error=False):
         """Set status message."""
@@ -384,8 +472,16 @@ class ImportBidDialog(QtWidgets.QDialog):
         self.status_label.setText(message)
 
     def get_imported_data(self):
-        """Get the imported data."""
-        return self.excel_data
+        """Get the imported data from all tabs.
+
+        Returns:
+            dict: Dictionary mapping tab names to DataFrames
+        """
+        result = {}
+        for tab_name, (_, data) in self.tab_config.items():
+            if data is not None:
+                result[tab_name] = data
+        return result
 
 
 class DragDropArea(QtWidgets.QLabel):
@@ -906,25 +1002,33 @@ class BidSelectorWidget(QtWidgets.QWidget):
         # Show the import dialog
         dialog = ImportBidDialog(parent=self)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            # Get the imported data
+            # Get the imported data (dict of tab_name -> DataFrame)
             data = dialog.get_imported_data()
 
-            if data is not None:
-                # For now, just show a success message with info about the imported data
-                rows = len(data)
-                cols = len(data.columns)
+            if data:
+                # Build summary message
+                summary_lines = ["Successfully imported Excel data:\n"]
+                total_rows = 0
+                total_cols = 0
+
+                for tab_name, df in data.items():
+                    rows = len(df)
+                    cols = len(df.columns)
+                    total_rows += rows
+                    total_cols = max(total_cols, cols)
+                    summary_lines.append(f"• {tab_name}: {rows} rows, {cols} columns")
+
+                summary_lines.append(f"\nTotal: {total_rows} rows imported across {len(data)} tabs")
+                summary_lines.append("\nNote: Data processing and storage functionality can be implemented as needed.")
+
                 QtWidgets.QMessageBox.information(
                     self,
                     "Import Successful",
-                    f"Successfully imported Excel data:\n\n"
-                    f"Rows: {rows}\n"
-                    f"Columns: {cols}\n\n"
-                    f"Column names: {', '.join([str(c) for c in data.columns])}\n\n"
-                    f"Note: Data processing and storage functionality can be implemented as needed."
+                    "\n".join(summary_lines)
                 )
 
-                logger.info(f"Imported Excel data with {rows} rows and {cols} columns")
-                self.statusMessageChanged.emit(f"✓ Imported data: {rows} rows, {cols} columns", False)
+                logger.info(f"Imported Excel data from {len(data)} tabs with total {total_rows} rows")
+                self.statusMessageChanged.emit(f"✓ Imported data: {len(data)} tabs, {total_rows} rows total", False)
 
     def _on_refresh_bids(self):
         """Handle Refresh button click."""
