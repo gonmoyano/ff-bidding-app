@@ -91,6 +91,40 @@ class AppSettings:
             self._save()
             logger.info(f"Sort template '{name}' deleted")
 
+    def get_column_mappings(self):
+        """Get saved column mappings for import dialogs.
+
+        Returns:
+            Dictionary of {mapping_key: {sg_field: excel_column}}
+        """
+        return self.settings.get("column_mappings", {})
+
+    def set_column_mapping(self, mapping_key, mapping):
+        """Save a column mapping.
+
+        Args:
+            mapping_key: Unique key for this mapping (e.g., "vfx_breakdown")
+            mapping: Dictionary mapping SG fields to Excel columns
+        """
+        if "column_mappings" not in self.settings:
+            self.settings["column_mappings"] = {}
+
+        self.settings["column_mappings"][mapping_key] = mapping
+        self._save()
+        logger.info(f"Column mapping '{mapping_key}' saved with {len(mapping)} mappings")
+
+    def get_column_mapping(self, mapping_key):
+        """Get a specific column mapping.
+
+        Args:
+            mapping_key: Unique key for the mapping
+
+        Returns:
+            Dictionary mapping SG fields to Excel columns, or None if not found
+        """
+        mappings = self.get_column_mappings()
+        return mappings.get(mapping_key)
+
     def get(self, key, default=None):
         """Get a setting value.
 

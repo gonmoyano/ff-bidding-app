@@ -7,9 +7,11 @@ from PySide6 import QtWidgets, QtCore, QtGui
 
 try:
     from .logger import logger
+    from .settings import AppSettings
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
+    from settings import AppSettings
 
 
 class CollapsibleGroupBox(QtWidgets.QWidget):
@@ -248,9 +250,14 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         self.mapping_combos = {}  # sg_field -> {"excel": combo, "sg": combo}
         self.sg_display_names = {}
 
+        # App settings for saving/loading mappings
+        self.app_settings = AppSettings()
+        self.mapping_key = "vfx_breakdown"  # Key for this specific mapping type
+
         self._fetch_sg_display_names()
         self._build_ui()
         self._auto_map_columns()
+        self._load_saved_mappings()
 
     def _fetch_sg_display_names(self):
         """Fetch human-readable display names for SG fields."""
@@ -465,6 +472,42 @@ class ColumnMappingDialog(QtWidgets.QDialog):
 
         # Only return if score is meaningful
         return best_match if best_score > 3 else None
+
+    def _load_saved_mappings(self):
+        """Load previously saved column mappings from settings."""
+        saved_mapping = self.app_settings.get_column_mapping(self.mapping_key)
+
+        if not saved_mapping:
+            logger.info("No saved column mappings found")
+            return
+
+        # Apply saved mappings (only if column exists in current Excel file)
+        applied_count = 0
+        for sg_field, excel_col in saved_mapping.items():
+            if sg_field not in self.mapping_combos:
+                continue
+
+            if excel_col and excel_col in self.excel_columns:
+                combo = self.mapping_combos[sg_field]["excel"]
+                index = combo.findText(excel_col)
+                if index >= 0:
+                    combo.setCurrentIndex(index)
+                    applied_count += 1
+                    logger.info(f"Applied saved mapping: '{excel_col}' -> '{sg_field}'")
+
+        logger.info(f"Applied {applied_count} saved column mappings")
+
+    def accept(self):
+        """Override accept to save mappings before closing."""
+        # Get current mappings
+        mapping = self.get_column_mapping()
+
+        # Save to settings
+        self.app_settings.set_column_mapping(self.mapping_key, mapping)
+        logger.info(f"Saved column mappings for '{self.mapping_key}'")
+
+        # Call parent accept
+        super().accept()
 
     def get_column_mapping(self):
         """Get the column mapping results.
