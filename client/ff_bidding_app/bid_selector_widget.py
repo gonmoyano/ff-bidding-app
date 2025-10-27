@@ -243,7 +243,13 @@ class ImportBidDialog(QtWidgets.QDialog):
 
         # Table for displaying data
         self.table = QtWidgets.QTableWidget()
-        self.table.setAlternatingRowColors(True)
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.table.setAlternatingRowColors(False)
+        self.table.setWordWrap(True)
+        self.table.horizontalHeader().setStretchLastSection(False)
+        self.table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        self.table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
         self.table.hide()
         layout.addWidget(self.table, stretch=1)
 
@@ -332,9 +338,10 @@ class ImportBidDialog(QtWidgets.QDialog):
             # Display in table
             self._populate_table(df)
 
-            # Enable import button
+            # Enable import button and hide drop area
             self.import_button.setEnabled(True)
             self.table.show()
+            self.drop_area.hide()
 
             self._set_status(f"Loaded sheet '{sheet_name}' with {len(df)} rows and {len(df.columns)} columns")
 
@@ -458,6 +465,7 @@ class DragDropArea(QtWidgets.QLabel):
     def dropEvent(self, event):
         """Handle drop event."""
         if event.mimeData().hasUrls():
+            event.acceptProposedAction()
             urls = event.mimeData().urls()
             if urls:
                 file_path = urls[0].toLocalFile()
@@ -472,6 +480,11 @@ class DragDropArea(QtWidgets.QLabel):
                 background-color: #2b2b2b;
                 color: #a0a0a0;
                 font-size: 14px;
+            }
+            QLabel:hover {
+                border-color: #777777;
+                background-color: #333333;
+                cursor: pointer;
             }
         """)
 
