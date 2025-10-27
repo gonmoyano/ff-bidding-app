@@ -202,6 +202,62 @@ class RenameBidDialog(QtWidgets.QDialog):
         return self.name_field.text().strip()
 
 
+class CreateVFXBreakdownDialog(QtWidgets.QDialog):
+    """Simple dialog for creating a new VFX Breakdown during import."""
+
+    def __init__(self, parent=None):
+        """Initialize the dialog."""
+        super().__init__(parent)
+        self.setWindowTitle("Create VFX Breakdown")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Instructions
+        instructions = QtWidgets.QLabel(
+            "Before importing breakdown items, you need to create a VFX Breakdown "
+            "to contain them. Please enter a name for the new VFX Breakdown:"
+        )
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet("padding: 10px; background-color: #2b2b2b; border-radius: 4px;")
+        layout.addWidget(instructions)
+
+        # Name field
+        name_layout = QtWidgets.QHBoxLayout()
+        name_label = QtWidgets.QLabel("Name:")
+        name_layout.addWidget(name_label)
+
+        self.name_field = QtWidgets.QLineEdit()
+        self.name_field.setPlaceholderText("Enter VFX Breakdown name...")
+        name_layout.addWidget(self.name_field, stretch=1)
+
+        layout.addLayout(name_layout)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        self.ok_button = QtWidgets.QPushButton("Create")
+        self.ok_button.clicked.connect(self.accept)
+        self.ok_button.setDefault(True)
+        button_layout.addWidget(self.ok_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+    def get_breakdown_name(self):
+        """Get the VFX Breakdown name from the dialog."""
+        return self.name_field.text().strip()
+
+
 class ColumnMappingDialog(QtWidgets.QDialog):
     """Dialog for mapping Excel columns to ShotGrid fields."""
 
@@ -1467,8 +1523,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
             if data:
                 # Process VFX Breakdown tab specifically
                 vfx_breakdown_created = 0
+                vfx_breakdown_id = None
                 if "VFX Breakdown" in data:
-                    vfx_breakdown_created = self._import_vfx_breakdown(data["VFX Breakdown"])
+                    vfx_breakdown_created, vfx_breakdown_id = self._import_vfx_breakdown(data["VFX Breakdown"])
 
                 # Build summary message
                 summary_lines = ["Successfully imported Excel data:\n"]
@@ -1494,6 +1551,10 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 logger.info(f"Imported Excel data from {len(data)} tabs with total {total_rows} rows")
                 self.statusMessageChanged.emit(f"✓ Imported data: {len(data)} tabs, {total_rows} rows total", False)
 
+                # Refresh VFX Breakdown dropdown if items were imported
+                if vfx_breakdown_id and self._refresh_vfx_breakdown_dropdown():
+                    logger.info(f"Refreshed VFX Breakdown dropdown, selecting ID {vfx_breakdown_id}")
+
     def _import_vfx_breakdown(self, df):
         """Import VFX Breakdown data to ShotGrid.
 
@@ -1501,17 +1562,46 @@ class BidSelectorWidget(QtWidgets.QWidget):
             df: DataFrame containing VFX Breakdown data
 
         Returns:
-            int: Number of records created
+            tuple: (Number of records created, VFX Breakdown ID)
         """
         import pandas as pd
 
         if df is None or len(df) == 0:
-            return 0
+            return 0, None
 
-        # Get column names from DataFrame
+        # Step 1: Create VFX Breakdown (CustomEntity01) dialog
+        breakdown_dialog = CreateVFXBreakdownDialog(parent=self)
+        if breakdown_dialog.exec_() != QtWidgets.QDialog.Accepted:
+            logger.info("VFX Breakdown creation cancelled by user")
+            return 0, None
+
+        breakdown_name = breakdown_dialog.get_breakdown_name()
+        if not breakdown_name:
+            QtWidgets.QMessageBox.warning(self, "Invalid Name", "Please enter a name for the VFX Breakdown.")
+            return 0, None
+
+        # Step 2: Create VFX Breakdown in ShotGrid
+        try:
+            breakdown_data = {
+                "code": breakdown_name,
+                "project": {"type": "Project", "id": self.current_project_id}
+            }
+            vfx_breakdown = self.sg_session.sg.create("CustomEntity01", breakdown_data)
+            breakdown_id = vfx_breakdown["id"]
+            logger.info(f"Created VFX Breakdown (CustomEntity01): {breakdown_id} - {breakdown_name}")
+        except Exception as e:
+            logger.error(f"Failed to create VFX Breakdown: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to create VFX Breakdown:\n{str(e)}"
+            )
+            return 0, None
+
+        # Step 3: Get column names from DataFrame
         excel_columns = list(df.columns)
 
-        # Show column mapping dialog
+        # Step 4: Show column mapping dialog
         mapping_dialog = ColumnMappingDialog(
             excel_columns,
             self.sg_session,
@@ -1521,13 +1611,19 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         if mapping_dialog.exec_() != QtWidgets.QDialog.Accepted:
             logger.info("Column mapping cancelled by user")
-            return 0
+            # VFX Breakdown was already created, so just return
+            QtWidgets.QMessageBox.information(
+                self,
+                "Import Cancelled",
+                f"VFX Breakdown '{breakdown_name}' was created, but no items were imported."
+            )
+            return 0, breakdown_id
 
         # Get the mapping
         column_mapping = mapping_dialog.get_column_mapping()
         logger.info(f"Column mapping: {column_mapping}")
 
-        # Create ShotGrid records
+        # Step 5: Create ShotGrid records (CustomEntity02) linked to VFX Breakdown
         created_count = 0
         failed_count = 0
 
@@ -1535,7 +1631,8 @@ class BidSelectorWidget(QtWidgets.QWidget):
             try:
                 # Build SG data from mapping
                 sg_data = {
-                    "project": {"type": "Project", "id": self.current_project_id}
+                    "project": {"type": "Project", "id": self.current_project_id},
+                    "sg_parent": {"type": "CustomEntity01", "id": breakdown_id}  # Link to VFX Breakdown
                 }
 
                 for sg_field, excel_col in column_mapping.items():
@@ -1579,7 +1676,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 # Create the record
                 result = self.sg_session.sg.create("CustomEntity02", sg_data)
                 created_count += 1
-                logger.info(f"Created CustomEntity02: {result['id']} with code '{sg_data.get('code', 'N/A')}'")
+                logger.info(f"Created CustomEntity02: {result['id']} with code '{sg_data.get('code', 'N/A')}' linked to VFX Breakdown {breakdown_id}")
 
             except Exception as e:
                 failed_count += 1
@@ -1589,14 +1686,42 @@ class BidSelectorWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(
                 self,
                 "Import Completed with Errors",
-                f"Created {created_count} VFX Breakdown items.\n"
+                f"Created VFX Breakdown '{breakdown_name}'.\n"
+                f"Created {created_count} breakdown items.\n"
                 f"Failed to create {failed_count} items.\n\n"
                 f"Check the logs for details."
             )
         else:
-            logger.info(f"Successfully created {created_count} VFX Breakdown items")
+            logger.info(f"Successfully created VFX Breakdown '{breakdown_name}' with {created_count} items")
 
-        return created_count
+        return created_count, breakdown_id
+
+    def _refresh_vfx_breakdown_dropdown(self):
+        """Refresh the VFX Breakdown dropdown in the VFX Breakdown tab.
+
+        Returns:
+            bool: True if refresh was successful, False otherwise
+        """
+        try:
+            # Navigate to VFX Breakdown tab via parent
+            if hasattr(self.parent_app, 'vfx_breakdown_tab'):
+                vfx_tab = self.parent_app.vfx_breakdown_tab
+
+                # Call populate_vfx_breakdown_combo to refresh
+                if hasattr(vfx_tab, 'populate_vfx_breakdown_combo'):
+                    # Get current RFQ if available
+                    rfq = getattr(vfx_tab, 'current_rfq', None) or self.current_rfq
+                    vfx_tab.populate_vfx_breakdown_combo(rfq, auto_select=False)
+                    logger.info("VFX Breakdown dropdown refreshed successfully")
+                    return True
+                else:
+                    logger.warning("VFX Breakdown tab does not have populate_vfx_breakdown_combo method")
+            else:
+                logger.warning("Parent app does not have vfx_breakdown_tab attribute")
+        except Exception as e:
+            logger.error(f"Failed to refresh VFX Breakdown dropdown: {e}", exc_info=True)
+
+        return False
 
     def _on_refresh_bids(self):
         """Handle Refresh button click."""
