@@ -200,6 +200,262 @@ class RenameBidDialog(QtWidgets.QDialog):
         return self.name_field.text().strip()
 
 
+class ImportBidDialog(QtWidgets.QDialog):
+    """Dialog for importing bid data from an Excel file."""
+
+    def __init__(self, parent=None):
+        """Initialize the dialog."""
+        super().__init__(parent)
+        self.setWindowTitle("Import Bid Data")
+        self.setModal(True)
+        self.setMinimumSize(800, 600)
+
+        # Data storage
+        self.excel_file_path = None
+        self.excel_data = None
+        self.sheet_names = []
+
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Drag and drop area
+        self.drop_area = DragDropArea()
+        self.drop_area.fileDropped.connect(self._on_file_dropped)
+        layout.addWidget(self.drop_area)
+
+        # Sheet selection (initially hidden)
+        self.sheet_widget = QtWidgets.QWidget()
+        sheet_layout = QtWidgets.QHBoxLayout(self.sheet_widget)
+        sheet_layout.setContentsMargins(0, 0, 0, 0)
+
+        sheet_label = QtWidgets.QLabel("Select Sheet:")
+        sheet_layout.addWidget(sheet_label)
+
+        self.sheet_combo = QtWidgets.QComboBox()
+        self.sheet_combo.currentIndexChanged.connect(self._on_sheet_changed)
+        sheet_layout.addWidget(self.sheet_combo, stretch=1)
+
+        self.sheet_widget.hide()
+        layout.addWidget(self.sheet_widget)
+
+        # Table for displaying data
+        self.table = QtWidgets.QTableWidget()
+        self.table.setAlternatingRowColors(True)
+        self.table.hide()
+        layout.addWidget(self.table, stretch=1)
+
+        # Status label
+        self.status_label = QtWidgets.QLabel("")
+        self.status_label.setStyleSheet("color: #a0a0a0; padding: 5px;")
+        layout.addWidget(self.status_label)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        self.import_button = QtWidgets.QPushButton("Import")
+        self.import_button.setMinimumHeight(40)
+        self.import_button.setMinimumWidth(120)
+        self.import_button.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                font-weight: bold;
+            }
+        """)
+        self.import_button.clicked.connect(self.accept)
+        self.import_button.setEnabled(False)
+        button_layout.addWidget(self.import_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+    def _on_file_dropped(self, file_path):
+        """Handle file drop event."""
+        if not file_path.lower().endswith(('.xlsx', '.xls')):
+            self._set_status("Error: Please drop an Excel file (.xlsx or .xls)", is_error=True)
+            return
+
+        self.excel_file_path = file_path
+        self._set_status(f"Loading file: {file_path}")
+
+        try:
+            # Try to import pandas
+            import pandas as pd
+
+            # Read Excel file to get sheet names
+            excel_file = pd.ExcelFile(file_path)
+            self.sheet_names = excel_file.sheet_names
+
+            # Populate sheet combo
+            self.sheet_combo.blockSignals(True)
+            self.sheet_combo.clear()
+            for sheet in self.sheet_names:
+                self.sheet_combo.addItem(sheet)
+            self.sheet_combo.blockSignals(False)
+
+            # Show sheet selection
+            self.sheet_widget.show()
+
+            # Load first sheet by default
+            if self.sheet_names:
+                self._load_sheet(self.sheet_names[0])
+
+            self._set_status(f"Loaded: {file_path}")
+
+        except ImportError:
+            self._set_status("Error: pandas library not installed. Please install with: pip install pandas openpyxl", is_error=True)
+        except Exception as e:
+            self._set_status(f"Error loading file: {str(e)}", is_error=True)
+            logger.error(f"Error loading Excel file: {e}", exc_info=True)
+
+    def _on_sheet_changed(self, index):
+        """Handle sheet selection change."""
+        if index >= 0 and index < len(self.sheet_names):
+            sheet_name = self.sheet_names[index]
+            self._load_sheet(sheet_name)
+
+    def _load_sheet(self, sheet_name):
+        """Load and display a specific sheet."""
+        try:
+            import pandas as pd
+
+            # Read the specific sheet
+            df = pd.read_excel(self.excel_file_path, sheet_name=sheet_name)
+            self.excel_data = df
+
+            # Display in table
+            self._populate_table(df)
+
+            # Enable import button
+            self.import_button.setEnabled(True)
+            self.table.show()
+
+            self._set_status(f"Loaded sheet '{sheet_name}' with {len(df)} rows and {len(df.columns)} columns")
+
+        except Exception as e:
+            self._set_status(f"Error loading sheet: {str(e)}", is_error=True)
+            logger.error(f"Error loading sheet {sheet_name}: {e}", exc_info=True)
+
+    def _populate_table(self, df):
+        """Populate the table widget with dataframe data."""
+        import pandas as pd
+
+        # Set dimensions
+        self.table.setRowCount(len(df))
+        self.table.setColumnCount(len(df.columns))
+
+        # Set headers
+        self.table.setHorizontalHeaderLabels([str(col) for col in df.columns])
+
+        # Populate data
+        for i in range(len(df)):
+            for j in range(len(df.columns)):
+                value = df.iloc[i, j]
+                # Handle None/NaN values
+                if pd.isna(value):
+                    value = ""
+                else:
+                    value = str(value)
+
+                item = QtWidgets.QTableWidgetItem(value)
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)  # Make read-only
+                self.table.setItem(i, j, item)
+
+        # Resize columns to content
+        self.table.resizeColumnsToContents()
+
+    def _set_status(self, message, is_error=False):
+        """Set status message."""
+        color = "#ff8080" if is_error else "#a0a0a0"
+        self.status_label.setStyleSheet(f"color: {color}; padding: 5px;")
+        self.status_label.setText(message)
+
+    def get_imported_data(self):
+        """Get the imported data."""
+        return self.excel_data
+
+
+class DragDropArea(QtWidgets.QLabel):
+    """A widget that accepts drag and drop of files."""
+
+    fileDropped = QtCore.Signal(str)  # Emits file path
+
+    def __init__(self, parent=None):
+        """Initialize the drag drop area."""
+        super().__init__(parent)
+
+        self.setAlignment(QtCore.Qt.AlignCenter)
+        self.setText("Drag and drop an Excel file here\n\nor click the Import button below")
+        self.setStyleSheet("""
+            QLabel {
+                border: 2px dashed #555555;
+                border-radius: 8px;
+                padding: 40px;
+                background-color: #2b2b2b;
+                color: #a0a0a0;
+                font-size: 14px;
+            }
+        """)
+
+        # Enable drag and drop
+        self.setAcceptDrops(True)
+        self.setMinimumHeight(150)
+
+    def dragEnterEvent(self, event):
+        """Handle drag enter event."""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            self.setStyleSheet("""
+                QLabel {
+                    border: 2px dashed #4a9eff;
+                    border-radius: 8px;
+                    padding: 40px;
+                    background-color: #353535;
+                    color: #4a9eff;
+                    font-size: 14px;
+                }
+            """)
+
+    def dragLeaveEvent(self, event):
+        """Handle drag leave event."""
+        self.setStyleSheet("""
+            QLabel {
+                border: 2px dashed #555555;
+                border-radius: 8px;
+                padding: 40px;
+                background-color: #2b2b2b;
+                color: #a0a0a0;
+                font-size: 14px;
+            }
+        """)
+
+    def dropEvent(self, event):
+        """Handle drop event."""
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                file_path = urls[0].toLocalFile()
+                self.fileDropped.emit(file_path)
+
+        # Reset style
+        self.setStyleSheet("""
+            QLabel {
+                border: 2px dashed #555555;
+                border-radius: 8px;
+                padding: 40px;
+                background-color: #2b2b2b;
+                color: #a0a0a0;
+                font-size: 14px;
+            }
+        """)
+
+
 class BidSelectorWidget(QtWidgets.QWidget):
     """
     Reusable widget for selecting and managing Bids.
@@ -232,6 +488,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self.remove_btn = None
         self.rename_btn = None
         self.refresh_btn = None
+        self.import_btn = None
         self.status_label = None
 
         self._build_ui()
@@ -276,6 +533,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self.refresh_btn.clicked.connect(self._on_refresh_bids)
         self.refresh_btn.setToolTip("Refresh the Bid list")
         selector_row.addWidget(self.refresh_btn)
+
+        self.import_btn = QtWidgets.QPushButton("Import")
+        self.import_btn.clicked.connect(self._on_import_bid)
+        self.import_btn.setToolTip("Import bid data from an Excel file")
+        selector_row.addWidget(self.import_btn)
 
         group.addLayout(selector_row)
 
@@ -605,6 +867,31 @@ class BidSelectorWidget(QtWidgets.QWidget):
             except Exception as e:
                 logger.error(f"Failed to rename bid: {e}", exc_info=True)
                 QtWidgets.QMessageBox.critical(self, "Error", f"Failed to rename bid:\n{str(e)}")
+
+    def _on_import_bid(self):
+        """Handle Import button click."""
+        # Show the import dialog
+        dialog = ImportBidDialog(parent=self)
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            # Get the imported data
+            data = dialog.get_imported_data()
+
+            if data is not None:
+                # For now, just show a success message with info about the imported data
+                rows = len(data)
+                cols = len(data.columns)
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Import Successful",
+                    f"Successfully imported Excel data:\n\n"
+                    f"Rows: {rows}\n"
+                    f"Columns: {cols}\n\n"
+                    f"Column names: {', '.join([str(c) for c in data.columns])}\n\n"
+                    f"Note: Data processing and storage functionality can be implemented as needed."
+                )
+
+                logger.info(f"Imported Excel data with {rows} rows and {cols} columns")
+                self.statusMessageChanged.emit(f"✓ Imported data: {rows} rows, {cols} columns", False)
 
     def _on_refresh_bids(self):
         """Handle Refresh button click."""
