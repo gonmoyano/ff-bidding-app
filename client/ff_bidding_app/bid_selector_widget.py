@@ -382,7 +382,7 @@ class ImportBidDialog(QtWidgets.QDialog):
 
 
 class DragDropArea(QtWidgets.QLabel):
-    """A widget that accepts drag and drop of files."""
+    """A widget that accepts drag and drop of files and can be clicked to open a file dialog."""
 
     fileDropped = QtCore.Signal(str)  # Emits file path
 
@@ -391,7 +391,7 @@ class DragDropArea(QtWidgets.QLabel):
         super().__init__(parent)
 
         self.setAlignment(QtCore.Qt.AlignCenter)
-        self.setText("Drag and drop an Excel file here\n\nor click the Import button below")
+        self.setText("Drag and drop an Excel file here\n\nor click to browse")
         self.setStyleSheet("""
             QLabel {
                 border: 2px dashed #555555;
@@ -401,11 +401,31 @@ class DragDropArea(QtWidgets.QLabel):
                 color: #a0a0a0;
                 font-size: 14px;
             }
+            QLabel:hover {
+                border-color: #777777;
+                background-color: #333333;
+                cursor: pointer;
+            }
         """)
 
         # Enable drag and drop
         self.setAcceptDrops(True)
         self.setMinimumHeight(150)
+
+        # Make it behave like a button
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+
+    def mousePressEvent(self, event):
+        """Handle mouse click to open file dialog."""
+        if event.button() == QtCore.Qt.LeftButton:
+            file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self,
+                "Select Excel File",
+                "",
+                "Excel Files (*.xlsx *.xls);;All Files (*)"
+            )
+            if file_path:
+                self.fileDropped.emit(file_path)
 
     def dragEnterEvent(self, event):
         """Handle drag enter event."""
