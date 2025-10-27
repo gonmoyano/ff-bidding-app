@@ -200,15 +200,308 @@ class RenameBidDialog(QtWidgets.QDialog):
         return self.name_field.text().strip()
 
 
+class ColumnMappingDialog(QtWidgets.QDialog):
+    """Dialog for mapping Excel columns to ShotGrid fields."""
+
+    # ShotGrid field definitions for VFX Breakdown (CustomEntity02)
+    BREAKDOWN_ITEM_REQUIRED_FIELDS = {
+        "code": "text",
+        "sg_complexity": "list",
+        "sg_interior_exterior": "list",
+        "sg_number_of_shots": "number",
+        "sg_on_set_vfx_needs": "text",
+        "sg_page_eights": "text",
+        "sg_previs": "checkbox",
+        "sg_script_excerpt": "text",
+        "sg_set": "text",
+        "sg_sim": "checkbox",
+        "sg_sorting_priority": "float",
+        "sg_team_notes": "text",
+        "sg_time_of_day": "list",
+        "sg_unit": "text",
+        "sg_vfx_assumptions": "text",
+        "sg_vfx_breakdown_scene": "text",
+        "sg_vfx_questions": "text",
+        "sg_vfx_supervisor_notes": "text",
+        "sg_vfx_type": "text",
+    }
+
+    def __init__(self, excel_columns, sg_session, project_id, parent=None):
+        """Initialize the column mapping dialog.
+
+        Args:
+            excel_columns: List of column headers from the Excel file
+            sg_session: ShotGrid session for API access
+            project_id: Project ID for field schema lookup
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.setWindowTitle("Map Columns to ShotGrid Fields")
+        self.setModal(True)
+        self.setMinimumSize(800, 600)
+
+        self.excel_columns = excel_columns
+        self.sg_session = sg_session
+        self.project_id = project_id
+
+        # Storage for mapping widgets
+        self.mapping_combos = {}  # sg_field -> {"excel": combo, "sg": combo}
+        self.sg_display_names = {}
+
+        self._fetch_sg_display_names()
+        self._build_ui()
+        self._auto_map_columns()
+
+    def _fetch_sg_display_names(self):
+        """Fetch human-readable display names for SG fields."""
+        try:
+            field_names = list(self.BREAKDOWN_ITEM_REQUIRED_FIELDS.keys())
+            self.sg_display_names = self._get_field_display_names(
+                "CustomEntity02", field_names, self.project_id
+            )
+            logger.info(f"Fetched display names for {len(self.sg_display_names)} SG fields")
+        except Exception as e:
+            logger.error(f"Error fetching SG field display names: {e}", exc_info=True)
+            # Fallback to field names
+            for field_name in self.BREAKDOWN_ITEM_REQUIRED_FIELDS.keys():
+                self.sg_display_names[field_name] = field_name
+
+    def _get_field_display_names(self, entity_name, field_names, project_id=None):
+        """Get display names for multiple fields of an entity.
+
+        Args:
+            entity_name (str): The entity type
+            field_names (list): List of field names
+            project_id (int, optional): The project ID for project-specific fields
+
+        Returns:
+            dict: Dictionary with field_name: display_name pairs
+        """
+        try:
+            # Get ALL fields for the entity
+            if project_id:
+                fields = self.sg_session.sg.schema_field_read(
+                    entity_name,
+                    project_entity={'type': 'Project', 'id': project_id}
+                )
+            else:
+                fields = self.sg_session.sg.schema_field_read(entity_name)
+
+            # Build the result dictionary with only the requested fields
+            result = {}
+            for field_name in field_names:
+                if field_name in fields:
+                    result[field_name] = fields[field_name]['name']['value']
+                else:
+                    result[field_name] = field_name  # Fallback to field name
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error retrieving field display names: {e}", exc_info=True)
+            return {field: field for field in field_names}
+
+    def _build_ui(self):
+        """Build the mapping dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Instructions
+        instructions = QtWidgets.QLabel(
+            "Map Excel columns to ShotGrid fields. Use the dropdowns to select which "
+            "Excel column corresponds to each ShotGrid field. Leave unmapped if the column "
+            "doesn't exist in your Excel file."
+        )
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet("padding: 10px; background-color: #2b2b2b; border-radius: 4px;")
+        layout.addWidget(instructions)
+
+        # Scroll area for mappings
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QtWidgets.QWidget()
+        scroll_layout = QtWidgets.QVBoxLayout(scroll_widget)
+
+        # Create mapping rows
+        for sg_field, field_type in self.BREAKDOWN_ITEM_REQUIRED_FIELDS.items():
+            row = self._create_mapping_row(sg_field, field_type)
+            scroll_layout.addLayout(row)
+
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_widget)
+        layout.addWidget(scroll, stretch=1)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        self.ok_button = QtWidgets.QPushButton("Confirm Mapping")
+        self.ok_button.clicked.connect(self.accept)
+        self.ok_button.setDefault(True)
+        button_layout.addWidget(self.ok_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+    def _create_mapping_row(self, sg_field, field_type):
+        """Create a mapping row with two dropdowns.
+
+        Args:
+            sg_field: ShotGrid field name
+            field_type: Field type (text, list, number, etc.)
+
+        Returns:
+            QHBoxLayout: Layout for the mapping row
+        """
+        row_layout = QtWidgets.QHBoxLayout()
+
+        # Excel column dropdown (left)
+        excel_label = QtWidgets.QLabel("Excel Column:")
+        row_layout.addWidget(excel_label)
+
+        excel_combo = QtWidgets.QComboBox()
+        excel_combo.addItem("-- Not Mapped --", None)
+        for col in self.excel_columns:
+            excel_combo.addItem(col)
+        excel_combo.setMinimumWidth(200)
+        row_layout.addWidget(excel_combo)
+
+        # Arrow
+        arrow_label = QtWidgets.QLabel("→")
+        arrow_label.setStyleSheet("font-size: 16px; padding: 0 10px;")
+        row_layout.addWidget(arrow_label)
+
+        # SG field dropdown (right) - read-only display
+        sg_display_name = self.sg_display_names.get(sg_field, sg_field)
+        sg_label = QtWidgets.QLabel(f"{sg_display_name}")
+        sg_label.setStyleSheet("font-weight: bold;")
+        sg_label.setMinimumWidth(200)
+        row_layout.addWidget(sg_label)
+
+        # Field type indicator
+        type_label = QtWidgets.QLabel(f"({field_type})")
+        type_label.setStyleSheet("color: #888888; font-size: 10px;")
+        row_layout.addWidget(type_label)
+
+        row_layout.addStretch()
+
+        # Store reference
+        self.mapping_combos[sg_field] = {
+            "excel": excel_combo,
+            "sg_display": sg_display_name
+        }
+
+        return row_layout
+
+    def _auto_map_columns(self):
+        """Automatically map Excel columns to SG fields using fuzzy matching."""
+        for sg_field in self.BREAKDOWN_ITEM_REQUIRED_FIELDS.keys():
+            best_match = self._find_best_column_match(sg_field)
+            if best_match:
+                combo = self.mapping_combos[sg_field]["excel"]
+                index = combo.findText(best_match)
+                if index >= 0:
+                    combo.setCurrentIndex(index)
+                    logger.info(f"Auto-mapped '{best_match}' -> '{sg_field}'")
+
+    def _find_best_column_match(self, sg_field):
+        """Find the best matching Excel column for a SG field using fuzzy logic.
+
+        Args:
+            sg_field: ShotGrid field name
+
+        Returns:
+            str: Best matching Excel column name or None
+        """
+        if not self.excel_columns:
+            return None
+
+        # Get display name for comparison
+        sg_display_name = self.sg_display_names.get(sg_field, sg_field)
+
+        # Clean field name (remove sg_ prefix)
+        sg_clean = sg_field.replace("sg_", "").replace("_", " ").lower()
+        sg_display_clean = sg_display_name.replace("_", " ").lower()
+
+        best_match = None
+        best_score = 0
+
+        for excel_col in self.excel_columns:
+            excel_clean = excel_col.replace("_", " ").lower()
+            score = 0
+
+            # Exact match (case insensitive)
+            if excel_clean == sg_clean or excel_clean == sg_display_clean:
+                return excel_col
+
+            # Check if field name is in column or vice versa
+            if sg_clean in excel_clean:
+                score += len(sg_clean) * 2
+            elif excel_clean in sg_clean:
+                score += len(excel_clean) * 2
+
+            # Check display name match
+            if sg_display_clean in excel_clean:
+                score += len(sg_display_clean) * 2
+            elif excel_clean in sg_display_clean:
+                score += len(excel_clean) * 2
+
+            # Word matching
+            sg_words = sg_clean.split()
+            excel_words = excel_clean.split()
+
+            for sg_word in sg_words:
+                for excel_word in excel_words:
+                    if sg_word == excel_word:
+                        score += len(sg_word) * 3
+                    elif sg_word in excel_word or excel_word in sg_word:
+                        score += len(min(sg_word, excel_word, key=len))
+
+            if score > best_score:
+                best_score = score
+                best_match = excel_col
+
+        # Only return if score is meaningful
+        return best_match if best_score > 3 else None
+
+    def get_column_mapping(self):
+        """Get the column mapping results.
+
+        Returns:
+            dict: Mapping of sg_field -> excel_column_name (or None if not mapped)
+        """
+        mapping = {}
+        for sg_field, widgets in self.mapping_combos.items():
+            excel_combo = widgets["excel"]
+            excel_col = excel_combo.currentText()
+            if excel_col and excel_col != "-- Not Mapped --":
+                mapping[sg_field] = excel_col
+            else:
+                mapping[sg_field] = None
+        return mapping
+
+
 class ImportBidDialog(QtWidgets.QDialog):
     """Dialog for importing bid data from an Excel file with tabs for different data types."""
 
-    def __init__(self, parent=None):
-        """Initialize the dialog."""
+    def __init__(self, sg_session, project_id, parent=None):
+        """Initialize the dialog.
+
+        Args:
+            sg_session: ShotGrid session for API access
+            project_id: Project ID for field schema lookup and record creation
+            parent: Parent widget
+        """
         super().__init__(parent)
         self.setWindowTitle("Import Bid Data")
         self.setModal(True)
         self.setMinimumSize(900, 700)
+
+        # ShotGrid connection
+        self.sg_session = sg_session
+        self.project_id = project_id
 
         # Data storage
         self.excel_file_path = None
@@ -1117,27 +1410,37 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
     def _on_import_bid(self):
         """Handle Import button click."""
+        # Check if we have required data
+        if not self.current_project_id:
+            QtWidgets.QMessageBox.warning(self, "No Project Selected", "Please select a project first.")
+            return
+
         # Show the import dialog
-        dialog = ImportBidDialog(parent=self)
+        dialog = ImportBidDialog(self.sg_session, self.current_project_id, parent=self)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
             # Get the imported data (dict of tab_name -> DataFrame)
             data = dialog.get_imported_data()
 
             if data:
+                # Process VFX Breakdown tab specifically
+                vfx_breakdown_created = 0
+                if "VFX Breakdown" in data:
+                    vfx_breakdown_created = self._import_vfx_breakdown(data["VFX Breakdown"])
+
                 # Build summary message
                 summary_lines = ["Successfully imported Excel data:\n"]
                 total_rows = 0
-                total_cols = 0
 
                 for tab_name, df in data.items():
                     rows = len(df)
-                    cols = len(df.columns)
+                    summary_lines.append(f"• {tab_name}: {rows} rows")
+
                     total_rows += rows
-                    total_cols = max(total_cols, cols)
-                    summary_lines.append(f"• {tab_name}: {rows} rows, {cols} columns")
+
+                if vfx_breakdown_created > 0:
+                    summary_lines.append(f"\n✓ Created {vfx_breakdown_created} VFX Breakdown items in ShotGrid")
 
                 summary_lines.append(f"\nTotal: {total_rows} rows imported across {len(data)} tabs")
-                summary_lines.append("\nNote: Data processing and storage functionality can be implemented as needed.")
 
                 QtWidgets.QMessageBox.information(
                     self,
@@ -1147,6 +1450,110 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
                 logger.info(f"Imported Excel data from {len(data)} tabs with total {total_rows} rows")
                 self.statusMessageChanged.emit(f"✓ Imported data: {len(data)} tabs, {total_rows} rows total", False)
+
+    def _import_vfx_breakdown(self, df):
+        """Import VFX Breakdown data to ShotGrid.
+
+        Args:
+            df: DataFrame containing VFX Breakdown data
+
+        Returns:
+            int: Number of records created
+        """
+        import pandas as pd
+
+        if df is None or len(df) == 0:
+            return 0
+
+        # Get column names from DataFrame
+        excel_columns = list(df.columns)
+
+        # Show column mapping dialog
+        mapping_dialog = ColumnMappingDialog(
+            excel_columns,
+            self.sg_session,
+            self.current_project_id,
+            parent=self
+        )
+
+        if mapping_dialog.exec_() != QtWidgets.QDialog.Accepted:
+            logger.info("Column mapping cancelled by user")
+            return 0
+
+        # Get the mapping
+        column_mapping = mapping_dialog.get_column_mapping()
+        logger.info(f"Column mapping: {column_mapping}")
+
+        # Create ShotGrid records
+        created_count = 0
+        failed_count = 0
+
+        for index, row in df.iterrows():
+            try:
+                # Build SG data from mapping
+                sg_data = {
+                    "project": {"type": "Project", "id": self.current_project_id}
+                }
+
+                for sg_field, excel_col in column_mapping.items():
+                    if excel_col is None:
+                        continue
+
+                    # Get value from DataFrame
+                    value = row[excel_col]
+
+                    # Skip empty values
+                    if pd.isna(value) or value == "":
+                        continue
+
+                    # Convert value based on field type
+                    field_type = ColumnMappingDialog.BREAKDOWN_ITEM_REQUIRED_FIELDS.get(sg_field)
+
+                    if field_type == "number":
+                        try:
+                            sg_data[sg_field] = int(value)
+                        except (ValueError, TypeError):
+                            logger.warning(f"Could not convert '{value}' to number for field '{sg_field}'")
+                            continue
+                    elif field_type == "float":
+                        try:
+                            sg_data[sg_field] = float(value)
+                        except (ValueError, TypeError):
+                            logger.warning(f"Could not convert '{value}' to float for field '{sg_field}'")
+                            continue
+                    elif field_type == "checkbox":
+                        # Convert to boolean
+                        if isinstance(value, bool):
+                            sg_data[sg_field] = value
+                        elif isinstance(value, str):
+                            sg_data[sg_field] = value.lower() in ["true", "yes", "1", "x"]
+                        else:
+                            sg_data[sg_field] = bool(value)
+                    else:
+                        # Text and list fields - store as string
+                        sg_data[sg_field] = str(value)
+
+                # Create the record
+                result = self.sg_session.sg.create("CustomEntity02", sg_data)
+                created_count += 1
+                logger.info(f"Created CustomEntity02: {result['id']} with code '{sg_data.get('code', 'N/A')}'")
+
+            except Exception as e:
+                failed_count += 1
+                logger.error(f"Failed to create CustomEntity02 for row {index}: {e}", exc_info=True)
+
+        if failed_count > 0:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Import Completed with Errors",
+                f"Created {created_count} VFX Breakdown items.\n"
+                f"Failed to create {failed_count} items.\n\n"
+                f"Check the logs for details."
+            )
+        else:
+            logger.info(f"Successfully created {created_count} VFX Breakdown items")
+
+        return created_count
 
     def _on_refresh_bids(self):
         """Handle Refresh button click."""
