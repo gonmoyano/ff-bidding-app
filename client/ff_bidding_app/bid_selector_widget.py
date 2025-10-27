@@ -3,7 +3,7 @@ Bid Selector Widget
 Reusable widget component for selecting and managing Bids (CustomEntity06).
 """
 
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 
 try:
     from .logger import logger
@@ -289,6 +289,15 @@ class ImportBidDialog(QtWidgets.QDialog):
         sheet_combo.currentIndexChanged.connect(lambda idx, tn=tab_name: self._on_sheet_changed(tn, idx))
         sheet_layout.addWidget(sheet_combo, stretch=1)
 
+        # Row selection buttons
+        select_all_btn = QtWidgets.QPushButton("Select All")
+        select_all_btn.clicked.connect(lambda checked, tn=tab_name: self._select_all_rows(tn, True))
+        sheet_layout.addWidget(select_all_btn)
+
+        deselect_all_btn = QtWidgets.QPushButton("Deselect All")
+        deselect_all_btn.clicked.connect(lambda checked, tn=tab_name: self._select_all_rows(tn, False))
+        sheet_layout.addWidget(deselect_all_btn)
+
         tab_layout.addLayout(sheet_layout)
 
         # Table for displaying data
@@ -300,6 +309,7 @@ class ImportBidDialog(QtWidgets.QDialog):
         table.horizontalHeader().setStretchLastSection(False)
         table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
         table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        table.itemChanged.connect(lambda item, tn=tab_name: self._on_table_item_changed(tn, item))
         tab_layout.addWidget(table, stretch=1)
 
         # Store references
@@ -438,18 +448,29 @@ class ImportBidDialog(QtWidgets.QDialog):
             logger.error(f"Error loading sheet {sheet_name} for tab {tab_name}: {e}", exc_info=True)
 
     def _populate_table(self, table, df):
-        """Populate a table widget with dataframe data."""
+        """Populate a table widget with dataframe data, with checkbox column for selection."""
         import pandas as pd
 
-        # Set dimensions
-        table.setRowCount(len(df))
-        table.setColumnCount(len(df.columns))
+        # Block signals while populating to avoid triggering itemChanged
+        table.blockSignals(True)
 
-        # Set headers
-        table.setHorizontalHeaderLabels([str(col) for col in df.columns])
+        # Set dimensions - add 1 column for checkbox
+        table.setRowCount(len(df))
+        table.setColumnCount(len(df.columns) + 1)
+
+        # Set headers - checkbox column first
+        headers = ["Import"] + [str(col) for col in df.columns]
+        table.setHorizontalHeaderLabels(headers)
 
         # Populate data
         for i in range(len(df)):
+            # Add checkbox in first column
+            checkbox_item = QtWidgets.QTableWidgetItem()
+            checkbox_item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
+            checkbox_item.setCheckState(QtCore.Qt.Checked)  # Checked by default
+            table.setItem(i, 0, checkbox_item)
+
+            # Add data in remaining columns
             for j in range(len(df.columns)):
                 value = df.iloc[i, j]
                 # Handle None/NaN values
@@ -460,10 +481,84 @@ class ImportBidDialog(QtWidgets.QDialog):
 
                 item = QtWidgets.QTableWidgetItem(value)
                 item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)  # Make read-only
-                table.setItem(i, j, item)
+                table.setItem(i, j + 1, item)
 
         # Resize columns to content
         table.resizeColumnsToContents()
+        # Make checkbox column narrower
+        table.setColumnWidth(0, 60)
+
+        # Unblock signals
+        table.blockSignals(False)
+
+    def _select_all_rows(self, tab_name, select):
+        """Select or deselect all rows in a tab's table.
+
+        Args:
+            tab_name: Name of the tab
+            select: True to select all, False to deselect all
+        """
+        widgets = self.tab_widgets.get(tab_name)
+        if not widgets:
+            return
+
+        table = widgets["table"]
+        table.blockSignals(True)
+
+        check_state = QtCore.Qt.Checked if select else QtCore.Qt.Unchecked
+
+        for row in range(table.rowCount()):
+            checkbox_item = table.item(row, 0)
+            if checkbox_item:
+                checkbox_item.setCheckState(check_state)
+                self._update_row_style(table, row, select)
+
+        table.blockSignals(False)
+
+    def _on_table_item_changed(self, tab_name, item):
+        """Handle table item changes (checkbox state changes).
+
+        Args:
+            tab_name: Name of the tab
+            item: The changed item
+        """
+        if item.column() != 0:  # Only handle checkbox column
+            return
+
+        widgets = self.tab_widgets.get(tab_name)
+        if not widgets:
+            return
+
+        table = widgets["table"]
+        row = item.row()
+        is_checked = item.checkState() == QtCore.Qt.Checked
+
+        self._update_row_style(table, row, is_checked)
+
+    def _update_row_style(self, table, row, is_enabled):
+        """Update the visual style of a row based on its enabled state.
+
+        Args:
+            table: The table widget
+            row: Row index
+            is_enabled: True if row is enabled, False if disabled
+        """
+        # Set color and font for all cells in the row
+        for col in range(table.columnCount()):
+            item = table.item(row, col)
+            if item:
+                if is_enabled:
+                    # Default styling
+                    item.setForeground(QtGui.QColor("#e0e0e0"))
+                    font = item.font()
+                    font.setStrikeOut(False)
+                    item.setFont(font)
+                else:
+                    # Disabled styling - gray and strikethrough
+                    item.setForeground(QtGui.QColor("#606060"))
+                    font = item.font()
+                    font.setStrikeOut(True)
+                    item.setFont(font)
 
     def _set_status(self, message, is_error=False):
         """Set status message."""
@@ -472,15 +567,38 @@ class ImportBidDialog(QtWidgets.QDialog):
         self.status_label.setText(message)
 
     def get_imported_data(self):
-        """Get the imported data from all tabs.
+        """Get the imported data from all tabs, filtered by selected rows.
 
         Returns:
-            dict: Dictionary mapping tab names to DataFrames
+            dict: Dictionary mapping tab names to DataFrames (only selected rows)
         """
+        import pandas as pd
+
         result = {}
         for tab_name, (_, data) in self.tab_config.items():
-            if data is not None:
-                result[tab_name] = data
+            if data is None:
+                continue
+
+            # Get the table for this tab
+            widgets = self.tab_widgets.get(tab_name)
+            if not widgets:
+                continue
+
+            table = widgets["table"]
+
+            # Find which rows are checked
+            selected_indices = []
+            for row in range(table.rowCount()):
+                checkbox_item = table.item(row, 0)
+                if checkbox_item and checkbox_item.checkState() == QtCore.Qt.Checked:
+                    selected_indices.append(row)
+
+            # Filter the DataFrame to only include selected rows
+            if selected_indices:
+                filtered_df = data.iloc[selected_indices].reset_index(drop=True)
+                result[tab_name] = filtered_df
+                logger.info(f"Tab '{tab_name}': {len(selected_indices)} of {len(data)} rows selected for import")
+
         return result
 
 
