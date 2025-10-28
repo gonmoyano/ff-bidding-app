@@ -97,14 +97,29 @@ class EditCommand:
 
     def _parse_value(self, text, field_name):
         """Parse text value to appropriate type based on ShotGrid schema."""
-        if not text or text == "-" or text == "":
-            return None
-
         # Get field schema info
         field_info = self.field_schema.get(field_name, {})
         data_type = field_info.get("data_type")
 
         logger.debug(f"Parsing field '{field_name}' with data_type '{data_type}': '{text}'")
+
+        # Handle checkbox/boolean type
+        if data_type == "checkbox":
+            # If already a boolean, return it
+            if isinstance(text, bool):
+                return text
+            # Handle empty/None values
+            if not text or text == "-" or text == "":
+                return False
+            # Parse string representations
+            if isinstance(text, str):
+                return text.lower() in ["true", "yes", "1", "checked", "x"]
+            # Try to convert to boolean
+            return bool(text)
+
+        # Handle empty values for other types
+        if not text or text == "-" or text == "":
+            return None
 
         # Parse based on ShotGrid data type
         if data_type == "number":
@@ -328,6 +343,31 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         field_name = self.column_fields[col]
         value = bidding_scene_data.get(field_name)
 
+        # Check if this is a checkbox field
+        is_checkbox = False
+        if field_name in self.field_schema:
+            field_info = self.field_schema[field_name]
+            is_checkbox = field_info.get("data_type") == "checkbox"
+
+        # Handle checkbox fields specially
+        if is_checkbox:
+            if role == QtCore.Qt.CheckStateRole:
+                # Return checkbox state
+                if isinstance(value, bool):
+                    return QtCore.Qt.Checked if value else QtCore.Qt.Unchecked
+                elif value is None:
+                    return QtCore.Qt.Unchecked
+                else:
+                    # Try to interpret as boolean
+                    return QtCore.Qt.Checked if value else QtCore.Qt.Unchecked
+            elif role == QtCore.Qt.DisplayRole:
+                # Don't show text for checkbox columns
+                return ""
+            elif role == QtCore.Qt.EditRole:
+                # Return the actual boolean value for editing
+                return value
+
+        # Handle non-checkbox fields normally
         if role == QtCore.Qt.DisplayRole or role == QtCore.Qt.EditRole:
             return self._format_sg_value(value)
 
@@ -347,7 +387,16 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
     def setData(self, index, value, role=QtCore.Qt.EditRole):
         """Set data for the given index."""
-        if not index.isValid() or role != QtCore.Qt.EditRole:
+        if not index.isValid():
+            return False
+
+        # Handle checkbox state changes
+        if role == QtCore.Qt.CheckStateRole:
+            # Convert checkbox state to boolean
+            value = (value == QtCore.Qt.Checked)
+            # Continue processing with EditRole
+            role = QtCore.Qt.EditRole
+        elif role != QtCore.Qt.EditRole:
             return False
 
         if self._updating:
@@ -435,10 +484,22 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
         field_name = self.column_fields[index.column()]
 
+        # Check if this is a checkbox field
+        is_checkbox = False
+        if field_name in self.field_schema:
+            field_info = self.field_schema[field_name]
+            is_checkbox = field_info.get("data_type") == "checkbox"
+
+        base_flags = QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
+
         if field_name in self.readonly_columns:
-            return QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
+            return base_flags
         else:
-            return QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEditable
+            if is_checkbox:
+                # Checkbox fields are user-checkable instead of editable
+                return base_flags | QtCore.Qt.ItemIsUserCheckable
+            else:
+                return base_flags | QtCore.Qt.ItemIsEditable
 
     def load_bidding_scenes(self, bidding_scenes):
         """Load bidding scenes data into the model.
