@@ -493,9 +493,6 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         row_layout = QtWidgets.QHBoxLayout()
 
         # Excel column dropdown (left)
-        excel_label = QtWidgets.QLabel("Excel Column:")
-        row_layout.addWidget(excel_label)
-
         excel_combo = QtWidgets.QComboBox()
         excel_combo.addItem("-- Not Mapped --", None)
         for col in self.excel_columns:
