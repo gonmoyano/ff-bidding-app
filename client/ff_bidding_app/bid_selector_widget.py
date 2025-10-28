@@ -386,8 +386,8 @@ class ColumnMappingDialog(QtWidgets.QDialog):
 
         self._fetch_sg_display_names()
         self._build_ui()
-        self._auto_map_columns()
-        self._load_saved_mappings()
+        self._load_saved_mappings()  # Load saved mappings FIRST
+        self._auto_map_columns()  # Only auto-map fields that aren't already mapped
 
     def _fetch_sg_display_names(self):
         """Fetch human-readable display names for SG fields."""
@@ -530,11 +530,22 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         return row_layout
 
     def _auto_map_columns(self):
-        """Automatically map Excel columns to SG fields using fuzzy matching."""
+        """Automatically map Excel columns to SG fields using fuzzy matching.
+
+        Only maps fields that don't already have a mapping (i.e., saved mappings take precedence).
+        """
         for sg_field in self.BREAKDOWN_ITEM_REQUIRED_FIELDS.keys():
+            combo = self.mapping_combos[sg_field]["excel"]
+
+            # Skip if this field already has a mapping (from saved settings)
+            current_text = combo.currentText()
+            if current_text and current_text != "-- Not Mapped --":
+                logger.info(f"Skipping auto-map for '{sg_field}' - already mapped to '{current_text}'")
+                continue
+
+            # No saved mapping, try fuzzy matching
             best_match = self._find_best_column_match(sg_field)
             if best_match:
-                combo = self.mapping_combos[sg_field]["excel"]
                 index = combo.findText(best_match)
                 if index >= 0:
                     combo.setCurrentIndex(index)
