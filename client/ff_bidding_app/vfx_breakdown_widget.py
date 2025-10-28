@@ -897,11 +897,31 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.statusMessageChanged.emit("Delete bidding scene functionality requires parent tab context", False)
 
     def _autosize_columns(self, min_px=80, max_px=700, extra_padding=28):
-        """Auto-size columns to fit content."""
+        """Auto-size columns to fit content.
+
+        For text columns, limits width to 200 characters or the longest string if shorter.
+        """
         fm = self.table_view.fontMetrics()
         h_header = self.table_view.horizontalHeader()
 
+        # Calculate width of 200 characters for text column limit
+        sample_text = "A" * 200
+        text_column_max_px = fm.horizontalAdvance(sample_text) + extra_padding
+
         for col in range(self.model.columnCount()):
+            # Get field information
+            field_name = self.model.column_fields[col] if col < len(self.model.column_fields) else None
+            is_text_field = False
+
+            # Check if this is a text field
+            if field_name and hasattr(self.model, 'field_schema') and self.model.field_schema:
+                field_info = self.model.field_schema.get(field_name, {})
+                data_type = field_info.get("data_type", "")
+                is_text_field = data_type in ["text", "multi_entity"]
+
+            # Determine max width for this column
+            column_max_px = text_column_max_px if is_text_field else max_px
+
             # Start with header width
             header_text = self.model.headerData(col, QtCore.Qt.Horizontal, QtCore.Qt.DisplayRole) or ""
             max_w = fm.horizontalAdvance(header_text)
@@ -910,11 +930,20 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             for row in range(min(self.model.rowCount(), 100)):  # Limit to first 100 rows for performance
                 index = self.model.index(row, col)
                 text = self.model.data(index, QtCore.Qt.DisplayRole) or ""
+
+                # For text fields, check character count and cap at 200 characters
+                if is_text_field and len(text) > 200:
+                    text = text[:200]
+
                 for line in text.splitlines() or [""]:
                     max_w = max(max_w, fm.horizontalAdvance(line))
 
-            target = max(min_px, min(max_w + extra_padding, max_px))
+            target = max(min_px, min(max_w + extra_padding, column_max_px))
             self.table_view.setColumnWidth(col, target)
+
+            if is_text_field:
+                logger.debug(f"Column {col} ({field_name}) is text type, capped at {column_max_px}px (~200 chars)")
+
 
     def _on_model_status_changed(self, message, is_error):
         """Handle status message from model."""
