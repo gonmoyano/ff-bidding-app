@@ -838,11 +838,27 @@ class ImportBidDialog(QtWidgets.QDialog):
             # Try to import pandas
             import pandas as pd
 
+            # Create progress dialog
+            progress = QtWidgets.QProgressDialog("Loading Excel file...", None, 0, 100, self)
+            progress.setWindowModality(QtCore.Qt.WindowModal)
+            progress.setMinimumDuration(0)
+            progress.setValue(0)
+            QtWidgets.QApplication.processEvents()
+
             # Read Excel file to get sheet names
+            progress.setLabelText("Reading Excel file...")
+            progress.setValue(10)
+            QtWidgets.QApplication.processEvents()
+
             excel_file = pd.ExcelFile(file_path)
             self.sheet_names = excel_file.sheet_names
 
+            progress.setValue(20)
+            QtWidgets.QApplication.processEvents()
+
             # Populate all sheet combos and auto-select best matches
+            tabs_to_load = []
+            progress.setLabelText("Setting up sheet selections...")
             for tab_name, widgets in self.tab_widgets.items():
                 combo = widgets["combo"]
                 combo.blockSignals(True)
@@ -858,8 +874,23 @@ class ImportBidDialog(QtWidgets.QDialog):
                     index = combo.findText(best_match)
                     if index >= 0:
                         combo.setCurrentIndex(index)
-                        # Load the sheet
-                        self._load_sheet_for_tab(tab_name, best_match)
+                        tabs_to_load.append((tab_name, best_match))
+
+            progress.setValue(30)
+            QtWidgets.QApplication.processEvents()
+
+            # Load sheets with progress updates
+            if tabs_to_load:
+                progress_step = 70 / len(tabs_to_load)
+                for i, (tab_name, sheet_name) in enumerate(tabs_to_load):
+                    progress.setLabelText(f"Loading sheet: {sheet_name}...")
+                    progress.setValue(30 + int(i * progress_step))
+                    QtWidgets.QApplication.processEvents()
+                    self._load_sheet_for_tab(tab_name, sheet_name)
+
+            progress.setValue(100)
+            QtWidgets.QApplication.processEvents()
+            progress.close()
 
             # Show tabs and hide drop area
             self.tab_widget.show()
@@ -1709,7 +1740,22 @@ class BidSelectorWidget(QtWidgets.QWidget):
             logger.info("Column mapping cancelled by user - no entities created")
             return 0, None
 
+        # Get the mapping
+        column_mapping = mapping_dialog.get_column_mapping()
+        logger.info(f"Column mapping: {column_mapping}")
+
+        # Create progress dialog for import
+        total_steps = len(df) + 2  # +2 for VFX Breakdown and Bid creation
+        progress = QtWidgets.QProgressDialog("Importing data to ShotGrid...", None, 0, total_steps, self)
+        progress.setWindowModality(QtCore.Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        QtWidgets.QApplication.processEvents()
+
         # Step 5: Now that mapping is confirmed, create VFX Breakdown in ShotGrid
+        progress.setLabelText(f"Creating VFX Breakdown: {breakdown_name}...")
+        QtWidgets.QApplication.processEvents()
+
         try:
             breakdown_data = {
                 "code": breakdown_name,
@@ -1720,6 +1766,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             logger.info(f"Created VFX Breakdown (CustomEntity01): {breakdown_id} - {breakdown_name}")
         except Exception as e:
             logger.error(f"Failed to create VFX Breakdown: {e}", exc_info=True)
+            progress.close()
             QtWidgets.QMessageBox.critical(
                 self,
                 "Error",
@@ -1727,7 +1774,13 @@ class BidSelectorWidget(QtWidgets.QWidget):
             )
             return 0, None
 
+        progress.setValue(1)
+        QtWidgets.QApplication.processEvents()
+
         # Step 6: Create Bid and link to VFX Breakdown
+        progress.setLabelText(f"Creating Bid: {bid_name}...")
+        QtWidgets.QApplication.processEvents()
+
         try:
             bid = self.sg_session.create_bid(
                 self.current_project_id,
@@ -1739,6 +1792,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             logger.info(f"Created Bid (CustomEntity06): {bid_id} - {bid_name}, linked to VFX Breakdown {breakdown_id}")
         except Exception as e:
             logger.error(f"Failed to create Bid: {e}", exc_info=True)
+            progress.close()
             QtWidgets.QMessageBox.critical(
                 self,
                 "Error",
@@ -1747,15 +1801,18 @@ class BidSelectorWidget(QtWidgets.QWidget):
             )
             return 0, None
 
-        # Get the mapping
-        column_mapping = mapping_dialog.get_column_mapping()
-        logger.info(f"Column mapping: {column_mapping}")
+        progress.setValue(2)
+        QtWidgets.QApplication.processEvents()
 
         # Step 7: Create ShotGrid records (CustomEntity02) linked to VFX Breakdown
         created_count = 0
         failed_count = 0
 
         for index, row in df.iterrows():
+            # Update progress
+            progress.setLabelText(f"Creating breakdown item {created_count + 1} of {len(df)}...")
+            progress.setValue(2 + index + 1)
+            QtWidgets.QApplication.processEvents()
             try:
                 # Build SG data from mapping
                 sg_data = {
@@ -1809,6 +1866,10 @@ class BidSelectorWidget(QtWidgets.QWidget):
             except Exception as e:
                 failed_count += 1
                 logger.error(f"Failed to create CustomEntity02 for row {index}: {e}", exc_info=True)
+
+        # Close progress dialog
+        progress.setValue(total_steps)
+        progress.close()
 
         if failed_count > 0:
             QtWidgets.QMessageBox.warning(
