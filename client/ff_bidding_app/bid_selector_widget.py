@@ -667,6 +667,9 @@ class ImportBidDialog(QtWidgets.QDialog):
         self.setModal(True)
         self.setMinimumSize(900, 700)
 
+        # Enable maximize button
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowMaximizeButtonHint)
+
         # ShotGrid connection
         self.sg_session = sg_session
         self.project_id = project_id
@@ -897,6 +900,9 @@ class ImportBidDialog(QtWidgets.QDialog):
             self.drop_area.hide()
             self.import_button.setEnabled(True)
 
+            # Auto-adjust dialog size to fit content
+            self._adjust_dialog_size()
+
             self._set_status(f"Loaded: {file_path} ({len(self.sheet_names)} sheets)")
 
         except ImportError:
@@ -1057,6 +1063,29 @@ class ImportBidDialog(QtWidgets.QDialog):
         color = "#ff8080" if is_error else "#a0a0a0"
         self.status_label.setStyleSheet(f"color: {color}; padding: 5px;")
         self.status_label.setText(message)
+
+    def _adjust_dialog_size(self):
+        """Adjust dialog size to fit content when data is loaded."""
+        # Get available screen size
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen:
+            screen_geometry = screen.availableGeometry()
+
+            # Set dialog to 85% of screen size
+            new_width = int(screen_geometry.width() * 0.85)
+            new_height = int(screen_geometry.height() * 0.85)
+
+            # Respect minimum size
+            new_width = max(new_width, self.minimumWidth())
+            new_height = max(new_height, self.minimumHeight())
+
+            self.resize(new_width, new_height)
+
+            # Center the dialog on screen
+            frame_geometry = self.frameGeometry()
+            center_point = screen_geometry.center()
+            frame_geometry.moveCenter(center_point)
+            self.move(frame_geometry.topLeft())
 
     def get_imported_data(self):
         """Get the imported data from all tabs, filtered by selected rows.
