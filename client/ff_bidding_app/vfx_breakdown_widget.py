@@ -417,6 +417,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                             self.table_view.setItemDelegateForColumn(col_idx, delegate)
 
         self.model.load_bidding_scenes(bidding_scenes)
+
+        # Ensure table is updated before auto-sizing
+        QtWidgets.QApplication.processEvents()
         self._autosize_columns()
 
     def clear_data(self):
@@ -901,17 +904,30 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         For text columns, limits width to 200 characters or the longest string if shorter.
         """
+        if not self.table_view or self.model.rowCount() == 0:
+            return
+
+        # First, use Qt's built-in resize to content
+        self.table_view.resizeColumnsToContents()
+
         fm = self.table_view.fontMetrics()
-        h_header = self.table_view.horizontalHeader()
 
         # Calculate width of 200 characters for text column limit
-        sample_text = "A" * 200
+        sample_text = "M" * 200  # Use 'M' as it's typically the widest character
         text_column_max_px = fm.horizontalAdvance(sample_text) + extra_padding
 
+        logger.info(f"Auto-sizing {self.model.columnCount()} columns for {self.model.rowCount()} rows")
+
+        # Now apply our constraints on top
         for col in range(self.model.columnCount()):
+            # Skip hidden columns
+            if self.table_view.isColumnHidden(col):
+                continue
+
             # Get field information
             field_name = self.model.column_fields[col] if col < len(self.model.column_fields) else None
             is_text_field = False
+            data_type = "unknown"
 
             # Check if this is a text field
             if field_name and hasattr(self.model, 'field_schema') and self.model.field_schema:
@@ -919,30 +935,30 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 data_type = field_info.get("data_type", "")
                 is_text_field = data_type in ["text", "multi_entity"]
 
-            # Determine max width for this column
-            column_max_px = text_column_max_px if is_text_field else max_px
+            # Get current width after resizeColumnsToContents
+            current_width = self.table_view.columnWidth(col)
 
-            # Start with header width
-            header_text = self.model.headerData(col, QtCore.Qt.Horizontal, QtCore.Qt.DisplayRole) or ""
-            max_w = fm.horizontalAdvance(header_text)
-
-            # Check visible rows
-            for row in range(min(self.model.rowCount(), 100)):  # Limit to first 100 rows for performance
-                index = self.model.index(row, col)
-                text = self.model.data(index, QtCore.Qt.DisplayRole) or ""
-
-                # For text fields, check character count and cap at 200 characters
-                if is_text_field and len(text) > 200:
-                    text = text[:200]
-
-                for line in text.splitlines() or [""]:
-                    max_w = max(max_w, fm.horizontalAdvance(line))
-
-            target = max(min_px, min(max_w + extra_padding, column_max_px))
-            self.table_view.setColumnWidth(col, target)
-
+            # Apply constraints
             if is_text_field:
-                logger.debug(f"Column {col} ({field_name}) is text type, capped at {column_max_px}px (~200 chars)")
+                # For text fields, cap at 200 characters
+                if current_width > text_column_max_px:
+                    self.table_view.setColumnWidth(col, text_column_max_px)
+                    logger.info(f"Column {col} ({field_name}): text field capped at {text_column_max_px}px (~200 chars), was {current_width}px")
+                elif current_width < min_px:
+                    self.table_view.setColumnWidth(col, min_px)
+                    logger.info(f"Column {col} ({field_name}): text field expanded to min {min_px}px")
+                else:
+                    logger.info(f"Column {col} ({field_name}): text field at {current_width}px")
+            else:
+                # For other fields, use standard constraints
+                if current_width > max_px:
+                    self.table_view.setColumnWidth(col, max_px)
+                    logger.debug(f"Column {col} ({field_name}, {data_type}): capped at {max_px}px, was {current_width}px")
+                elif current_width < min_px:
+                    self.table_view.setColumnWidth(col, min_px)
+                    logger.debug(f"Column {col} ({field_name}, {data_type}): expanded to min {min_px}px")
+                else:
+                    logger.debug(f"Column {col} ({field_name}, {data_type}): at {current_width}px")
 
 
     def _on_model_status_changed(self, message, is_error):
