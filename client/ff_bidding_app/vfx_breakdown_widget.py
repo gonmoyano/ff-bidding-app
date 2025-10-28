@@ -62,13 +62,17 @@ class ConfigColumnsDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Configure Visible Columns")
         self.setModal(True)
-        self.setMinimumWidth(400)
 
         self.column_fields = column_fields
         self.column_headers = column_headers
         self.checkboxes = {}
 
         self._build_ui(current_visibility)
+
+        # Adjust size to content
+        self.adjustSize()
+        # Set a reasonable minimum but allow it to grow
+        self.setMinimumWidth(350)
 
     def _build_ui(self, current_visibility):
         """Build the dialog UI."""
@@ -88,53 +92,76 @@ class ConfigColumnsDialog(QtWidgets.QDialog):
         scroll_widget = QtWidgets.QWidget()
         scroll_layout = QtWidgets.QVBoxLayout(scroll_widget)
 
-        # Custom checkbox stylesheet - checkmark icon instead of solid fill
-        checkbox_style = """
-            QCheckBox {
-                spacing: 8px;
-            }
-            QCheckBox::indicator {
-                width: 18px;
-                height: 18px;
-                border: 2px solid #555;
-                border-radius: 3px;
-                background-color: #2b2b2b;
-            }
-            QCheckBox::indicator:hover {
-                border: 2px solid #777;
-                background-color: #3b3b3b;
-            }
-            QCheckBox::indicator:checked {
-                border: 2px solid #0078d4;
-                background-color: #2b2b2b;
-            }
-        """
-
-        # Create checkbox for each column
+        # Create checkbox for each column with custom tick icon
         for field, header in zip(self.column_fields, self.column_headers):
-            # Create a widget with checkbox and custom checkmark
+            # Create a container with custom styling
             row_widget = QtWidgets.QWidget()
             row_layout = QtWidgets.QHBoxLayout(row_widget)
             row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(8)
 
+            # Custom checkbox indicator
+            indicator_label = QtWidgets.QLabel()
+            indicator_label.setFixedSize(20, 20)
+            indicator_label.setAlignment(QtCore.Qt.AlignCenter)
+
+            # Checkbox
             checkbox = QtWidgets.QCheckBox(header)
             checkbox.setChecked(current_visibility.get(field, True))
-            checkbox.setStyleSheet(checkbox_style)
 
-            # Add checkmark label that appears when checked
-            checkmark_label = QtWidgets.QLabel("✓")
-            checkmark_label.setStyleSheet("color: #0078d4; font-size: 14px; font-weight: bold; margin-left: -16px; margin-right: 2px;")
-            checkmark_label.setFixedWidth(16)
-            checkmark_label.setVisible(checkbox.isChecked())
+            # Remove default indicator and add custom styling
+            checkbox.setStyleSheet("""
+                QCheckBox {
+                    spacing: 0px;
+                }
+                QCheckBox::indicator {
+                    width: 0px;
+                    height: 0px;
+                }
+            """)
 
-            # Connect checkbox to update checkmark visibility
-            def make_update_checkmark(cb, lbl):
-                return lambda checked: lbl.setVisible(checked)
+            # Function to update indicator appearance
+            def make_update_indicator(indicator, cb):
+                def update_indicator(checked):
+                    if checked:
+                        # Checked state: show tick icon
+                        indicator.setStyleSheet("""
+                            QLabel {
+                                border: 2px solid #0078d4;
+                                border-radius: 3px;
+                                background-color: #2b2b2b;
+                                color: #0078d4;
+                                font-size: 16px;
+                                font-weight: bold;
+                            }
+                        """)
+                        indicator.setText("✓")
+                    else:
+                        # Unchecked state: empty box
+                        indicator.setStyleSheet("""
+                            QLabel {
+                                border: 2px solid #555;
+                                border-radius: 3px;
+                                background-color: #2b2b2b;
+                            }
+                        """)
+                        indicator.setText("")
+                return update_indicator
 
-            checkbox.toggled.connect(make_update_checkmark(checkbox, checkmark_label))
+            # Connect checkbox to update indicator
+            update_func = make_update_indicator(indicator_label, checkbox)
+            checkbox.toggled.connect(update_func)
+            update_func(checkbox.isChecked())  # Set initial state
 
+            # Make indicator clickable
+            def make_indicator_click(cb):
+                return lambda event: cb.setChecked(not cb.isChecked())
+
+            indicator_label.mousePressEvent = make_indicator_click(checkbox)
+            indicator_label.setCursor(QtCore.Qt.PointingHandCursor)
+
+            row_layout.addWidget(indicator_label)
             row_layout.addWidget(checkbox)
-            row_layout.addWidget(checkmark_label)
             row_layout.addStretch()
 
             self.checkboxes[field] = checkbox
