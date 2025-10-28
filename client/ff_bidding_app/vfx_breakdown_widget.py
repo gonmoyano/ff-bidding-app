@@ -31,6 +31,8 @@ class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
         for value in self.list_values:
             combo.addItem(value)
         combo.setFrame(False)
+        # Show popup immediately when editor is created
+        QtCore.QTimer.singleShot(0, combo.showPopup)
         return combo
 
     def setEditorData(self, editor, index):
@@ -45,6 +47,13 @@ class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
         """Save the selected value back to the model."""
         value = editor.currentText()
         model.setData(index, value, QtCore.Qt.EditRole)
+
+    def editorEvent(self, event, model, option, index):
+        """Handle double-click to open dropdown."""
+        if event.type() == QtCore.QEvent.MouseButtonDblClick:
+            # Double-click detected - the editor will be created and dropdown will show
+            return False  # Let default handling proceed to create editor
+        return super().editorEvent(event, model, option, index)
 
 
 class ConfigColumnsDialog(QtWidgets.QDialog):
@@ -143,19 +152,31 @@ class ConfigColumnsDialog(QtWidgets.QDialog):
             field_label.setStyleSheet("padding: 5px;")
             row_layout.addWidget(field_label)
 
-            # Visible checkbox
-            visible_checkbox = QtWidgets.QCheckBox()
-            visible_checkbox.setChecked(current_visibility.get(field, True))
-            visible_checkbox.setMinimumWidth(80)
-            visible_checkbox.setStyleSheet("margin-left: 30px;")
-            row_layout.addWidget(visible_checkbox)
+            # Visible checkbox with custom indicator
+            visible_indicator, visible_checkbox = self._create_custom_checkbox(
+                current_visibility.get(field, True)
+            )
+            visible_container = QtWidgets.QWidget()
+            visible_container_layout = QtWidgets.QHBoxLayout(visible_container)
+            visible_container_layout.setContentsMargins(30, 0, 0, 0)
+            visible_container_layout.addWidget(visible_indicator)
+            visible_container_layout.addWidget(visible_checkbox)
+            visible_container_layout.addStretch()
+            visible_container.setMinimumWidth(80)
+            row_layout.addWidget(visible_container)
 
-            # Dropdown checkbox
-            dropdown_checkbox = QtWidgets.QCheckBox()
-            dropdown_checkbox.setChecked(current_dropdowns.get(field, False))
-            dropdown_checkbox.setMinimumWidth(120)
-            dropdown_checkbox.setStyleSheet("margin-left: 50px;")
-            row_layout.addWidget(dropdown_checkbox)
+            # Dropdown checkbox with custom indicator
+            dropdown_indicator, dropdown_checkbox = self._create_custom_checkbox(
+                current_dropdowns.get(field, False)
+            )
+            dropdown_container = QtWidgets.QWidget()
+            dropdown_container_layout = QtWidgets.QHBoxLayout(dropdown_container)
+            dropdown_container_layout.setContentsMargins(50, 0, 0, 0)
+            dropdown_container_layout.addWidget(dropdown_indicator)
+            dropdown_container_layout.addWidget(dropdown_checkbox)
+            dropdown_container_layout.addStretch()
+            dropdown_container.setMinimumWidth(120)
+            row_layout.addWidget(dropdown_container)
 
             row_layout.addStretch()
 
@@ -199,6 +220,71 @@ class ConfigColumnsDialog(QtWidgets.QDialog):
         button_layout.addWidget(self.cancel_button)
 
         layout.addLayout(button_layout)
+
+    def _create_custom_checkbox(self, checked=False):
+        """Create a checkbox with custom tick icon indicator.
+
+        Args:
+            checked: Initial checked state
+
+        Returns:
+            tuple: (indicator_label, checkbox)
+        """
+        # Custom checkbox indicator
+        indicator_label = QtWidgets.QLabel()
+        indicator_label.setFixedSize(20, 20)
+        indicator_label.setAlignment(QtCore.Qt.AlignCenter)
+
+        # Checkbox (hidden default indicator)
+        checkbox = QtWidgets.QCheckBox()
+        checkbox.setChecked(checked)
+
+        # Remove default indicator and add custom styling
+        checkbox.setStyleSheet("""
+            QCheckBox {
+                spacing: 0px;
+            }
+            QCheckBox::indicator {
+                width: 0px;
+                height: 0px;
+            }
+        """)
+
+        # Function to update indicator appearance
+        def update_indicator(is_checked):
+            if is_checked:
+                # Checked state: show tick icon
+                indicator_label.setStyleSheet("""
+                    QLabel {
+                        border: 2px solid #0078d4;
+                        border-radius: 3px;
+                        background-color: #2b2b2b;
+                        color: #0078d4;
+                        font-size: 16px;
+                        font-weight: bold;
+                    }
+                """)
+                indicator_label.setText("✓")
+            else:
+                # Unchecked state: empty box
+                indicator_label.setStyleSheet("""
+                    QLabel {
+                        border: 2px solid #555;
+                        border-radius: 3px;
+                        background-color: #2b2b2b;
+                    }
+                """)
+                indicator_label.setText("")
+
+        # Connect checkbox to update indicator
+        checkbox.toggled.connect(update_indicator)
+        update_indicator(checkbox.isChecked())  # Set initial state
+
+        # Make indicator clickable
+        indicator_label.mousePressEvent = lambda event: checkbox.setChecked(not checkbox.isChecked())
+        indicator_label.setCursor(QtCore.Qt.PointingHandCursor)
+
+        return indicator_label, checkbox
 
     def _select_all_visible(self):
         """Select all visibility checkboxes."""
@@ -700,9 +786,11 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             index = self.model.index(row_idx, col_idx)
             value = self.model.data(index, QtCore.Qt.DisplayRole)
 
-            # Add non-empty, non-None values
-            if value and str(value).strip():
-                unique_values.add(str(value).strip())
+            # Add non-empty, non-None values (filter out empty strings, "-", None, etc.)
+            if value is not None:
+                value_str = str(value).strip()
+                if value_str and value_str != "-" and value_str.lower() != "none":
+                    unique_values.add(value_str)
 
         # Return sorted list
         return sorted(list(unique_values))
