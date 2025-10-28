@@ -17,19 +17,31 @@ except ImportError:
 
 
 class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
-    """Custom delegate for combo box cells with List field values."""
+    """Custom delegate for combo box cells with List field values.
 
-    def __init__(self, field_name, list_values, parent=None):
+    Supports editable dropdowns - users can select from list or type new values.
+    New values are added to the shared list for all cells in that column.
+    """
+
+    def __init__(self, field_name, list_values, parent_widget=None, is_editable=False, parent=None):
         super().__init__(parent)
         self.field_name = field_name
-        self.list_values = list_values or []
+        # Store reference to the list (not a copy) so updates are shared
+        self.list_values = list_values
+        self.parent_widget = parent_widget  # VFXBreakdownWidget for callbacks
+        self.is_editable = is_editable  # Whether users can type new values
 
     def createEditor(self, parent, option, index):
-        """Create a combo box editor."""
+        """Create a combo box editor (editable or not based on settings)."""
         combo = QtWidgets.QComboBox(parent)
 
-        # Add all values (no empty option)
-        for value in self.list_values:
+        # Make combo box editable if this is a user-defined dropdown
+        if self.is_editable:
+            combo.setEditable(True)
+            combo.setInsertPolicy(QtWidgets.QComboBox.NoInsert)  # We'll handle inserts manually
+
+        # Add all current values
+        for value in sorted(self.list_values):  # Sort for consistency
             combo.addItem(value)
 
         combo.setFrame(False)
@@ -55,22 +67,32 @@ class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
         """Set the current value in the combo box."""
         value = index.model().data(index, QtCore.Qt.EditRole)
         if value:
-            index_pos = editor.findText(value)
+            # Try to find and select the current value
+            index_pos = editor.findText(str(value))
             if index_pos >= 0:
                 editor.setCurrentIndex(index_pos)
-            else:
-                # Value not in list, select first item if available
-                if editor.count() > 0:
-                    editor.setCurrentIndex(0)
-        else:
-            # Empty value, select first item if available
-            if editor.count() > 0:
-                editor.setCurrentIndex(0)
+            elif self.is_editable:
+                # Value not in list, but editable - set it as text
+                editor.setEditText(str(value))
+        elif self.is_editable:
+            # Empty value, allow user to type
+            editor.setEditText("")
 
     def setModelData(self, editor, model, index):
-        """Save the selected value back to the model."""
-        value = editor.currentText()
+        """Save the value back to the model and add to list if new."""
+        value = editor.currentText().strip()
+
+        # Save to model
         model.setData(index, value, QtCore.Qt.EditRole)
+
+        # If this is an editable dropdown and a new value was entered, add it to the list
+        if self.is_editable and value and value not in self.list_values:
+            self.list_values.append(value)
+            logger.info(f"Added new value '{value}' to dropdown list for field '{self.field_name}'")
+
+            # Notify parent widget to update settings if available
+            if self.parent_widget and hasattr(self.parent_widget, '_on_dropdown_value_added'):
+                self.parent_widget._on_dropdown_value_added(self.field_name, value)
 
     def editorEvent(self, event, model, option, index):
         """Handle double-click to open dropdown."""
@@ -384,6 +406,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.app_settings = AppSettings()
         self.column_visibility = {}  # field_name -> bool
         self.column_dropdowns = {}  # field_name -> bool
+        self.dropdown_values = {}  # field_name -> list of unique values (shared reference)
 
         # Build UI
         self._build_ui()
@@ -781,14 +804,31 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
                 # Only apply dropdown to text fields (list fields already have ComboBoxDelegate)
                 if data_type == "text":
-                    # Extract unique values from this column
-                    unique_values = self._get_unique_column_values(field_name)
+                    # Get or create the shared list for this field
+                    if field_name not in self.dropdown_values:
+                        # Extract unique values from this column
+                        self.dropdown_values[field_name] = self._get_unique_column_values(field_name)
 
-                    if unique_values:
-                        # Create and set dropdown delegate with unique values
-                        delegate = ComboBoxDelegate(field_name, unique_values, self.table_view)
+                    # Get the shared list reference
+                    shared_list = self.dropdown_values[field_name]
+
+                    if shared_list is not None:
+                        # Create and set dropdown delegate with shared list reference
+                        # Pass self as parent_widget so delegate can notify us of new values
+                        # is_editable=True allows users to type new values
+                        delegate = ComboBoxDelegate(field_name, shared_list, parent_widget=self, is_editable=True, parent=self.table_view)
                         self.table_view.setItemDelegateForColumn(col_idx, delegate)
-                        logger.info(f"Applied dropdown to '{field_name}' with {len(unique_values)} unique values")
+                        logger.info(f"Applied editable dropdown to '{field_name}' with {len(shared_list)} unique values")
+
+    def _on_dropdown_value_added(self, field_name, new_value):
+        """Callback when a new value is added to a dropdown list.
+
+        Args:
+            field_name: The field that had a new value added
+            new_value: The new value that was added
+        """
+        # The value is already in the shared list, but we can log it or save to settings
+        logger.info(f"New dropdown value added to '{field_name}': '{new_value}'")
 
     def _get_unique_column_values(self, field_name):
         """Extract unique non-empty values from a column.
