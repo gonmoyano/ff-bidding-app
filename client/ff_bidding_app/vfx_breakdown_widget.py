@@ -9,9 +9,11 @@ import logging
 try:
     from .logger import logger
     from .vfx_breakdown_model import VFXBreakdownModel, PasteCommand
+    from .settings import AppSettings
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
     from vfx_breakdown_model import VFXBreakdownModel, PasteCommand
+    from settings import AppSettings
 
 
 class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
@@ -43,6 +45,109 @@ class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
         """Save the selected value back to the model."""
         value = editor.currentText()
         model.setData(index, value, QtCore.Qt.EditRole)
+
+
+class ConfigColumnsDialog(QtWidgets.QDialog):
+    """Dialog for configuring column visibility in VFX Breakdown table."""
+
+    def __init__(self, column_fields, column_headers, current_visibility, parent=None):
+        """Initialize the dialog.
+
+        Args:
+            column_fields: List of field names
+            column_headers: List of display names for the fields
+            current_visibility: Dictionary mapping field names to visibility (bool)
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.setWindowTitle("Configure Visible Columns")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+
+        self.column_fields = column_fields
+        self.column_headers = column_headers
+        self.checkboxes = {}
+
+        self._build_ui(current_visibility)
+
+    def _build_ui(self, current_visibility):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Instructions
+        instructions = QtWidgets.QLabel(
+            "Select which columns to display in the VFX Breakdown table:"
+        )
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet("padding: 10px; background-color: #2b2b2b; border-radius: 4px;")
+        layout.addWidget(instructions)
+
+        # Scroll area for checkboxes
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QtWidgets.QWidget()
+        scroll_layout = QtWidgets.QVBoxLayout(scroll_widget)
+
+        # Create checkbox for each column
+        for field, header in zip(self.column_fields, self.column_headers):
+            checkbox = QtWidgets.QCheckBox(header)
+            checkbox.setChecked(current_visibility.get(field, True))
+            self.checkboxes[field] = checkbox
+            scroll_layout.addWidget(checkbox)
+
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_widget)
+        layout.addWidget(scroll, stretch=1)
+
+        # Select/Deselect All buttons
+        button_row = QtWidgets.QHBoxLayout()
+
+        select_all_btn = QtWidgets.QPushButton("Select All")
+        select_all_btn.clicked.connect(self._select_all)
+        button_row.addWidget(select_all_btn)
+
+        deselect_all_btn = QtWidgets.QPushButton("Deselect All")
+        deselect_all_btn.clicked.connect(self._deselect_all)
+        button_row.addWidget(deselect_all_btn)
+
+        button_row.addStretch()
+        layout.addLayout(button_row)
+
+        # OK/Cancel buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        self.ok_button = QtWidgets.QPushButton("OK")
+        self.ok_button.clicked.connect(self.accept)
+        self.ok_button.setDefault(True)
+        button_layout.addWidget(self.ok_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+    def _select_all(self):
+        """Select all checkboxes."""
+        for checkbox in self.checkboxes.values():
+            checkbox.setChecked(True)
+
+    def _deselect_all(self):
+        """Deselect all checkboxes."""
+        for checkbox in self.checkboxes.values():
+            checkbox.setChecked(False)
+
+    def get_column_visibility(self):
+        """Get the column visibility settings.
+
+        Returns:
+            dict: Mapping of field names to visibility (bool)
+        """
+        visibility = {}
+        for field, checkbox in self.checkboxes.items():
+            visibility[field] = checkbox.isChecked()
+        return visibility
 
 
 class VFXBreakdownWidget(QtWidgets.QWidget):
@@ -78,12 +183,20 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.global_search_box = None
         self.clear_filters_btn = None
         self.compound_sort_btn = None
+        self.config_columns_btn = None
         self.template_dropdown = None
         self.row_count_label = None
+
+        # Settings for column visibility
+        self.app_settings = AppSettings()
+        self.column_visibility = {}  # field_name -> bool
 
         # Build UI
         self._build_ui()
         self._setup_shortcuts()
+
+        # Load and apply column visibility settings
+        self._load_column_visibility()
 
     def _build_ui(self):
         """Build the widget UI."""
@@ -112,6 +225,11 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             self.compound_sort_btn = QtWidgets.QPushButton("Compound Sorting")
             self.compound_sort_btn.clicked.connect(self._open_compound_sort_dialog)
             toolbar_layout.addWidget(self.compound_sort_btn)
+
+            # Config Columns button
+            self.config_columns_btn = QtWidgets.QPushButton("Config Columns")
+            self.config_columns_btn.clicked.connect(self._open_config_columns_dialog)
+            toolbar_layout.addWidget(self.config_columns_btn)
 
             # Template dropdown
             toolbar_layout.addWidget(QtWidgets.QLabel("Template:"))
@@ -335,6 +453,61 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             self._update_header_sort_indicators()
 
             logger.info(f"Compound sort applied: {len(sort_config)} levels")
+
+    def _open_config_columns_dialog(self):
+        """Open the column configuration dialog."""
+        # Get current visibility state
+        current_visibility = self.column_visibility.copy()
+
+        # Ensure all fields have a visibility setting
+        for field in self.model.column_fields:
+            if field not in current_visibility:
+                current_visibility[field] = True
+
+        # Open dialog
+        dialog = ConfigColumnsDialog(
+            column_fields=self.model.column_fields,
+            column_headers=self.model.column_headers,
+            current_visibility=current_visibility,
+            parent=self
+        )
+
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            # Get the new visibility settings
+            new_visibility = dialog.get_column_visibility()
+
+            # Save to settings
+            self.app_settings.set_column_visibility("vfx_breakdown", new_visibility)
+
+            # Update local state
+            self.column_visibility = new_visibility
+
+            # Apply visibility to table
+            self._apply_column_visibility()
+
+            logger.info(f"Column visibility updated: {sum(new_visibility.values())} of {len(new_visibility)} visible")
+
+    def _load_column_visibility(self):
+        """Load column visibility settings from AppSettings."""
+        saved_visibility = self.app_settings.get_column_visibility("vfx_breakdown")
+
+        if saved_visibility:
+            self.column_visibility = saved_visibility
+        else:
+            # Default: all columns visible
+            self.column_visibility = {field: True for field in self.model.column_fields}
+
+        # Apply visibility
+        self._apply_column_visibility()
+
+    def _apply_column_visibility(self):
+        """Apply column visibility settings to the table view."""
+        if not self.table_view:
+            return
+
+        for col_index, field in enumerate(self.model.column_fields):
+            is_visible = self.column_visibility.get(field, True)
+            self.table_view.setColumnHidden(col_index, not is_visible)
 
     def _apply_sort_template(self, template_name):
         """Apply a saved sort template."""

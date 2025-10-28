@@ -146,3 +146,30 @@ class AppSettings:
         """
         self.settings[key] = value
         self._save()
+
+    def get_column_visibility(self, context_key):
+        """Get column visibility settings for a specific context.
+
+        Args:
+            context_key: Unique key for the context (e.g., "vfx_breakdown")
+
+        Returns:
+            Dictionary mapping field names to visibility (bool), or None if not found
+        """
+        if "column_visibility" not in self.settings:
+            return None
+        return self.settings["column_visibility"].get(context_key)
+
+    def set_column_visibility(self, context_key, visibility):
+        """Save column visibility settings for a specific context.
+
+        Args:
+            context_key: Unique key for the context (e.g., "vfx_breakdown")
+            visibility: Dictionary mapping field names to visibility (bool)
+        """
+        if "column_visibility" not in self.settings:
+            self.settings["column_visibility"] = {}
+
+        self.settings["column_visibility"][context_key] = visibility
+        self._save()
+        logger.info(f"Column visibility '{context_key}' saved with {len(visibility)} columns")
