@@ -200,3 +200,30 @@ class AppSettings:
         self.settings["column_order"][context_key] = order
         self._save()
         logger.info(f"Column order '{context_key}' saved with {len(order)} columns")
+
+    def get_column_widths(self, context_key):
+        """Get column width settings for a specific context.
+
+        Args:
+            context_key: Unique key for the context (e.g., "vfx_breakdown")
+
+        Returns:
+            Dictionary mapping field names to widths (int), or None if not found
+        """
+        if "column_widths" not in self.settings:
+            return None
+        return self.settings["column_widths"].get(context_key)
+
+    def set_column_widths(self, context_key, widths):
+        """Save column width settings for a specific context.
+
+        Args:
+            context_key: Unique key for the context (e.g., "vfx_breakdown")
+            widths: Dictionary mapping field names to widths (int)
+        """
+        if "column_widths" not in self.settings:
+            self.settings["column_widths"] = {}
+
+        self.settings["column_widths"][context_key] = widths
+        self._save()
+        logger.info(f"Column widths '{context_key}' saved with {len(widths)} columns")

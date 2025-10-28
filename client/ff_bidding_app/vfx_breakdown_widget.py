@@ -337,6 +337,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         h_header.setSectionsMovable(True)  # Enable draggable columns
         h_header.sectionClicked.connect(self._on_header_clicked)
         h_header.sectionMoved.connect(self._on_column_moved)  # Save order when moved
+        h_header.sectionResized.connect(self._on_column_resized)  # Save width when resized
 
         v_header = self.table_view.verticalHeader()
         v_header.sectionClicked.connect(self._on_row_header_clicked)
@@ -425,6 +426,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Ensure table is updated before auto-sizing
         QtWidgets.QApplication.processEvents()
         self._autosize_columns()
+
+        # Apply saved column widths (overrides auto-sizing for manually resized columns)
+        self._load_column_widths()
 
     def clear_data(self):
         """Clear all data from the widget."""
@@ -656,6 +660,61 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                         header.moveSection(current_visual_index, visual_index)
 
             logger.info(f"Loaded column order with {len(saved_order)} columns")
+
+        finally:
+            header.blockSignals(False)
+
+    def _on_column_resized(self, logical_index, old_size, new_size):
+        """Handle column resize event and save the new width."""
+        if logical_index < 0 or logical_index >= len(self.model.column_fields):
+            return
+
+        field_name = self.model.column_fields[logical_index]
+
+        # Get current widths
+        widths = self._get_current_column_widths()
+
+        # Save to settings
+        self.app_settings.set_column_widths("vfx_breakdown", widths)
+
+        logger.info(f"Column '{field_name}' resized from {old_size}px to {new_size}px")
+
+    def _get_current_column_widths(self):
+        """Get the current widths of all columns.
+
+        Returns:
+            dict: Mapping of field names to column widths in pixels
+        """
+        if not self.table_view:
+            return {}
+
+        widths = {}
+        for logical_index, field_name in enumerate(self.model.column_fields):
+            width = self.table_view.columnWidth(logical_index)
+            widths[field_name] = width
+
+        return widths
+
+    def _load_column_widths(self):
+        """Load and apply saved column widths."""
+        saved_widths = self.app_settings.get_column_widths("vfx_breakdown")
+
+        if not saved_widths or not self.table_view:
+            return
+
+        header = self.table_view.horizontalHeader()
+
+        # Block signals to avoid triggering sectionResized
+        header.blockSignals(True)
+
+        try:
+            # Apply saved widths to columns
+            for logical_index, field_name in enumerate(self.model.column_fields):
+                if field_name in saved_widths:
+                    width = saved_widths[field_name]
+                    self.table_view.setColumnWidth(logical_index, width)
+
+            logger.info(f"Loaded column widths for {len(saved_widths)} columns")
 
         finally:
             header.blockSignals(False)
