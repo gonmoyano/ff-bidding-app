@@ -202,6 +202,78 @@ class RenameBidDialog(QtWidgets.QDialog):
         return self.name_field.text().strip()
 
 
+class CreateBidDialog(QtWidgets.QDialog):
+    """Dialog for creating a new Bid during import."""
+
+    def __init__(self, parent=None):
+        """Initialize the dialog."""
+        super().__init__(parent)
+        self.setWindowTitle("Create Bid")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Instructions
+        instructions = QtWidgets.QLabel(
+            "Before importing, you need to create a Bid to contain the data. "
+            "Please enter a name for the new Bid:"
+        )
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet("padding: 10px; background-color: #2b2b2b; border-radius: 4px;")
+        layout.addWidget(instructions)
+
+        # Name field
+        name_layout = QtWidgets.QHBoxLayout()
+        name_label = QtWidgets.QLabel("Bid Name:")
+        name_layout.addWidget(name_label)
+
+        self.name_field = QtWidgets.QLineEdit()
+        self.name_field.setPlaceholderText("Enter bid name...")
+        name_layout.addWidget(self.name_field, stretch=1)
+
+        layout.addLayout(name_layout)
+
+        # Bid type selection
+        type_layout = QtWidgets.QHBoxLayout()
+        type_label = QtWidgets.QLabel("Bid Type:")
+        type_layout.addWidget(type_label)
+
+        self.type_combo = QtWidgets.QComboBox()
+        self.type_combo.addItem("Early Bid")
+        self.type_combo.addItem("Turnover Bid")
+        type_layout.addWidget(self.type_combo, stretch=1)
+
+        layout.addLayout(type_layout)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        self.ok_button = QtWidgets.QPushButton("Create")
+        self.ok_button.clicked.connect(self.accept)
+        self.ok_button.setDefault(True)
+        button_layout.addWidget(self.ok_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+    def get_bid_name(self):
+        """Get the bid name from the dialog."""
+        return self.name_field.text().strip()
+
+    def get_bid_type(self):
+        """Get the selected bid type."""
+        return self.type_combo.currentText()
+
+
 class CreateVFXBreakdownDialog(QtWidgets.QDialog):
     """Simple dialog for creating a new VFX Breakdown during import."""
 
@@ -1555,6 +1627,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 if vfx_breakdown_id and self._refresh_vfx_breakdown_dropdown():
                     logger.info(f"Refreshed VFX Breakdown dropdown, selecting ID {vfx_breakdown_id}")
 
+                # Refresh Bid dropdown after import
+                if vfx_breakdown_id:
+                    self._refresh_bids()
+                    logger.info("Refreshed Bid dropdown after import")
+
     def _import_vfx_breakdown(self, df):
         """Import VFX Breakdown data to ShotGrid.
 
@@ -1569,18 +1646,58 @@ class BidSelectorWidget(QtWidgets.QWidget):
         if df is None or len(df) == 0:
             return 0, None
 
-        # Step 1: Create VFX Breakdown (CustomEntity01) dialog
-        breakdown_dialog = CreateVFXBreakdownDialog(parent=self)
-        if breakdown_dialog.exec_() != QtWidgets.QDialog.Accepted:
-            logger.info("VFX Breakdown creation cancelled by user")
+        # Step 1: Create Bid (CustomEntity06) dialog
+        bid_dialog = CreateBidDialog(parent=self)
+        if bid_dialog.exec_() != QtWidgets.QDialog.Accepted:
+            logger.info("Bid creation cancelled by user")
             return 0, None
 
-        breakdown_name = breakdown_dialog.get_breakdown_name()
-        if not breakdown_name:
-            QtWidgets.QMessageBox.warning(self, "Invalid Name", "Please enter a name for the VFX Breakdown.")
+        bid_name = bid_dialog.get_bid_name()
+        bid_type = bid_dialog.get_bid_type()
+
+        if not bid_name:
+            QtWidgets.QMessageBox.warning(self, "Invalid Name", "Please enter a name for the Bid.")
             return 0, None
 
-        # Step 2: Create VFX Breakdown in ShotGrid
+        # Step 2: Determine version number for VFX Breakdown
+        # Query existing VFX Breakdowns with pattern: {bid_name}-Breakdown-v*
+        try:
+            filters = [
+                ["project", "is", {"type": "Project", "id": self.current_project_id}],
+                ["code", "starts_with", f"{bid_name}-Breakdown-v"]
+            ]
+            existing_breakdowns = self.sg_session.sg.find(
+                "CustomEntity01",
+                filters,
+                ["code"]
+            )
+
+            # Find the highest version number
+            max_version = 0
+            for breakdown in existing_breakdowns:
+                code = breakdown.get("code", "")
+                # Extract version number from code (e.g., "MyBid-Breakdown-v003" -> 3)
+                if code.startswith(f"{bid_name}-Breakdown-v"):
+                    version_str = code.split("-v")[-1]
+                    try:
+                        version = int(version_str)
+                        max_version = max(max_version, version)
+                    except ValueError:
+                        continue
+
+            # Increment to get next version
+            next_version = max_version + 1
+            breakdown_name = f"{bid_name}-Breakdown-v{next_version:03d}"
+
+            logger.info(f"Generated VFX Breakdown name: {breakdown_name} (version {next_version})")
+
+        except Exception as e:
+            logger.error(f"Failed to query existing VFX Breakdowns: {e}", exc_info=True)
+            # Default to v001 if query fails
+            breakdown_name = f"{bid_name}-Breakdown-v001"
+            logger.warning(f"Defaulting to version 001: {breakdown_name}")
+
+        # Step 3: Create VFX Breakdown in ShotGrid
         try:
             breakdown_data = {
                 "code": breakdown_name,
@@ -1598,10 +1715,30 @@ class BidSelectorWidget(QtWidgets.QWidget):
             )
             return 0, None
 
-        # Step 3: Get column names from DataFrame
+        # Step 4: Create Bid and link to VFX Breakdown
+        try:
+            bid = self.sg_session.create_bid(
+                self.current_project_id,
+                bid_name,
+                bid_type,
+                vfx_breakdown={"type": "CustomEntity01", "id": breakdown_id}
+            )
+            bid_id = bid["id"]
+            logger.info(f"Created Bid (CustomEntity06): {bid_id} - {bid_name}, linked to VFX Breakdown {breakdown_id}")
+        except Exception as e:
+            logger.error(f"Failed to create Bid: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to create Bid:\n{str(e)}\n\n"
+                f"Note: VFX Breakdown '{breakdown_name}' was already created."
+            )
+            return 0, None
+
+        # Step 5: Get column names from DataFrame
         excel_columns = list(df.columns)
 
-        # Step 4: Show column mapping dialog
+        # Step 6: Show column mapping dialog
         mapping_dialog = ColumnMappingDialog(
             excel_columns,
             self.sg_session,
@@ -1611,11 +1748,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         if mapping_dialog.exec_() != QtWidgets.QDialog.Accepted:
             logger.info("Column mapping cancelled by user")
-            # VFX Breakdown was already created, so just return
+            # Bid and VFX Breakdown were already created, so just return
             QtWidgets.QMessageBox.information(
                 self,
                 "Import Cancelled",
-                f"VFX Breakdown '{breakdown_name}' was created, but no items were imported."
+                f"Bid '{bid_name}' and VFX Breakdown '{breakdown_name}' were created, but no items were imported."
             )
             return 0, breakdown_id
 
@@ -1623,7 +1760,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         column_mapping = mapping_dialog.get_column_mapping()
         logger.info(f"Column mapping: {column_mapping}")
 
-        # Step 5: Create ShotGrid records (CustomEntity02) linked to VFX Breakdown
+        # Step 7: Create ShotGrid records (CustomEntity02) linked to VFX Breakdown
         created_count = 0
         failed_count = 0
 
@@ -1686,13 +1823,13 @@ class BidSelectorWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(
                 self,
                 "Import Completed with Errors",
-                f"Created VFX Breakdown '{breakdown_name}'.\n"
+                f"Created Bid '{bid_name}' and VFX Breakdown '{breakdown_name}'.\n"
                 f"Created {created_count} breakdown items.\n"
                 f"Failed to create {failed_count} items.\n\n"
                 f"Check the logs for details."
             )
         else:
-            logger.info(f"Successfully created VFX Breakdown '{breakdown_name}' with {created_count} items")
+            logger.info(f"Successfully created Bid '{bid_name}' and VFX Breakdown '{breakdown_name}' with {created_count} items")
 
         return created_count, breakdown_id
 
