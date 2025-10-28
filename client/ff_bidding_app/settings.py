@@ -227,3 +227,30 @@ class AppSettings:
         self.settings["column_widths"][context_key] = widths
         self._save()
         logger.info(f"Column widths '{context_key}' saved with {len(widths)} columns")
+
+    def get_column_dropdowns(self, context_key):
+        """Get column dropdown settings for a specific context.
+
+        Args:
+            context_key: Unique key for the context (e.g., "vfx_breakdown")
+
+        Returns:
+            Dictionary mapping field names to dropdown enabled (bool), or None if not found
+        """
+        if "column_dropdowns" not in self.settings:
+            return None
+        return self.settings["column_dropdowns"].get(context_key)
+
+    def set_column_dropdowns(self, context_key, dropdowns):
+        """Save column dropdown settings for a specific context.
+
+        Args:
+            context_key: Unique key for the context (e.g., "vfx_breakdown")
+            dropdowns: Dictionary mapping field names to dropdown enabled (bool)
+        """
+        if "column_dropdowns" not in self.settings:
+            self.settings["column_dropdowns"] = {}
+
+        self.settings["column_dropdowns"][context_key] = dropdowns
+        self._save()
+        logger.info(f"Column dropdowns '{context_key}' saved with {len(dropdowns)} columns")

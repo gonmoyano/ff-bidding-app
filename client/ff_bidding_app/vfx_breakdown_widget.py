@@ -48,123 +48,119 @@ class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
 
 
 class ConfigColumnsDialog(QtWidgets.QDialog):
-    """Dialog for configuring column visibility in VFX Breakdown table."""
+    """Dialog for configuring column visibility and dropdown lists in VFX Breakdown table."""
 
-    def __init__(self, column_fields, column_headers, current_visibility, parent=None):
+    def __init__(self, column_fields, column_headers, current_visibility, current_dropdowns, parent=None):
         """Initialize the dialog.
 
         Args:
             column_fields: List of field names
             column_headers: List of display names for the fields
             current_visibility: Dictionary mapping field names to visibility (bool)
+            current_dropdowns: Dictionary mapping field names to dropdown enabled (bool)
             parent: Parent widget
         """
         super().__init__(parent)
-        self.setWindowTitle("Configure Visible Columns")
+        self.setWindowTitle("Configure Columns")
         self.setModal(True)
 
         self.column_fields = column_fields
         self.column_headers = column_headers
-        self.checkboxes = {}
+        self.visibility_checkboxes = {}
+        self.dropdown_checkboxes = {}
 
-        self._build_ui(current_visibility)
+        self._build_ui(current_visibility, current_dropdowns)
 
         # Adjust size to content
         self.adjustSize()
         # Set a reasonable minimum but allow it to grow
-        self.setMinimumWidth(350)
+        self.setMinimumWidth(500)
 
-    def _build_ui(self, current_visibility):
+    def _build_ui(self, current_visibility, current_dropdowns):
         """Build the dialog UI."""
         layout = QtWidgets.QVBoxLayout(self)
 
         # Instructions
         instructions = QtWidgets.QLabel(
-            "Select which columns to display in the VFX Breakdown table:"
+            "Configure column visibility and dropdown filters for the VFX Breakdown table:"
         )
         instructions.setWordWrap(True)
         instructions.setStyleSheet("padding: 10px; background-color: #2b2b2b; border-radius: 4px;")
         layout.addWidget(instructions)
 
-        # Scroll area for checkboxes
+        # Scroll area for the table
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         scroll_widget = QtWidgets.QWidget()
         scroll_layout = QtWidgets.QVBoxLayout(scroll_widget)
 
-        # Create checkbox for each column with custom tick icon
+        # Header row
+        header_widget = QtWidgets.QWidget()
+        header_layout = QtWidgets.QHBoxLayout(header_widget)
+        header_layout.setContentsMargins(0, 5, 0, 5)
+        header_layout.setSpacing(10)
+
+        # Field name header
+        field_header = QtWidgets.QLabel("Field Name")
+        field_header.setStyleSheet("font-weight: bold; padding: 5px;")
+        field_header.setMinimumWidth(200)
+        header_layout.addWidget(field_header)
+
+        # Visible header
+        visible_header = QtWidgets.QLabel("Visible")
+        visible_header.setStyleSheet("font-weight: bold; padding: 5px;")
+        visible_header.setAlignment(QtCore.Qt.AlignCenter)
+        visible_header.setMinimumWidth(80)
+        header_layout.addWidget(visible_header)
+
+        # Dropdown list header
+        dropdown_header = QtWidgets.QLabel("Dropdown List")
+        dropdown_header.setStyleSheet("font-weight: bold; padding: 5px;")
+        dropdown_header.setAlignment(QtCore.Qt.AlignCenter)
+        dropdown_header.setMinimumWidth(120)
+        dropdown_header.setToolTip("Enable dropdown selection with unique values from this column")
+        header_layout.addWidget(dropdown_header)
+
+        header_layout.addStretch()
+        scroll_layout.addWidget(header_widget)
+
+        # Separator line
+        line = QtWidgets.QFrame()
+        line.setFrameShape(QtWidgets.QFrame.HLine)
+        line.setFrameShadow(QtWidgets.QFrame.Sunken)
+        scroll_layout.addWidget(line)
+
+        # Create row for each column
         for field, header in zip(self.column_fields, self.column_headers):
-            # Create a container with custom styling
             row_widget = QtWidgets.QWidget()
             row_layout = QtWidgets.QHBoxLayout(row_widget)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(8)
+            row_layout.setContentsMargins(0, 2, 0, 2)
+            row_layout.setSpacing(10)
 
-            # Custom checkbox indicator
-            indicator_label = QtWidgets.QLabel()
-            indicator_label.setFixedSize(20, 20)
-            indicator_label.setAlignment(QtCore.Qt.AlignCenter)
+            # Field name label
+            field_label = QtWidgets.QLabel(header)
+            field_label.setMinimumWidth(200)
+            field_label.setStyleSheet("padding: 5px;")
+            row_layout.addWidget(field_label)
 
-            # Checkbox
-            checkbox = QtWidgets.QCheckBox(header)
-            checkbox.setChecked(current_visibility.get(field, True))
+            # Visible checkbox
+            visible_checkbox = QtWidgets.QCheckBox()
+            visible_checkbox.setChecked(current_visibility.get(field, True))
+            visible_checkbox.setMinimumWidth(80)
+            visible_checkbox.setStyleSheet("margin-left: 30px;")
+            row_layout.addWidget(visible_checkbox)
 
-            # Remove default indicator and add custom styling
-            checkbox.setStyleSheet("""
-                QCheckBox {
-                    spacing: 0px;
-                }
-                QCheckBox::indicator {
-                    width: 0px;
-                    height: 0px;
-                }
-            """)
+            # Dropdown checkbox
+            dropdown_checkbox = QtWidgets.QCheckBox()
+            dropdown_checkbox.setChecked(current_dropdowns.get(field, False))
+            dropdown_checkbox.setMinimumWidth(120)
+            dropdown_checkbox.setStyleSheet("margin-left: 50px;")
+            row_layout.addWidget(dropdown_checkbox)
 
-            # Function to update indicator appearance
-            def make_update_indicator(indicator, cb):
-                def update_indicator(checked):
-                    if checked:
-                        # Checked state: show tick icon
-                        indicator.setStyleSheet("""
-                            QLabel {
-                                border: 2px solid #0078d4;
-                                border-radius: 3px;
-                                background-color: #2b2b2b;
-                                color: #0078d4;
-                                font-size: 16px;
-                                font-weight: bold;
-                            }
-                        """)
-                        indicator.setText("✓")
-                    else:
-                        # Unchecked state: empty box
-                        indicator.setStyleSheet("""
-                            QLabel {
-                                border: 2px solid #555;
-                                border-radius: 3px;
-                                background-color: #2b2b2b;
-                            }
-                        """)
-                        indicator.setText("")
-                return update_indicator
-
-            # Connect checkbox to update indicator
-            update_func = make_update_indicator(indicator_label, checkbox)
-            checkbox.toggled.connect(update_func)
-            update_func(checkbox.isChecked())  # Set initial state
-
-            # Make indicator clickable
-            def make_indicator_click(cb):
-                return lambda event: cb.setChecked(not cb.isChecked())
-
-            indicator_label.mousePressEvent = make_indicator_click(checkbox)
-            indicator_label.setCursor(QtCore.Qt.PointingHandCursor)
-
-            row_layout.addWidget(indicator_label)
-            row_layout.addWidget(checkbox)
             row_layout.addStretch()
 
-            self.checkboxes[field] = checkbox
+            self.visibility_checkboxes[field] = visible_checkbox
+            self.dropdown_checkboxes[field] = dropdown_checkbox
             scroll_layout.addWidget(row_widget)
 
         scroll_layout.addStretch()
@@ -174,12 +170,16 @@ class ConfigColumnsDialog(QtWidgets.QDialog):
         # Select/Deselect All buttons
         button_row = QtWidgets.QHBoxLayout()
 
+        visible_group = QtWidgets.QLabel("Visibility:")
+        visible_group.setStyleSheet("font-weight: bold;")
+        button_row.addWidget(visible_group)
+
         select_all_btn = QtWidgets.QPushButton("Select All")
-        select_all_btn.clicked.connect(self._select_all)
+        select_all_btn.clicked.connect(self._select_all_visible)
         button_row.addWidget(select_all_btn)
 
         deselect_all_btn = QtWidgets.QPushButton("Deselect All")
-        deselect_all_btn.clicked.connect(self._deselect_all)
+        deselect_all_btn.clicked.connect(self._deselect_all_visible)
         button_row.addWidget(deselect_all_btn)
 
         button_row.addStretch()
@@ -200,14 +200,14 @@ class ConfigColumnsDialog(QtWidgets.QDialog):
 
         layout.addLayout(button_layout)
 
-    def _select_all(self):
-        """Select all checkboxes."""
-        for checkbox in self.checkboxes.values():
+    def _select_all_visible(self):
+        """Select all visibility checkboxes."""
+        for checkbox in self.visibility_checkboxes.values():
             checkbox.setChecked(True)
 
-    def _deselect_all(self):
-        """Deselect all checkboxes."""
-        for checkbox in self.checkboxes.values():
+    def _deselect_all_visible(self):
+        """Deselect all visibility checkboxes."""
+        for checkbox in self.visibility_checkboxes.values():
             checkbox.setChecked(False)
 
     def get_column_visibility(self):
@@ -217,9 +217,20 @@ class ConfigColumnsDialog(QtWidgets.QDialog):
             dict: Mapping of field names to visibility (bool)
         """
         visibility = {}
-        for field, checkbox in self.checkboxes.items():
+        for field, checkbox in self.visibility_checkboxes.items():
             visibility[field] = checkbox.isChecked()
         return visibility
+
+    def get_column_dropdowns(self):
+        """Get the column dropdown settings.
+
+        Returns:
+            dict: Mapping of field names to dropdown enabled (bool)
+        """
+        dropdowns = {}
+        for field, checkbox in self.dropdown_checkboxes.items():
+            dropdowns[field] = checkbox.isChecked()
+        return dropdowns
 
 
 class VFXBreakdownWidget(QtWidgets.QWidget):
@@ -259,9 +270,10 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.template_dropdown = None
         self.row_count_label = None
 
-        # Settings for column visibility
+        # Settings for column visibility and dropdowns
         self.app_settings = AppSettings()
         self.column_visibility = {}  # field_name -> bool
+        self.column_dropdowns = {}  # field_name -> bool
 
         # Build UI
         self._build_ui()
@@ -270,6 +282,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Load and apply column settings
         self._load_column_order()  # Load column order first
         self._load_column_visibility()  # Then apply visibility
+        self._load_column_dropdowns()  # Load dropdown settings
 
     def _build_ui(self):
         """Build the widget UI."""
@@ -439,6 +452,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             widths = self._get_current_column_widths()
             self.app_settings.set_column_widths("vfx_breakdown", widths)
 
+        # Apply dropdown delegates to columns marked for dropdowns
+        self._apply_column_dropdowns()
+
     def clear_data(self):
         """Clear all data from the widget."""
         self.model.clear_data()
@@ -553,11 +569,14 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         """Open the column configuration dialog."""
         # Get current visibility state
         current_visibility = self.column_visibility.copy()
+        current_dropdowns = self.column_dropdowns.copy()
 
-        # Ensure all fields have a visibility setting
+        # Ensure all fields have settings
         for field in self.model.column_fields:
             if field not in current_visibility:
                 current_visibility[field] = True
+            if field not in current_dropdowns:
+                current_dropdowns[field] = False
 
         # Get columns in their current visual order
         ordered_fields = self._get_current_column_order()
@@ -573,23 +592,31 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             column_fields=ordered_fields,
             column_headers=ordered_headers,
             current_visibility=current_visibility,
+            current_dropdowns=current_dropdowns,
             parent=self
         )
 
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            # Get the new visibility settings
+            # Get the new settings
             new_visibility = dialog.get_column_visibility()
+            new_dropdowns = dialog.get_column_dropdowns()
 
             # Save to settings
             self.app_settings.set_column_visibility("vfx_breakdown", new_visibility)
+            self.app_settings.set_column_dropdowns("vfx_breakdown", new_dropdowns)
 
             # Update local state
             self.column_visibility = new_visibility
+            self.column_dropdowns = new_dropdowns
 
             # Apply visibility to table
             self._apply_column_visibility()
 
+            # Apply dropdown delegates
+            self._apply_column_dropdowns()
+
             logger.info(f"Column visibility updated: {sum(new_visibility.values())} of {len(new_visibility)} visible")
+            logger.info(f"Column dropdowns updated: {sum(new_dropdowns.values())} of {len(new_dropdowns)} with dropdowns")
 
     def _load_column_visibility(self):
         """Load column visibility settings from AppSettings."""
@@ -612,6 +639,73 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         for col_index, field in enumerate(self.model.column_fields):
             is_visible = self.column_visibility.get(field, True)
             self.table_view.setColumnHidden(col_index, not is_visible)
+
+    def _load_column_dropdowns(self):
+        """Load column dropdown settings from AppSettings."""
+        saved_dropdowns = self.app_settings.get_column_dropdowns("vfx_breakdown")
+
+        if saved_dropdowns:
+            self.column_dropdowns = saved_dropdowns
+        else:
+            # Default: no dropdowns enabled
+            self.column_dropdowns = {field: False for field in self.model.column_fields}
+
+        # Apply dropdowns
+        self._apply_column_dropdowns()
+
+    def _apply_column_dropdowns(self):
+        """Apply dropdown delegates to columns marked for dropdowns."""
+        if not self.table_view or not self.model.field_schema:
+            return
+
+        # Get field schema from the model
+        field_schema = self.model.field_schema
+
+        for col_idx, field_name in enumerate(self.model.column_fields):
+            # Check if dropdown is enabled for this field
+            dropdown_enabled = self.column_dropdowns.get(field_name, False)
+
+            if dropdown_enabled and field_name in field_schema:
+                field_info = field_schema[field_name]
+                data_type = field_info.get("data_type")
+
+                # Only apply dropdown to text fields (list fields already have ComboBoxDelegate)
+                if data_type == "text":
+                    # Extract unique values from this column
+                    unique_values = self._get_unique_column_values(field_name)
+
+                    if unique_values:
+                        # Create and set dropdown delegate with unique values
+                        delegate = ComboBoxDelegate(field_name, unique_values, self.table_view)
+                        self.table_view.setItemDelegateForColumn(col_idx, delegate)
+                        logger.info(f"Applied dropdown to '{field_name}' with {len(unique_values)} unique values")
+
+    def _get_unique_column_values(self, field_name):
+        """Extract unique non-empty values from a column.
+
+        Args:
+            field_name: Name of the field to extract values from
+
+        Returns:
+            list: Sorted list of unique non-empty values
+        """
+        if field_name not in self.model.column_fields:
+            return []
+
+        col_idx = self.model.column_fields.index(field_name)
+        unique_values = set()
+
+        # Iterate through all rows in the model
+        for row_idx in range(self.model.rowCount()):
+            index = self.model.index(row_idx, col_idx)
+            value = self.model.data(index, QtCore.Qt.DisplayRole)
+
+            # Add non-empty, non-None values
+            if value and str(value).strip():
+                unique_values.add(str(value).strip())
+
+        # Return sorted list
+        return sorted(list(unique_values))
 
     def _on_column_moved(self, logical_index, old_visual_index, new_visual_index):
         """Handle column reorder event and save the new order."""
