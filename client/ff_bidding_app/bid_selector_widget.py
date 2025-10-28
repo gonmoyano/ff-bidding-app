@@ -941,108 +941,27 @@ class ImportBidDialog(QtWidgets.QDialog):
     def _load_sheet_for_tab(self, tab_name, sheet_name):
         """Load and display a specific sheet in a specific tab.
 
-        Preserves Excel display formatting (e.g., leading zeros like 001, checkboxes).
+        Reads all cells as text to preserve display format (e.g., fractions like "4 1/8", leading zeros like "001").
         """
         try:
             import pandas as pd
-            from openpyxl import load_workbook
 
-            # Load workbook with openpyxl to preserve formatting
-            wb = load_workbook(self.excel_file_path, data_only=False)
-            if sheet_name not in wb.sheetnames:
-                raise ValueError(f"Sheet '{sheet_name}' not found in workbook")
+            # Read Excel with all columns as strings to preserve text format
+            # This prevents Excel from converting fractions to dates or numbers
+            df = pd.read_excel(
+                self.excel_file_path,
+                sheet_name=sheet_name,
+                dtype=str,  # Force all columns to be read as strings
+                keep_default_na=False,  # Don't convert to NaN
+                na_filter=False  # Don't interpret NA values
+            )
 
-            ws = wb[sheet_name]
+            # Replace any actual NaN values with empty strings
+            df = df.fillna("")
 
-            # Read data preserving display format
-            data = []
-            headers = []
-
-            # Get headers from first row
-            first_row = True
-            for row in ws.iter_rows():
-                if first_row:
-                    # Get column headers
-                    for cell in row:
-                        # Get the displayed value or column letter if empty
-                        header_value = cell.value
-                        if header_value is None or str(header_value).strip() == "":
-                            header_value = cell.column_letter
-                        headers.append(str(header_value))
-                    first_row = False
-                    continue
-
-                # Get row data using formatted values
-                row_data = []
-                for cell in row:
-                    # Get the formatted display value (what you see in Excel)
-                    if cell.value is None:
-                        display_value = ""
-                    elif cell.data_type == 'b':  # Boolean (checkbox)
-                        # Handle Excel checkboxes
-                        display_value = "TRUE" if cell.value else "FALSE"
-                    elif cell.number_format and '?' in cell.number_format and '/' in cell.number_format:
-                        # Fraction format (e.g., "# ?/?", "# ?/8") - reconstruct fraction from numeric value
-                        try:
-                            from fractions import Fraction
-                            if isinstance(cell.value, (int, float)):
-                                # Convert the numeric value to a fraction
-                                frac = Fraction(cell.value).limit_denominator(8)  # Limit to denominator of 8 for page eights
-                                if frac.numerator == 0:
-                                    display_value = "0"
-                                elif frac.denominator == 1:
-                                    display_value = str(frac.numerator)
-                                else:
-                                    # Format as "whole numerator/denominator"
-                                    whole = frac.numerator // frac.denominator
-                                    remainder = frac.numerator % frac.denominator
-                                    if whole > 0:
-                                        display_value = f"{whole} {remainder}/{frac.denominator}"
-                                    else:
-                                        display_value = f"{remainder}/{frac.denominator}"
-                            else:
-                                display_value = str(cell.value)
-                        except:
-                            display_value = str(cell.value)
-                    elif cell.data_type == 'd':  # Date type
-                        # Check if this might be a fraction misinterpreted as date
-                        # If the number format is a fraction, it was already handled above
-                        # Otherwise, convert to string to prevent date interpretation
-                        display_value = str(cell.value)
-                    elif cell.number_format and cell.number_format != 'General':
-                        # Cell has custom formatting - use displayed value
-                        # This preserves things like 001, dates, etc.
-                        try:
-                            # Check if it's a date format
-                            if any(date_char in cell.number_format for date_char in ['d', 'm', 'y', 'h', 's']):
-                                # Date format - convert to string to keep as text
-                                display_value = str(cell.value)
-                            elif '0' in cell.number_format and isinstance(cell.value, (int, float)):
-                                # Number with leading zeros
-                                display_value = str(cell.value)
-                                # If it's a whole number displayed with leading zeros, format it
-                                if isinstance(cell.value, (int, float)) and cell.value == int(cell.value):
-                                    # Count leading zeros in format
-                                    format_str = cell.number_format
-                                    if format_str.startswith('0'):
-                                        num_zeros = len(format_str.split('.')[0])
-                                        display_value = str(int(cell.value)).zfill(num_zeros)
-                            else:
-                                display_value = str(cell.value)
-                        except:
-                            display_value = str(cell.value)
-                    else:
-                        # General format or text - keep as is
-                        display_value = str(cell.value)
-
-                    row_data.append(display_value)
-
-                # Only add row if it has any data
-                if any(val != "" and val != "None" for val in row_data):
-                    data.append(row_data)
-
-            # Create DataFrame from the data
-            df = pd.DataFrame(data, columns=headers)
+            # Convert all values to strings (should already be, but ensure it)
+            for col in df.columns:
+                df[col] = df[col].astype(str)
 
             # Store data
             keywords, _ = self.tab_config[tab_name]
