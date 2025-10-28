@@ -853,8 +853,11 @@ class ImportBidDialog(QtWidgets.QDialog):
             progress.setValue(10)
             QtWidgets.QApplication.processEvents()
 
-            excel_file = pd.ExcelFile(file_path)
-            self.sheet_names = excel_file.sheet_names
+            # Use openpyxl to read sheet names (consistent with how we read data)
+            from openpyxl import load_workbook
+            wb = load_workbook(file_path, data_only=False, read_only=True)
+            self.sheet_names = wb.sheetnames
+            wb.close()
 
             progress.setValue(20)
             QtWidgets.QApplication.processEvents()
@@ -924,12 +927,83 @@ class ImportBidDialog(QtWidgets.QDialog):
             self._load_sheet_for_tab(tab_name, sheet_name)
 
     def _load_sheet_for_tab(self, tab_name, sheet_name):
-        """Load and display a specific sheet in a specific tab."""
+        """Load and display a specific sheet in a specific tab.
+
+        Preserves Excel display formatting (e.g., leading zeros like 001, checkboxes).
+        """
         try:
             import pandas as pd
+            from openpyxl import load_workbook
 
-            # Read the specific sheet
-            df = pd.read_excel(self.excel_file_path, sheet_name=sheet_name)
+            # Load workbook with openpyxl to preserve formatting
+            wb = load_workbook(self.excel_file_path, data_only=False)
+            if sheet_name not in wb.sheetnames:
+                raise ValueError(f"Sheet '{sheet_name}' not found in workbook")
+
+            ws = wb[sheet_name]
+
+            # Read data preserving display format
+            data = []
+            headers = []
+
+            # Get headers from first row
+            first_row = True
+            for row in ws.iter_rows():
+                if first_row:
+                    # Get column headers
+                    for cell in row:
+                        # Get the displayed value or column letter if empty
+                        header_value = cell.value
+                        if header_value is None or str(header_value).strip() == "":
+                            header_value = cell.column_letter
+                        headers.append(str(header_value))
+                    first_row = False
+                    continue
+
+                # Get row data using formatted values
+                row_data = []
+                for cell in row:
+                    # Get the formatted display value (what you see in Excel)
+                    if cell.value is None:
+                        display_value = ""
+                    elif cell.data_type == 'b':  # Boolean (checkbox)
+                        # Handle Excel checkboxes
+                        display_value = "TRUE" if cell.value else "FALSE"
+                    elif cell.number_format and cell.number_format != 'General':
+                        # Cell has custom formatting - use displayed value
+                        # This preserves things like 001, dates, etc.
+                        try:
+                            # Try to get formatted value
+                            if hasattr(cell, 'number_format') and cell.number_format:
+                                # For numbers with custom format like "000", preserve as string
+                                display_value = str(cell.value)
+                                # Check if format indicates leading zeros
+                                if '0' in cell.number_format and isinstance(cell.value, (int, float)):
+                                    # Preserve as formatted string
+                                    display_value = str(cell.value)
+                                    # If it's a whole number displayed with leading zeros, format it
+                                    if isinstance(cell.value, (int, float)) and cell.value == int(cell.value):
+                                        # Count leading zeros in format
+                                        format_str = cell.number_format
+                                        if format_str.startswith('0'):
+                                            num_zeros = len(format_str.split('.')[0])
+                                            display_value = str(int(cell.value)).zfill(num_zeros)
+                            else:
+                                display_value = str(cell.value)
+                        except:
+                            display_value = str(cell.value)
+                    else:
+                        # General format or text - keep as is
+                        display_value = str(cell.value)
+
+                    row_data.append(display_value)
+
+                # Only add row if it has any data
+                if any(val != "" and val != "None" for val in row_data):
+                    data.append(row_data)
+
+            # Create DataFrame from the data
+            df = pd.DataFrame(data, columns=headers)
 
             # Store data
             keywords, _ = self.tab_config[tab_name]
@@ -939,7 +1013,7 @@ class ImportBidDialog(QtWidgets.QDialog):
             widgets = self.tab_widgets[tab_name]
             self._populate_table(widgets["table"], df)
 
-            logger.info(f"Loaded sheet '{sheet_name}' for tab '{tab_name}': {len(df)} rows, {len(df.columns)} columns")
+            logger.info(f"Loaded sheet '{sheet_name}' for tab '{tab_name}' with preserved formatting: {len(df)} rows, {len(df.columns)} columns")
 
         except Exception as e:
             self._set_status(f"Error loading sheet: {str(e)}", is_error=True)
