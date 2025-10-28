@@ -88,12 +88,57 @@ class ConfigColumnsDialog(QtWidgets.QDialog):
         scroll_widget = QtWidgets.QWidget()
         scroll_layout = QtWidgets.QVBoxLayout(scroll_widget)
 
+        # Custom checkbox stylesheet - checkmark icon instead of solid fill
+        checkbox_style = """
+            QCheckBox {
+                spacing: 8px;
+            }
+            QCheckBox::indicator {
+                width: 18px;
+                height: 18px;
+                border: 2px solid #555;
+                border-radius: 3px;
+                background-color: #2b2b2b;
+            }
+            QCheckBox::indicator:hover {
+                border: 2px solid #777;
+                background-color: #3b3b3b;
+            }
+            QCheckBox::indicator:checked {
+                border: 2px solid #0078d4;
+                background-color: #2b2b2b;
+            }
+        """
+
         # Create checkbox for each column
         for field, header in zip(self.column_fields, self.column_headers):
+            # Create a widget with checkbox and custom checkmark
+            row_widget = QtWidgets.QWidget()
+            row_layout = QtWidgets.QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+
             checkbox = QtWidgets.QCheckBox(header)
             checkbox.setChecked(current_visibility.get(field, True))
+            checkbox.setStyleSheet(checkbox_style)
+
+            # Add checkmark label that appears when checked
+            checkmark_label = QtWidgets.QLabel("✓")
+            checkmark_label.setStyleSheet("color: #0078d4; font-size: 14px; font-weight: bold; margin-left: -16px; margin-right: 2px;")
+            checkmark_label.setFixedWidth(16)
+            checkmark_label.setVisible(checkbox.isChecked())
+
+            # Connect checkbox to update checkmark visibility
+            def make_update_checkmark(cb, lbl):
+                return lambda checked: lbl.setVisible(checked)
+
+            checkbox.toggled.connect(make_update_checkmark(checkbox, checkmark_label))
+
+            row_layout.addWidget(checkbox)
+            row_layout.addWidget(checkmark_label)
+            row_layout.addStretch()
+
             self.checkboxes[field] = checkbox
-            scroll_layout.addWidget(checkbox)
+            scroll_layout.addWidget(row_widget)
 
         scroll_layout.addStretch()
         scroll.setWidget(scroll_widget)
@@ -195,8 +240,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self._build_ui()
         self._setup_shortcuts()
 
-        # Load and apply column visibility settings
-        self._load_column_visibility()
+        # Load and apply column settings
+        self._load_column_order()  # Load column order first
+        self._load_column_visibility()  # Then apply visibility
 
     def _build_ui(self):
         """Build the widget UI."""
@@ -261,7 +307,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         h_header.setStretchLastSection(False)
         h_header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
         h_header.setSectionsClickable(True)
+        h_header.setSectionsMovable(True)  # Enable draggable columns
         h_header.sectionClicked.connect(self._on_header_clicked)
+        h_header.sectionMoved.connect(self._on_column_moved)  # Save order when moved
 
         v_header = self.table_view.verticalHeader()
         v_header.sectionClicked.connect(self._on_row_header_clicked)
@@ -464,10 +512,19 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             if field not in current_visibility:
                 current_visibility[field] = True
 
-        # Open dialog
+        # Get columns in their current visual order
+        ordered_fields = self._get_current_column_order()
+        ordered_headers = []
+
+        # Build headers list in the same order
+        field_to_header = {field: header for field, header in zip(self.model.column_fields, self.model.column_headers)}
+        for field in ordered_fields:
+            ordered_headers.append(field_to_header.get(field, field))
+
+        # Open dialog with columns in visual order
         dialog = ConfigColumnsDialog(
-            column_fields=self.model.column_fields,
-            column_headers=self.model.column_headers,
+            column_fields=ordered_fields,
+            column_headers=ordered_headers,
             current_visibility=current_visibility,
             parent=self
         )
@@ -508,6 +565,66 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         for col_index, field in enumerate(self.model.column_fields):
             is_visible = self.column_visibility.get(field, True)
             self.table_view.setColumnHidden(col_index, not is_visible)
+
+    def _on_column_moved(self, logical_index, old_visual_index, new_visual_index):
+        """Handle column reorder event and save the new order."""
+        # Get the current visual order of columns
+        column_order = self._get_current_column_order()
+
+        # Save to settings
+        self.app_settings.set_column_order("vfx_breakdown", column_order)
+
+        logger.info(f"Column moved: {self.model.column_fields[logical_index]} from position {old_visual_index} to {new_visual_index}")
+
+    def _get_current_column_order(self):
+        """Get the current visual order of columns.
+
+        Returns:
+            list: Field names in their current visual order
+        """
+        if not self.table_view:
+            return self.model.column_fields
+
+        header = self.table_view.horizontalHeader()
+        order = []
+
+        # Get fields in visual order
+        for visual_index in range(len(self.model.column_fields)):
+            logical_index = header.logicalIndex(visual_index)
+            if 0 <= logical_index < len(self.model.column_fields):
+                order.append(self.model.column_fields[logical_index])
+
+        return order
+
+    def _load_column_order(self):
+        """Load and apply saved column order."""
+        saved_order = self.app_settings.get_column_order("vfx_breakdown")
+
+        if not saved_order or not self.table_view:
+            return
+
+        header = self.table_view.horizontalHeader()
+
+        # Block signals to avoid triggering sectionMoved
+        header.blockSignals(True)
+
+        try:
+            # Build a map of field names to logical indices
+            field_to_logical = {field: i for i, field in enumerate(self.model.column_fields)}
+
+            # Move columns to match saved order
+            for visual_index, field in enumerate(saved_order):
+                if field in field_to_logical:
+                    logical_index = field_to_logical[field]
+                    current_visual_index = header.visualIndex(logical_index)
+
+                    if current_visual_index != visual_index:
+                        header.moveSection(current_visual_index, visual_index)
+
+            logger.info(f"Loaded column order with {len(saved_order)} columns")
+
+        finally:
+            header.blockSignals(False)
 
     def _apply_sort_template(self, template_name):
         """Apply a saved sort template."""

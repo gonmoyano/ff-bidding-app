@@ -173,3 +173,30 @@ class AppSettings:
         self.settings["column_visibility"][context_key] = visibility
         self._save()
         logger.info(f"Column visibility '{context_key}' saved with {len(visibility)} columns")
+
+    def get_column_order(self, context_key):
+        """Get column order settings for a specific context.
+
+        Args:
+            context_key: Unique key for the context (e.g., "vfx_breakdown")
+
+        Returns:
+            List of field names in display order, or None if not found
+        """
+        if "column_order" not in self.settings:
+            return None
+        return self.settings["column_order"].get(context_key)
+
+    def set_column_order(self, context_key, order):
+        """Save column order settings for a specific context.
+
+        Args:
+            context_key: Unique key for the context (e.g., "vfx_breakdown")
+            order: List of field names in display order
+        """
+        if "column_order" not in self.settings:
+            self.settings["column_order"] = {}
+
+        self.settings["column_order"][context_key] = order
+        self._save()
+        logger.info(f"Column order '{context_key}' saved with {len(order)} columns")
