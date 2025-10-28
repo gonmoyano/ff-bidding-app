@@ -27,10 +27,26 @@ class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         """Create a combo box editor."""
         combo = QtWidgets.QComboBox(parent)
-        combo.addItem("")  # Empty option
+
+        # Add all values (no empty option)
         for value in self.list_values:
             combo.addItem(value)
+
         combo.setFrame(False)
+
+        # Adjust dropdown height to fit content (avoid scrollbar when possible)
+        # Show up to 20 items before scrollbar appears
+        combo.setMaxVisibleItems(min(20, len(self.list_values)))
+
+        # Adjust the view height to fit items
+        if self.list_values:
+            view = combo.view()
+            # Calculate height: item height * number of items (up to 20)
+            item_height = view.sizeHintForRow(0)
+            num_visible = min(20, len(self.list_values))
+            desired_height = item_height * num_visible + 2  # +2 for borders
+            view.setMinimumHeight(desired_height)
+
         # Show popup immediately when editor is created
         QtCore.QTimer.singleShot(0, combo.showPopup)
         return combo
@@ -42,6 +58,14 @@ class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
             index_pos = editor.findText(value)
             if index_pos >= 0:
                 editor.setCurrentIndex(index_pos)
+            else:
+                # Value not in list, select first item if available
+                if editor.count() > 0:
+                    editor.setCurrentIndex(0)
+        else:
+            # Empty value, select first item if available
+            if editor.count() > 0:
+                editor.setCurrentIndex(0)
 
     def setModelData(self, editor, model, index):
         """Save the selected value back to the model."""
