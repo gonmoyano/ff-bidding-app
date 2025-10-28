@@ -3,7 +3,7 @@ VFX Breakdown Model
 Qt Model/View pattern implementation for VFX Breakdown data management.
 """
 
-from PySide6 import QtCore, QtGui
+from PySide6 import QtCore, QtGui, QtWidgets
 import json
 import logging
 from datetime import datetime, date
@@ -14,6 +14,82 @@ try:
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
+
+
+class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
+    """Custom delegate for rendering checkboxes with custom styling."""
+
+    def paint(self, painter, option, index):
+        """Paint the checkbox with custom styling."""
+        # Get the check state from the model
+        check_state = index.data(QtCore.Qt.CheckStateRole)
+
+        # Only paint custom checkbox if this cell has a check state
+        if check_state is not None:
+            painter.save()
+
+            # Calculate checkbox rect (centered in the cell)
+            checkbox_size = 20
+            checkbox_rect = QtCore.QRect(
+                option.rect.center().x() - checkbox_size // 2,
+                option.rect.center().y() - checkbox_size // 2,
+                checkbox_size,
+                checkbox_size
+            )
+
+            # Draw background if selected
+            if option.state & QtWidgets.QStyle.State_Selected:
+                painter.fillRect(option.rect, option.palette.highlight())
+
+            # Determine if checked
+            is_checked = (check_state == QtCore.Qt.Checked)
+
+            # Set up pen and brush for border
+            if is_checked:
+                # Checked: blue border
+                pen = QtGui.QPen(QtGui.QColor("#0078d4"), 2)
+                painter.setPen(pen)
+                painter.setBrush(QtGui.QColor("#2b2b2b"))
+            else:
+                # Unchecked: gray border
+                pen = QtGui.QPen(QtGui.QColor("#555555"), 2)
+                painter.setPen(pen)
+                painter.setBrush(QtGui.QColor("#2b2b2b"))
+
+            # Draw rounded rectangle
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            painter.drawRoundedRect(checkbox_rect, 3, 3)
+
+            # Draw tick if checked
+            if is_checked:
+                painter.setPen(QtGui.QPen(QtGui.QColor("#0078d4"), 2))
+                font = painter.font()
+                font.setPixelSize(16)
+                font.setBold(True)
+                painter.setFont(font)
+                painter.drawText(checkbox_rect, QtCore.Qt.AlignCenter, "✓")
+
+            painter.restore()
+        else:
+            # Not a checkbox, use default painting
+            super().paint(painter, option, index)
+
+    def editorEvent(self, event, model, option, index):
+        """Handle mouse events for toggling checkboxes."""
+        # Get the check state from the model
+        check_state = index.data(QtCore.Qt.CheckStateRole)
+
+        # Only handle checkbox events if this cell has a check state
+        if check_state is not None:
+            if event.type() == QtCore.QEvent.MouseButtonRelease:
+                if event.button() == QtCore.Qt.LeftButton:
+                    # Toggle the check state
+                    new_state = QtCore.Qt.Unchecked if check_state == QtCore.Qt.Checked else QtCore.Qt.Checked
+                    return model.setData(index, new_state, QtCore.Qt.CheckStateRole)
+            return True
+
+        # Not a checkbox, use default behavior
+        return super().editorEvent(event, model, option, index)
 
 
 class ReverseString:

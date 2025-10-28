@@ -8,10 +8,12 @@ from PySide6 import QtWidgets, QtCore, QtGui
 try:
     from .logger import logger
     from .settings import AppSettings
+    from .vfx_breakdown_model import CheckBoxDelegate
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
+    from vfx_breakdown_model import CheckBoxDelegate
 
 
 class CollapsibleGroupBox(QtWidgets.QWidget):
@@ -774,6 +776,11 @@ class ImportBidDialog(QtWidgets.QDialog):
         table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
         table.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
         table.itemChanged.connect(lambda item, tn=tab_name: self._on_table_item_changed(tn, item))
+
+        # Apply custom checkbox delegate for better checkbox styling
+        checkbox_delegate = CheckBoxDelegate(table)
+        table.setItemDelegate(checkbox_delegate)
+
         tab_layout.addWidget(table, stretch=1)
 
         # Store references

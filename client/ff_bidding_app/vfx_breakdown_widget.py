@@ -8,11 +8,11 @@ import logging
 
 try:
     from .logger import logger
-    from .vfx_breakdown_model import VFXBreakdownModel, PasteCommand
+    from .vfx_breakdown_model import VFXBreakdownModel, PasteCommand, CheckBoxDelegate
     from .settings import AppSettings
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
-    from vfx_breakdown_model import VFXBreakdownModel, PasteCommand
+    from vfx_breakdown_model import VFXBreakdownModel, PasteCommand, CheckBoxDelegate
     from settings import AppSettings
 
 
@@ -406,7 +406,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         if field_schema:
             self.model.set_field_schema(field_schema)
 
-            # Set up delegates for list fields
+            # Set up delegates for list fields and checkbox fields
             for col_idx, field_name in enumerate(self.model.column_fields):
                 if field_name in field_schema:
                     field_info = field_schema[field_name]
@@ -415,6 +415,10 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                         if list_values:
                             delegate = ComboBoxDelegate(field_name, list_values, self.table_view)
                             self.table_view.setItemDelegateForColumn(col_idx, delegate)
+                    elif field_info.get("data_type") == "checkbox":
+                        # Use custom checkbox delegate for checkbox fields
+                        delegate = CheckBoxDelegate(self.table_view)
+                        self.table_view.setItemDelegateForColumn(col_idx, delegate)
 
         self.model.load_bidding_scenes(bidding_scenes)
 
