@@ -962,7 +962,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_field_allowlist = [
             "code",
             "sg_vfx_breakdown_scene",
-            "sg_complexity",
             "sg_interior_exterior",
             "sg_number_of_shots",
             "sg_on_set_vfx_needs",
@@ -976,6 +975,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             "sg_time_of_day",
             "sg_unit",
             "sg_vfx_assumptions",
+            "sg_vfx_description",
             "sg_vfx_questions",
             "sg_vfx_supervisor_notes",
             "sg_vfx_type",
