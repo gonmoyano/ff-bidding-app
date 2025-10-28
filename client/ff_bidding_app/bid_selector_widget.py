@@ -981,9 +981,33 @@ class ImportBidDialog(QtWidgets.QDialog):
                     elif cell.data_type == 'b':  # Boolean (checkbox)
                         # Handle Excel checkboxes
                         display_value = "TRUE" if cell.value else "FALSE"
+                    elif cell.number_format and '?' in cell.number_format and '/' in cell.number_format:
+                        # Fraction format (e.g., "# ?/?", "# ?/8") - reconstruct fraction from numeric value
+                        try:
+                            from fractions import Fraction
+                            if isinstance(cell.value, (int, float)):
+                                # Convert the numeric value to a fraction
+                                frac = Fraction(cell.value).limit_denominator(8)  # Limit to denominator of 8 for page eights
+                                if frac.numerator == 0:
+                                    display_value = "0"
+                                elif frac.denominator == 1:
+                                    display_value = str(frac.numerator)
+                                else:
+                                    # Format as "whole numerator/denominator"
+                                    whole = frac.numerator // frac.denominator
+                                    remainder = frac.numerator % frac.denominator
+                                    if whole > 0:
+                                        display_value = f"{whole} {remainder}/{frac.denominator}"
+                                    else:
+                                        display_value = f"{remainder}/{frac.denominator}"
+                            else:
+                                display_value = str(cell.value)
+                        except:
+                            display_value = str(cell.value)
                     elif cell.data_type == 'd':  # Date type
-                        # For date types, convert to string to prevent date interpretation
-                        # This handles "Page Eights" and other text that looks like dates
+                        # Check if this might be a fraction misinterpreted as date
+                        # If the number format is a fraction, it was already handled above
+                        # Otherwise, convert to string to prevent date interpretation
                         display_value = str(cell.value)
                     elif cell.number_format and cell.number_format != 'General':
                         # Cell has custom formatting - use displayed value
