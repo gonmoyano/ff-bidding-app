@@ -1656,7 +1656,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "Invalid Name", "Please enter a name for the Bid.")
             return 0, None
 
-        # Step 2: Determine version number for VFX Breakdown
+        # Step 2: Determine version number for VFX Breakdown (but don't create yet)
         # Query existing VFX Breakdowns with pattern: {bid_name}-Breakdown-v*
         try:
             filters = [
@@ -1694,7 +1694,22 @@ class BidSelectorWidget(QtWidgets.QWidget):
             breakdown_name = f"{bid_name}-Breakdown-v001"
             logger.warning(f"Defaulting to version 001: {breakdown_name}")
 
-        # Step 3: Create VFX Breakdown in ShotGrid
+        # Step 3: Get column names from DataFrame
+        excel_columns = list(df.columns)
+
+        # Step 4: Show column mapping dialog BEFORE creating entities
+        mapping_dialog = ColumnMappingDialog(
+            excel_columns,
+            self.sg_session,
+            self.current_project_id,
+            parent=self
+        )
+
+        if mapping_dialog.exec_() != QtWidgets.QDialog.Accepted:
+            logger.info("Column mapping cancelled by user - no entities created")
+            return 0, None
+
+        # Step 5: Now that mapping is confirmed, create VFX Breakdown in ShotGrid
         try:
             breakdown_data = {
                 "code": breakdown_name,
@@ -1712,7 +1727,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             )
             return 0, None
 
-        # Step 4: Create Bid and link to VFX Breakdown
+        # Step 6: Create Bid and link to VFX Breakdown
         try:
             bid = self.sg_session.create_bid(
                 self.current_project_id,
@@ -1731,27 +1746,6 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 f"Note: VFX Breakdown '{breakdown_name}' was already created."
             )
             return 0, None
-
-        # Step 5: Get column names from DataFrame
-        excel_columns = list(df.columns)
-
-        # Step 6: Show column mapping dialog
-        mapping_dialog = ColumnMappingDialog(
-            excel_columns,
-            self.sg_session,
-            self.current_project_id,
-            parent=self
-        )
-
-        if mapping_dialog.exec_() != QtWidgets.QDialog.Accepted:
-            logger.info("Column mapping cancelled by user")
-            # Bid and VFX Breakdown were already created, so just return
-            QtWidgets.QMessageBox.information(
-                self,
-                "Import Cancelled",
-                f"Bid '{bid_name}' and VFX Breakdown '{breakdown_name}' were created, but no items were imported."
-            )
-            return 0, breakdown_id
 
         # Get the mapping
         column_mapping = mapping_dialog.get_column_mapping()
