@@ -958,36 +958,32 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.field_schema = {}  # {field_name: {"data_type": ..., "properties": {...}}}
 
         # Fields to display for VFX Breakdown, in order
+        # Using the same fields as import mapping for consistency
         self.vfx_breakdown_field_allowlist = [
-            "id",
             "code",
-            "sg_beat_id",
             "sg_vfx_breakdown_scene",
-            "sg_page",
-            "sg_script_excerpt",
-            "description",
-            "sg_vfx_type",
             "sg_complexity",
-            "sg_category",
-            "sg_vfx_description",
+            "sg_interior_exterior",
             "sg_number_of_shots",
+            "sg_on_set_vfx_needs",
+            "sg_page_eights",
+            "sg_previs",
+            "sg_script_excerpt",
+            "sg_set",
+            "sg_sim",
+            "sg_sorting_priority",
+            "sg_team_notes",
+            "sg_time_of_day",
+            "sg_unit",
+            "sg_vfx_assumptions",
+            "sg_vfx_questions",
+            "sg_vfx_supervisor_notes",
+            "sg_vfx_type",
         ]
 
-        # Human-friendly labels for the table
-        self.vfx_breakdown_label_overrides = {
-            "id": "ID",
-            "code": "Code",
-            "sg_beat_id": "Bidding Scene ID",
-            "sg_vfx_breakdown_scene": "Scene",
-            "sg_page": "Page",
-            "sg_script_excerpt": "Script Excerpt",
-            "description": "Description",
-            "sg_vfx_type": "VFX Type",
-            "sg_complexity": "Complexity",
-            "sg_category": "Category",
-            "sg_vfx_description": "VFX Description",
-            "sg_number_of_shots": "# Shots",
-        }
+        # Human-friendly labels will be fetched from ShotGrid schema
+        # This is just a fallback for fields that can't be fetched
+        self.vfx_breakdown_label_overrides = {}
 
         # UI widgets for breakdown selector
         self.vfx_breakdown_combo = None
@@ -2023,6 +2019,9 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         try:
             schema = self.sg_session.sg.schema_field_read("CustomEntity02")
 
+            # Build display names dictionary
+            display_names = {}
+
             for field_name, field_info in schema.items():
                 data_type = field_info.get("data_type", {})
                 properties = field_info.get("properties", {})
@@ -2031,6 +2030,14 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     "data_type": data_type.get("value") if isinstance(data_type, dict) else data_type,
                     "properties": properties
                 }
+
+                # Extract display name
+                name_info = field_info.get("name", {})
+                if isinstance(name_info, dict):
+                    display_name = name_info.get("value", field_name)
+                else:
+                    display_name = name_info or field_name
+                display_names[field_name] = display_name
 
                 # Extract list values if it's a list field
                 if self.field_schema[field_name]["data_type"] == "list":
@@ -2042,6 +2049,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                         list_values = []
                     self.field_schema[field_name]["list_values"] = list_values
                     logger.info(f"Field '{field_name}' is a list with values: {list_values}")
+
+            # Update the model's column headers with display names
+            if self.breakdown_widget and hasattr(self.breakdown_widget, 'model'):
+                self.breakdown_widget.model.set_column_headers(display_names)
 
             logger.info(f"Fetched schema for {len(self.field_schema)} fields")
             return True
@@ -2746,16 +2757,13 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         breakdown_id = int(breakdown["id"])
 
-        base_fields = [
-            "id", "code", "sg_beat_id", "sg_vfx_breakdown_scene", "sg_page",
-            "sg_script_excerpt", "description", "sg_vfx_type", "sg_complexity",
-            "sg_category", "sg_vfx_description", "sg_number_of_shots"
-        ]
+        # Use the allowlist for fields to fetch
+        base_fields = self.vfx_breakdown_field_allowlist
         extra_fields = ["updated_at", "updated_by"]
         fields = base_fields + extra_fields
 
         order = [
-            {"field_name": "sg_page", "direction": "asc"},
+            {"field_name": "sg_sorting_priority", "direction": "asc"},
             {"field_name": "code", "direction": "asc"},
         ]
 

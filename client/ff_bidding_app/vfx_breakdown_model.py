@@ -243,23 +243,34 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         super().__init__(parent)
         self.sg_session = sg_session
 
-        # Column configuration
+        # Column configuration - matches import mapping fields
         self.column_fields = [
-            "id", "code", "sg_bidding_scene_id", "sg_vfx_breakdown_scene", "sg_page",
-            "sg_script_excerpt", "description", "sg_vfx_type", "sg_complexity",
-            "sg_category", "sg_vfx_description", "sg_number_of_shots",
-            "updated_at", "updated_by"
+            "code",
+            "sg_vfx_breakdown_scene",
+            "sg_complexity",
+            "sg_interior_exterior",
+            "sg_number_of_shots",
+            "sg_on_set_vfx_needs",
+            "sg_page_eights",
+            "sg_previs",
+            "sg_script_excerpt",
+            "sg_set",
+            "sg_sim",
+            "sg_sorting_priority",
+            "sg_team_notes",
+            "sg_time_of_day",
+            "sg_unit",
+            "sg_vfx_assumptions",
+            "sg_vfx_questions",
+            "sg_vfx_supervisor_notes",
+            "sg_vfx_type",
         ]
 
-        self.column_headers = [
-            "ID", "Code", "Bidding Scene ID", "Scene", "Page",
-            "Script Excerpt", "Description", "VFX Type", "Complexity",
-            "Category", "VFX Description", "# Shots",
-            "Updated At", "Updated By"
-        ]
+        # Default headers (will be replaced with display names from ShotGrid)
+        self.column_headers = self.column_fields.copy()
 
         # Read-only columns
-        self.readonly_columns = ["id", "updated_at", "updated_by"]
+        self.readonly_columns = []
 
         # Data storage
         self.all_bidding_scenes_data = []  # Original unfiltered bidding scene data
@@ -475,6 +486,21 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
             field_schema: Dictionary mapping field names to schema info
         """
         self.field_schema = field_schema
+
+    def set_column_headers(self, display_names):
+        """Set the column headers from ShotGrid display names.
+
+        Args:
+            display_names: Dictionary mapping field names to display names
+        """
+        # Update column headers with display names
+        self.column_headers = []
+        for field in self.column_fields:
+            display_name = display_names.get(field, field)
+            self.column_headers.append(display_name)
+
+        # Emit header data changed signal
+        self.headerDataChanged.emit(QtCore.Qt.Horizontal, 0, len(self.column_fields) - 1)
 
     def set_global_search(self, search_text):
         """Set the global search filter text.
