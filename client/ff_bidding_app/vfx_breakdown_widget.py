@@ -423,12 +423,21 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         self.model.load_bidding_scenes(bidding_scenes)
 
-        # Ensure table is updated before auto-sizing
+        # Ensure table is updated before sizing
         QtWidgets.QApplication.processEvents()
-        self._autosize_columns()
 
-        # Apply saved column widths (overrides auto-sizing for manually resized columns)
-        self._load_column_widths()
+        # Check if we have saved column widths
+        saved_widths = self.app_settings.get_column_widths("vfx_breakdown")
+
+        if saved_widths:
+            # If we have saved widths, use them (skip auto-sizing)
+            self._load_column_widths()
+        else:
+            # First time: auto-size columns to content
+            self._autosize_columns()
+            # Save the auto-sized widths so they persist
+            widths = self._get_current_column_widths()
+            self.app_settings.set_column_widths("vfx_breakdown", widths)
 
     def clear_data(self):
         """Clear all data from the widget."""
