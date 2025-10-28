@@ -941,25 +941,70 @@ class ImportBidDialog(QtWidgets.QDialog):
     def _load_sheet_for_tab(self, tab_name, sheet_name):
         """Load and display a specific sheet in a specific tab.
 
-        Reads all cells as text to preserve display format (e.g., fractions like "4 1/8", leading zeros like "001").
+        Reads cells using openpyxl to get the exact displayed text value.
         """
         try:
             import pandas as pd
+            from openpyxl import load_workbook
+            from fractions import Fraction
 
-            # Read Excel with all columns as strings to preserve text format
-            # This prevents Excel from converting fractions to dates or numbers
-            df = pd.read_excel(
-                self.excel_file_path,
-                sheet_name=sheet_name,
-                dtype=str,  # Force all columns to be read as strings
-                keep_default_na=False,  # Don't convert to NaN
-                na_filter=False  # Don't interpret NA values
-            )
+            # Use openpyxl to read cells and preserve their display format
+            wb = load_workbook(self.excel_file_path, data_only=True)
 
-            # Replace any actual NaN values with empty strings
+            if sheet_name not in wb.sheetnames:
+                raise ValueError(f"Sheet '{sheet_name}' not found in workbook")
+
+            ws = wb[sheet_name]
+
+            # Extract all data as displayed text
+            data = []
+            headers = None
+
+            for row in ws.iter_rows(values_only=False):
+                row_values = []
+                for cell in row:
+                    if cell.value is None:
+                        row_values.append("")
+                    elif cell.data_type == 'b':  # Boolean
+                        row_values.append("TRUE" if cell.value else "FALSE")
+                    elif isinstance(cell.value, (int, float)):
+                        # Numeric value - check if it has fraction formatting
+                        if cell.number_format and '?' in cell.number_format and '/' in cell.number_format:
+                            # It's a fraction format - reconstruct the fraction
+                            try:
+                                frac = Fraction(cell.value).limit_denominator(8)
+                                whole = frac.numerator // frac.denominator
+                                remainder = frac.numerator % frac.denominator
+                                if whole > 0 and remainder > 0:
+                                    row_values.append(f"{whole} {remainder}/{frac.denominator}")
+                                elif remainder > 0:
+                                    row_values.append(f"{remainder}/{frac.denominator}")
+                                else:
+                                    row_values.append(str(whole))
+                            except:
+                                row_values.append(str(cell.value))
+                        else:
+                            # Regular number - just convert to string
+                            row_values.append(str(cell.value))
+                    else:
+                        # Text, date, or other - convert to string
+                        row_values.append(str(cell.value))
+
+                # First row is headers
+                if headers is None:
+                    headers = [str(v) if v else f"Column{i}" for i, v in enumerate(row_values)]
+                else:
+                    # Only add rows that have at least one non-empty value
+                    if any(v and v != "" and v != "None" for v in row_values):
+                        data.append(row_values)
+
+            wb.close()
+
+            # Create DataFrame
+            df = pd.DataFrame(data, columns=headers)
+
+            # Ensure all values are strings
             df = df.fillna("")
-
-            # Convert all values to strings (should already be, but ensure it)
             for col in df.columns:
                 df[col] = df[col].astype(str)
 
