@@ -969,25 +969,28 @@ class ImportBidDialog(QtWidgets.QDialog):
                     elif cell.data_type == 'b':  # Boolean (checkbox)
                         # Handle Excel checkboxes
                         display_value = "TRUE" if cell.value else "FALSE"
+                    elif cell.data_type == 'd':  # Date type
+                        # For date types, convert to string to prevent date interpretation
+                        # This handles "Page Eights" and other text that looks like dates
+                        display_value = str(cell.value)
                     elif cell.number_format and cell.number_format != 'General':
                         # Cell has custom formatting - use displayed value
                         # This preserves things like 001, dates, etc.
                         try:
-                            # Try to get formatted value
-                            if hasattr(cell, 'number_format') and cell.number_format:
-                                # For numbers with custom format like "000", preserve as string
+                            # Check if it's a date format
+                            if any(date_char in cell.number_format for date_char in ['d', 'm', 'y', 'h', 's']):
+                                # Date format - convert to string to keep as text
                                 display_value = str(cell.value)
-                                # Check if format indicates leading zeros
-                                if '0' in cell.number_format and isinstance(cell.value, (int, float)):
-                                    # Preserve as formatted string
-                                    display_value = str(cell.value)
-                                    # If it's a whole number displayed with leading zeros, format it
-                                    if isinstance(cell.value, (int, float)) and cell.value == int(cell.value):
-                                        # Count leading zeros in format
-                                        format_str = cell.number_format
-                                        if format_str.startswith('0'):
-                                            num_zeros = len(format_str.split('.')[0])
-                                            display_value = str(int(cell.value)).zfill(num_zeros)
+                            elif '0' in cell.number_format and isinstance(cell.value, (int, float)):
+                                # Number with leading zeros
+                                display_value = str(cell.value)
+                                # If it's a whole number displayed with leading zeros, format it
+                                if isinstance(cell.value, (int, float)) and cell.value == int(cell.value):
+                                    # Count leading zeros in format
+                                    format_str = cell.number_format
+                                    if format_str.startswith('0'):
+                                        num_zeros = len(format_str.split('.')[0])
+                                        display_value = str(int(cell.value)).zfill(num_zeros)
                             else:
                                 display_value = str(cell.value)
                         except:
@@ -1020,7 +1023,10 @@ class ImportBidDialog(QtWidgets.QDialog):
             logger.error(f"Error loading sheet {sheet_name} for tab {tab_name}: {e}", exc_info=True)
 
     def _populate_table(self, table, df):
-        """Populate a table widget with dataframe data, with checkbox column for selection."""
+        """Populate a table widget with dataframe data, with checkbox column for selection.
+
+        Boolean columns (TRUE/FALSE) are displayed as checkboxes.
+        """
         import pandas as pd
 
         # Block signals while populating to avoid triggering itemChanged
@@ -1033,6 +1039,17 @@ class ImportBidDialog(QtWidgets.QDialog):
         # Set headers - checkbox column first
         headers = ["Import"] + [str(col) for col in df.columns]
         table.setHorizontalHeaderLabels(headers)
+
+        # Identify boolean columns (columns with TRUE/FALSE values)
+        boolean_columns = set()
+        for j, col_name in enumerate(df.columns):
+            # Check if column name suggests boolean (previs, sim, etc.)
+            col_name_lower = str(col_name).lower()
+            if any(keyword in col_name_lower for keyword in ['previs', 'sim', 'checkbox', 'bool']):
+                # Check if values are TRUE/FALSE
+                unique_values = df.iloc[:, j].dropna().unique()
+                if all(str(v).upper() in ['TRUE', 'FALSE', ''] for v in unique_values):
+                    boolean_columns.add(j)
 
         # Populate data
         for i in range(len(df)):
@@ -1051,8 +1068,23 @@ class ImportBidDialog(QtWidgets.QDialog):
                 else:
                     value = str(value)
 
-                item = QtWidgets.QTableWidgetItem(value)
-                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)  # Make read-only
+                # Check if this is a boolean column
+                if j in boolean_columns and value.upper() in ['TRUE', 'FALSE']:
+                    # Create checkbox item
+                    item = QtWidgets.QTableWidgetItem()
+                    item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
+                    # Set checkbox state based on value
+                    if value.upper() == 'TRUE':
+                        item.setCheckState(QtCore.Qt.Checked)
+                    else:
+                        item.setCheckState(QtCore.Qt.Unchecked)
+                    # Store the original value as text for export
+                    item.setData(QtCore.Qt.UserRole, value)
+                else:
+                    # Create text item
+                    item = QtWidgets.QTableWidgetItem(value)
+                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)  # Make read-only
+
                 table.setItem(i, j + 1, item)
 
         # Resize columns to content
