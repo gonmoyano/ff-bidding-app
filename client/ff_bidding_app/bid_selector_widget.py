@@ -1031,7 +1031,25 @@ class ImportBidDialog(QtWidgets.QDialog):
 
                 # First row is headers
                 if headers is None:
+                    # Create initial headers
                     headers = [str(v) if v else f"Column{i}" for i, v in enumerate(row_values)]
+
+                    # Handle duplicate column names by making them unique
+                    seen = {}
+                    unique_headers = []
+                    for i, header in enumerate(headers):
+                        if header in seen:
+                            # Duplicate found - append suffix
+                            seen[header] += 1
+                            new_header = f"{header}_{seen[header]}"
+                            unique_headers.append(new_header)
+                            logger.warning(f"Duplicate column name '{header}' at position {i}, renamed to '{new_header}'")
+                        else:
+                            seen[header] = 1
+                            unique_headers.append(header)
+
+                    headers = unique_headers
+                    logger.info(f"Headers: {headers}")
                 else:
                     # Only add rows that have at least one non-empty value
                     if any(v and v != "" and v != "None" for v in row_values):
@@ -1042,10 +1060,17 @@ class ImportBidDialog(QtWidgets.QDialog):
             wb.close()
 
             # Create DataFrame
-            df = pd.DataFrame(data, columns=headers)
+            try:
+                df = pd.DataFrame(data, columns=headers)
+                logger.info(f"DataFrame created successfully with {len(df)} rows and {len(df.columns)} columns")
+            except Exception as e:
+                error_msg = f"Failed to create DataFrame: {str(e)}"
+                logger.error(error_msg)
+                logger.error(f"Headers: {headers}")
+                logger.error(f"Data rows: {len(data)}")
+                raise ValueError(error_msg)
 
             # Log sample of DataFrame values for debugging
-            logger.info(f"DataFrame created with {len(df)} rows and {len(df.columns)} columns")
             for col_name in df.columns:
                 unique_vals = df[col_name].dropna().unique()[:5]  # First 5 unique values
                 logger.info(f"Column '{col_name}': sample values = {list(unique_vals)}")
