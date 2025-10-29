@@ -1071,10 +1071,11 @@ class ImportBidDialog(QtWidgets.QDialog):
         for j, col_name in enumerate(df.columns):
             # Check if all non-empty values in the column are TRUE/FALSE
             unique_values = df.iloc[:, j].dropna().unique()
-            # Filter out empty strings
-            non_empty_values = [str(v).upper() for v in unique_values if str(v).strip() != '']
+            # Filter out empty strings and normalize values
+            non_empty_values = [str(v).strip().upper() for v in unique_values if str(v).strip() != '']
             if non_empty_values and all(v in ['TRUE', 'FALSE'] for v in non_empty_values):
                 boolean_columns.add(j)
+                logger.debug(f"Column {j} ({col_name}) identified as boolean with values: {non_empty_values}")
 
         # Populate data
         for i in range(len(df)):
@@ -1091,19 +1092,22 @@ class ImportBidDialog(QtWidgets.QDialog):
                 if pd.isna(value):
                     value = ""
                 else:
-                    value = str(value)
+                    value = str(value).strip()  # Strip whitespace
 
                 # Check if this is a boolean column
                 if j in boolean_columns:
                     # Create checkbox item for boolean columns
                     item = QtWidgets.QTableWidgetItem()
                     item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
-                    # Set checkbox state based on value
-                    if value.upper() == 'TRUE':
+                    # Set checkbox state based on value (case-insensitive)
+                    value_upper = value.upper()
+                    if value_upper == 'TRUE':
                         item.setCheckState(QtCore.Qt.Checked)
+                        logger.debug(f"Row {i}, Col {j}: Setting checkbox to CHECKED for value '{value}'")
                     else:
                         # FALSE or empty = unchecked
                         item.setCheckState(QtCore.Qt.Unchecked)
+                        logger.debug(f"Row {i}, Col {j}: Setting checkbox to UNCHECKED for value '{value}'")
                     # Store the original value as text for export
                     item.setData(QtCore.Qt.UserRole, value)
                 else:
