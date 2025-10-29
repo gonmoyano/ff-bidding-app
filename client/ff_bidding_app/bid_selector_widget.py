@@ -947,6 +947,7 @@ class ImportBidDialog(QtWidgets.QDialog):
             import pandas as pd
             from openpyxl import load_workbook
             from fractions import Fraction
+            from datetime import datetime
 
             # Use openpyxl to read cells and preserve their display format
             wb = load_workbook(self.excel_file_path, data_only=True)
@@ -986,8 +987,27 @@ class ImportBidDialog(QtWidgets.QDialog):
                         else:
                             # Regular number - just convert to string
                             row_values.append(str(cell.value))
+                    elif isinstance(cell.value, datetime):
+                        # Date/datetime value - check if it might be a misinterpreted fraction
+                        # Common date formats that might be fractions: m/d, m/d/yy, d/m, etc.
+                        if cell.number_format and '/' in cell.number_format:
+                            # Check if it's a simple date format without year (likely a fraction)
+                            # Examples: "m/d", "d/m" (these are often misinterpreted fractions)
+                            format_lower = cell.number_format.lower()
+                            if ('y' not in format_lower and
+                                format_lower.count('/') == 1 and
+                                any(fmt in format_lower for fmt in ['m/d', 'd/m', 'm"/"d', 'd"/"m'])):
+                                # This looks like a fraction that Excel interpreted as a date
+                                # Format it as "month/day" to restore the original appearance
+                                row_values.append(f"{cell.value.month}/{cell.value.day}")
+                            else:
+                                # It's a real date with year or more complex format
+                                row_values.append(cell.value.strftime('%Y-%m-%d'))
+                        else:
+                            # No format info, treat as date
+                            row_values.append(cell.value.strftime('%Y-%m-%d'))
                     else:
-                        # Text, date, or other - convert to string
+                        # Text or other - convert to string
                         row_values.append(str(cell.value))
 
                 # First row is headers
