@@ -37,11 +37,19 @@ class AssetsTab(QtWidgets.QWidget):
         # Current context
         self.current_project_id = None
         self.current_bid_id = None
+        self.current_bid_data = None  # Store full bid data for accessing sg_bid_assets
 
         # Cached schema information for Assets
         self.asset_entity_type = "CustomEntity07"
         self.asset_field_names = []
         self.asset_field_labels = {}
+
+        # Fields to display for Asset items, in order
+        self.asset_field_allowlist = [
+            "code",
+            "sg_bid_asset_type",
+            "sg_bidding_notes",
+        ]
 
         # Field schema information (data types and list values)
         self.field_schema = {}
@@ -129,14 +137,15 @@ class AssetsTab(QtWidgets.QWidget):
             self.bid_assets_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
         self.bid_assets_status_label.setText(message)
 
-    def set_bid(self, bid_id, project_id):
+    def set_bid(self, bid_data, project_id):
         """Set the current bid and load associated bid assets.
 
         Args:
-            bid_id: ID of the Bid (CustomEntity06)
+            bid_data: Dictionary containing Bid (CustomEntity06) data, or None
             project_id: ID of the project
         """
-        self.current_bid_id = bid_id
+        self.current_bid_data = bid_data
+        self.current_bid_id = bid_data.get('id') if bid_data else None
         self.current_project_id = project_id
 
         # Clear current selection
@@ -144,7 +153,7 @@ class AssetsTab(QtWidgets.QWidget):
         self.bid_assets_combo.clear()
         self.bid_assets_combo.blockSignals(False)
 
-        if not bid_id or not project_id:
+        if not self.current_bid_id or not project_id:
             self._set_bid_assets_status("Select a Bid to view Bid Assets.")
             self.assets_widget.clear_table()
             return
@@ -153,7 +162,7 @@ class AssetsTab(QtWidgets.QWidget):
         if not self.field_schema:
             self._fetch_asset_schema()
 
-        # Refresh the bid assets list
+        # Refresh the bid assets list and auto-select the one linked to this bid
         self._refresh_bid_assets()
 
     def _fetch_asset_schema(self):
@@ -162,12 +171,18 @@ class AssetsTab(QtWidgets.QWidget):
             # Get schema for CustomEntity07
             schema = self.sg_session.sg.schema_field_read("CustomEntity07")
 
-            # Build field schema dictionary
-            for field_name, field_info in schema.items():
+            # Build field schema dictionary for allowlisted fields only
+            for field_name in self.asset_field_allowlist:
+                if field_name not in schema:
+                    logger.warning(f"Field {field_name} not found in CustomEntity07 schema")
+                    continue
+
+                field_info = schema[field_name]
                 self.field_schema[field_name] = {
                     "data_type": field_info.get("data_type", {}).get("value"),
                     "properties": field_info.get("properties", {}),
-                    "editable": field_info.get("editable", {}).get("value", True)
+                    "editable": field_info.get("editable", {}).get("value", True),
+                    "display_name": field_info.get("name", {}).get("value", field_name)
                 }
 
                 # Store list values for list fields
@@ -175,7 +190,7 @@ class AssetsTab(QtWidgets.QWidget):
                     list_values = field_info.get("properties", {}).get("valid_values", {}).get("value", [])
                     self.field_schema[field_name]["list_values"] = list_values
 
-            logger.info(f"Fetched schema for CustomEntity07 with {len(self.field_schema)} fields")
+            logger.info(f"Fetched schema for CustomEntity07 with {len(self.field_schema)} fields from allowlist")
 
         except Exception as e:
             logger.error(f"Failed to fetch schema for CustomEntity07: {e}", exc_info=True)
@@ -210,8 +225,27 @@ class AssetsTab(QtWidgets.QWidget):
             if bid_assets_list:
                 self._set_bid_assets_status(f"Found {len(bid_assets_list)} Bid Assets")
                 self.bid_assets_set_btn.setEnabled(True)
-                # Load the first one
-                self._on_bid_assets_changed(0)
+
+                # Auto-select the Bid Assets linked to this Bid (if any)
+                linked_bid_assets_id = None
+                if self.current_bid_data:
+                    linked_bid_assets = self.current_bid_data.get("sg_bid_assets")
+                    if linked_bid_assets and isinstance(linked_bid_assets, dict):
+                        linked_bid_assets_id = linked_bid_assets.get("id")
+
+                # Try to find and select the linked Bid Assets
+                selected = False
+                if linked_bid_assets_id:
+                    for i in range(self.bid_assets_combo.count()):
+                        if self.bid_assets_combo.itemData(i) == linked_bid_assets_id:
+                            self.bid_assets_combo.setCurrentIndex(i)
+                            selected = True
+                            logger.info(f"Auto-selected Bid Assets {linked_bid_assets_id} linked to current Bid")
+                            break
+
+                # If no linked Bid Assets found, load the first one
+                if not selected:
+                    self._on_bid_assets_changed(0)
             else:
                 self._set_bid_assets_status("No Bid Assets found for this project.")
                 self.bid_assets_set_btn.setEnabled(False)

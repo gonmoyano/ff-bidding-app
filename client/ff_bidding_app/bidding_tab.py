@@ -206,8 +206,8 @@ class BiddingTab(QtWidgets.QWidget):
         # Update Assets tab with the current bid
         if hasattr(self, 'assets_tab'):
             if bid_data and self.current_project_id:
-                bid_id = bid_data.get('id')
-                self.assets_tab.set_bid(bid_id, self.current_project_id)
+                # Pass full bid_data so assets_tab can access sg_bid_assets field
+                self.assets_tab.set_bid(bid_data, self.current_project_id)
             else:
                 # Clear assets tab if no bid selected
                 self.assets_tab.set_bid(None, None)

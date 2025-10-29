@@ -1546,7 +1546,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         try:
             logger.info(f"Loading Bids for Project ID {project_id}")
             # Get all bids for the project
-            bids = self.sg_session.get_bids(project_id, fields=["id", "code", "name", "sg_bid_type", "sg_vfx_breakdown"])
+            bids = self.sg_session.get_bids(project_id, fields=["id", "code", "name", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets"])
         except Exception as e:
             logger.error(f"Error loading Bids: {e}", exc_info=True)
             bids = []
