@@ -965,14 +965,19 @@ class ImportBidDialog(QtWidgets.QDialog):
             # Extract all data as displayed text
             data = []
             headers = None
+            row_idx = 0
 
             for row in ws.iter_rows(values_only=False):
                 row_values = []
+                col_idx = 0
                 for cell in row:
                     if cell.value is None:
                         row_values.append("")
                     elif cell.data_type == 'b':  # Boolean
-                        row_values.append("TRUE" if cell.value else "FALSE")
+                        converted = "TRUE" if cell.value else "FALSE"
+                        row_values.append(converted)
+                        if row_idx > 0:  # Log data rows, not header
+                            logger.info(f"Excel R{row_idx}C{col_idx}: Boolean type, value={cell.value} -> '{converted}'")
                     elif isinstance(cell.value, (int, float)):
                         # Numeric value - check if it has fraction formatting
                         if cell.number_format and '?' in cell.number_format and '/' in cell.number_format:
@@ -992,7 +997,10 @@ class ImportBidDialog(QtWidgets.QDialog):
                         elif cell.value in (0, 1):
                             # Could be a boolean represented as 0/1
                             # Keep as string "0" or "1" for later detection
-                            row_values.append(str(int(cell.value)))
+                            converted = str(int(cell.value))
+                            row_values.append(converted)
+                            if row_idx > 0:
+                                logger.info(f"Excel R{row_idx}C{col_idx}: Numeric 0/1, value={cell.value} -> '{converted}'")
                         else:
                             # Regular number - just convert to string
                             row_values.append(str(cell.value))
@@ -1019,6 +1027,8 @@ class ImportBidDialog(QtWidgets.QDialog):
                         # Text or other - convert to string
                         row_values.append(str(cell.value))
 
+                    col_idx += 1
+
                 # First row is headers
                 if headers is None:
                     headers = [str(v) if v else f"Column{i}" for i, v in enumerate(row_values)]
@@ -1027,10 +1037,18 @@ class ImportBidDialog(QtWidgets.QDialog):
                     if any(v and v != "" and v != "None" for v in row_values):
                         data.append(row_values)
 
+                row_idx += 1
+
             wb.close()
 
             # Create DataFrame
             df = pd.DataFrame(data, columns=headers)
+
+            # Log sample of DataFrame values for debugging
+            logger.info(f"DataFrame created with {len(df)} rows and {len(df.columns)} columns")
+            for col_name in df.columns:
+                unique_vals = df[col_name].dropna().unique()[:5]  # First 5 unique values
+                logger.info(f"Column '{col_name}': sample values = {list(unique_vals)}")
 
             # Ensure all values are strings
             df = df.fillna("")
@@ -1087,10 +1105,13 @@ class ImportBidDialog(QtWidgets.QDialog):
 
         # Populate data
         for i in range(len(df)):
-            # Add checkbox in first column
+            # Add checkbox in first column (Import column)
+            # This checkbox controls whether the row gets imported
+            # Checked (default) = row will be imported
+            # Unchecked = row will be skipped during import
             checkbox_item = QtWidgets.QTableWidgetItem()
             checkbox_item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
-            checkbox_item.setCheckState(QtCore.Qt.Checked)  # Checked by default
+            checkbox_item.setCheckState(QtCore.Qt.Checked)  # All rows checked by default
             table.setItem(i, 0, checkbox_item)
 
             # Add data in remaining columns
@@ -1114,11 +1135,11 @@ class ImportBidDialog(QtWidgets.QDialog):
                     # TRUE values: TRUE, 1, YES, Y, X
                     if value_upper in ['TRUE', '1', 'YES', 'Y', 'X']:
                         item.setCheckState(QtCore.Qt.Checked)
-                        logger.debug(f"Row {i}, Col {j} ({df.columns[j]}): Setting checkbox to CHECKED for value '{value}'")
+                        logger.info(f"Row {i}, Col '{df.columns[j]}': Checkbox CHECKED for value='{value}' (upper='{value_upper}')")
                     else:
                         # FALSE values: FALSE, 0, NO, N, empty
                         item.setCheckState(QtCore.Qt.Unchecked)
-                        logger.debug(f"Row {i}, Col {j} ({df.columns[j]}): Setting checkbox to UNCHECKED for value '{value}'")
+                        logger.info(f"Row {i}, Col '{df.columns[j]}': Checkbox UNCHECKED for value='{value}' (upper='{value_upper}')")
 
                     # Store the original value as text for export
                     item.setData(QtCore.Qt.UserRole, value)
