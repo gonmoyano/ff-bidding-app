@@ -59,9 +59,23 @@ class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
             desired_height = item_height * num_visible + 2  # +2 for borders
             view.setMinimumHeight(desired_height)
 
-        # Show popup immediately when editor is created
-        QtCore.QTimer.singleShot(0, combo.showPopup)
+        # For editable combos, show popup and focus on text field
+        if self.is_editable:
+            # Show popup immediately
+            QtCore.QTimer.singleShot(0, combo.showPopup)
+            # Set focus to the text field (line edit) and select all text
+            QtCore.QTimer.singleShot(0, lambda: self._focus_line_edit(combo))
+        else:
+            # For non-editable, just show popup
+            QtCore.QTimer.singleShot(0, combo.showPopup)
+
         return combo
+
+    def _focus_line_edit(self, combo):
+        """Set focus to the combo box's line edit and select all text."""
+        if combo.lineEdit():
+            combo.lineEdit().setFocus()
+            combo.lineEdit().selectAll()
 
     def setEditorData(self, editor, index):
         """Set the current value in the combo box."""
