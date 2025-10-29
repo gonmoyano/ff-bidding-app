@@ -1853,41 +1853,49 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 # Process VFX Breakdown tab specifically
                 vfx_breakdown_created = 0
                 vfx_breakdown_id = None
+                import_cancelled = False
+
                 if "VFX Breakdown" in data:
                     vfx_breakdown_created, vfx_breakdown_id = self._import_vfx_breakdown(data["VFX Breakdown"])
+                    # If both are 0/None and we had data, user cancelled the import
+                    if vfx_breakdown_created == 0 and vfx_breakdown_id is None:
+                        import_cancelled = True
+                        logger.info("Import cancelled by user during column mapping or bid creation")
 
-                # Build summary message
-                summary_lines = ["Successfully imported Excel data:\n"]
-                total_rows = 0
+                # Only show success message if import wasn't cancelled
+                if not import_cancelled:
+                    # Build summary message
+                    summary_lines = ["Successfully imported Excel data:\n"]
+                    total_rows = 0
 
-                for tab_name, df in data.items():
-                    rows = len(df)
-                    summary_lines.append(f"• {tab_name}: {rows} rows")
+                    for tab_name, df in data.items():
+                        rows = len(df)
+                        summary_lines.append(f"• {tab_name}: {rows} rows")
 
-                    total_rows += rows
+                        total_rows += rows
 
-                if vfx_breakdown_created > 0:
-                    summary_lines.append(f"\n✓ Created {vfx_breakdown_created} VFX Breakdown items in ShotGrid")
+                    if vfx_breakdown_created > 0:
+                        summary_lines.append(f"\n✓ Created {vfx_breakdown_created} VFX Breakdown items in ShotGrid")
 
-                summary_lines.append(f"\nTotal: {total_rows} rows imported across {len(data)} tabs")
+                    summary_lines.append(f"\nTotal: {total_rows} rows imported across {len(data)} tabs")
 
-                QtWidgets.QMessageBox.information(
-                    self,
-                    "Import Successful",
-                    "\n".join(summary_lines)
-                )
+                    QtWidgets.QMessageBox.information(
+                        self,
+                        "Import Successful",
+                        "\n".join(summary_lines)
+                    )
 
-                logger.info(f"Imported Excel data from {len(data)} tabs with total {total_rows} rows")
-                self.statusMessageChanged.emit(f"✓ Imported data: {len(data)} tabs, {total_rows} rows total", False)
+                    logger.info(f"Imported Excel data from {len(data)} tabs with total {total_rows} rows")
+                    self.statusMessageChanged.emit(f"✓ Imported data: {len(data)} tabs, {total_rows} rows total", False)
 
-                # Refresh VFX Breakdown dropdown if items were imported
-                if vfx_breakdown_id and self._refresh_vfx_breakdown_dropdown():
-                    logger.info(f"Refreshed VFX Breakdown dropdown, selecting ID {vfx_breakdown_id}")
+                    # Refresh VFX Breakdown dropdown if items were imported
+                    if vfx_breakdown_id and self._refresh_vfx_breakdown_dropdown():
+                        logger.info(f"Refreshed VFX Breakdown dropdown, selecting ID {vfx_breakdown_id}")
 
-                # Refresh Bid dropdown after import
-                if vfx_breakdown_id:
-                    self._refresh_bids()
-                    logger.info("Refreshed Bid dropdown after import")
+                    # Refresh Bid dropdown after import
+                    if vfx_breakdown_id:
+                        self._refresh_bids()
+                        logger.info("Refreshed Bid dropdown after import")
 
     def _import_vfx_breakdown(self, df):
         """Import VFX Breakdown data to ShotGrid.
