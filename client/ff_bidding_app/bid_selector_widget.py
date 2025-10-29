@@ -1066,15 +1066,15 @@ class ImportBidDialog(QtWidgets.QDialog):
         table.setHorizontalHeaderLabels(headers)
 
         # Identify boolean columns (columns with TRUE/FALSE values)
+        # Check ALL columns for TRUE/FALSE values to display as checkboxes
         boolean_columns = set()
         for j, col_name in enumerate(df.columns):
-            # Check if column name suggests boolean (previs, sim, etc.)
-            col_name_lower = str(col_name).lower()
-            if any(keyword in col_name_lower for keyword in ['previs', 'sim', 'checkbox', 'bool']):
-                # Check if values are TRUE/FALSE
-                unique_values = df.iloc[:, j].dropna().unique()
-                if all(str(v).upper() in ['TRUE', 'FALSE', ''] for v in unique_values):
-                    boolean_columns.add(j)
+            # Check if all non-empty values in the column are TRUE/FALSE
+            unique_values = df.iloc[:, j].dropna().unique()
+            # Filter out empty strings
+            non_empty_values = [str(v).upper() for v in unique_values if str(v).strip() != '']
+            if non_empty_values and all(v in ['TRUE', 'FALSE'] for v in non_empty_values):
+                boolean_columns.add(j)
 
         # Populate data
         for i in range(len(df)):
@@ -1094,14 +1094,15 @@ class ImportBidDialog(QtWidgets.QDialog):
                     value = str(value)
 
                 # Check if this is a boolean column
-                if j in boolean_columns and value.upper() in ['TRUE', 'FALSE']:
-                    # Create checkbox item
+                if j in boolean_columns:
+                    # Create checkbox item for boolean columns
                     item = QtWidgets.QTableWidgetItem()
                     item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
                     # Set checkbox state based on value
                     if value.upper() == 'TRUE':
                         item.setCheckState(QtCore.Qt.Checked)
                     else:
+                        # FALSE or empty = unchecked
                         item.setCheckState(QtCore.Qt.Unchecked)
                     # Store the original value as text for export
                     item.setData(QtCore.Qt.UserRole, value)
