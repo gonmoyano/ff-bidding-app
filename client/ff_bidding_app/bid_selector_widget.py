@@ -1131,15 +1131,21 @@ class ImportBidDialog(QtWidgets.QDialog):
 
                     # Set checkbox state based on value (case-insensitive)
                     # Support multiple boolean representations
-                    value_upper = value.upper()
+                    value_upper = value.upper() if value else ""
                     # TRUE values: TRUE, 1, YES, Y, X
                     if value_upper in ['TRUE', '1', 'YES', 'Y', 'X']:
                         item.setCheckState(QtCore.Qt.Checked)
-                        logger.info(f"Row {i}, Col '{df.columns[j]}': Checkbox CHECKED for value='{value}' (upper='{value_upper}')")
+                        logger.info(f"Row {i}, Col '{df.columns[j]}': Setting CHECKED for value='{value}' (upper='{value_upper}')")
+                        # Verify immediately after setting
+                        actual_state = item.checkState()
+                        logger.info(f"  -> Verified: checkState()={actual_state}, Checked={QtCore.Qt.Checked}, Unchecked={QtCore.Qt.Unchecked}")
                     else:
                         # FALSE values: FALSE, 0, NO, N, empty
                         item.setCheckState(QtCore.Qt.Unchecked)
-                        logger.info(f"Row {i}, Col '{df.columns[j]}': Checkbox UNCHECKED for value='{value}' (upper='{value_upper}')")
+                        logger.info(f"Row {i}, Col '{df.columns[j]}': Setting UNCHECKED for value='{value}' (upper='{value_upper}')")
+                        # Verify immediately after setting
+                        actual_state = item.checkState()
+                        logger.info(f"  -> Verified: checkState()={actual_state}, Checked={QtCore.Qt.Checked}, Unchecked={QtCore.Qt.Unchecked}")
 
                     # Store the original value as text for export
                     item.setData(QtCore.Qt.UserRole, value)
@@ -1149,6 +1155,11 @@ class ImportBidDialog(QtWidgets.QDialog):
                     item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)  # Make read-only
 
                 table.setItem(i, j + 1, item)
+
+                # Verify checkbox state after adding to table (for boolean columns only)
+                if j in boolean_columns:
+                    state_after_add = table.item(i, j + 1).checkState()
+                    logger.info(f"  -> After table.setItem(): checkState()={state_after_add}")
 
         # Resize columns to content
         table.resizeColumnsToContents()
