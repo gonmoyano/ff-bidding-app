@@ -119,7 +119,9 @@ class AssetsTab(QtWidgets.QWidget):
         # Override the default VFX Breakdown columns with Asset columns
         if hasattr(self.assets_widget, 'model') and self.assets_widget.model:
             self.assets_widget.model.column_fields = self.asset_field_allowlist.copy()
-            logger.info(f"Configured Assets widget model with fields: {self.asset_field_allowlist}")
+            # Set entity type to CustomEntity07 (Asset items) instead of default CustomEntity02
+            self.assets_widget.model.entity_type = "CustomEntity07"
+            logger.info(f"Configured Assets widget model with fields: {self.asset_field_allowlist} and entity_type: CustomEntity07")
 
         # Connect widget signals
         self.assets_widget.statusMessageChanged.connect(self._on_widget_status_changed)

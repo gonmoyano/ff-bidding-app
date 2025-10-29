@@ -132,7 +132,7 @@ class ReverseString:
 class EditCommand:
     """Command pattern for undo/redo of cell edits."""
 
-    def __init__(self, model, row, col, old_value, new_value, bidding_scene_data, field_name, sg_session, field_schema=None):
+    def __init__(self, model, row, col, old_value, new_value, bidding_scene_data, field_name, sg_session, field_schema=None, entity_type="CustomEntity02"):
         self.model = model
         self.row = row
         self.col = col
@@ -142,6 +142,7 @@ class EditCommand:
         self.field_name = field_name
         self.sg_session = sg_session
         self.field_schema = field_schema or {}
+        self.entity_type = entity_type
 
     def undo(self):
         """Undo the edit."""
@@ -161,15 +162,15 @@ class EditCommand:
         """Update ShotGrid with the value."""
         bidding_scene_id = self.bidding_scene_data.get("id")
         if not bidding_scene_id:
-            logger.error("No bidding scene ID found for update")
-            raise ValueError("No bidding scene ID found for update")
+            logger.error(f"No entity ID found for update ({self.entity_type})")
+            raise ValueError(f"No entity ID found for update ({self.entity_type})")
 
         # Convert string value back to appropriate type
         update_value = self._parse_value(value, self.field_name)
 
-        # Update on ShotGrid
-        self.sg_session.sg.update("CustomEntity02", bidding_scene_id, {self.field_name: update_value})
-        logger.info(f"Updated Bidding Scene {bidding_scene_id} field '{self.field_name}' to: {update_value}")
+        # Update on ShotGrid using the configured entity type
+        self.sg_session.sg.update(self.entity_type, bidding_scene_id, {self.field_name: update_value})
+        logger.info(f"Updated {self.entity_type} {bidding_scene_id} field '{self.field_name}' to: {update_value}")
 
     def _parse_value(self, text, field_name):
         """Parse text value to appropriate type based on ShotGrid schema."""
@@ -229,7 +230,7 @@ class EditCommand:
 class PasteCommand:
     """Command pattern for undo/redo of paste operations."""
 
-    def __init__(self, changes, model, sg_session, field_schema=None):
+    def __init__(self, changes, model, sg_session, field_schema=None, entity_type="CustomEntity02"):
         """
         Initialize paste command.
 
@@ -238,11 +239,13 @@ class PasteCommand:
             model: VFXBreakdownModel instance
             sg_session: ShotGrid session object
             field_schema: Field schema information
+            entity_type: ShotGrid entity type to update
         """
         self.changes = changes
         self.model = model
         self.sg_session = sg_session
         self.field_schema = field_schema or {}
+        self.entity_type = entity_type
 
     def undo(self):
         """Undo all paste changes."""
@@ -262,15 +265,15 @@ class PasteCommand:
         """Update ShotGrid with the value."""
         bidding_scene_id = bidding_scene_data.get("id")
         if not bidding_scene_id:
-            logger.error("No bidding scene ID found for update")
-            raise ValueError("No bidding scene ID found for update")
+            logger.error(f"No entity ID found for update ({self.entity_type})")
+            raise ValueError(f"No entity ID found for update ({self.entity_type})")
 
         # Convert string value back to appropriate type
         update_value = self._parse_value(value, field_name)
 
-        # Update on ShotGrid
-        self.sg_session.sg.update("CustomEntity02", bidding_scene_id, {field_name: update_value})
-        logger.info(f"Updated Bidding Scene {bidding_scene_id} field '{field_name}' to: {update_value}")
+        # Update on ShotGrid using the configured entity type
+        self.sg_session.sg.update(self.entity_type, bidding_scene_id, {field_name: update_value})
+        logger.info(f"Updated {self.entity_type} {bidding_scene_id} field '{field_name}' to: {update_value}")
 
     def _parse_value(self, text, field_name):
         """Parse text value to appropriate type based on ShotGrid schema."""
@@ -333,6 +336,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         """
         super().__init__(parent)
         self.sg_session = sg_session
+
+        # Entity type for ShotGrid updates (can be overridden for different entity types)
+        self.entity_type = "CustomEntity02"  # Default: Bidding Scenes
 
         # Column configuration - matches import mapping fields
         self.column_fields = [
@@ -511,7 +517,8 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
             bidding_scene_data,
             field_name,
             self.sg_session,
-            field_schema=self.field_schema
+            field_schema=self.field_schema,
+            entity_type=self.entity_type
         )
 
         # Execute the command (update ShotGrid)

@@ -1165,7 +1165,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             return
 
         # Create paste command
-        command = PasteCommand(changes, self.model, self.sg_session, field_schema=self.model.field_schema)
+        command = PasteCommand(changes, self.model, self.sg_session, field_schema=self.model.field_schema, entity_type=self.model.entity_type)
 
         try:
             # Execute paste
