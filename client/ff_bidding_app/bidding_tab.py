@@ -7,10 +7,12 @@ from PySide6 import QtWidgets, QtCore
 
 try:
     from .vfx_breakdown_tab import VFXBreakdownTab
+    from .assets_tab import AssetsTab
     from .bid_selector_widget import BidSelectorWidget
     from .logger import logger
 except ImportError:
     from vfx_breakdown_tab import VFXBreakdownTab
+    from assets_tab import AssetsTab
     from bid_selector_widget import BidSelectorWidget
     import logging
     logger = logging.getLogger("FFPackageManager")
@@ -84,24 +86,14 @@ class BiddingTab(QtWidgets.QWidget):
         return tab
 
     def _create_assets_tab(self):
-        """Create the Assets nested tab content."""
-        widget = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(widget)
+        """Create the Assets nested tab content with full functionality."""
+        # Use the full AssetsTab (includes selector, Add/Remove/Rename buttons, etc.)
+        tab = AssetsTab(self.sg_session, parent=self.parent_app)
 
-        # Title
-        title_label = QtWidgets.QLabel("Assets")
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 20px;")
-        layout.addWidget(title_label)
+        # Store reference to use in set_bid if needed
+        self.assets_tab = tab
 
-        # Placeholder content
-        info_label = QtWidgets.QLabel("Assets content will be displayed here.\nThis tab will contain asset information and requirements for the bid.")
-        info_label.setStyleSheet("padding: 20px;")
-        info_label.setWordWrap(True)
-        layout.addWidget(info_label)
-
-        layout.addStretch()
-
-        return widget
+        return tab
 
     def _create_scene_tab(self):
         """Create the Scene nested tab content."""
@@ -210,6 +202,15 @@ class BiddingTab(QtWidgets.QWidget):
             # No bid selected, just populate breakdowns without auto-select
             if hasattr(self, 'vfx_breakdown_tab') and self.current_rfq:
                 self.vfx_breakdown_tab.populate_vfx_breakdown_combo(self.current_rfq, auto_select=True)
+
+        # Update Assets tab with the current bid
+        if hasattr(self, 'assets_tab'):
+            if bid_data and self.current_project_id:
+                bid_id = bid_data.get('id')
+                self.assets_tab.set_bid(bid_id, self.current_project_id)
+            else:
+                # Clear assets tab if no bid selected
+                self.assets_tab.set_bid(None, None)
 
     def _on_bid_status_message(self, message, is_error):
         """Handle status messages from bid selector.
