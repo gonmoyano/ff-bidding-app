@@ -8,12 +8,10 @@ from PySide6 import QtWidgets, QtCore, QtGui
 try:
     from .logger import logger
     from .settings import AppSettings
-    from .vfx_breakdown_model import CheckBoxDelegate
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
-    from vfx_breakdown_model import CheckBoxDelegate
 
 
 class CollapsibleGroupBox(QtWidgets.QWidget):
@@ -1187,20 +1185,6 @@ class ImportBidDialog(QtWidgets.QDialog):
         table.resizeColumnsToContents()
         # Make checkbox column narrower
         table.setColumnWidth(0, 60)
-
-        # Apply CheckBoxDelegate to checkbox columns for custom styling
-        # Column 0: Import checkbox column
-        delegate = CheckBoxDelegate(table)
-        table.setItemDelegateForColumn(0, delegate)
-        logger.info("Applied CheckBoxDelegate to Import column (column 0)")
-
-        # Apply CheckBoxDelegate to boolean data columns
-        for j in boolean_columns:
-            # j is the DataFrame column index, but in the table it's j+1 (because column 0 is Import)
-            table_col_idx = j + 1
-            delegate = CheckBoxDelegate(table)
-            table.setItemDelegateForColumn(table_col_idx, delegate)
-            logger.info(f"Applied CheckBoxDelegate to boolean column {table_col_idx} ({df.columns[j]})")
 
         # Unblock signals
         table.blockSignals(False)
