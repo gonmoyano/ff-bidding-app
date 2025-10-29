@@ -115,6 +115,12 @@ class AssetsTab(QtWidgets.QWidget):
         # Create reusable Assets widget (reusing VFXBreakdownWidget)
         self.assets_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
 
+        # Configure the model to use Asset-specific columns
+        # Override the default VFX Breakdown columns with Asset columns
+        if hasattr(self.assets_widget, 'model') and self.assets_widget.model:
+            self.assets_widget.model.column_fields = self.asset_field_allowlist.copy()
+            logger.info(f"Configured Assets widget model with fields: {self.asset_field_allowlist}")
+
         # Connect widget signals
         self.assets_widget.statusMessageChanged.connect(self._on_widget_status_changed)
 
@@ -191,6 +197,14 @@ class AssetsTab(QtWidgets.QWidget):
                     self.field_schema[field_name]["list_values"] = list_values
 
             logger.info(f"Fetched schema for CustomEntity07 with {len(self.field_schema)} fields from allowlist")
+
+            # Update the model's column headers with display names
+            if hasattr(self.assets_widget, 'model') and self.assets_widget.model:
+                display_names = {field: self.field_schema[field]["display_name"]
+                                for field in self.asset_field_allowlist
+                                if field in self.field_schema}
+                self.assets_widget.model.set_column_headers(display_names)
+                logger.info(f"Set column headers with display names: {display_names}")
 
         except Exception as e:
             logger.error(f"Failed to fetch schema for CustomEntity07: {e}", exc_info=True)
