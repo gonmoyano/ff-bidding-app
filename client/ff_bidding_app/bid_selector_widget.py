@@ -989,6 +989,10 @@ class ImportBidDialog(QtWidgets.QDialog):
                                     row_values.append(str(whole))
                             except:
                                 row_values.append(str(cell.value))
+                        elif cell.value in (0, 1):
+                            # Could be a boolean represented as 0/1
+                            # Keep as string "0" or "1" for later detection
+                            row_values.append(str(int(cell.value)))
                         else:
                             # Regular number - just convert to string
                             row_values.append(str(cell.value))
@@ -1065,17 +1069,21 @@ class ImportBidDialog(QtWidgets.QDialog):
         headers = ["Import"] + [str(col) for col in df.columns]
         table.setHorizontalHeaderLabels(headers)
 
-        # Identify boolean columns (columns with TRUE/FALSE values)
-        # Check ALL columns for TRUE/FALSE values to display as checkboxes
+        # Identify boolean columns (columns with boolean-like values)
+        # Check ALL columns for TRUE/FALSE, 1/0, Yes/No, X/"" values to display as checkboxes
         boolean_columns = set()
         for j, col_name in enumerate(df.columns):
-            # Check if all non-empty values in the column are TRUE/FALSE
+            # Check if all non-empty values in the column are boolean-like
             unique_values = df.iloc[:, j].dropna().unique()
             # Filter out empty strings and normalize values
             non_empty_values = [str(v).strip().upper() for v in unique_values if str(v).strip() != '']
-            if non_empty_values and all(v in ['TRUE', 'FALSE'] for v in non_empty_values):
-                boolean_columns.add(j)
-                logger.debug(f"Column {j} ({col_name}) identified as boolean with values: {non_empty_values}")
+
+            # Check if all values match common boolean representations
+            if non_empty_values:
+                is_boolean = all(v in ['TRUE', 'FALSE', '1', '0', 'YES', 'NO', 'Y', 'N', 'X'] for v in non_empty_values)
+                if is_boolean:
+                    boolean_columns.add(j)
+                    logger.info(f"Column {j} ({col_name}) identified as boolean with values: {non_empty_values}")
 
         # Populate data
         for i in range(len(df)):
@@ -1099,15 +1107,19 @@ class ImportBidDialog(QtWidgets.QDialog):
                     # Create checkbox item for boolean columns
                     item = QtWidgets.QTableWidgetItem()
                     item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
+
                     # Set checkbox state based on value (case-insensitive)
+                    # Support multiple boolean representations
                     value_upper = value.upper()
-                    if value_upper == 'TRUE':
+                    # TRUE values: TRUE, 1, YES, Y, X
+                    if value_upper in ['TRUE', '1', 'YES', 'Y', 'X']:
                         item.setCheckState(QtCore.Qt.Checked)
-                        logger.debug(f"Row {i}, Col {j}: Setting checkbox to CHECKED for value '{value}'")
+                        logger.debug(f"Row {i}, Col {j} ({df.columns[j]}): Setting checkbox to CHECKED for value '{value}'")
                     else:
-                        # FALSE or empty = unchecked
+                        # FALSE values: FALSE, 0, NO, N, empty
                         item.setCheckState(QtCore.Qt.Unchecked)
-                        logger.debug(f"Row {i}, Col {j}: Setting checkbox to UNCHECKED for value '{value}'")
+                        logger.debug(f"Row {i}, Col {j} ({df.columns[j]}): Setting checkbox to UNCHECKED for value '{value}'")
+
                     # Store the original value as text for export
                     item.setData(QtCore.Qt.UserRole, value)
                 else:
