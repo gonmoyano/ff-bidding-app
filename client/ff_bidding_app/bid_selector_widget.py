@@ -333,7 +333,7 @@ class CreateVFXBreakdownDialog(QtWidgets.QDialog):
 class ColumnMappingDialog(QtWidgets.QDialog):
     """Dialog for mapping Excel columns to ShotGrid fields."""
 
-    # ShotGrid field definitions for VFX Breakdown (CustomEntity02)
+    # ShotGrid field definitions for VFX Breakdown (CustomEntity02 - Bidding Scenes)
     BREAKDOWN_ITEM_REQUIRED_FIELDS = {
         "code": "text",
         "sg_bid_assets": "entity",
@@ -358,6 +358,54 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         "sg_vfx_type": "text",
     }
 
+    # ShotGrid field definitions for Assets (CustomEntity07 - Asset items)
+    ASSET_ITEM_REQUIRED_FIELDS = {
+        "code": "text",
+        "sg_bid_asset_type": "list",
+        "sg_bidding_notes": "text",
+    }
+
+    # ShotGrid field definitions for Scenes (placeholder - customize as needed)
+    SCENE_REQUIRED_FIELDS = {
+        "code": "text",
+        "description": "text",
+    }
+
+    # ShotGrid field definitions for Rates (placeholder - customize as needed)
+    RATE_REQUIRED_FIELDS = {
+        "code": "text",
+        "sg_rate": "float",
+        "sg_unit": "text",
+    }
+
+    # Entity type mapping
+    ENTITY_CONFIGS = {
+        "breakdown": {
+            "name": "Breakdown",
+            "entity_type": "CustomEntity02",
+            "fields": BREAKDOWN_ITEM_REQUIRED_FIELDS,
+            "mapping_key": "vfx_breakdown"
+        },
+        "assets": {
+            "name": "Assets",
+            "entity_type": "CustomEntity07",
+            "fields": ASSET_ITEM_REQUIRED_FIELDS,
+            "mapping_key": "assets"
+        },
+        "scenes": {
+            "name": "Scenes",
+            "entity_type": "Scene",
+            "fields": SCENE_REQUIRED_FIELDS,
+            "mapping_key": "scenes"
+        },
+        "rates": {
+            "name": "Rates",
+            "entity_type": "CustomEntity09",
+            "fields": RATE_REQUIRED_FIELDS,
+            "mapping_key": "rates"
+        }
+    }
+
     def __init__(self, excel_columns, sg_session, project_id, parent=None):
         """Initialize the column mapping dialog.
 
@@ -370,38 +418,38 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         super().__init__(parent)
         self.setWindowTitle("Map Columns to ShotGrid Fields")
         self.setModal(True)
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(900, 700)
 
         self.excel_columns = excel_columns
         self.sg_session = sg_session
         self.project_id = project_id
 
-        # Storage for mapping widgets
-        self.mapping_combos = {}  # sg_field -> {"excel": combo, "sg": combo}
-        self.sg_display_names = {}
+        # Storage for mapping widgets - keyed by entity config key (breakdown, assets, etc.)
+        self.mapping_combos = {}  # config_key -> {sg_field -> {"excel": combo, "sg": combo}}
+        self.sg_display_names = {}  # config_key -> {sg_field -> display_name}
 
         # App settings for saving/loading mappings
         self.app_settings = AppSettings()
-        self.mapping_key = "vfx_breakdown"  # Key for this specific mapping type
 
-        self._fetch_sg_display_names()
+        self._fetch_all_display_names()
         self._build_ui()
-        self._load_saved_mappings()  # Load saved mappings FIRST
-        self._auto_map_columns()  # Only auto-map fields that aren't already mapped
+        self._load_all_saved_mappings()
+        self._auto_map_all_columns()
 
-    def _fetch_sg_display_names(self):
-        """Fetch human-readable display names for SG fields."""
-        try:
-            field_names = list(self.BREAKDOWN_ITEM_REQUIRED_FIELDS.keys())
-            self.sg_display_names = self._get_field_display_names(
-                "CustomEntity02", field_names, self.project_id
-            )
-            logger.info(f"Fetched display names for {len(self.sg_display_names)} SG fields")
-        except Exception as e:
-            logger.error(f"Error fetching SG field display names: {e}", exc_info=True)
-            # Fallback to field names
-            for field_name in self.BREAKDOWN_ITEM_REQUIRED_FIELDS.keys():
-                self.sg_display_names[field_name] = field_name
+    def _fetch_all_display_names(self):
+        """Fetch human-readable display names for all entity types."""
+        for config_key, config in self.ENTITY_CONFIGS.items():
+            entity_type = config["entity_type"]
+            field_names = list(config["fields"].keys())
+
+            try:
+                display_names = self._get_field_display_names(entity_type, field_names, self.project_id)
+                self.sg_display_names[config_key] = display_names
+                logger.info(f"Fetched {len(display_names)} display names for {config['name']}")
+            except Exception as e:
+                logger.error(f"Error fetching display names for {config['name']}: {e}", exc_info=True)
+                # Fallback to field names
+                self.sg_display_names[config_key] = {field: field for field in field_names}
 
     def _get_field_display_names(self, entity_name, field_names, project_id=None):
         """Get display names for multiple fields of an entity.
@@ -439,7 +487,7 @@ class ColumnMappingDialog(QtWidgets.QDialog):
             return {field: field for field in field_names}
 
     def _build_ui(self):
-        """Build the mapping dialog UI."""
+        """Build the mapping dialog UI with tabs."""
         layout = QtWidgets.QVBoxLayout(self)
 
         # Instructions
@@ -452,20 +500,15 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         instructions.setStyleSheet("padding: 10px; background-color: #2b2b2b; border-radius: 4px;")
         layout.addWidget(instructions)
 
-        # Scroll area for mappings
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll_widget = QtWidgets.QWidget()
-        scroll_layout = QtWidgets.QVBoxLayout(scroll_widget)
+        # Create tab widget
+        self.tab_widget = QtWidgets.QTabWidget()
 
-        # Create mapping rows
-        for sg_field, field_type in self.BREAKDOWN_ITEM_REQUIRED_FIELDS.items():
-            row = self._create_mapping_row(sg_field, field_type)
-            scroll_layout.addLayout(row)
+        # Create a tab for each entity type
+        for config_key, config in self.ENTITY_CONFIGS.items():
+            tab = self._create_mapping_tab(config_key, config)
+            self.tab_widget.addTab(tab, config["name"])
 
-        scroll_layout.addStretch()
-        scroll.setWidget(scroll_widget)
-        layout.addWidget(scroll, stretch=1)
+        layout.addWidget(self.tab_widget, stretch=1)
 
         # Buttons
         button_layout = QtWidgets.QHBoxLayout()
@@ -482,10 +525,44 @@ class ColumnMappingDialog(QtWidgets.QDialog):
 
         layout.addLayout(button_layout)
 
-    def _create_mapping_row(self, sg_field, field_type):
+    def _create_mapping_tab(self, config_key, config):
+        """Create a tab for a specific entity type.
+
+        Args:
+            config_key: Key for this entity configuration (e.g., "breakdown", "assets")
+            config: Entity configuration dictionary
+
+        Returns:
+            QWidget: Tab widget
+        """
+        tab_widget = QtWidgets.QWidget()
+        tab_layout = QtWidgets.QVBoxLayout(tab_widget)
+
+        # Scroll area for mappings
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_widget = QtWidgets.QWidget()
+        scroll_layout = QtWidgets.QVBoxLayout(scroll_widget)
+
+        # Initialize mapping combos storage for this entity type
+        self.mapping_combos[config_key] = {}
+
+        # Create mapping rows for this entity's fields
+        for sg_field, field_type in config["fields"].items():
+            row = self._create_mapping_row(config_key, sg_field, field_type)
+            scroll_layout.addLayout(row)
+
+        scroll_layout.addStretch()
+        scroll.setWidget(scroll_widget)
+        tab_layout.addWidget(scroll)
+
+        return tab_widget
+
+    def _create_mapping_row(self, config_key, sg_field, field_type):
         """Create a mapping row with two dropdowns.
 
         Args:
+            config_key: Entity configuration key (e.g., "breakdown", "assets")
             sg_field: ShotGrid field name
             field_type: Field type (text, list, number, etc.)
 
@@ -508,7 +585,8 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         row_layout.addWidget(arrow_label)
 
         # SG field dropdown (right) - read-only display
-        sg_display_name = self.sg_display_names.get(sg_field, sg_field)
+        display_names = self.sg_display_names.get(config_key, {})
+        sg_display_name = display_names.get(sg_field, sg_field)
         sg_label = QtWidgets.QLabel(f"{sg_display_name}")
         sg_label.setStyleSheet("font-weight: bold;")
         sg_label.setMinimumWidth(200)
@@ -522,39 +600,54 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         row_layout.addStretch()
 
         # Store reference
-        self.mapping_combos[sg_field] = {
+        self.mapping_combos[config_key][sg_field] = {
             "excel": excel_combo,
             "sg_display": sg_display_name
         }
 
         return row_layout
 
-    def _auto_map_columns(self):
+    def _auto_map_all_columns(self):
+        """Automatically map Excel columns to SG fields for all entity types."""
+        for config_key, config in self.ENTITY_CONFIGS.items():
+            self._auto_map_columns_for_entity(config_key, config)
+
+    def _auto_map_columns_for_entity(self, config_key, config):
         """Automatically map Excel columns to SG fields using fuzzy matching.
 
         Only maps fields that don't already have a mapping (i.e., saved mappings take precedence).
+
+        Args:
+            config_key: Entity configuration key
+            config: Entity configuration dictionary
         """
-        for sg_field in self.BREAKDOWN_ITEM_REQUIRED_FIELDS.keys():
-            combo = self.mapping_combos[sg_field]["excel"]
+        entity_mappings = self.mapping_combos.get(config_key, {})
+
+        for sg_field in config["fields"].keys():
+            if sg_field not in entity_mappings:
+                continue
+
+            combo = entity_mappings[sg_field]["excel"]
 
             # Skip if this field already has a mapping (from saved settings)
             current_text = combo.currentText()
             if current_text and current_text != "-- Not Mapped --":
-                logger.info(f"Skipping auto-map for '{sg_field}' - already mapped to '{current_text}'")
+                logger.info(f"Skipping auto-map for '{config_key}.{sg_field}' - already mapped to '{current_text}'")
                 continue
 
             # No saved mapping, try fuzzy matching
-            best_match = self._find_best_column_match(sg_field)
+            best_match = self._find_best_column_match(config_key, sg_field)
             if best_match:
                 index = combo.findText(best_match)
                 if index >= 0:
                     combo.setCurrentIndex(index)
-                    logger.info(f"Auto-mapped '{best_match}' -> '{sg_field}'")
+                    logger.info(f"Auto-mapped '{best_match}' -> '{config_key}.{sg_field}'")
 
-    def _find_best_column_match(self, sg_field):
+    def _find_best_column_match(self, config_key, sg_field):
         """Find the best matching Excel column for a SG field using fuzzy logic.
 
         Args:
+            config_key: Entity configuration key
             sg_field: ShotGrid field name
 
         Returns:
@@ -564,7 +657,8 @@ class ColumnMappingDialog(QtWidgets.QDialog):
             return None
 
         # Get display name for comparison
-        sg_display_name = self.sg_display_names.get(sg_field, sg_field)
+        display_names = self.sg_display_names.get(config_key, {})
+        sg_display_name = display_names.get(sg_field, sg_field)
 
         # Clean field name (remove sg_ prefix)
         sg_clean = sg_field.replace("sg_", "").replace("_", " ").lower()
@@ -611,50 +705,76 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         # Only return if score is meaningful
         return best_match if best_score > 3 else None
 
-    def _load_saved_mappings(self):
-        """Load previously saved column mappings from settings."""
-        saved_mapping = self.app_settings.get_column_mapping(self.mapping_key)
+    def _load_all_saved_mappings(self):
+        """Load previously saved column mappings from settings for all entity types."""
+        for config_key, config in self.ENTITY_CONFIGS.items():
+            self._load_saved_mappings_for_entity(config_key, config)
+
+    def _load_saved_mappings_for_entity(self, config_key, config):
+        """Load previously saved column mappings from settings.
+
+        Args:
+            config_key: Entity configuration key
+            config: Entity configuration dictionary
+        """
+        mapping_key = config["mapping_key"]
+        saved_mapping = self.app_settings.get_column_mapping(mapping_key)
 
         if not saved_mapping:
-            logger.info("No saved column mappings found")
+            logger.info(f"No saved column mappings found for '{config_key}'")
             return
 
         # Apply saved mappings (only if column exists in current Excel file)
         applied_count = 0
+        entity_mappings = self.mapping_combos.get(config_key, {})
+
         for sg_field, excel_col in saved_mapping.items():
-            if sg_field not in self.mapping_combos:
+            if sg_field not in entity_mappings:
                 continue
 
             if excel_col and excel_col in self.excel_columns:
-                combo = self.mapping_combos[sg_field]["excel"]
+                combo = entity_mappings[sg_field]["excel"]
                 index = combo.findText(excel_col)
                 if index >= 0:
                     combo.setCurrentIndex(index)
                     applied_count += 1
-                    logger.info(f"Applied saved mapping: '{excel_col}' -> '{sg_field}'")
+                    logger.info(f"Applied saved mapping for '{config_key}': '{excel_col}' -> '{sg_field}'")
 
-        logger.info(f"Applied {applied_count} saved column mappings")
+        logger.info(f"Applied {applied_count} saved column mappings for '{config_key}'")
 
     def accept(self):
         """Override accept to save mappings before closing."""
-        # Get current mappings
-        mapping = self.get_column_mapping()
-
-        # Save to settings
-        self.app_settings.set_column_mapping(self.mapping_key, mapping)
-        logger.info(f"Saved column mappings for '{self.mapping_key}'")
+        # Save mappings for all entity types
+        for config_key, config in self.ENTITY_CONFIGS.items():
+            mapping = self.get_column_mapping_for_entity(config_key)
+            mapping_key = config["mapping_key"]
+            self.app_settings.set_column_mapping(mapping_key, mapping)
+            logger.info(f"Saved column mappings for '{config_key}' with key '{mapping_key}'")
 
         # Call parent accept
         super().accept()
 
     def get_column_mapping(self):
-        """Get the column mapping results.
+        """Get the column mapping results for the Breakdown tab (for backward compatibility).
+
+        Returns:
+            dict: Mapping of sg_field -> excel_column_name (or None if not mapped)
+        """
+        return self.get_column_mapping_for_entity("breakdown")
+
+    def get_column_mapping_for_entity(self, config_key):
+        """Get the column mapping results for a specific entity type.
+
+        Args:
+            config_key: Entity configuration key (e.g., "breakdown", "assets")
 
         Returns:
             dict: Mapping of sg_field -> excel_column_name (or None if not mapped)
         """
         mapping = {}
-        for sg_field, widgets in self.mapping_combos.items():
+        entity_mappings = self.mapping_combos.get(config_key, {})
+
+        for sg_field, widgets in entity_mappings.items():
             excel_combo = widgets["excel"]
             excel_col = excel_combo.currentText()
             if excel_col and excel_col != "-- Not Mapped --":
@@ -662,6 +782,17 @@ class ColumnMappingDialog(QtWidgets.QDialog):
             else:
                 mapping[sg_field] = None
         return mapping
+
+    def get_all_column_mappings(self):
+        """Get all column mappings for all entity types.
+
+        Returns:
+            dict: Mapping of config_key -> {sg_field -> excel_column_name}
+        """
+        all_mappings = {}
+        for config_key in self.ENTITY_CONFIGS.keys():
+            all_mappings[config_key] = self.get_column_mapping_for_entity(config_key)
+        return all_mappings
 
 
 class ImportBidDialog(QtWidgets.QDialog):
