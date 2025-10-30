@@ -10,10 +10,12 @@ try:
     from .logger import logger
     from .vfx_breakdown_model import VFXBreakdownModel, PasteCommand, CheckBoxDelegate
     from .settings import AppSettings
+    from .multi_entity_reference_widget import MultiEntityReferenceWidget
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
     from vfx_breakdown_model import VFXBreakdownModel, PasteCommand, CheckBoxDelegate
     from settings import AppSettings
+    from multi_entity_reference_widget import MultiEntityReferenceWidget
 
 
 class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
@@ -601,6 +603,64 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # Apply dropdown delegates to columns marked for dropdowns
         self._apply_column_dropdowns()
+
+        # Set up MultiEntityReferenceWidget for sg_bid_assets column
+        self._setup_bid_assets_widgets()
+
+    def _setup_bid_assets_widgets(self):
+        """Set up MultiEntityReferenceWidget for each row in the sg_bid_assets column."""
+        # Find the column index for sg_bid_assets
+        try:
+            assets_col_idx = self.model.column_fields.index("sg_bid_assets")
+        except ValueError:
+            # Column not present in this table
+            return
+
+        # Create widget for each row
+        for row in range(self.model.rowCount()):
+            # Get the model index for this cell
+            index = self.model.index(row, assets_col_idx)
+
+            # Get the actual data row index
+            data_row = self.model.filtered_row_indices[row]
+            bidding_scene_data = self.model.all_bidding_scenes_data[data_row]
+
+            # Get current entities for this row
+            entities = bidding_scene_data.get("sg_bid_assets", [])
+            if not isinstance(entities, list):
+                entities = [entities] if entities else []
+
+            # Create the widget
+            widget = MultiEntityReferenceWidget(entities=entities, allow_add=True)
+            widget.setMinimumHeight(60)
+
+            # Connect signal to update model when entities change
+            widget.entitiesChanged.connect(
+                lambda ents, r=row, col=assets_col_idx: self._on_bid_assets_changed(r, col, ents)
+            )
+
+            # Set the widget in the table
+            self.table_view.setIndexWidget(index, widget)
+
+        # Increase row height for this column
+        self.table_view.verticalHeader().setDefaultSectionSize(80)
+
+    def _on_bid_assets_changed(self, row, col, entities):
+        """Handle when bid assets are changed in a cell widget.
+
+        Args:
+            row: Table row index
+            col: Column index
+            entities: Updated list of entity dicts
+        """
+        # Get the model index
+        index = self.model.index(row, col)
+
+        # Update the model data
+        # The model expects the list of entity dicts
+        self.model.setData(index, entities, QtCore.Qt.EditRole)
+
+        logger.info(f"Updated sg_bid_assets for row {row}: {[e.get('name') for e in entities]}")
 
     def clear_data(self):
         """Clear all data from the widget."""
