@@ -26,6 +26,8 @@ class CollapsibleGroupBox(QtWidgets.QWidget):
         """
         super().__init__(parent)
         self.is_collapsed = False
+        self.base_title = title
+        self.additional_info = ""
 
         # Main layout
         main_layout = QtWidgets.QVBoxLayout(self)
@@ -49,7 +51,7 @@ class CollapsibleGroupBox(QtWidgets.QWidget):
             }
         """)
         self.toggle_button.clicked.connect(self._on_toggle)
-        self._update_button_text(title)
+        self._update_button_text()
         main_layout.addWidget(self.toggle_button)
 
         # Content frame
@@ -65,20 +67,33 @@ class CollapsibleGroupBox(QtWidgets.QWidget):
         self.content_layout = QtWidgets.QVBoxLayout(self.content_frame)
         main_layout.addWidget(self.content_frame)
 
-    def _update_button_text(self, title):
-        """Update button text with arrow indicator."""
+    def _update_button_text(self):
+        """Update button text with arrow indicator and additional info."""
         arrow = "▼" if not self.is_collapsed else "▶"
-        self.toggle_button.setText(f"{arrow} {title}")
+        if self.additional_info:
+            self.toggle_button.setText(f"{arrow} {self.base_title} | {self.additional_info}")
+        else:
+            self.toggle_button.setText(f"{arrow} {self.base_title}")
 
     def _on_toggle(self):
         """Toggle the visibility of the content."""
         self.is_collapsed = not self.is_collapsed
         self.content_frame.setVisible(not self.is_collapsed)
-        self._update_button_text(self.toggle_button.text().split(" ", 1)[1])
+        self._update_button_text()
 
     def setTitle(self, title):
         """Set the title of the group box."""
-        self._update_button_text(title)
+        self.base_title = title
+        self._update_button_text()
+
+    def setAdditionalInfo(self, info):
+        """Set additional information to display in the title bar.
+
+        Args:
+            info: Additional info string to display after the title
+        """
+        self.additional_info = info
+        self._update_button_text()
 
     def addWidget(self, widget):
         """Add a widget to the content area."""
@@ -1902,6 +1917,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self.current_project_id = None
 
         # UI widgets
+        self.group_box = None
         self.bid_combo = None
         self.set_current_btn = None
         self.add_btn = None
@@ -1916,7 +1932,8 @@ class BidSelectorWidget(QtWidgets.QWidget):
     def _build_ui(self):
         """Build the bid selector UI."""
         # Main collapsible group
-        group = CollapsibleGroupBox("Bids")
+        self.group_box = CollapsibleGroupBox("Bids")
+        group = self.group_box
 
         # Selector row
         selector_row = QtWidgets.QHBoxLayout()
@@ -2070,12 +2087,58 @@ class BidSelectorWidget(QtWidgets.QWidget):
         """
         return self.bid_combo.currentData()
 
+    def _update_group_title_with_bid_info(self, bid):
+        """Update the collapsible group title with breakdown and bid asset info.
+
+        Args:
+            bid: Bid data dict or None
+        """
+        if not bid:
+            # Clear additional info if no bid selected
+            self.group_box.setAdditionalInfo("")
+            return
+
+        info_parts = []
+
+        # Add breakdown info
+        breakdown = bid.get("sg_vfx_breakdown")
+        if breakdown:
+            # Extract breakdown name/code
+            if isinstance(breakdown, dict):
+                breakdown_name = breakdown.get("name") or breakdown.get("code") or f"ID {breakdown.get('id', 'N/A')}"
+            elif isinstance(breakdown, list) and breakdown:
+                breakdown_name = breakdown[0].get("name") or breakdown[0].get("code") or f"ID {breakdown[0].get('id', 'N/A')}"
+            else:
+                breakdown_name = str(breakdown)
+            info_parts.append(f"Breakdown: {breakdown_name}")
+
+        # Add bid asset info
+        bid_assets = bid.get("sg_bid_assets")
+        if bid_assets:
+            # Extract bid asset name/code
+            if isinstance(bid_assets, dict):
+                asset_name = bid_assets.get("name") or bid_assets.get("code") or f"ID {bid_assets.get('id', 'N/A')}"
+            elif isinstance(bid_assets, list) and bid_assets:
+                asset_name = bid_assets[0].get("name") or bid_assets[0].get("code") or f"ID {bid_assets[0].get('id', 'N/A')}"
+            else:
+                asset_name = str(bid_assets)
+            info_parts.append(f"Asset: {asset_name}")
+
+        # Update the group box title with the additional info
+        if info_parts:
+            self.group_box.setAdditionalInfo(" | ".join(info_parts))
+        else:
+            self.group_box.setAdditionalInfo("")
+
     def clear(self):
         """Clear the bid selector."""
         self.bid_combo.blockSignals(True)
         self.bid_combo.clear()
         self.bid_combo.addItem("-- Select Bid --", None)
         self.bid_combo.blockSignals(False)
+
+        # Clear the group title additional info
+        self.group_box.setAdditionalInfo("")
         self.set_current_btn.setEnabled(False)
         self._set_status("Select an RFQ to view Bids.")
 
@@ -2091,6 +2154,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
         else:
             if index == 0:
                 self._set_status("Select a Bid to view its details.")
+
+        # Update the group title with breakdown and bid asset info
+        self._update_group_title_with_bid_info(bid)
 
         # Emit signal
         self.bidChanged.emit(bid)
