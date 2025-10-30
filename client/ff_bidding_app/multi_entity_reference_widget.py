@@ -40,11 +40,11 @@ class EntityPillWidget(QtWidgets.QWidget):
         self.entity = entity
         self.entity_name = entity.get("name", f"ID {entity.get('id', 'N/A')}")
 
-        # Enable background painting
-        self.setAutoFillBackground(True)
+        # Colors for custom painting
+        self.bg_color = QtGui.QColor("#b0b0b0")
+        self.border_color = QtGui.QColor("#888888")
 
         self._setup_ui()
-        self._apply_styling()
 
     def _setup_ui(self):
         """Build the pill UI with label and close button."""
@@ -87,21 +87,18 @@ class EntityPillWidget(QtWidgets.QWidget):
         self.close_btn.clicked.connect(self._on_remove_clicked)
         layout.addWidget(self.close_btn)
 
-    def _apply_styling(self):
-        """Apply the rounded pill styling."""
-        # Set palette for background
-        palette = self.palette()
-        palette.setColor(QtGui.QPalette.Window, QtGui.QColor("#b0b0b0"))
-        self.setPalette(palette)
+    def paintEvent(self, event):
+        """Custom paint event to draw the rounded pill background."""
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
 
-        # Apply stylesheet for borders and other styling
-        self.setStyleSheet("""
-            EntityPillWidget {
-                background-color: #b0b0b0;
-                border: 1px solid #888888;
-                border-radius: 10px;
-            }
-        """)
+        # Get the widget rectangle
+        rect = self.rect()
+
+        # Draw rounded rectangle background
+        painter.setPen(QtGui.QPen(self.border_color, 1))
+        painter.setBrush(QtGui.QBrush(self.bg_color))
+        painter.drawRoundedRect(rect, 10, 10)
 
     def _on_remove_clicked(self):
         """Handle remove button click."""
