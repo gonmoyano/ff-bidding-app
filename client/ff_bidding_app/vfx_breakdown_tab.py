@@ -1007,7 +1007,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         selector_group = CollapsibleGroupBox("VFX Breakdowns")
 
         selector_row = QtWidgets.QHBoxLayout()
-        selector_label = QtWidgets.QLabel("Select VFX Breakdown:")
+        selector_label = QtWidgets.QLabel("VFX Breakdown:")
         selector_row.addWidget(selector_label)
 
         self.vfx_breakdown_combo = QtWidgets.QComboBox()

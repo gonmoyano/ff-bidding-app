@@ -74,7 +74,7 @@ class AssetsTab(QtWidgets.QWidget):
         selector_group = CollapsibleGroupBox("Bid Assets")
 
         selector_row = QtWidgets.QHBoxLayout()
-        selector_label = QtWidgets.QLabel("Select Bid Assets:")
+        selector_label = QtWidgets.QLabel("Bid Assets:")
         selector_row.addWidget(selector_label)
 
         self.bid_assets_combo = QtWidgets.QComboBox()

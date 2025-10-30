@@ -1938,7 +1938,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         # Selector row
         selector_row = QtWidgets.QHBoxLayout()
-        selector_label = QtWidgets.QLabel("Select Bid:")
+        selector_label = QtWidgets.QLabel("Bid:")
         selector_row.addWidget(selector_label)
 
         self.bid_combo = QtWidgets.QComboBox()
@@ -2117,7 +2117,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 breakdown_name = breakdown[0].get("name") or breakdown[0].get("code") or f"ID {breakdown[0].get('id', 'N/A')}"
             else:
                 breakdown_name = str(breakdown)
-            info_parts.append(f"Breakdown: {breakdown_name}")
+            info_parts.append(f"Bid Breakdown: {breakdown_name}")
 
         # Add bid asset info
         bid_assets = bid.get("sg_bid_assets")
@@ -2129,11 +2129,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 asset_name = bid_assets[0].get("name") or bid_assets[0].get("code") or f"ID {bid_assets[0].get('id', 'N/A')}"
             else:
                 asset_name = str(bid_assets)
-            info_parts.append(f"Asset: {asset_name}")
+            info_parts.append(f"Bid Asset: {asset_name}")
 
         # Update the label with the info
         if info_parts:
-            self.bid_info_label.setText(" | ".join(info_parts))
+            self.bid_info_label.setText("  ".join(info_parts))
         else:
             self.bid_info_label.setText("")
 
@@ -2155,8 +2155,6 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         if bid:
             bid_name = bid.get("code") or f"Bid {bid.get('id', 'N/A')}"
-            bid_type = bid.get("sg_bid_type", "Unknown")
-            self._set_status(f"Selected: {bid_name} ({bid_type})")
             logger.info(f"Bid selected: {bid_name} (ID: {bid.get('id')})")
         else:
             if index == 0:
