@@ -330,8 +330,239 @@ class CreateVFXBreakdownDialog(QtWidgets.QDialog):
         return self.name_field.text().strip()
 
 
+class SelectBidDialog(QtWidgets.QDialog):
+    """Dialog for selecting Bid and entity types to import."""
+
+    # Custom return code for Back button
+    BACK_CLICKED = QtWidgets.QDialog.Rejected + 1
+
+    def __init__(self, existing_bids, available_sheets, parent=None):
+        """Initialize the dialog.
+
+        Args:
+            existing_bids: List of existing bids [{"id": 1, "code": "BidName"}, ...]
+            available_sheets: Dict of sheet names that have data {"breakdown": True, "assets": False, ...}
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.setWindowTitle("Select Bid and Import Options")
+        self.setModal(True)
+        self.setMinimumWidth(500)
+
+        self.existing_bids = existing_bids
+        self.available_sheets = available_sheets
+
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Instructions
+        instructions = QtWidgets.QLabel(
+            "Select whether to add data to an existing Bid or create a new one, "
+            "then choose which entity types to import."
+        )
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet("padding: 10px; background-color: #2b2b2b; border-radius: 4px;")
+        layout.addWidget(instructions)
+
+        # Bid selection section
+        bid_group = QtWidgets.QGroupBox("Bid Selection")
+        bid_layout = QtWidgets.QVBoxLayout()
+
+        # Existing bid option
+        self.existing_bid_radio = QtWidgets.QRadioButton("Add to existing Bid")
+        self.existing_bid_radio.setChecked(True)
+        self.existing_bid_radio.toggled.connect(self._on_bid_option_changed)
+        bid_layout.addWidget(self.existing_bid_radio)
+
+        existing_bid_container = QtWidgets.QHBoxLayout()
+        existing_bid_container.addSpacing(30)
+        bid_label = QtWidgets.QLabel("Select Bid:")
+        existing_bid_container.addWidget(bid_label)
+
+        self.bid_combo = QtWidgets.QComboBox()
+        self.bid_combo.addItem("-- Select Bid --", None)
+        for bid in self.existing_bids:
+            self.bid_combo.addItem(bid.get("code", "Unknown"), bid.get("id"))
+        existing_bid_container.addWidget(self.bid_combo, stretch=1)
+        bid_layout.addLayout(existing_bid_container)
+
+        bid_layout.addSpacing(10)
+
+        # New bid option
+        self.new_bid_radio = QtWidgets.QRadioButton("Create new Bid")
+        self.new_bid_radio.toggled.connect(self._on_bid_option_changed)
+        bid_layout.addWidget(self.new_bid_radio)
+
+        new_bid_container = QtWidgets.QVBoxLayout()
+        new_bid_container.setContentsMargins(30, 0, 0, 0)
+
+        name_layout = QtWidgets.QHBoxLayout()
+        name_label = QtWidgets.QLabel("Bid Name:")
+        name_layout.addWidget(name_label)
+        self.name_field = QtWidgets.QLineEdit()
+        self.name_field.setPlaceholderText("Enter bid name...")
+        name_layout.addWidget(self.name_field, stretch=1)
+        new_bid_container.addLayout(name_layout)
+
+        type_layout = QtWidgets.QHBoxLayout()
+        type_label = QtWidgets.QLabel("Bid Type:")
+        type_layout.addWidget(type_label)
+        self.type_combo = QtWidgets.QComboBox()
+        self.type_combo.addItem("Early Bid")
+        self.type_combo.addItem("Turnover Bid")
+        type_layout.addWidget(self.type_combo, stretch=1)
+        new_bid_container.addLayout(type_layout)
+
+        bid_layout.addLayout(new_bid_container)
+
+        bid_group.setLayout(bid_layout)
+        layout.addWidget(bid_group)
+
+        # Entity selection section
+        entity_group = QtWidgets.QGroupBox("What to Import")
+        entity_layout = QtWidgets.QVBoxLayout()
+
+        entity_instructions = QtWidgets.QLabel(
+            "Select which entity types to import from the Excel sheets:"
+        )
+        entity_instructions.setWordWrap(True)
+        entity_layout.addWidget(entity_instructions)
+
+        entity_layout.addSpacing(5)
+
+        self.breakdown_checkbox = QtWidgets.QCheckBox('Breakdown (from "VFX Breakdown" sheet)')
+        self.breakdown_checkbox.setChecked(self.available_sheets.get("breakdown", False))
+        self.breakdown_checkbox.setEnabled(self.available_sheets.get("breakdown", False))
+        entity_layout.addWidget(self.breakdown_checkbox)
+
+        self.assets_checkbox = QtWidgets.QCheckBox('Assets (from "Assets" sheet)')
+        self.assets_checkbox.setChecked(self.available_sheets.get("assets", False))
+        self.assets_checkbox.setEnabled(self.available_sheets.get("assets", False))
+        entity_layout.addWidget(self.assets_checkbox)
+
+        self.scenes_checkbox = QtWidgets.QCheckBox('Scenes (from "Scene" sheet)')
+        self.scenes_checkbox.setChecked(self.available_sheets.get("scenes", False))
+        self.scenes_checkbox.setEnabled(self.available_sheets.get("scenes", False))
+        entity_layout.addWidget(self.scenes_checkbox)
+
+        self.rates_checkbox = QtWidgets.QCheckBox('Rates (from "Rates" sheet)')
+        self.rates_checkbox.setChecked(self.available_sheets.get("rates", False))
+        self.rates_checkbox.setEnabled(self.available_sheets.get("rates", False))
+        entity_layout.addWidget(self.rates_checkbox)
+
+        entity_group.setLayout(entity_layout)
+        layout.addWidget(entity_group)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+
+        self.back_button = QtWidgets.QPushButton("Back")
+        self.back_button.clicked.connect(self._on_back_clicked)
+        button_layout.addWidget(self.back_button)
+
+        button_layout.addStretch()
+
+        self.import_button = QtWidgets.QPushButton("Import")
+        self.import_button.clicked.connect(self._on_import_clicked)
+        self.import_button.setDefault(True)
+        button_layout.addWidget(self.import_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+        # Initialize UI state
+        self._on_bid_option_changed()
+
+    def _on_bid_option_changed(self):
+        """Handle bid option radio button changes."""
+        is_existing = self.existing_bid_radio.isChecked()
+
+        # Enable/disable existing bid controls
+        self.bid_combo.setEnabled(is_existing)
+
+        # Enable/disable new bid controls
+        self.name_field.setEnabled(not is_existing)
+        self.type_combo.setEnabled(not is_existing)
+
+    def _on_back_clicked(self):
+        """Handle Back button click."""
+        self.done(self.BACK_CLICKED)
+
+    def _on_import_clicked(self):
+        """Handle Import button click with validation."""
+        # Validate bid selection
+        if self.existing_bid_radio.isChecked():
+            if self.bid_combo.currentData() is None:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "No Bid Selected",
+                    "Please select a Bid from the dropdown."
+                )
+                return
+        else:
+            bid_name = self.name_field.text().strip()
+            if not bid_name:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Invalid Name",
+                    "Please enter a name for the new Bid."
+                )
+                return
+
+        # Validate at least one entity type selected
+        if not any([
+            self.breakdown_checkbox.isChecked(),
+            self.assets_checkbox.isChecked(),
+            self.scenes_checkbox.isChecked(),
+            self.rates_checkbox.isChecked()
+        ]):
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Entity Types Selected",
+                "Please select at least one entity type to import."
+            )
+            return
+
+        # All validation passed
+        self.accept()
+
+    def is_creating_new_bid(self):
+        """Check if creating a new bid."""
+        return self.new_bid_radio.isChecked()
+
+    def get_selected_bid_id(self):
+        """Get the selected existing bid ID."""
+        return self.bid_combo.currentData()
+
+    def get_new_bid_name(self):
+        """Get the new bid name."""
+        return self.name_field.text().strip()
+
+    def get_new_bid_type(self):
+        """Get the new bid type."""
+        return self.type_combo.currentText()
+
+    def get_selected_entity_types(self):
+        """Get dict of selected entity types."""
+        return {
+            "breakdown": self.breakdown_checkbox.isChecked(),
+            "assets": self.assets_checkbox.isChecked(),
+            "scenes": self.scenes_checkbox.isChecked(),
+            "rates": self.rates_checkbox.isChecked()
+        }
+
+
 class ColumnMappingDialog(QtWidgets.QDialog):
     """Dialog for mapping Excel columns to ShotGrid fields."""
+
+    # Custom return code for Back button
+    BACK_CLICKED = QtWidgets.QDialog.Rejected + 1
 
     # ShotGrid field definitions for VFX Breakdown (CustomEntity02 - Bidding Scenes)
     BREAKDOWN_ITEM_REQUIRED_FIELDS = {
@@ -527,18 +758,27 @@ class ColumnMappingDialog(QtWidgets.QDialog):
 
         # Buttons
         button_layout = QtWidgets.QHBoxLayout()
+
+        self.back_button = QtWidgets.QPushButton("Back")
+        self.back_button.clicked.connect(self._on_back_clicked)
+        button_layout.addWidget(self.back_button)
+
         button_layout.addStretch()
 
-        self.ok_button = QtWidgets.QPushButton("Confirm Mapping")
-        self.ok_button.clicked.connect(self.accept)
-        self.ok_button.setDefault(True)
-        button_layout.addWidget(self.ok_button)
+        self.next_button = QtWidgets.QPushButton("Next")
+        self.next_button.clicked.connect(self.accept)
+        self.next_button.setDefault(True)
+        button_layout.addWidget(self.next_button)
 
         self.cancel_button = QtWidgets.QPushButton("Cancel")
         self.cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(self.cancel_button)
 
         layout.addLayout(button_layout)
+
+    def _on_back_clicked(self):
+        """Handle Back button click."""
+        self.done(self.BACK_CLICKED)
 
     def _create_mapping_tab(self, config_key, config):
         """Create a tab for a specific entity type.
@@ -890,18 +1130,18 @@ class ImportBidDialog(QtWidgets.QDialog):
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addStretch()
 
-        self.import_button = QtWidgets.QPushButton("Import")
-        self.import_button.setMinimumHeight(40)
-        self.import_button.setMinimumWidth(120)
-        self.import_button.setStyleSheet("""
+        self.next_button = QtWidgets.QPushButton("Next")
+        self.next_button.setMinimumHeight(40)
+        self.next_button.setMinimumWidth(120)
+        self.next_button.setStyleSheet("""
             QPushButton {
                 font-size: 14px;
                 font-weight: bold;
             }
         """)
-        self.import_button.clicked.connect(self.accept)
-        self.import_button.setEnabled(False)
-        button_layout.addWidget(self.import_button)
+        self.next_button.clicked.connect(self.accept)
+        self.next_button.setEnabled(False)
+        button_layout.addWidget(self.next_button)
 
         self.cancel_button = QtWidgets.QPushButton("Cancel")
         self.cancel_button.clicked.connect(self.reject)
@@ -1072,7 +1312,7 @@ class ImportBidDialog(QtWidgets.QDialog):
             # Show tabs and hide drop area
             self.tab_widget.show()
             self.drop_area.hide()
-            self.import_button.setEnabled(True)
+            self.next_button.setEnabled(True)
 
             # Auto-adjust dialog size to fit content
             self._adjust_dialog_size()
