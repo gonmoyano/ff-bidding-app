@@ -344,6 +344,7 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         self.column_fields = [
             "code",
             "sg_bid_assets",
+            "sg_sequence_code",
             "sg_vfx_breakdown_scene",
             "sg_interior_exterior",
             "sg_number_of_shots",
