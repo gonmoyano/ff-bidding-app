@@ -40,6 +40,9 @@ class EntityPillWidget(QtWidgets.QWidget):
         self.entity = entity
         self.entity_name = entity.get("name", f"ID {entity.get('id', 'N/A')}")
 
+        # Enable background painting
+        self.setAutoFillBackground(True)
+
         self._setup_ui()
         self._apply_styling()
 
@@ -86,6 +89,12 @@ class EntityPillWidget(QtWidgets.QWidget):
 
     def _apply_styling(self):
         """Apply the rounded pill styling."""
+        # Set palette for background
+        palette = self.palette()
+        palette.setColor(QtGui.QPalette.Window, QtGui.QColor("#b0b0b0"))
+        self.setPalette(palette)
+
+        # Apply stylesheet for borders and other styling
         self.setStyleSheet("""
             EntityPillWidget {
                 background-color: #b0b0b0;
