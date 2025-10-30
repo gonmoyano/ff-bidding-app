@@ -2095,17 +2095,24 @@ class BidSelectorWidget(QtWidgets.QWidget):
         return self.bid_combo.currentData()
 
     def _update_bid_info_label(self, bid):
-        """Update the bid info label with breakdown and bid asset info.
+        """Update the bid info label and group box title with breakdown and bid asset info.
 
         Args:
             bid: Bid data dict or None
         """
         if not bid:
-            # Clear label if no bid selected
+            # Clear label and group box title if no bid selected
             self.bid_info_label.setText("")
+            self.group_box.setAdditionalInfo("")
             return
 
         info_parts = []
+        title_parts = []
+
+        # Get bid name for title bar
+        bid_name = bid.get("code") or f"Bid {bid.get('id', 'N/A')}"
+        bid_type = bid.get("sg_bid_type", "Unknown")
+        title_parts.append(f"{bid_name} ({bid_type})")
 
         # Add breakdown info
         breakdown = bid.get("sg_vfx_breakdown")
@@ -2118,6 +2125,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             else:
                 breakdown_name = str(breakdown)
             info_parts.append(f"Bid Breakdown: {breakdown_name}")
+            title_parts.append(f"Bid Breakdown: {breakdown_name}")
 
         # Add bid asset info
         bid_assets = bid.get("sg_bid_assets")
@@ -2130,12 +2138,16 @@ class BidSelectorWidget(QtWidgets.QWidget):
             else:
                 asset_name = str(bid_assets)
             info_parts.append(f"Bid Asset: {asset_name}")
+            title_parts.append(f"Bid Asset: {asset_name}")
 
-        # Update the label with the info
+        # Update the label with the info (for display under dropdown)
         if info_parts:
             self.bid_info_label.setText("  ".join(info_parts))
         else:
             self.bid_info_label.setText("")
+
+        # Update the group box title with bid name and info (for collapsed state)
+        self.group_box.setAdditionalInfo(" | ".join(title_parts))
 
     def clear(self):
         """Clear the bid selector."""
@@ -2144,8 +2156,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self.bid_combo.addItem("-- Select Bid --", None)
         self.bid_combo.blockSignals(False)
 
-        # Clear the bid info label
+        # Clear the bid info label and group box title
         self.bid_info_label.setText("")
+        self.group_box.setAdditionalInfo("")
         self.set_current_btn.setEnabled(False)
         self._set_status("Select an RFQ to view Bids.")
 
