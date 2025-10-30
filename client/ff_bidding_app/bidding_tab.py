@@ -183,6 +183,10 @@ class BiddingTab(QtWidgets.QWidget):
         self.current_bid = bid_data
         logger.info(f"Bid changed in Bidding tab: {bid_data.get('code') if bid_data else 'None'}")
 
+        # Update breakdown widget with current bid for asset queries
+        if hasattr(self, 'vfx_breakdown_tab') and hasattr(self.vfx_breakdown_tab, 'breakdown_widget'):
+            self.vfx_breakdown_tab.breakdown_widget.set_current_bid(bid_data)
+
         # When a bid is selected, load its VFX breakdown
         if bid_data and hasattr(self, 'vfx_breakdown_tab'):
             # Get the VFX breakdown linked to this bid

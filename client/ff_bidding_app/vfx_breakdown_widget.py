@@ -401,6 +401,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self.sg_session = sg_session
         self.show_toolbar = show_toolbar
+        self.current_bid = None  # Store reference to current Bid
 
         # Create the model
         self.model = VFXBreakdownModel(sg_session, parent=self)
@@ -507,6 +508,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Context menu
         self.table_view.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.table_view.customContextMenuRequested.connect(self._on_context_menu)
+
+        # Double-click handler for adding bid assets
+        self.table_view.doubleClicked.connect(self._on_cell_double_clicked)
 
         # Install event filter
         self.table_view.installEventFilter(self)
@@ -661,6 +665,159 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.model.setData(index, entities, QtCore.Qt.EditRole)
 
         logger.info(f"Updated sg_bid_assets for row {row}: {[e.get('name') for e in entities]}")
+
+    def set_current_bid(self, bid):
+        """Set the current Bid for this widget.
+
+        Args:
+            bid: Bid dictionary from ShotGrid
+        """
+        self.current_bid = bid
+        logger.info(f"VFXBreakdownWidget: Current bid set to {bid.get('code') if bid else None}")
+
+    def _on_cell_double_clicked(self, index):
+        """Handle double-click on a cell.
+
+        If the cell is in the sg_bid_assets column, show dropdown to add an asset.
+
+        Args:
+            index: QModelIndex of the clicked cell
+        """
+        # Check if this is the sg_bid_assets column
+        field_name = self.model.column_fields[index.column()]
+        if field_name != "sg_bid_assets":
+            return
+
+        # Check if we have a current bid
+        if not self.current_bid:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Bid Selected",
+                "Please select a Bid from the Bids tab first."
+            )
+            return
+
+        # Get available assets and show selection dialog
+        self._show_add_asset_dialog(index)
+
+    def _show_add_asset_dialog(self, index):
+        """Show dialog to select and add a bid asset to the cell.
+
+        Args:
+            index: QModelIndex of the cell to add asset to
+        """
+        row = index.row()
+        col = index.column()
+
+        # Get currently selected assets in this cell
+        data_row = self.model.filtered_row_indices[row]
+        bidding_scene_data = self.model.all_bidding_scenes_data[data_row]
+        current_entities = bidding_scene_data.get("sg_bid_assets", [])
+        if not isinstance(current_entities, list):
+            current_entities = [current_entities] if current_entities else []
+
+        # Get IDs of already-added assets
+        current_asset_ids = {e.get("id") for e in current_entities if isinstance(e, dict)}
+
+        # Query available assets from current Bid
+        available_assets = self._get_available_bid_assets()
+
+        if not available_assets:
+            QtWidgets.QMessageBox.information(
+                self,
+                "No Assets Available",
+                "No Bid Assets found for the current Bid.\n\n"
+                "Please ensure the Bid has Bid Assets with Asset items."
+            )
+            return
+
+        # Filter out already-added assets
+        available_assets = [a for a in available_assets if a.get("id") not in current_asset_ids]
+
+        if not available_assets:
+            QtWidgets.QMessageBox.information(
+                self,
+                "All Assets Added",
+                "All available Bid Assets have already been added to this cell."
+            )
+            return
+
+        # Show dropdown dialog
+        asset_codes = [a.get("code", f"ID {a.get('id', 'N/A')}") for a in available_assets]
+
+        selected_code, ok = QtWidgets.QInputDialog.getItem(
+            self,
+            "Add Bid Asset",
+            "Select asset to add:",
+            asset_codes,
+            0,
+            False
+        )
+
+        if ok and selected_code:
+            # Find the selected asset
+            selected_asset = next((a for a in available_assets if a.get("code") == selected_code), None)
+
+            if selected_asset:
+                # Add to current entities
+                current_entities.append(selected_asset)
+
+                # Update the model
+                self.model.setData(index, current_entities, QtCore.Qt.EditRole)
+
+                # Refresh the widget
+                widget = self.table_view.indexWidget(index)
+                if isinstance(widget, MultiEntityReferenceWidget):
+                    widget.set_entities(current_entities)
+
+                logger.info(f"Added asset {selected_code} to row {row}")
+
+    def _get_available_bid_assets(self):
+        """Query and return all Asset items from the current Bid's Bid Assets.
+
+        Returns:
+            list: List of Asset item dicts (CustomEntity07) with id, code, name, type
+        """
+        if not self.current_bid:
+            return []
+
+        # Get the Bid Assets entity from the current Bid
+        bid_assets_entity = self.current_bid.get("sg_bid_assets")
+
+        if not bid_assets_entity:
+            logger.warning(f"Current Bid {self.current_bid.get('code')} has no sg_bid_assets")
+            return []
+
+        # Extract Bid Assets ID
+        if isinstance(bid_assets_entity, dict):
+            bid_assets_id = bid_assets_entity.get("id")
+        elif isinstance(bid_assets_entity, list) and bid_assets_entity:
+            bid_assets_id = bid_assets_entity[0].get("id")
+        else:
+            logger.warning(f"Invalid sg_bid_assets format: {bid_assets_entity}")
+            return []
+
+        if not bid_assets_id:
+            return []
+
+        try:
+            # Query all Asset items (CustomEntity07) that belong to this Bid Assets
+            filters = [
+                ["sg_bid_assets", "is", {"type": "CustomEntity08", "id": bid_assets_id}]
+            ]
+
+            assets = self.sg_session.sg.find(
+                "CustomEntity07",
+                filters,
+                ["id", "code", "name", "type"]
+            )
+
+            logger.info(f"Found {len(assets)} Asset items in Bid Assets {bid_assets_id}")
+            return assets
+
+        except Exception as e:
+            logger.error(f"Failed to query Asset items: {e}", exc_info=True)
+            return []
 
     def clear_data(self):
         """Clear all data from the widget."""
