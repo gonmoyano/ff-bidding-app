@@ -54,7 +54,7 @@ class EntityPillWidget(QtWidgets.QWidget):
         self.name_label = QtWidgets.QLabel(self.entity_name)
         self.name_label.setStyleSheet("""
             QLabel {
-                color: #e0e0e0;
+                color: #2b2b2b;
                 font-size: 11px;
                 background: transparent;
                 border: none;
@@ -70,7 +70,7 @@ class EntityPillWidget(QtWidgets.QWidget):
             QPushButton {
                 background: transparent;
                 border: none;
-                color: #a0a0a0;
+                color: #555555;
                 font-size: 16px;
                 font-weight: bold;
                 padding: 0px;
@@ -88,8 +88,8 @@ class EntityPillWidget(QtWidgets.QWidget):
         """Apply the rounded pill styling."""
         self.setStyleSheet("""
             EntityPillWidget {
-                background-color: #3a3a3a;
-                border: 1px solid #555555;
+                background-color: #b0b0b0;
+                border: 1px solid #888888;
                 border-radius: 10px;
             }
         """)
@@ -174,7 +174,11 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
                 border: 1px solid #555555;
                 border-radius: 4px;
             }
+            QWidget#pillsContainer {
+                background-color: transparent;
+            }
         """)
+        self.pills_container.setObjectName("pillsContainer")
 
     def _populate_entities(self):
         """Create pill widgets for all entities."""
