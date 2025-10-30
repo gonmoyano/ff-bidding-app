@@ -2236,120 +2236,282 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.critical(self, "Error", f"Failed to rename bid:\n{str(e)}")
 
     def _on_import_bid(self):
-        """Handle Import button click."""
+        """Handle Import button click with 3-dialog navigation flow."""
         # Check if we have required data
         if not self.current_project_id:
             QtWidgets.QMessageBox.warning(self, "No Project Selected", "Please select a project first.")
             return
 
-        # Show the import dialog
-        dialog = ImportBidDialog(self.sg_session, self.current_project_id, parent=self)
-        if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            # Get the imported data (dict of tab_name -> DataFrame)
-            data = dialog.get_imported_data()
+        # Dialog navigation state
+        current_step = 1  # 1=Import, 2=Mapping, 3=Select
+        import_dialog = None
+        mapping_dialog = None
+        data = None
+        excel_columns_dict = {}
+        all_mappings = {}
 
-            if data:
-                # Extract columns from all DataFrames for the mapping dialog
-                excel_columns_dict = {}
-                if "VFX Breakdown" in data:
-                    excel_columns_dict["breakdown"] = list(data["VFX Breakdown"].columns)
-                if "Assets" in data:
-                    excel_columns_dict["assets"] = list(data["Assets"].columns)
-                if "Scene" in data:
-                    excel_columns_dict["scenes"] = list(data["Scene"].columns)
-                if "Rates" in data:
-                    excel_columns_dict["rates"] = list(data["Rates"].columns)
+        # Dialog navigation loop
+        while True:
+            if current_step == 1:
+                # Step 1: ImportBidDialog - Load Excel file
+                if import_dialog is None:
+                    import_dialog = ImportBidDialog(self.sg_session, self.current_project_id, parent=self)
 
-                # Show mapping dialog once with all columns
-                mapping_dialog = ColumnMappingDialog(
-                    excel_columns_dict,
-                    self.sg_session,
-                    self.current_project_id,
-                    parent=self
-                )
+                result = import_dialog.exec_()
 
-                if mapping_dialog.exec_() != QtWidgets.QDialog.Accepted:
-                    logger.info("Column mapping cancelled by user - no imports performed")
+                if result == QtWidgets.QDialog.Accepted:
+                    data = import_dialog.get_imported_data()
+                    if not data:
+                        QtWidgets.QMessageBox.warning(self, "No Data", "No data loaded from Excel file.")
+                        return
+
+                    # Extract columns from all DataFrames
+                    excel_columns_dict = {}
+                    if "VFX Breakdown" in data:
+                        excel_columns_dict["breakdown"] = list(data["VFX Breakdown"].columns)
+                    if "Assets" in data:
+                        excel_columns_dict["assets"] = list(data["Assets"].columns)
+                    if "Scene" in data:
+                        excel_columns_dict["scenes"] = list(data["Scene"].columns)
+                    if "Rates" in data:
+                        excel_columns_dict["rates"] = list(data["Rates"].columns)
+
+                    current_step = 2  # Move to mapping dialog
+                else:
+                    # User cancelled
                     return
 
-                # Get all mappings
-                all_mappings = mapping_dialog.get_all_column_mappings()
-                logger.info(f"Received mappings for {len(all_mappings)} entity types")
-
-                # Process VFX Breakdown tab specifically
-                vfx_breakdown_created = 0
-                vfx_breakdown_id = None
-                assets_created = 0
-                bid_assets_id = None
-                import_cancelled = False
-
-                if "VFX Breakdown" in data:
-                    breakdown_mapping = all_mappings.get("breakdown", {})
-                    vfx_breakdown_created, vfx_breakdown_id = self._import_vfx_breakdown(
-                        data["VFX Breakdown"],
-                        breakdown_mapping
-                    )
-                    # If both are 0/None and we had data, user cancelled the import
-                    if vfx_breakdown_created == 0 and vfx_breakdown_id is None:
-                        import_cancelled = True
-                        logger.info("Import cancelled by user during bid creation")
-
-                # Process Assets tab
-                if "Assets" in data and not import_cancelled:
-                    assets_mapping = all_mappings.get("assets", {})
-                    assets_created, bid_assets_id = self._import_assets(
-                        data["Assets"],
-                        assets_mapping
-                    )
-                    # If both are 0/None and we had data, user cancelled the import
-                    if assets_created == 0 and bid_assets_id is None:
-                        import_cancelled = True
-                        logger.info("Assets import cancelled by user")
-
-                # Only show success message if import wasn't cancelled
-                if not import_cancelled:
-                    # Build summary message
-                    summary_lines = ["Successfully imported Excel data:\n"]
-                    total_rows = 0
-
-                    for tab_name, df in data.items():
-                        rows = len(df)
-                        summary_lines.append(f"• {tab_name}: {rows} rows")
-
-                        total_rows += rows
-
-                    if vfx_breakdown_created > 0:
-                        summary_lines.append(f"\n✓ Created {vfx_breakdown_created} VFX Breakdown items in ShotGrid")
-
-                    if assets_created > 0:
-                        summary_lines.append(f"✓ Created {assets_created} Asset items in ShotGrid")
-
-                    summary_lines.append(f"\nTotal: {total_rows} rows imported across {len(data)} tabs")
-
-                    QtWidgets.QMessageBox.information(
-                        self,
-                        "Import Successful",
-                        "\n".join(summary_lines)
+            elif current_step == 2:
+                # Step 2: ColumnMappingDialog - Map columns
+                if mapping_dialog is None:
+                    mapping_dialog = ColumnMappingDialog(
+                        excel_columns_dict,
+                        self.sg_session,
+                        self.current_project_id,
+                        parent=self
                     )
 
-                    logger.info(f"Imported Excel data from {len(data)} tabs with total {total_rows} rows")
-                    self.statusMessageChanged.emit(f"✓ Imported data: {len(data)} tabs, {total_rows} rows total", False)
+                result = mapping_dialog.exec_()
 
-                    # Refresh VFX Breakdown dropdown if items were imported
-                    if vfx_breakdown_id and self._refresh_vfx_breakdown_dropdown():
-                        logger.info(f"Refreshed VFX Breakdown dropdown, selecting ID {vfx_breakdown_id}")
+                if result == QtWidgets.QDialog.Accepted:
+                    # Get all mappings
+                    all_mappings = mapping_dialog.get_all_column_mappings()
+                    logger.info(f"Received mappings for {len(all_mappings)} entity types")
+                    current_step = 3  # Move to select dialog
+                elif result == ColumnMappingDialog.BACK_CLICKED:
+                    # Go back to import dialog
+                    current_step = 1
+                else:
+                    # User cancelled
+                    return
 
-                    # Refresh Bid dropdown after import
-                    if vfx_breakdown_id or bid_assets_id:
-                        self._refresh_bids()
-                        logger.info("Refreshed Bid dropdown after import")
+            elif current_step == 3:
+                # Step 3: SelectBidDialog - Select Bid and entity types
+                # Get existing bids
+                existing_bids = self._get_existing_bids()
 
-    def _import_vfx_breakdown(self, df, column_mapping):
+                # Determine which sheets have data
+                available_sheets = {
+                    "breakdown": "VFX Breakdown" in data,
+                    "assets": "Assets" in data,
+                    "scenes": "Scene" in data,
+                    "rates": "Rates" in data
+                }
+
+                select_dialog = SelectBidDialog(existing_bids, available_sheets, parent=self)
+                result = select_dialog.exec_()
+
+                if result == QtWidgets.QDialog.Accepted:
+                    # Perform import
+                    self._perform_import(select_dialog, data, all_mappings)
+                    return
+                elif result == SelectBidDialog.BACK_CLICKED:
+                    # Go back to mapping dialog
+                    current_step = 2
+                else:
+                    # User cancelled
+                    return
+
+    def _get_existing_bids(self):
+        """Get list of existing bids for the current project.
+
+        Returns:
+            list: List of bid dicts [{"id": 1, "code": "BidName"}, ...]
+        """
+        try:
+            filters = [["project", "is", {"type": "Project", "id": self.current_project_id}]]
+            bids = self.sg_session.sg.find(
+                "CustomEntity06",
+                filters,
+                ["code"],
+                order=[{"field_name": "code", "direction": "asc"}]
+            )
+            logger.info(f"Found {len(bids)} existing bids")
+            return bids
+        except Exception as e:
+            logger.error(f"Failed to query existing bids: {e}", exc_info=True)
+            return []
+
+    def _perform_import(self, select_dialog, data, all_mappings):
+        """Perform the actual import based on user selections.
+
+        Args:
+            select_dialog: SelectBidDialog with user's choices
+            data: Dict of sheet data {sheet_name -> DataFrame}
+            all_mappings: Dict of column mappings {entity_type -> {field -> column}}
+        """
+        # Get user selections
+        is_new_bid = select_dialog.is_creating_new_bid()
+        selected_entity_types = select_dialog.get_selected_entity_types()
+
+        # Get or create Bid
+        if is_new_bid:
+            bid_name = select_dialog.get_new_bid_name()
+            bid_type = select_dialog.get_new_bid_type()
+
+            try:
+                bid = self.sg_session.create_bid(
+                    self.current_project_id,
+                    bid_name,
+                    bid_type
+                )
+                bid_id = bid["id"]
+                logger.info(f"Created new Bid: {bid_id} - {bid_name}")
+            except Exception as e:
+                logger.error(f"Failed to create Bid: {e}", exc_info=True)
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to create Bid:\n{str(e)}"
+                )
+                return
+        else:
+            bid_id = select_dialog.get_selected_bid_id()
+            # Get bid name for versioning
+            try:
+                bid = self.sg_session.sg.find_one(
+                    "CustomEntity06",
+                    [["id", "is", bid_id]],
+                    ["code"]
+                )
+                bid_name = bid.get("code", "Unknown")
+                logger.info(f"Using existing Bid: {bid_id} - {bid_name}")
+            except Exception as e:
+                logger.error(f"Failed to query Bid: {e}", exc_info=True)
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to query Bid:\n{str(e)}"
+                )
+                return
+
+        # Import selected entity types
+        results = {
+            "breakdown": {"created": 0, "entity_id": None},
+            "assets": {"created": 0, "entity_id": None},
+            "scenes": {"created": 0, "entity_id": None},
+            "rates": {"created": 0, "entity_id": None}
+        }
+
+        try:
+            # Import Breakdown
+            if selected_entity_types.get("breakdown") and "VFX Breakdown" in data:
+                breakdown_mapping = all_mappings.get("breakdown", {})
+                created, entity_id = self._import_vfx_breakdown(
+                    data["VFX Breakdown"],
+                    breakdown_mapping,
+                    bid_id,
+                    bid_name
+                )
+                results["breakdown"]["created"] = created
+                results["breakdown"]["entity_id"] = entity_id
+
+            # Import Assets
+            if selected_entity_types.get("assets") and "Assets" in data:
+                assets_mapping = all_mappings.get("assets", {})
+                created, entity_id = self._import_assets(
+                    data["Assets"],
+                    assets_mapping,
+                    bid_id,
+                    bid_name
+                )
+                results["assets"]["created"] = created
+                results["assets"]["entity_id"] = entity_id
+
+            # Import Scenes
+            if selected_entity_types.get("scenes") and "Scene" in data:
+                scenes_mapping = all_mappings.get("scenes", {})
+                created, entity_id = self._import_scenes(data["Scene"], scenes_mapping, bid_id, bid_name)
+                results["scenes"]["created"] = created
+                results["scenes"]["entity_id"] = entity_id
+
+            # Import Rates
+            if selected_entity_types.get("rates") and "Rates" in data:
+                rates_mapping = all_mappings.get("rates", {})
+                created, entity_id = self._import_rates(data["Rates"], rates_mapping, bid_id, bid_name)
+                results["rates"]["created"] = created
+                results["rates"]["entity_id"] = entity_id
+
+            # Show success message
+            self._show_import_success(results, data)
+
+            # Refresh dropdowns and select new entities
+            self._refresh_after_import(bid_id, results)
+
+        except Exception as e:
+            logger.error(f"Import failed: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Import Error",
+                f"Import failed:\n{str(e)}"
+            )
+
+    def _show_import_success(self, results, data):
+        """Show success message after import."""
+        summary_lines = ["Successfully imported Excel data:\n"]
+
+        if results["breakdown"]["created"] > 0:
+            summary_lines.append(f"✓ Created {results['breakdown']['created']} VFX Breakdown items")
+        if results["assets"]["created"] > 0:
+            summary_lines.append(f"✓ Created {results['assets']['created']} Asset items")
+        if results["scenes"]["created"] > 0:
+            summary_lines.append(f"✓ Created {results['scenes']['created']} Scene items")
+        if results["rates"]["created"] > 0:
+            summary_lines.append(f"✓ Created {results['rates']['created']} Rate items")
+
+        QtWidgets.QMessageBox.information(
+            self,
+            "Import Successful",
+            "\n".join(summary_lines)
+        )
+
+        logger.info(f"Import completed: {results}")
+
+    def _refresh_after_import(self, bid_id, results):
+        """Refresh dropdowns and select imported entities.
+
+        Args:
+            bid_id: ID of the Bid
+            results: Dict of import results
+        """
+        # Refresh Bid dropdown
+        self._refresh_bids()
+        self._select_bid_by_id(bid_id)
+
+        # Refresh VFX Breakdown dropdown if items were imported
+        if results["breakdown"]["entity_id"] and self._refresh_vfx_breakdown_dropdown():
+            logger.info(f"Refreshed VFX Breakdown dropdown")
+
+        logger.info("Completed post-import refresh")
+
+    def _import_vfx_breakdown(self, df, column_mapping, bid_id, bid_name):
         """Import VFX Breakdown data to ShotGrid.
 
         Args:
             df: DataFrame containing VFX Breakdown data
             column_mapping: Dict mapping ShotGrid fields to Excel column names
+            bid_id: ID of the Bid to link to
+            bid_name: Name of the Bid for versioning
 
         Returns:
             tuple: (Number of records created, VFX Breakdown ID)
@@ -2359,23 +2521,10 @@ class BidSelectorWidget(QtWidgets.QWidget):
         if df is None or len(df) == 0:
             return 0, None
 
-        logger.info(f"Starting VFX Breakdown import with {len(df)} rows")
+        logger.info(f"Starting VFX Breakdown import with {len(df)} rows for Bid: {bid_name} ({bid_id})")
         logger.info(f"Column mapping: {column_mapping}")
 
-        # Step 1: Create Bid (CustomEntity06) dialog
-        bid_dialog = CreateBidDialog(parent=self)
-        if bid_dialog.exec_() != QtWidgets.QDialog.Accepted:
-            logger.info("Bid creation cancelled by user")
-            return 0, None
-
-        bid_name = bid_dialog.get_bid_name()
-        bid_type = bid_dialog.get_bid_type()
-
-        if not bid_name:
-            QtWidgets.QMessageBox.warning(self, "Invalid Name", "Please enter a name for the Bid.")
-            return 0, None
-
-        # Step 2: Determine version number for VFX Breakdown (but don't create yet)
+        # Determine version number for VFX Breakdown
         # Query existing VFX Breakdowns with pattern: {bid_name}-Breakdown-v*
         try:
             filters = [
@@ -2446,34 +2595,25 @@ class BidSelectorWidget(QtWidgets.QWidget):
         progress.setValue(1)
         QtWidgets.QApplication.processEvents()
 
-        # Step 6: Create Bid and link to VFX Breakdown
-        progress.setLabelText(f"Creating Bid: {bid_name}...")
+        # Link VFX Breakdown to Bid
+        progress.setLabelText(f"Linking VFX Breakdown to Bid...")
         QtWidgets.QApplication.processEvents()
 
         try:
-            bid = self.sg_session.create_bid(
-                self.current_project_id,
-                bid_name,
-                bid_type,
-                vfx_breakdown={"type": "CustomEntity01", "id": breakdown_id}
+            self.sg_session.sg.update(
+                "CustomEntity06",
+                bid_id,
+                {"sg_vfx_breakdown": {"type": "CustomEntity01", "id": breakdown_id}}
             )
-            bid_id = bid["id"]
-            logger.info(f"Created Bid (CustomEntity06): {bid_id} - {bid_name}, linked to VFX Breakdown {breakdown_id}")
+            logger.info(f"Linked VFX Breakdown {breakdown_id} to Bid {bid_id}")
         except Exception as e:
-            logger.error(f"Failed to create Bid: {e}", exc_info=True)
-            progress.close()
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to create Bid:\n{str(e)}\n\n"
-                f"Note: VFX Breakdown '{breakdown_name}' was already created."
-            )
-            return 0, None
+            logger.error(f"Failed to link VFX Breakdown to Bid: {e}", exc_info=True)
+            # Non-fatal, continue with import
 
         progress.setValue(2)
         QtWidgets.QApplication.processEvents()
 
-        # Step 7: Create ShotGrid records (CustomEntity02) linked to VFX Breakdown
+        # Create ShotGrid records (CustomEntity02) linked to VFX Breakdown
         created_count = 0
         failed_count = 0
 
@@ -2554,12 +2694,14 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         return created_count, breakdown_id
 
-    def _import_assets(self, df, column_mapping):
+    def _import_assets(self, df, column_mapping, bid_id, bid_name):
         """Import Assets data to ShotGrid.
 
         Args:
             df: DataFrame containing Assets data
             column_mapping: Dict mapping ShotGrid fields to Excel column names
+            bid_id: ID of the Bid to link to
+            bid_name: Name of the Bid for versioning
 
         Returns:
             tuple: (Number of records created, Bid Assets ID)
@@ -2571,20 +2713,6 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         logger.info(f"Starting Assets import with {len(df)} rows")
         logger.info(f"Column mapping: {column_mapping}")
-
-        # Step 1: Get current Bid
-        current_bid = self.get_current_bid()
-        if not current_bid:
-            QtWidgets.QMessageBox.warning(
-                self,
-                "No Bid Selected",
-                "Please select a Bid before importing Assets."
-            )
-            return 0, None
-
-        bid_id = current_bid.get("id")
-        bid_name = current_bid.get("code", "Unknown")
-
         logger.info(f"Importing Assets for Bid: {bid_name} (ID: {bid_id})")
 
         # Step 2: Determine version number for Bid Assets
@@ -2755,6 +2883,47 @@ class BidSelectorWidget(QtWidgets.QWidget):
             logger.info(f"Successfully created Bid Assets '{bid_assets_name}' with {created_count} Asset items")
 
         return created_count, bid_assets_id
+
+    def _import_scenes(self, df, column_mapping, bid_id, bid_name):
+        """Import Scenes data to ShotGrid.
+
+        TODO: Needs clarification:
+        - Correct entity type (currently "Scene" in ENTITY_CONFIGS - verify if correct)
+        - Parent container entity type and naming convention (e.g., "Bid Scenes-v###")
+        - Field name on Bid for linking
+        - Complete field mappings
+
+        Args:
+            df: DataFrame containing Scenes data
+            column_mapping: Dict mapping ShotGrid fields to Excel column names
+            bid_id: ID of the Bid to link to
+            bid_name: Name of the Bid for versioning
+
+        Returns:
+            tuple: (Number of records created, Parent entity ID)
+        """
+        logger.warning("Scene import not yet fully implemented - needs entity type and linking details")
+        return 0, None
+
+    def _import_rates(self, df, column_mapping, bid_id, bid_name):
+        """Import Rates data to ShotGrid.
+
+        TODO: Needs clarification:
+        - Parent container entity type and naming convention (e.g., "Bid Rates-v###")
+        - Field name on Bid for linking
+        - Complete field mappings (currently: code, sg_rate, sg_unit)
+
+        Args:
+            df: DataFrame containing Rates data
+            column_mapping: Dict mapping ShotGrid fields to Excel column names
+            bid_id: ID of the Bid to link to
+            bid_name: Name of the Bid for versioning
+
+        Returns:
+            tuple: (Number of records created, Parent entity ID)
+        """
+        logger.warning("Rates import not yet fully implemented - needs entity type and linking details")
+        return 0, None
 
     def _refresh_vfx_breakdown_dropdown(self):
         """Refresh the VFX Breakdown dropdown in the VFX Breakdown tab.
