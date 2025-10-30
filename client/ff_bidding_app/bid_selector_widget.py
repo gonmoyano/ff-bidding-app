@@ -433,22 +433,75 @@ class SelectBidDialog(QtWidgets.QDialog):
 
         entity_layout.addSpacing(5)
 
-        self.breakdown_checkbox = QtWidgets.QCheckBox('Breakdown (from "VFX Breakdown" sheet)')
+        # Checkbox stylesheet to match VFX Breakdown table style
+        checkbox_style = """
+            QCheckBox {
+                spacing: 8px;
+            }
+            QCheckBox::indicator {
+                width: 20px;
+                height: 20px;
+                border-radius: 3px;
+                background-color: #2b2b2b;
+                border: 2px solid #555555;
+            }
+            QCheckBox::indicator:checked {
+                border: 2px solid #0078d4;
+                background-color: #2b2b2b;
+                image: none;
+            }
+            QCheckBox::indicator:disabled {
+                background-color: #1a1a1a;
+                border-color: #333333;
+            }
+        """
+
+        # Create a custom paint function for checkmarks
+        def create_checkbox_with_checkmark(text):
+            """Create a checkbox with custom checkmark rendering."""
+            checkbox = QtWidgets.QCheckBox(text)
+            checkbox.setStyleSheet(checkbox_style)
+
+            # Override paint event to draw custom checkmark
+            original_paint = checkbox.paintEvent
+
+            def custom_paint(event):
+                original_paint(event)
+                if checkbox.isChecked():
+                    painter = QtGui.QPainter(checkbox)
+                    painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+                    # Get indicator rect (20x20, positioned at left side)
+                    indicator_rect = QtCore.QRect(0, (checkbox.height() - 20) // 2, 20, 20)
+
+                    # Draw checkmark
+                    painter.setPen(QtGui.QPen(QtGui.QColor("#0078d4"), 2))
+                    font = painter.font()
+                    font.setPixelSize(16)
+                    font.setBold(True)
+                    painter.setFont(font)
+                    painter.drawText(indicator_rect, QtCore.Qt.AlignCenter, "✓")
+                    painter.end()
+
+            checkbox.paintEvent = custom_paint
+            return checkbox
+
+        self.breakdown_checkbox = create_checkbox_with_checkmark("Breakdown")
         self.breakdown_checkbox.setChecked(self.available_sheets.get("breakdown", False))
         self.breakdown_checkbox.setEnabled(self.available_sheets.get("breakdown", False))
         entity_layout.addWidget(self.breakdown_checkbox)
 
-        self.assets_checkbox = QtWidgets.QCheckBox('Assets (from "Assets" sheet)')
+        self.assets_checkbox = create_checkbox_with_checkmark("Assets")
         self.assets_checkbox.setChecked(self.available_sheets.get("assets", False))
         self.assets_checkbox.setEnabled(self.available_sheets.get("assets", False))
         entity_layout.addWidget(self.assets_checkbox)
 
-        self.scenes_checkbox = QtWidgets.QCheckBox('Scenes (from "Scene" sheet)')
+        self.scenes_checkbox = create_checkbox_with_checkmark("Scenes")
         self.scenes_checkbox.setChecked(self.available_sheets.get("scenes", False))
         self.scenes_checkbox.setEnabled(self.available_sheets.get("scenes", False))
         entity_layout.addWidget(self.scenes_checkbox)
 
-        self.rates_checkbox = QtWidgets.QCheckBox('Rates (from "Rates" sheet)')
+        self.rates_checkbox = create_checkbox_with_checkmark("Rates")
         self.rates_checkbox.setChecked(self.available_sheets.get("rates", False))
         self.rates_checkbox.setEnabled(self.available_sheets.get("rates", False))
         entity_layout.addWidget(self.rates_checkbox)
