@@ -410,7 +410,8 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         """Initialize the column mapping dialog.
 
         Args:
-            excel_columns: List of column headers from the Excel file
+            excel_columns: Either a list of column headers (uses same columns for all tabs)
+                          or a dict mapping entity type to column list {"breakdown": [...], "assets": [...]}
             sg_session: ShotGrid session for API access
             project_id: Project ID for field schema lookup
             parent: Parent widget
@@ -420,7 +421,21 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         self.setModal(True)
         self.setMinimumSize(900, 700)
 
-        self.excel_columns = excel_columns
+        # Convert excel_columns to dict format if it's a list (backward compatibility)
+        if isinstance(excel_columns, list):
+            # Use same columns for all entity types
+            self.excel_columns_dict = {
+                "breakdown": excel_columns,
+                "assets": excel_columns,
+                "scenes": excel_columns,
+                "rates": excel_columns
+            }
+        else:
+            # Already a dict, use as-is (with defaults for missing keys)
+            self.excel_columns_dict = {}
+            for config_key in self.ENTITY_CONFIGS.keys():
+                self.excel_columns_dict[config_key] = excel_columns.get(config_key, [])
+
         self.sg_session = sg_session
         self.project_id = project_id
 
@@ -571,10 +586,11 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         """
         row_layout = QtWidgets.QHBoxLayout()
 
-        # Excel column dropdown (left)
+        # Excel column dropdown (left) - use columns specific to this entity type
         excel_combo = QtWidgets.QComboBox()
         excel_combo.addItem("-- Not Mapped --", None)
-        for col in self.excel_columns:
+        entity_columns = self.excel_columns_dict.get(config_key, [])
+        for col in entity_columns:
             excel_combo.addItem(col)
         excel_combo.setMinimumWidth(200)
         row_layout.addWidget(excel_combo)
@@ -653,7 +669,9 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         Returns:
             str: Best matching Excel column name or None
         """
-        if not self.excel_columns:
+        # Get entity-specific columns
+        entity_columns = self.excel_columns_dict.get(config_key, [])
+        if not entity_columns:
             return None
 
         # Get display name for comparison
@@ -667,7 +685,7 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         best_match = None
         best_score = 0
 
-        for excel_col in self.excel_columns:
+        for excel_col in entity_columns:
             excel_clean = excel_col.replace("_", " ").lower()
             score = 0
 
@@ -727,12 +745,13 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         # Apply saved mappings (only if column exists in current Excel file)
         applied_count = 0
         entity_mappings = self.mapping_combos.get(config_key, {})
+        entity_columns = self.excel_columns_dict.get(config_key, [])
 
         for sg_field, excel_col in saved_mapping.items():
             if sg_field not in entity_mappings:
                 continue
 
-            if excel_col and excel_col in self.excel_columns:
+            if excel_col and excel_col in entity_columns:
                 combo = entity_mappings[sg_field]["excel"]
                 index = combo.findText(excel_col)
                 if index >= 0:
@@ -744,12 +763,19 @@ class ColumnMappingDialog(QtWidgets.QDialog):
 
     def accept(self):
         """Override accept to save mappings before closing."""
-        # Save mappings for all entity types
+        # Save mappings only for entity types that have columns
+        # This prevents overwriting existing saved mappings for tabs that weren't used
         for config_key, config in self.ENTITY_CONFIGS.items():
-            mapping = self.get_column_mapping_for_entity(config_key)
-            mapping_key = config["mapping_key"]
-            self.app_settings.set_column_mapping(mapping_key, mapping)
-            logger.info(f"Saved column mappings for '{config_key}' with key '{mapping_key}'")
+            entity_columns = self.excel_columns_dict.get(config_key, [])
+
+            # Only save if this entity type has columns (i.e., was actually used)
+            if entity_columns:
+                mapping = self.get_column_mapping_for_entity(config_key)
+                mapping_key = config["mapping_key"]
+                self.app_settings.set_column_mapping(mapping_key, mapping)
+                logger.info(f"Saved column mappings for '{config_key}' with key '{mapping_key}'")
+            else:
+                logger.info(f"Skipping save for '{config_key}' - no columns provided")
 
         # Call parent accept
         super().accept()
@@ -2112,8 +2138,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
         excel_columns = list(df.columns)
 
         # Step 4: Show column mapping dialog BEFORE creating entities
+        # Pass columns as dict with breakdown key so each tab shows correct columns
         mapping_dialog = ColumnMappingDialog(
-            excel_columns,
+            {"breakdown": excel_columns},
             self.sg_session,
             self.current_project_id,
             parent=self
@@ -2339,8 +2366,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
         excel_columns = list(df.columns)
 
         # Step 4: Show column mapping dialog BEFORE creating entities
+        # Pass columns as dict with assets key so each tab shows correct columns
         mapping_dialog = ColumnMappingDialog(
-            excel_columns,
+            {"assets": excel_columns},
             self.sg_session,
             self.current_project_id,
             parent=self
