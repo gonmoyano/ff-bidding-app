@@ -2108,12 +2108,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
             return
 
         info_parts = []
-        title_parts = []
 
         # Get bid name for title bar
         bid_name = bid.get("code") or f"Bid {bid.get('id', 'N/A')}"
-        bid_type = bid.get("sg_bid_type", "Unknown")
-        title_parts.append(f"{bid_name} ({bid_type})")
+        # Start with "Current Bid: (bid name)"
+        title_text = f"Current Bid: {bid_name}"
 
         # Add breakdown info
         breakdown = bid.get("sg_vfx_breakdown")
@@ -2126,7 +2125,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             else:
                 breakdown_name = str(breakdown)
             info_parts.append(f"Bid Breakdown: {breakdown_name}")
-            title_parts.append(f"Bid Breakdown: {breakdown_name}")
+            title_text += f" Bid Breakdown: {breakdown_name}"
 
         # Add bid asset info
         bid_assets = bid.get("sg_bid_assets")
@@ -2139,7 +2138,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             else:
                 asset_name = str(bid_assets)
             info_parts.append(f"Bid Asset: {asset_name}")
-            title_parts.append(f"Bid Asset: {asset_name}")
+            title_text += f" Bid Asset: {asset_name}"
 
         # Update the label with the info (for display under dropdown)
         if info_parts:
@@ -2148,7 +2147,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             self.bid_info_label.setText("")
 
         # Update the group box title with bid name and info (for collapsed state)
-        self.group_box.setAdditionalInfo(" | ".join(title_parts))
+        self.group_box.setAdditionalInfo(title_text)
 
     def clear(self):
         """Clear the bid selector."""
