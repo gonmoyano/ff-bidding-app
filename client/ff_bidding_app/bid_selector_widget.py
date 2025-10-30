@@ -336,6 +336,7 @@ class ColumnMappingDialog(QtWidgets.QDialog):
     # ShotGrid field definitions for VFX Breakdown (CustomEntity02)
     BREAKDOWN_ITEM_REQUIRED_FIELDS = {
         "code": "text",
+        "sg_bid_assets": "entity",
         "sg_interior_exterior": "list",
         "sg_number_of_shots": "number",
         "sg_on_set_vfx_needs": "text",

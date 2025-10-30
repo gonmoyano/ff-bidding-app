@@ -343,6 +343,7 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         # Column configuration - matches import mapping fields
         self.column_fields = [
             "code",
+            "sg_bid_assets",
             "sg_vfx_breakdown_scene",
             "sg_interior_exterior",
             "sg_number_of_shots",
