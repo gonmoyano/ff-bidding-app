@@ -2551,19 +2551,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         }
 
         try:
-            # Import Breakdown
-            if selected_entity_types.get("breakdown") and "VFX Breakdown" in data:
-                breakdown_mapping = all_mappings.get("breakdown", {})
-                created, entity_id = self._import_vfx_breakdown(
-                    data["VFX Breakdown"],
-                    breakdown_mapping,
-                    bid_id,
-                    bid_name
-                )
-                results["breakdown"]["created"] = created
-                results["breakdown"]["entity_id"] = entity_id
-
-            # Import Assets
+            # Import Assets first (so Breakdown can reference them)
             if selected_entity_types.get("assets") and "Assets" in data:
                 assets_mapping = all_mappings.get("assets", {})
                 created, entity_id = self._import_assets(
@@ -2574,6 +2562,18 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 )
                 results["assets"]["created"] = created
                 results["assets"]["entity_id"] = entity_id
+
+            # Import Breakdown (can now reference Assets)
+            if selected_entity_types.get("breakdown") and "VFX Breakdown" in data:
+                breakdown_mapping = all_mappings.get("breakdown", {})
+                created, entity_id = self._import_vfx_breakdown(
+                    data["VFX Breakdown"],
+                    breakdown_mapping,
+                    bid_id,
+                    bid_name
+                )
+                results["breakdown"]["created"] = created
+                results["breakdown"]["entity_id"] = entity_id
 
             # Import Scenes
             if selected_entity_types.get("scenes") and "Scene" in data:
@@ -2817,17 +2817,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
         progress.setValue(total_steps)
         progress.close()
 
+        # Log summary (detailed message shown at end of all imports)
         if failed_count > 0:
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Import Completed with Errors",
-                f"Created Bid '{bid_name}' and VFX Breakdown '{breakdown_name}'.\n"
-                f"Created {created_count} breakdown items.\n"
-                f"Failed to create {failed_count} items.\n\n"
-                f"Check the logs for details."
-            )
+            logger.warning(f"Created VFX Breakdown '{breakdown_name}' with {created_count} items ({failed_count} failed)")
         else:
-            logger.info(f"Successfully created Bid '{bid_name}' and VFX Breakdown '{breakdown_name}' with {created_count} items")
+            logger.info(f"Successfully created VFX Breakdown '{breakdown_name}' with {created_count} items")
 
         return created_count, breakdown_id
 
@@ -3007,15 +3001,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
         progress.setValue(total_steps)
         progress.close()
 
+        # Log summary (detailed message shown at end of all imports)
         if failed_count > 0:
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Import Completed with Errors",
-                f"Created Bid Assets '{bid_assets_name}'.\n"
-                f"Created {created_count} Asset items.\n"
-                f"Failed to create {failed_count} items.\n\n"
-                f"Check the logs for details."
-            )
+            logger.warning(f"Created Bid Assets '{bid_assets_name}' with {created_count} Asset items ({failed_count} failed)")
         else:
             logger.info(f"Successfully created Bid Assets '{bid_assets_name}' with {created_count} Asset items")
 
