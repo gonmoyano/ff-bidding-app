@@ -1986,6 +1986,8 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 # Process VFX Breakdown tab specifically
                 vfx_breakdown_created = 0
                 vfx_breakdown_id = None
+                assets_created = 0
+                bid_assets_id = None
                 import_cancelled = False
 
                 if "VFX Breakdown" in data:
@@ -1994,6 +1996,14 @@ class BidSelectorWidget(QtWidgets.QWidget):
                     if vfx_breakdown_created == 0 and vfx_breakdown_id is None:
                         import_cancelled = True
                         logger.info("Import cancelled by user during column mapping or bid creation")
+
+                # Process Assets tab
+                if "Assets" in data and not import_cancelled:
+                    assets_created, bid_assets_id = self._import_assets(data["Assets"])
+                    # If both are 0/None and we had data, user cancelled the import
+                    if assets_created == 0 and bid_assets_id is None:
+                        import_cancelled = True
+                        logger.info("Assets import cancelled by user")
 
                 # Only show success message if import wasn't cancelled
                 if not import_cancelled:
@@ -2009,6 +2019,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
                     if vfx_breakdown_created > 0:
                         summary_lines.append(f"\n✓ Created {vfx_breakdown_created} VFX Breakdown items in ShotGrid")
+
+                    if assets_created > 0:
+                        summary_lines.append(f"✓ Created {assets_created} Asset items in ShotGrid")
 
                     summary_lines.append(f"\nTotal: {total_rows} rows imported across {len(data)} tabs")
 
@@ -2026,7 +2039,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         logger.info(f"Refreshed VFX Breakdown dropdown, selecting ID {vfx_breakdown_id}")
 
                     # Refresh Bid dropdown after import
-                    if vfx_breakdown_id:
+                    if vfx_breakdown_id or bid_assets_id:
                         self._refresh_bids()
                         logger.info("Refreshed Bid dropdown after import")
 
@@ -2254,6 +2267,223 @@ class BidSelectorWidget(QtWidgets.QWidget):
             logger.info(f"Successfully created Bid '{bid_name}' and VFX Breakdown '{breakdown_name}' with {created_count} items")
 
         return created_count, breakdown_id
+
+    def _import_assets(self, df):
+        """Import Assets data to ShotGrid.
+
+        Args:
+            df: DataFrame containing Assets data
+
+        Returns:
+            tuple: (Number of records created, Bid Assets ID)
+        """
+        import pandas as pd
+
+        if df is None or len(df) == 0:
+            return 0, None
+
+        # Step 1: Get current Bid
+        current_bid = self.get_current_bid()
+        if not current_bid:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Bid Selected",
+                "Please select a Bid before importing Assets."
+            )
+            return 0, None
+
+        bid_id = current_bid.get("id")
+        bid_name = current_bid.get("code", "Unknown")
+
+        logger.info(f"Importing Assets for Bid: {bid_name} (ID: {bid_id})")
+
+        # Step 2: Determine version number for Bid Assets
+        # Query existing Bid Assets with pattern: {bid_name}-Bid Assets-v*
+        try:
+            filters = [
+                ["project", "is", {"type": "Project", "id": self.current_project_id}],
+                ["code", "starts_with", f"{bid_name}-Bid Assets-v"]
+            ]
+            existing_bid_assets = self.sg_session.sg.find(
+                "CustomEntity08",
+                filters,
+                ["code"]
+            )
+
+            # Find the highest version number
+            max_version = 0
+            for bid_asset in existing_bid_assets:
+                code = bid_asset.get("code", "")
+                # Extract version number from code (e.g., "MyBid-Bid Assets-v003" -> 3)
+                if code.startswith(f"{bid_name}-Bid Assets-v"):
+                    version_str = code.split("-v")[-1]
+                    try:
+                        version = int(version_str)
+                        max_version = max(max_version, version)
+                    except ValueError:
+                        continue
+
+            # Increment to get next version
+            next_version = max_version + 1
+            bid_assets_name = f"{bid_name}-Bid Assets-v{next_version:03d}"
+
+            logger.info(f"Generated Bid Assets name: {bid_assets_name} (version {next_version})")
+
+        except Exception as e:
+            logger.error(f"Failed to query existing Bid Assets: {e}", exc_info=True)
+            # Default to v001 if query fails
+            bid_assets_name = f"{bid_name}-Bid Assets-v001"
+            logger.warning(f"Defaulting to version 001: {bid_assets_name}")
+
+        # Step 3: Get column names from DataFrame
+        excel_columns = list(df.columns)
+
+        # Step 4: Show column mapping dialog BEFORE creating entities
+        mapping_dialog = ColumnMappingDialog(
+            excel_columns,
+            self.sg_session,
+            self.current_project_id,
+            parent=self
+        )
+
+        if mapping_dialog.exec_() != QtWidgets.QDialog.Accepted:
+            logger.info("Column mapping cancelled by user - no entities created")
+            return 0, None
+
+        # Get the mapping for Assets
+        column_mapping = mapping_dialog.get_column_mapping_for_entity("assets")
+        logger.info(f"Assets column mapping: {column_mapping}")
+
+        # Create progress dialog for import
+        total_steps = len(df) + 1  # +1 for Bid Assets creation
+        progress = QtWidgets.QProgressDialog("Importing Assets to ShotGrid...", None, 0, total_steps, self)
+        progress.setWindowModality(QtCore.Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        QtWidgets.QApplication.processEvents()
+
+        # Step 5: Create Bid Assets in ShotGrid
+        progress.setLabelText(f"Creating Bid Assets: {bid_assets_name}...")
+        QtWidgets.QApplication.processEvents()
+
+        try:
+            bid_assets_data = {
+                "code": bid_assets_name,
+                "project": {"type": "Project", "id": self.current_project_id}
+            }
+            bid_assets = self.sg_session.sg.create("CustomEntity08", bid_assets_data)
+            bid_assets_id = bid_assets["id"]
+            logger.info(f"Created Bid Assets (CustomEntity08): {bid_assets_id} - {bid_assets_name}")
+        except Exception as e:
+            logger.error(f"Failed to create Bid Assets: {e}", exc_info=True)
+            progress.close()
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to create Bid Assets:\n{str(e)}"
+            )
+            return 0, None
+
+        progress.setValue(1)
+        QtWidgets.QApplication.processEvents()
+
+        # Step 6: Link Bid Assets to current Bid
+        try:
+            self.sg_session.sg.update(
+                "CustomEntity06",
+                bid_id,
+                {"sg_bid_assets": {"type": "CustomEntity08", "id": bid_assets_id}}
+            )
+            logger.info(f"Linked Bid Assets {bid_assets_id} to Bid {bid_id}")
+        except Exception as e:
+            logger.error(f"Failed to link Bid Assets to Bid: {e}", exc_info=True)
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Warning",
+                f"Bid Assets created but failed to link to Bid:\n{str(e)}"
+            )
+
+        # Step 7: Create Asset items (CustomEntity07) linked to Bid Assets
+        created_count = 0
+        failed_count = 0
+
+        for index, row in df.iterrows():
+            # Update progress
+            progress.setLabelText(f"Creating Asset item {created_count + 1} of {len(df)}...")
+            progress.setValue(1 + index + 1)
+            QtWidgets.QApplication.processEvents()
+
+            try:
+                # Build SG data from mapping
+                sg_data = {
+                    "project": {"type": "Project", "id": self.current_project_id},
+                    "sg_bid_assets": {"type": "CustomEntity08", "id": bid_assets_id}  # Link to Bid Assets
+                }
+
+                for sg_field, excel_col in column_mapping.items():
+                    if excel_col is None:
+                        continue
+
+                    # Get value from DataFrame
+                    value = row[excel_col]
+
+                    # Skip empty values
+                    if pd.isna(value) or value == "":
+                        continue
+
+                    # Convert value based on field type
+                    field_type = ColumnMappingDialog.ASSET_ITEM_REQUIRED_FIELDS.get(sg_field)
+
+                    if field_type == "number":
+                        try:
+                            sg_data[sg_field] = int(value)
+                        except (ValueError, TypeError):
+                            logger.warning(f"Could not convert '{value}' to number for field '{sg_field}'")
+                            continue
+                    elif field_type == "float":
+                        try:
+                            sg_data[sg_field] = float(value)
+                        except (ValueError, TypeError):
+                            logger.warning(f"Could not convert '{value}' to float for field '{sg_field}'")
+                            continue
+                    elif field_type == "checkbox":
+                        # Convert to boolean
+                        if isinstance(value, bool):
+                            sg_data[sg_field] = value
+                        elif isinstance(value, str):
+                            sg_data[sg_field] = value.lower() in ["true", "yes", "1", "x"]
+                        else:
+                            sg_data[sg_field] = bool(value)
+                    else:
+                        # Text and list fields - store as string
+                        sg_data[sg_field] = str(value)
+
+                # Create the record
+                result = self.sg_session.sg.create("CustomEntity07", sg_data)
+                created_count += 1
+                logger.info(f"Created CustomEntity07 (Asset item): {result['id']} with code '{sg_data.get('code', 'N/A')}' linked to Bid Assets {bid_assets_id}")
+
+            except Exception as e:
+                failed_count += 1
+                logger.error(f"Failed to create CustomEntity07 (Asset item) for row {index}: {e}", exc_info=True)
+
+        # Close progress dialog
+        progress.setValue(total_steps)
+        progress.close()
+
+        if failed_count > 0:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Import Completed with Errors",
+                f"Created Bid Assets '{bid_assets_name}'.\n"
+                f"Created {created_count} Asset items.\n"
+                f"Failed to create {failed_count} items.\n\n"
+                f"Check the logs for details."
+            )
+        else:
+            logger.info(f"Successfully created Bid Assets '{bid_assets_name}' with {created_count} Asset items")
+
+        return created_count, bid_assets_id
 
     def _refresh_vfx_breakdown_dropdown(self):
         """Refresh the VFX Breakdown dropdown in the VFX Breakdown tab.
