@@ -630,8 +630,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             if not isinstance(entities, list):
                 entities = [entities] if entities else []
 
-            # Create the widget
-            widget = MultiEntityReferenceWidget(entities=entities, allow_add=True)
+            # Create the widget (without add button for now)
+            widget = MultiEntityReferenceWidget(entities=entities, allow_add=False)
             widget.setMinimumHeight(60)
 
             # Connect signal to update model when entities change

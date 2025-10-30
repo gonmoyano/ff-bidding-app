@@ -451,6 +451,15 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
                 # Return the actual boolean value for editing
                 return value
 
+        # Handle sg_bid_assets field specially (uses custom widget)
+        if field_name == "sg_bid_assets":
+            if role == QtCore.Qt.DisplayRole:
+                # Don't show text - custom widget will display the entities
+                return ""
+            elif role == QtCore.Qt.EditRole:
+                # Return the actual list for editing
+                return value
+
         # Handle non-checkbox fields normally
         if role == QtCore.Qt.DisplayRole or role == QtCore.Qt.EditRole:
             return self._format_sg_value(value)
