@@ -150,6 +150,9 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
 
     def _setup_ui(self):
         """Build the main UI with flow layout."""
+        # Set object name for stylesheet targeting
+        self.setObjectName("entityReferenceWidget")
+
         # Main layout
         main_layout = QtWidgets.QVBoxLayout(self)
         main_layout.setContentsMargins(2, 2, 2, 2)
@@ -175,9 +178,9 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         scroll_area.setWidget(self.pills_container)
         main_layout.addWidget(scroll_area)
 
-        # Apply dark theme styling
+        # Apply initial dark theme styling
         self.setStyleSheet("""
-            MultiEntityReferenceWidget {
+            QWidget#entityReferenceWidget {
                 background-color: #2b2b2b;
                 border: 1px solid #555555;
                 border-radius: 4px;
@@ -308,8 +311,10 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         Args:
             selected (bool): True if cell is selected, False otherwise
         """
-        self._is_selected = selected
-        self._update_visual_state()
+        if self._is_selected != selected:
+            self._is_selected = selected
+            print(f"DEBUG: MultiEntityReferenceWidget.set_selected({selected})")
+            self._update_visual_state()
 
     def set_editing(self, editing):
         """Set the editing state of the widget.
@@ -317,8 +322,10 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         Args:
             editing (bool): True if cell is being edited (menu open), False otherwise
         """
-        self._is_editing = editing
-        self._update_visual_state()
+        if self._is_editing != editing:
+            self._is_editing = editing
+            print(f"DEBUG: MultiEntityReferenceWidget.set_editing({editing})")
+            self._update_visual_state()
 
     def _update_visual_state(self):
         """Update the widget's visual appearance based on selection and editing states."""
@@ -328,20 +335,25 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
             bg_color = "#2b2b2b"
             border_color = "#0078d4"
             border_width = "2px"
+            state = "editing"
         elif self._is_selected:
             # Selected mode: blue background
             bg_color = "#0078d4"
             border_color = "#0078d4"
             border_width = "1px"
+            state = "selected"
         else:
             # Normal mode: dark background
             bg_color = "#2b2b2b"
             border_color = "#555555"
             border_width = "1px"
+            state = "normal"
 
-        # Apply stylesheet
+        print(f"DEBUG: _update_visual_state() - state={state}, bg={bg_color}, border={border_color} {border_width}")
+
+        # Apply stylesheet using object name for reliable targeting
         self.setStyleSheet(f"""
-            MultiEntityReferenceWidget {{
+            QWidget#entityReferenceWidget {{
                 background-color: {bg_color};
                 border: {border_width} solid {border_color};
                 border-radius: 4px;
@@ -350,6 +362,9 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
                 background-color: transparent;
             }}
         """)
+
+        # Force widget repaint
+        self.update()
 
 
 class FlowLayout(QtWidgets.QLayout):

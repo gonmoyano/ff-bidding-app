@@ -652,6 +652,11 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Set the widget in the table
             self.table_view.setIndexWidget(index, widget)
 
+            # Check if this cell is currently selected and update widget state
+            if self.table_view.selectionModel():
+                is_selected = self.table_view.selectionModel().isSelected(index)
+                widget.set_selected(is_selected)
+
         # Increase row height for this column
         self.table_view.verticalHeader().setDefaultSectionSize(80)
 
@@ -690,19 +695,23 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         """
         # Update deselected widgets
         for index in deselected.indexes():
-            field_name = self.model.column_fields[index.column()]
-            if field_name == "sg_bid_assets":
-                widget = self.table_view.indexWidget(index)
-                if isinstance(widget, MultiEntityReferenceWidget):
-                    widget.set_selected(False)
+            if index.column() < len(self.model.column_fields):
+                field_name = self.model.column_fields[index.column()]
+                if field_name == "sg_bid_assets":
+                    widget = self.table_view.indexWidget(index)
+                    if isinstance(widget, MultiEntityReferenceWidget):
+                        logger.debug(f"Setting deselected state for row {index.row()}")
+                        widget.set_selected(False)
 
         # Update selected widgets
         for index in selected.indexes():
-            field_name = self.model.column_fields[index.column()]
-            if field_name == "sg_bid_assets":
-                widget = self.table_view.indexWidget(index)
-                if isinstance(widget, MultiEntityReferenceWidget):
-                    widget.set_selected(True)
+            if index.column() < len(self.model.column_fields):
+                field_name = self.model.column_fields[index.column()]
+                if field_name == "sg_bid_assets":
+                    widget = self.table_view.indexWidget(index)
+                    if isinstance(widget, MultiEntityReferenceWidget):
+                        logger.debug(f"Setting selected state for row {index.row()}")
+                        widget.set_selected(True)
 
     def _on_cell_double_clicked(self, index):
         """Handle double-click on a cell.
