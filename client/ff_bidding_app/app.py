@@ -295,6 +295,15 @@ class RemoveRFQDialog(QtWidgets.QDialog):
 
         layout.addLayout(select_layout)
 
+        # Delete related elements checkbox
+        layout.addSpacing(10)
+        self.delete_related_checkbox = QtWidgets.QCheckBox(
+            "Also delete all related elements (Bids, VFX Breakdowns, Bidding Scenes, Bid Assets)"
+        )
+        self.delete_related_checkbox.setChecked(False)
+        self.delete_related_checkbox.setStyleSheet("padding: 10px;")
+        layout.addWidget(self.delete_related_checkbox)
+
         # Confirmation section
         layout.addSpacing(20)
 
@@ -342,6 +351,10 @@ class RemoveRFQDialog(QtWidgets.QDialog):
     def get_selected_rfq(self):
         """Get the selected RFQ to delete."""
         return self.rfq_combo.currentData()
+
+    def should_delete_related(self):
+        """Get whether related elements should also be deleted."""
+        return self.delete_related_checkbox.isChecked()
 
 
 class ConfigRFQsDialog(QtWidgets.QDialog):
@@ -1068,6 +1081,8 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             return
 
         rfq = dialog.get_selected_rfq()
+        delete_related = dialog.should_delete_related()
+
         if not rfq:
             QtWidgets.QMessageBox.warning(
                 self,
@@ -1077,20 +1092,51 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             return
 
         try:
-            # Delete the RFQ from ShotGrid
-            self.sg_session.delete_rfq(rfq['id'])
-            logger.info(f"Deleted RFQ {rfq['id']}")
+            if delete_related:
+                # Delete the RFQ and all related elements
+                deleted_summary = self.sg_session.delete_rfq_and_related(rfq['id'])
+                logger.info(f"Deleted RFQ {rfq['id']} and related elements: {deleted_summary}")
 
-            # Reload RFQs
-            project = self.sg_project_combo.itemData(self.sg_project_combo.currentIndex())
-            if project:
-                self._load_rfqs(project['id'])
+                # Build success message with summary
+                summary_parts = []
+                if deleted_summary.get("rfq"):
+                    summary_parts.append(f"RFQ: {deleted_summary['rfq']}")
+                if deleted_summary.get("bids"):
+                    summary_parts.append(f"Bids: {deleted_summary['bids']}")
+                if deleted_summary.get("vfx_breakdowns"):
+                    summary_parts.append(f"VFX Breakdowns: {deleted_summary['vfx_breakdowns']}")
+                if deleted_summary.get("bidding_scenes"):
+                    summary_parts.append(f"Bidding Scenes: {deleted_summary['bidding_scenes']}")
+                if deleted_summary.get("bid_assets"):
+                    summary_parts.append(f"Bid Assets: {deleted_summary['bid_assets']}")
 
-            QtWidgets.QMessageBox.information(
-                self,
-                "Success",
-                f"RFQ '{rfq.get('code', 'N/A')}' removed successfully."
-            )
+                summary_text = "\n".join(summary_parts) if summary_parts else "No items deleted"
+
+                # Reload RFQs
+                project = self.sg_project_combo.itemData(self.sg_project_combo.currentIndex())
+                if project:
+                    self._load_rfqs(project['id'])
+
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Success",
+                    f"RFQ '{rfq.get('code', 'N/A')}' and related elements removed successfully.\n\nDeleted items:\n{summary_text}"
+                )
+            else:
+                # Delete only the RFQ
+                self.sg_session.delete_rfq(rfq['id'])
+                logger.info(f"Deleted RFQ {rfq['id']}")
+
+                # Reload RFQs
+                project = self.sg_project_combo.itemData(self.sg_project_combo.currentIndex())
+                if project:
+                    self._load_rfqs(project['id'])
+
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Success",
+                    f"RFQ '{rfq.get('code', 'N/A')}' removed successfully."
+                )
 
         except Exception as e:
             logger.error(f"Error removing RFQ: {e}", exc_info=True)

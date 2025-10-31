@@ -437,6 +437,201 @@ class ShotgridClient:
         result = self.sg.delete("CustomEntity04", int(rfq_id))
         return result
 
+    def delete_vfx_breakdown(self, breakdown_id):
+        """
+        Delete a VFX Breakdown (CustomEntity01).
+
+        Args:
+            breakdown_id: VFX Breakdown ID
+
+        Returns:
+            Result of the delete operation
+        """
+        result = self.sg.delete("CustomEntity01", int(breakdown_id))
+        return result
+
+    def delete_bidding_scene(self, scene_id):
+        """
+        Delete a Bidding Scene (CustomEntity02).
+
+        Args:
+            scene_id: Bidding Scene ID
+
+        Returns:
+            Result of the delete operation
+        """
+        result = self.sg.delete("CustomEntity02", int(scene_id))
+        return result
+
+    def delete_bid_assets(self, bid_assets_id):
+        """
+        Delete Bid Assets (CustomEntity08).
+
+        Args:
+            bid_assets_id: Bid Assets ID
+
+        Returns:
+            Result of the delete operation
+        """
+        result = self.sg.delete("CustomEntity08", int(bid_assets_id))
+        return result
+
+    def delete_asset(self, asset_id):
+        """
+        Delete an Asset (CustomEntity07).
+
+        Args:
+            asset_id: Asset ID
+
+        Returns:
+            Result of the delete operation
+        """
+        result = self.sg.delete("CustomEntity07", int(asset_id))
+        return result
+
+    def delete_rfq_and_related(self, rfq_id):
+        """
+        Delete an RFQ and all related elements (Bids, VFX Breakdowns, Bidding Scenes, Bid Assets).
+
+        Args:
+            rfq_id: RFQ ID
+
+        Returns:
+            dict: Summary of deleted items
+        """
+        log = logging.getLogger(__name__)
+        deleted_summary = {
+            "rfq": 0,
+            "bids": 0,
+            "vfx_breakdowns": 0,
+            "bidding_scenes": 0,
+            "bid_assets": 0,
+            "assets": 0
+        }
+
+        try:
+            # First, get the RFQ with all its linked data
+            rfq = self.sg.find_one(
+                "CustomEntity04",
+                [["id", "is", int(rfq_id)]],
+                ["id", "code", "sg_early_bid", "sg_turnover_bid", "sg_vfx_breakdown"]
+            )
+
+            if not rfq:
+                log.warning(f"RFQ {rfq_id} not found")
+                return deleted_summary
+
+            # Collect all bids linked to this RFQ
+            bids_to_delete = []
+            if rfq.get("sg_early_bid"):
+                bid = rfq["sg_early_bid"]
+                if isinstance(bid, dict) and bid.get("id"):
+                    bids_to_delete.append(bid["id"])
+                elif isinstance(bid, list):
+                    bids_to_delete.extend([b["id"] for b in bid if isinstance(b, dict) and b.get("id")])
+
+            if rfq.get("sg_turnover_bid"):
+                bid = rfq["sg_turnover_bid"]
+                if isinstance(bid, dict) and bid.get("id"):
+                    bids_to_delete.append(bid["id"])
+                elif isinstance(bid, list):
+                    bids_to_delete.extend([b["id"] for b in bid if isinstance(b, dict) and b.get("id")])
+
+            # Collect all VFX breakdowns linked to this RFQ
+            vfx_breakdowns_to_delete = []
+            if rfq.get("sg_vfx_breakdown"):
+                breakdown = rfq["sg_vfx_breakdown"]
+                if isinstance(breakdown, dict) and breakdown.get("id"):
+                    vfx_breakdowns_to_delete.append(breakdown["id"])
+                elif isinstance(breakdown, list):
+                    vfx_breakdowns_to_delete.extend([b["id"] for b in breakdown if isinstance(b, dict) and b.get("id")])
+
+            # For each bid, get its linked VFX breakdown and bid assets
+            for bid_id in bids_to_delete:
+                try:
+                    bid_data = self.sg.find_one(
+                        "CustomEntity06",
+                        [["id", "is", int(bid_id)]],
+                        ["id", "sg_vfx_breakdown", "sg_bid_assets"]
+                    )
+
+                    if bid_data:
+                        # Add VFX breakdown from bid (if not already in list)
+                        if bid_data.get("sg_vfx_breakdown"):
+                            breakdown = bid_data["sg_vfx_breakdown"]
+                            if isinstance(breakdown, dict) and breakdown.get("id"):
+                                if breakdown["id"] not in vfx_breakdowns_to_delete:
+                                    vfx_breakdowns_to_delete.append(breakdown["id"])
+                            elif isinstance(breakdown, list):
+                                for b in breakdown:
+                                    if isinstance(b, dict) and b.get("id") and b["id"] not in vfx_breakdowns_to_delete:
+                                        vfx_breakdowns_to_delete.append(b["id"])
+
+                        # Delete bid assets linked to this bid
+                        if bid_data.get("sg_bid_assets"):
+                            bid_assets = bid_data["sg_bid_assets"]
+                            if isinstance(bid_assets, dict) and bid_assets.get("id"):
+                                try:
+                                    self.delete_bid_assets(bid_assets["id"])
+                                    deleted_summary["bid_assets"] += 1
+                                    log.info(f"Deleted Bid Assets {bid_assets['id']}")
+                                except Exception as e:
+                                    log.error(f"Failed to delete Bid Assets {bid_assets['id']}: {e}")
+                            elif isinstance(bid_assets, list):
+                                for ba in bid_assets:
+                                    if isinstance(ba, dict) and ba.get("id"):
+                                        try:
+                                            self.delete_bid_assets(ba["id"])
+                                            deleted_summary["bid_assets"] += 1
+                                            log.info(f"Deleted Bid Assets {ba['id']}")
+                                        except Exception as e:
+                                            log.error(f"Failed to delete Bid Assets {ba['id']}: {e}")
+
+                    # Delete the bid
+                    self.delete_bid(bid_id)
+                    deleted_summary["bids"] += 1
+                    log.info(f"Deleted Bid {bid_id}")
+
+                except Exception as e:
+                    log.error(f"Failed to delete Bid {bid_id}: {e}")
+
+            # For each VFX breakdown, delete all linked bidding scenes
+            for breakdown_id in vfx_breakdowns_to_delete:
+                try:
+                    # Get all bidding scenes linked to this breakdown
+                    bidding_scenes = self.get_bidding_scenes_for_vfx_breakdown(
+                        breakdown_id,
+                        fields=["id"]
+                    )
+
+                    # Delete all bidding scenes
+                    for scene in bidding_scenes:
+                        try:
+                            self.delete_bidding_scene(scene["id"])
+                            deleted_summary["bidding_scenes"] += 1
+                            log.info(f"Deleted Bidding Scene {scene['id']}")
+                        except Exception as e:
+                            log.error(f"Failed to delete Bidding Scene {scene['id']}: {e}")
+
+                    # Delete the VFX breakdown
+                    self.delete_vfx_breakdown(breakdown_id)
+                    deleted_summary["vfx_breakdowns"] += 1
+                    log.info(f"Deleted VFX Breakdown {breakdown_id}")
+
+                except Exception as e:
+                    log.error(f"Failed to delete VFX Breakdown {breakdown_id}: {e}")
+
+            # Finally, delete the RFQ
+            self.delete_rfq(rfq_id)
+            deleted_summary["rfq"] = 1
+            log.info(f"Deleted RFQ {rfq_id}")
+
+        except Exception as e:
+            log.error(f"Error in delete_rfq_and_related: {e}", exc_info=True)
+            raise
+
+        return deleted_summary
+
     def update_rfq_bid(self, rfq_id, bid):
         """
         Update the Bid linked to an RFQ.
