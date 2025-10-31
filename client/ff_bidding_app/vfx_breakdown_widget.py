@@ -1723,10 +1723,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # Now apply our constraints on top
         for col in range(self.model.columnCount()):
-            # Skip hidden columns
-            if self.table_view.isColumnHidden(col):
-                continue
-
             # Get field information
             field_name = self.model.column_fields[col] if col < len(self.model.column_fields) else None
             is_text_field = False
