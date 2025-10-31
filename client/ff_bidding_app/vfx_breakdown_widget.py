@@ -742,35 +742,56 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             )
             return
 
-        # Show dropdown dialog
-        asset_codes = [a.get("code", f"ID {a.get('id', 'N/A')}") for a in available_assets]
+        # Create custom QComboBox subclass to handle cleanup
+        class AssetComboBox(QtWidgets.QComboBox):
+            def hidePopup(self):
+                super().hidePopup()
+                # Clean up after popup closes
+                QtCore.QTimer.singleShot(100, self.deleteLater)
 
-        selected_code, ok = QtWidgets.QInputDialog.getItem(
-            self,
-            "Add Bid Asset",
-            "Select asset to add:",
-            asset_codes,
-            0,
-            False
-        )
+        # Create and show dropdown at cell location (matching table dropdown style)
+        combo = AssetComboBox(self.table_view)
+        combo.setFrame(False)  # Match ComboBoxDelegate style
 
-        if ok and selected_code:
-            # Find the selected asset
-            selected_asset = next((a for a in available_assets if a.get("code") == selected_code), None)
+        # Add empty option first (matching ComboBoxDelegate pattern)
+        combo.addItem("")
 
-            if selected_asset:
-                # Add to current entities
-                current_entities.append(selected_asset)
+        # Add available assets
+        for asset in available_assets:
+            asset_code = asset.get("code", f"ID {asset.get('id', 'N/A')}")
+            combo.addItem(asset_code)
+            # Store the full asset dict as item data
+            combo.setItemData(combo.count() - 1, asset)
 
-                # Update the model
-                self.model.setData(index, current_entities, QtCore.Qt.EditRole)
+        # Position combo at the cell location
+        cell_rect = self.table_view.visualRect(index)
+        combo.setGeometry(cell_rect)
 
-                # Refresh the widget
-                widget = self.table_view.indexWidget(index)
-                if isinstance(widget, MultiEntityReferenceWidget):
-                    widget.set_entities(current_entities)
+        # Define handler for selection
+        def on_combo_activated(combo_index):
+            if combo_index > 0:  # Skip empty option
+                selected_asset = combo.itemData(combo_index)
 
-                logger.info(f"Added asset {selected_code} to row {row}")
+                if selected_asset:
+                    # Add to current entities
+                    current_entities.append(selected_asset)
+
+                    # Update the model
+                    self.model.setData(index, current_entities, QtCore.Qt.EditRole)
+
+                    # Refresh the widget
+                    widget = self.table_view.indexWidget(index)
+                    if isinstance(widget, MultiEntityReferenceWidget):
+                        widget.set_entities(current_entities)
+
+                    logger.info(f"Added asset {selected_asset.get('code')} to row {row}")
+
+        # Connect signal
+        combo.activated.connect(on_combo_activated)
+
+        # Show the combo and open the dropdown
+        combo.show()
+        combo.showPopup()
 
     def _get_available_bid_assets(self):
         """Query and return all Asset items from the current Bid's Bid Assets.
