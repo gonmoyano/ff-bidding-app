@@ -742,94 +742,58 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             )
             return
 
-        # Create custom QComboBox subclass to handle cleanup
-        class AssetComboBox(QtWidgets.QComboBox):
-            def hidePopup(self):
-                super().hidePopup()
-                # Clean up after popup closes
-                QtCore.QTimer.singleShot(100, self.deleteLater)
+        # Create a QMenu for asset selection (simpler and more reliable than QComboBox popup)
+        menu = QtWidgets.QMenu(self.table_view)
 
-            def showPopup(self):
-                # Override to position popup correctly
-                popup = self.view()
-                popup.setParent(self.parent(), QtCore.Qt.Popup | QtCore.Qt.FramelessWindowHint)
-
-                # Get cell rectangle in viewport coordinates
-                cell_rect = self.property("cell_rect")
-                viewport = self.property("viewport")
-
-                if cell_rect and viewport:
-                    # Convert to global coordinates
-                    bottom_left = viewport.mapToGlobal(cell_rect.bottomLeft())
-                    top_left = viewport.mapToGlobal(cell_rect.topLeft())
-
-                    # Get popup size
-                    popup.updateGeometry()
-                    popup_height = popup.sizeHint().height()
-
-                    # Get screen geometry
-                    screen_geometry = QtWidgets.QApplication.primaryScreen().availableGeometry()
-
-                    # Check if there's room below the cell
-                    if bottom_left.y() + popup_height <= screen_geometry.bottom():
-                        # Position below cell (align top of popup with bottom of cell)
-                        popup.move(bottom_left)
-                    else:
-                        # Position above cell (align bottom of popup with top of cell)
-                        popup.move(top_left.x(), top_left.y() - popup_height)
-
-                    popup.show()
-                else:
-                    super().showPopup()
-
-        # Create dropdown (matching table dropdown style)
-        combo = AssetComboBox(self.table_view)
-        combo.setFrame(False)  # Match ComboBoxDelegate style
-
-        # Hide the combo box button itself - we only want the popup
-        combo.setAttribute(QtCore.Qt.WA_DontShowOnScreen, True)
-        combo.resize(0, 0)  # Make it tiny
-
-        # Add empty option first (matching ComboBoxDelegate pattern)
-        combo.addItem("")
-
-        # Add available assets
+        # Add available assets as menu actions
         for asset in available_assets:
             asset_code = asset.get("code", f"ID {asset.get('id', 'N/A')}")
-            combo.addItem(asset_code)
-            # Store the full asset dict as item data
-            combo.setItemData(combo.count() - 1, asset)
-
-        # Store cell info for positioning
-        cell_rect = self.table_view.visualRect(index)
-        combo.setProperty("cell_rect", cell_rect)
-        combo.setProperty("viewport", self.table_view.viewport())
+            action = menu.addAction(asset_code)
+            # Store the full asset dict as action data
+            action.setData(asset)
 
         # Define handler for selection
-        def on_combo_activated(combo_index):
-            if combo_index > 0:  # Skip empty option
-                selected_asset = combo.itemData(combo_index)
+        def on_action_triggered(action):
+            selected_asset = action.data()
+            if selected_asset:
+                # Add to current entities
+                current_entities.append(selected_asset)
 
-                if selected_asset:
-                    # Add to current entities
-                    current_entities.append(selected_asset)
+                # Update the model
+                self.model.setData(index, current_entities, QtCore.Qt.EditRole)
 
-                    # Update the model
-                    self.model.setData(index, current_entities, QtCore.Qt.EditRole)
+                # Refresh the widget
+                widget = self.table_view.indexWidget(index)
+                if isinstance(widget, MultiEntityReferenceWidget):
+                    widget.set_entities(current_entities)
 
-                    # Refresh the widget
-                    widget = self.table_view.indexWidget(index)
-                    if isinstance(widget, MultiEntityReferenceWidget):
-                        widget.set_entities(current_entities)
-
-                    logger.info(f"Added asset {selected_asset.get('code')} to row {row}")
+                logger.info(f"Added asset {selected_asset.get('code')} to row {row}")
 
         # Connect signal
-        combo.activated.connect(on_combo_activated)
+        menu.triggered.connect(on_action_triggered)
 
-        # Show the combo and open the dropdown
-        combo.show()
-        combo.showPopup()
+        # Get cell rectangle and calculate position
+        cell_rect = self.table_view.visualRect(index)
+        viewport = self.table_view.viewport()
+
+        # Convert to global coordinates
+        bottom_left = viewport.mapToGlobal(cell_rect.bottomLeft())
+        top_left = viewport.mapToGlobal(cell_rect.topLeft())
+
+        # Get menu size hint
+        menu.adjustSize()
+        menu_height = menu.sizeHint().height()
+
+        # Get screen geometry
+        screen_geometry = QtWidgets.QApplication.primaryScreen().availableGeometry()
+
+        # Calculate position: below cell if room, otherwise above
+        if bottom_left.y() + menu_height <= screen_geometry.bottom():
+            # Position below cell (align top of menu with bottom of cell)
+            menu.exec(bottom_left)
+        else:
+            # Position above cell (align bottom of menu with top of cell)
+            menu.exec(QtCore.QPoint(top_left.x(), top_left.y() - menu_height))
 
     def _get_available_bid_assets(self):
         """Query and return all Asset items from the current Bid's Bid Assets.
