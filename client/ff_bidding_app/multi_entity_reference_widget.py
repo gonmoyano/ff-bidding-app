@@ -38,7 +38,8 @@ class EntityPillWidget(QtWidgets.QWidget):
         """
         super().__init__(parent)
         self.entity = entity
-        self.entity_name = entity.get("name", f"ID {entity.get('id', 'N/A')}")
+        # Try 'code' first (used by Asset items), then 'name', finally fallback to ID
+        self.entity_name = entity.get("code") or entity.get("name") or f"ID {entity.get('id', 'N/A')}"
 
         # Colors for custom painting
         self.bg_color = QtGui.QColor("#b0b0b0")

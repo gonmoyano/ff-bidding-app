@@ -194,6 +194,22 @@ class EditCommand:
             # Try to convert to boolean
             return bool(text)
 
+        # Handle multi-entity type (lists of entity dictionaries)
+        if data_type == "multi_entity":
+            # If already a list, return it as-is
+            if isinstance(text, list):
+                logger.debug(f"Returning multi_entity list with {len(text)} entities")
+                return text
+            # Handle empty values
+            if not text or text == "-" or text == "":
+                return []
+            # If it's a single entity dict, wrap it in a list
+            if isinstance(text, dict) and "type" in text and "id" in text:
+                return [text]
+            # Otherwise return empty list
+            logger.warning(f"Unexpected value type for multi_entity field '{field_name}': {type(text)}")
+            return []
+
         # Handle empty values for other types
         if not text or text == "-" or text == "":
             return None
@@ -277,12 +293,29 @@ class PasteCommand:
 
     def _parse_value(self, text, field_name):
         """Parse text value to appropriate type based on ShotGrid schema."""
-        if not text or text == "-" or text == "":
-            return None
-
-        # Get field schema info
+        # Get field schema info first to check for multi_entity
         field_info = self.field_schema.get(field_name, {})
         data_type = field_info.get("data_type")
+
+        # Handle multi-entity type (lists of entity dictionaries)
+        if data_type == "multi_entity":
+            # If already a list, return it as-is
+            if isinstance(text, list):
+                logger.debug(f"Returning multi_entity list with {len(text)} entities")
+                return text
+            # Handle empty values
+            if not text or text == "-" or text == "":
+                return []
+            # If it's a single entity dict, wrap it in a list
+            if isinstance(text, dict) and "type" in text and "id" in text:
+                return [text]
+            # Otherwise return empty list
+            logger.warning(f"Unexpected value type for multi_entity field '{field_name}': {type(text)}")
+            return []
+
+        # Handle empty values for other types
+        if not text or text == "-" or text == "":
+            return None
 
         logger.debug(f"Parsing field '{field_name}' with data_type '{data_type}': '{text}'")
 
