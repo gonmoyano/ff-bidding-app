@@ -203,9 +203,16 @@ class BiddingTab(QtWidgets.QWidget):
                     if breakdown_id:
                         self.vfx_breakdown_tab._select_vfx_breakdown_by_id(breakdown_id)
         else:
-            # No bid selected, just populate breakdowns without auto-select
-            if hasattr(self, 'vfx_breakdown_tab') and self.current_rfq:
-                self.vfx_breakdown_tab.populate_vfx_breakdown_combo(self.current_rfq, auto_select=True)
+            # No bid selected - cascade reset to downstream dropdowns
+            if hasattr(self, 'vfx_breakdown_tab'):
+                # Reset VFX Breakdown dropdown to placeholder
+                self.vfx_breakdown_tab.vfx_breakdown_combo.blockSignals(True)
+                self.vfx_breakdown_tab.vfx_breakdown_combo.clear()
+                self.vfx_breakdown_tab.vfx_breakdown_combo.addItem("-- Select VFX Breakdown --", None)
+                self.vfx_breakdown_tab.vfx_breakdown_combo.blockSignals(False)
+                self.vfx_breakdown_tab._clear_vfx_breakdown_table()
+                self.vfx_breakdown_tab._set_vfx_breakdown_status("Select a Bid to view VFX Breakdowns.")
+                self.vfx_breakdown_tab.vfx_breakdown_set_btn.setEnabled(False)
 
         # Update Assets tab with the current bid
         if hasattr(self, 'assets_tab'):
@@ -213,7 +220,7 @@ class BiddingTab(QtWidgets.QWidget):
                 # Pass full bid_data so assets_tab can access sg_bid_assets field
                 self.assets_tab.set_bid(bid_data, self.current_project_id)
             else:
-                # Clear assets tab if no bid selected
+                # Clear assets tab if no bid selected (cascading reset)
                 self.assets_tab.set_bid(None, None)
 
     def _on_bid_status_message(self, message, is_error):

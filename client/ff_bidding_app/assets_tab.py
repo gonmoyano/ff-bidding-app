@@ -156,14 +156,16 @@ class AssetsTab(QtWidgets.QWidget):
         self.current_bid_id = bid_data.get('id') if bid_data else None
         self.current_project_id = project_id
 
-        # Clear current selection
+        # Clear current selection and add placeholder
         self.bid_assets_combo.blockSignals(True)
         self.bid_assets_combo.clear()
+        self.bid_assets_combo.addItem("-- Select Bid Assets --", None)
         self.bid_assets_combo.blockSignals(False)
 
         if not self.current_bid_id or not project_id:
             self._set_bid_assets_status("Select a Bid to view Bid Assets.")
             self.assets_widget.clear_table()
+            self.bid_assets_set_btn.setEnabled(False)
             return
 
         # Fetch schema if not already loaded
@@ -232,6 +234,7 @@ class AssetsTab(QtWidgets.QWidget):
             # Update combo box
             self.bid_assets_combo.blockSignals(True)
             self.bid_assets_combo.clear()
+            self.bid_assets_combo.addItem("-- Select Bid Assets --", None)
 
             for bid_assets in sorted(bid_assets_list, key=lambda x: x.get("code", "")):
                 self.bid_assets_combo.addItem(bid_assets.get("code", "Unnamed"), bid_assets["id"])
@@ -250,18 +253,17 @@ class AssetsTab(QtWidgets.QWidget):
                         linked_bid_assets_id = linked_bid_assets.get("id")
 
                 # Try to find and select the linked Bid Assets
-                selected = False
                 if linked_bid_assets_id:
                     for i in range(self.bid_assets_combo.count()):
                         if self.bid_assets_combo.itemData(i) == linked_bid_assets_id:
                             self.bid_assets_combo.setCurrentIndex(i)
-                            selected = True
                             logger.info(f"Auto-selected Bid Assets {linked_bid_assets_id} linked to current Bid")
                             break
-
-                # If no linked Bid Assets found, load the first one
-                if not selected:
-                    self._on_bid_assets_changed(0)
+                    else:
+                        # Linked Bid Assets not found
+                        logger.warning(f"Linked Bid Assets {linked_bid_assets_id} not found in project")
+                # If no linked Bid Assets, leave at placeholder (index 0)
+                # Don't auto-select - user must explicitly choose
             else:
                 self._set_bid_assets_status("No Bid Assets found for this project.")
                 self.bid_assets_set_btn.setEnabled(False)
@@ -279,6 +281,8 @@ class AssetsTab(QtWidgets.QWidget):
 
         bid_assets_id = self.bid_assets_combo.currentData()
         if not bid_assets_id:
+            # Placeholder selected, clear the table
+            self.assets_widget.clear_table()
             return
 
         # Load asset items for this Bid Assets

@@ -2622,13 +2622,12 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 linked_id = (linked[0] or {}).get("id")
 
             if linked_id:
-                # try select it
+                # Try to select the linked breakdown
                 if not self._select_vfx_breakdown_by_id(linked_id):
-                    if auto_select and self.vfx_breakdown_combo.count() > 1:
-                        self.vfx_breakdown_combo.setCurrentIndex(1)
-            else:
-                if auto_select and self.vfx_breakdown_combo.count() > 1:
-                    self.vfx_breakdown_combo.setCurrentIndex(1)
+                    # Linked breakdown not found, don't auto-select anything
+                    logger.warning(f"Linked VFX Breakdown {linked_id} not found in project breakdowns")
+            # If no linked breakdown, leave at placeholder (index 0)
+            # Don't auto-select the first breakdown - user must explicitly choose
         else:
             self._set_vfx_breakdown_status("No VFX Breakdowns found in this project.")
             self._clear_vfx_breakdown_table()
