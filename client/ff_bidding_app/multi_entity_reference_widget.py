@@ -147,7 +147,7 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
 
         # Colors for custom painting
         self.bg_color = QtGui.QColor("#2b2b2b")      # Normal background
-        self.border_color = QtGui.QColor("#555555")  # Normal border
+        self.border_color = QtGui.QColor("#000000")  # Normal border (black like table cells)
         self.border_width = 1                         # Border width in pixels
 
         self._setup_ui()
@@ -357,9 +357,9 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
             self.border_width = 1
             state = "selected"
         else:
-            # Normal mode: dark background, gray border
+            # Normal mode: dark background, black border (matching table cells)
             self.bg_color = QtGui.QColor("#2b2b2b")
-            self.border_color = QtGui.QColor("#555555")
+            self.border_color = QtGui.QColor("#000000")
             self.border_width = 1
             state = "normal"
 
