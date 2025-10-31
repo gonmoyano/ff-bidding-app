@@ -338,6 +338,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Connect model signals
         self.model.statusMessageChanged.connect(self._on_model_status_changed)
         self.model.rowCountChanged.connect(self._on_model_row_count_changed)
+        self.model.dataChanged.connect(self._on_model_data_changed)
 
         # UI widgets
         self.table_view = None
@@ -1768,3 +1769,38 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         """Handle row count change from model."""
         if self.row_count_label:
             self.row_count_label.setText(f"Showing {shown_rows} of {total_rows} rows")
+
+    def _on_model_data_changed(self, top_left, bottom_right, roles):
+        """Handle data changes from model (e.g., during undo/redo).
+
+        Args:
+            top_left: Top-left QModelIndex of changed region
+            bottom_right: Bottom-right QModelIndex of changed region
+            roles: List of changed roles
+        """
+        # Check if any of the changed cells are sg_bid_assets columns
+        try:
+            assets_col_idx = self.model.column_fields.index("sg_bid_assets")
+        except ValueError:
+            # Column not present in this table
+            return
+
+        # Update widgets for all changed sg_bid_assets cells
+        for row in range(top_left.row(), bottom_right.row() + 1):
+            for col in range(top_left.column(), bottom_right.column() + 1):
+                if col == assets_col_idx:
+                    # Get the widget for this cell
+                    index = self.model.index(row, col)
+                    widget = self.table_view.indexWidget(index)
+
+                    if isinstance(widget, MultiEntityReferenceWidget):
+                        # Get the updated entities from the model
+                        data_row = self.model.filtered_row_indices[row]
+                        bidding_scene_data = self.model.all_bidding_scenes_data[data_row]
+                        entities = bidding_scene_data.get("sg_bid_assets", [])
+                        if not isinstance(entities, list):
+                            entities = [entities] if entities else []
+
+                        # Update the widget with the new entities
+                        widget.set_entities(entities)
+                        logger.info(f"Refreshed sg_bid_assets widget for row {row} after data change")
