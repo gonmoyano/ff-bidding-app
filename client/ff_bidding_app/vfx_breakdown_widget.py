@@ -579,16 +579,17 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         if field_schema:
             self.model.set_field_schema(field_schema)
 
-            # Set up delegates for list fields and checkbox fields
+            # Set up delegates for checkbox fields (list fields now use QMenu on double-click)
             for col_idx, field_name in enumerate(self.model.column_fields):
                 if field_name in field_schema:
                     field_info = field_schema[field_name]
-                    if field_info.get("data_type") == "list":
-                        list_values = field_info.get("list_values", [])
-                        if list_values:
-                            delegate = ComboBoxDelegate(field_name, list_values, self.table_view)
-                            self.table_view.setItemDelegateForColumn(col_idx, delegate)
-                    elif field_info.get("data_type") == "checkbox":
+                    # List fields now handled by _show_list_selection_menu on double-click
+                    # if field_info.get("data_type") == "list":
+                    #     list_values = field_info.get("list_values", [])
+                    #     if list_values:
+                    #         delegate = ComboBoxDelegate(field_name, list_values, self.table_view)
+                    #         self.table_view.setItemDelegateForColumn(col_idx, delegate)
+                    if field_info.get("data_type") == "checkbox":
                         # Use custom checkbox delegate for checkbox fields
                         delegate = CheckBoxDelegate(self.table_view)
                         self.table_view.setItemDelegateForColumn(col_idx, delegate)
@@ -716,27 +717,36 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
     def _on_cell_double_clicked(self, index):
         """Handle double-click on a cell.
 
-        If the cell is in the sg_bid_assets column, show dropdown to add an asset.
+        Shows a dropdown menu for:
+        - sg_bid_assets column: asset selection menu
+        - List type fields: value selection menu
 
         Args:
             index: QModelIndex of the clicked cell
         """
-        # Check if this is the sg_bid_assets column
         field_name = self.model.column_fields[index.column()]
-        if field_name != "sg_bid_assets":
+
+        # Handle sg_bid_assets column
+        if field_name == "sg_bid_assets":
+            # Check if we have a current bid
+            if not self.current_bid:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "No Bid Selected",
+                    "Please select a Bid from the Bids tab first."
+                )
+                return
+            self._show_add_asset_dialog(index)
             return
 
-        # Check if we have a current bid
-        if not self.current_bid:
-            QtWidgets.QMessageBox.warning(
-                self,
-                "No Bid Selected",
-                "Please select a Bid from the Bids tab first."
-            )
-            return
-
-        # Get available assets and show selection dialog
-        self._show_add_asset_dialog(index)
+        # Handle list type fields
+        if hasattr(self.model, 'field_schema') and self.model.field_schema:
+            field_info = self.model.field_schema.get(field_name, {})
+            if field_info.get("data_type") == "list":
+                list_values = field_info.get("list_values", [])
+                if list_values:
+                    self._show_list_selection_menu(index, field_name, list_values)
+                    return
 
     def _show_add_asset_dialog(self, index):
         """Show dialog to select and add a bid asset to the cell.
@@ -852,6 +862,59 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # Reset flag after menu closes
         self._asset_menu_open = False
+
+    def _show_list_selection_menu(self, index, field_name, list_values):
+        """Show menu to select a value from a list field.
+
+        Args:
+            index: QModelIndex of the cell
+            field_name: Name of the field
+            list_values: List of possible values
+        """
+        # Create a QMenu for value selection
+        menu = QtWidgets.QMenu(self.table_view)
+
+        # Add empty option first
+        empty_action = menu.addAction("")
+        empty_action.setData(None)
+
+        # Add all list values as menu actions
+        for value in list_values:
+            action = menu.addAction(value)
+            action.setData(value)
+
+        # Define handler for selection
+        def on_action_triggered(action):
+            selected_value = action.data()
+            # Update the model (even if None/empty)
+            self.model.setData(index, selected_value, QtCore.Qt.EditRole)
+            logger.info(f"Set {field_name} to '{selected_value}' for row {index.row()}")
+
+        # Connect signal
+        menu.triggered.connect(on_action_triggered)
+
+        # Get cell rectangle and calculate position
+        cell_rect = self.table_view.visualRect(index)
+        viewport = self.table_view.viewport()
+
+        # Convert to global coordinates
+        bottom_left = viewport.mapToGlobal(cell_rect.bottomLeft())
+        top_left = viewport.mapToGlobal(cell_rect.topLeft())
+
+        # Get menu size hint
+        menu.adjustSize()
+        menu_height = menu.sizeHint().height()
+
+        # Get screen geometry
+        screen_geometry = QtWidgets.QApplication.primaryScreen().availableGeometry()
+
+        # Calculate position: below cell if room, otherwise above
+        if bottom_left.y() + menu_height <= screen_geometry.bottom():
+            # Position below cell (align top of menu with bottom of cell)
+            menu.exec(bottom_left)
+        else:
+            # Position above cell (align bottom of menu with top of cell)
+            menu.exec(QtCore.QPoint(top_left.x(), top_left.y() - menu_height))
 
     def _get_available_bid_assets(self):
         """Query and return all Asset items from the current Bid's Bid Assets.
@@ -1114,7 +1177,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 field_info = field_schema[field_name]
                 data_type = field_info.get("data_type")
 
-                # Only apply dropdown to text fields (list fields already have ComboBoxDelegate)
+                # Only apply dropdown to text fields (list fields use QMenu on double-click)
                 if data_type == "text":
                     # Get or create the shared list for this field
                     if field_name not in self.dropdown_values:
