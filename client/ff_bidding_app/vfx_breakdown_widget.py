@@ -18,104 +18,32 @@ except ImportError:
     from multi_entity_reference_widget import MultiEntityReferenceWidget
 
 
-class ComboBoxDelegate(QtWidgets.QStyledItemDelegate):
-    """Custom delegate for combo box cells with List field values.
+class DropdownMenuDelegate(QtWidgets.QStyledItemDelegate):
+    """Delegate that paints the blue editing border when a dropdown menu is active."""
 
-    Supports editable dropdowns - users can select from list or type new values.
-    New values are added to the shared list for all cells in that column.
-    """
-
-    def __init__(self, field_name, list_values, parent_widget=None, is_editable=False, parent=None):
+    def __init__(self, parent_widget, parent=None):
         super().__init__(parent)
-        self.field_name = field_name
-        # Store reference to the list (not a copy) so updates are shared
-        self.list_values = list_values
-        self.parent_widget = parent_widget  # VFXBreakdownWidget for callbacks
-        self.is_editable = is_editable  # Whether users can type new values
+        self.parent_widget = parent_widget
 
     def createEditor(self, parent, option, index):
-        """Create a combo box editor (editable or not based on settings)."""
-        combo = QtWidgets.QComboBox(parent)
+        """Disable the default editor - dropdown menus are shown separately."""
+        return None
 
-        # Make combo box editable if this is a user-defined dropdown
-        if self.is_editable:
-            combo.setEditable(True)
-            combo.setInsertPolicy(QtWidgets.QComboBox.NoInsert)  # We'll handle inserts manually
+    def paint(self, painter, option, index):
+        super().paint(painter, option, index)
 
-        # Add all current values
-        for value in sorted(self.list_values):  # Sort for consistency
-            combo.addItem(value)
+        if not self.parent_widget:
+            return
 
-        combo.setFrame(False)
-
-        # Adjust dropdown height to fit content (avoid scrollbar when possible)
-        # Show up to 20 items before scrollbar appears
-        combo.setMaxVisibleItems(min(20, len(self.list_values)))
-
-        # Adjust the view height to fit items
-        if self.list_values:
-            view = combo.view()
-            # Calculate height: item height * number of items (up to 20)
-            item_height = view.sizeHintForRow(0)
-            num_visible = min(20, len(self.list_values))
-            desired_height = item_height * num_visible + 2  # +2 for borders
-            view.setMinimumHeight(desired_height)
-
-        # For editable combos, show popup and focus on text field
-        if self.is_editable:
-            # Show popup immediately
-            QtCore.QTimer.singleShot(0, combo.showPopup)
-            # Set focus to the text field (line edit) and select all text
-            QtCore.QTimer.singleShot(0, lambda: self._focus_line_edit(combo))
-        else:
-            # For non-editable, just show popup
-            QtCore.QTimer.singleShot(0, combo.showPopup)
-
-        return combo
-
-    def _focus_line_edit(self, combo):
-        """Set focus to the combo box's line edit and select all text."""
-        if combo.lineEdit():
-            combo.lineEdit().setFocus()
-            combo.lineEdit().selectAll()
-
-    def setEditorData(self, editor, index):
-        """Set the current value in the combo box."""
-        value = index.model().data(index, QtCore.Qt.EditRole)
-        if value:
-            # Try to find and select the current value
-            index_pos = editor.findText(str(value))
-            if index_pos >= 0:
-                editor.setCurrentIndex(index_pos)
-            elif self.is_editable:
-                # Value not in list, but editable - set it as text
-                editor.setEditText(str(value))
-        elif self.is_editable:
-            # Empty value, allow user to type
-            editor.setEditText("")
-
-    def setModelData(self, editor, model, index):
-        """Save the value back to the model and add to list if new."""
-        value = editor.currentText().strip()
-
-        # Save to model
-        model.setData(index, value, QtCore.Qt.EditRole)
-
-        # If this is an editable dropdown and a new value was entered, add it to the list
-        if self.is_editable and value and value not in self.list_values:
-            self.list_values.append(value)
-            logger.info(f"Added new value '{value}' to dropdown list for field '{self.field_name}'")
-
-            # Notify parent widget to update settings if available
-            if self.parent_widget and hasattr(self.parent_widget, '_on_dropdown_value_added'):
-                self.parent_widget._on_dropdown_value_added(self.field_name, value)
-
-    def editorEvent(self, event, model, option, index):
-        """Handle double-click to open dropdown."""
-        if event.type() == QtCore.QEvent.MouseButtonDblClick:
-            # Double-click detected - the editor will be created and dropdown will show
-            return False  # Let default handling proceed to create editor
-        return super().editorEvent(event, model, option, index)
+        if self.parent_widget.is_dropdown_menu_active(index):
+            painter.save()
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            pen = QtGui.QPen(QtGui.QColor("#0078d4"), 2)
+            painter.setPen(pen)
+            painter.setBrush(QtCore.Qt.NoBrush)
+            border_rect = option.rect.adjusted(1, 1, -1, -1)
+            painter.drawRoundedRect(border_rect, 4, 4)
+            painter.restore()
 
 
 class ConfigColumnsDialog(QtWidgets.QDialog):
@@ -425,6 +353,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.column_visibility = {}  # field_name -> bool
         self.column_dropdowns = {}  # field_name -> bool
         self.dropdown_values = {}  # field_name -> list of unique values (shared reference)
+        self._dropdown_delegates = {}  # field_name -> DropdownMenuDelegate
+        self._active_dropdown_index = None  # Track which cell should show the editing border
 
         # Build UI
         self._build_ui()
@@ -767,6 +697,20 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         if hasattr(self.model, 'field_schema') and self.model.field_schema:
             field_info = self.model.field_schema.get(field_name, {})
             logger.info(f"Double-click on {field_name}: field_info={field_info}")
+
+            # Text fields that are configured for dropdowns should use the menu styling
+            if (
+                self.column_dropdowns.get(field_name, False)
+                and field_info.get("data_type") == "text"
+            ):
+                shared_list = self.dropdown_values.get(field_name)
+                if shared_list is None:
+                    shared_list = self._get_unique_column_values(field_name)
+                    self.dropdown_values[field_name] = shared_list
+
+                self._show_text_dropdown_menu(index, field_name, shared_list)
+                return
+
             if field_info.get("data_type") == "list":
                 list_values = field_info.get("list_values", [])
                 logger.info(f"List field {field_name} has {len(list_values)} values")
@@ -894,6 +838,84 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # Reset flag after menu closes
         self._asset_menu_open = False
+
+    def _show_text_dropdown_menu(self, index, field_name, shared_list):
+        """Show the dropdown menu for text fields configured as dropdowns."""
+
+        # Ensure the menu operates on the shared list reference
+        if shared_list is None:
+            shared_list = []
+            self.dropdown_values[field_name] = shared_list
+
+        menu = QtWidgets.QMenu(self.table_view)
+
+        # Empty option allows clearing the value
+        empty_action = menu.addAction("")
+        empty_action.setData(None)
+
+        # Sort values for consistent ordering in the menu
+        if shared_list:
+            sorted_values = sorted(shared_list, key=lambda v: v.lower() if isinstance(v, str) else str(v).lower())
+            for value in sorted_values:
+                action = menu.addAction(value)
+                action.setData(value)
+        else:
+            placeholder = menu.addAction("(No saved values)")
+            placeholder.setEnabled(False)
+
+        menu.addSeparator()
+        add_new_action = menu.addAction("Add New Value…")
+        add_new_action.setData("__add_new__")
+
+        def on_action_triggered(action):
+            selected_value = action.data()
+
+            if selected_value == "__add_new__":
+                text, ok = QtWidgets.QInputDialog.getText(
+                    self,
+                    "Add New Dropdown Value",
+                    f"Enter a new value for {field_name}:"
+                )
+                if ok:
+                    new_value = text.strip()
+                    if new_value:
+                        if new_value not in shared_list:
+                            shared_list.append(new_value)
+                            shared_list.sort(key=lambda v: v.lower() if isinstance(v, str) else str(v).lower())
+                            self._on_dropdown_value_added(field_name, new_value)
+                        self.model.setData(index, new_value, QtCore.Qt.EditRole)
+                        logger.info(f"Added new dropdown value '{new_value}' to '{field_name}'")
+                return
+
+            # Persist selected value (may be None for cleared option)
+            if selected_value is None:
+                self.model.setData(index, None, QtCore.Qt.EditRole)
+                logger.info(f"Cleared value for '{field_name}' at row {index.row()}")
+            else:
+                self.model.setData(index, selected_value, QtCore.Qt.EditRole)
+                logger.info(f"Set '{field_name}' to '{selected_value}' for row {index.row()}")
+
+        menu.triggered.connect(on_action_triggered)
+
+        # Record the active index to paint the blue editing border
+        self._set_active_dropdown_index(index)
+
+        cell_rect = self.table_view.visualRect(index)
+        viewport = self.table_view.viewport()
+        bottom_left = viewport.mapToGlobal(cell_rect.bottomLeft())
+        top_left = viewport.mapToGlobal(cell_rect.topLeft())
+
+        menu.adjustSize()
+        menu_height = menu.sizeHint().height()
+        screen_geometry = QtWidgets.QApplication.primaryScreen().availableGeometry()
+
+        try:
+            if bottom_left.y() + menu_height <= screen_geometry.bottom():
+                menu.exec(bottom_left)
+            else:
+                menu.exec(QtCore.QPoint(top_left.x(), top_left.y() - menu_height))
+        finally:
+            self._clear_active_dropdown_index(index)
 
     def _show_list_selection_menu(self, index, field_name, list_values):
         """Show menu to select a value from a list field.
@@ -1201,6 +1223,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Get field schema from the model
         field_schema = self.model.field_schema
 
+        active_delegate_fields = set()
+
         for col_idx, field_name in enumerate(self.model.column_fields):
             # Check if dropdown is enabled for this field
             dropdown_enabled = self.column_dropdowns.get(field_name, False)
@@ -1220,12 +1244,66 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                     shared_list = self.dropdown_values[field_name]
 
                     if shared_list is not None:
-                        # Create and set dropdown delegate with shared list reference
-                        # Pass self as parent_widget so delegate can notify us of new values
-                        # is_editable=True allows users to type new values
-                        delegate = ComboBoxDelegate(field_name, shared_list, parent_widget=self, is_editable=True, parent=self.table_view)
+                        # Create (or reuse) a delegate that paints the menu editing border
+                        delegate = self._dropdown_delegates.get(field_name)
+                        if delegate is None:
+                            delegate = DropdownMenuDelegate(self, parent=self.table_view)
+                            self._dropdown_delegates[field_name] = delegate
+
                         self.table_view.setItemDelegateForColumn(col_idx, delegate)
-                        logger.info(f"Applied editable dropdown to '{field_name}' with {len(shared_list)} unique values")
+                        active_delegate_fields.add(field_name)
+                        logger.info(
+                            f"Applied dropdown menu styling to '{field_name}' with {len(shared_list)} unique values"
+                        )
+
+        # Remove delegates from fields that are no longer marked as dropdowns
+        for field_name in list(self._dropdown_delegates.keys()):
+            if field_name not in active_delegate_fields:
+                delegate = self._dropdown_delegates.pop(field_name)
+                # Reset the column delegate to default if the field is still present
+                if field_name in self.model.column_fields:
+                    col_idx = self.model.column_fields.index(field_name)
+                    self.table_view.setItemDelegateForColumn(col_idx, None)
+                del delegate
+
+    def _set_active_dropdown_index(self, index):
+        """Record the index whose dropdown menu is currently shown."""
+        if index and index.isValid():
+            self._active_dropdown_index = (index.row(), index.column())
+            self._update_dropdown_highlight_region(index)
+
+    def _clear_active_dropdown_index(self, index=None):
+        """Clear the active dropdown index and refresh the cell painting."""
+        if self._active_dropdown_index is None:
+            return
+
+        # Store the previous index so we can trigger an update after clearing
+        previous_row, previous_col = self._active_dropdown_index
+        self._active_dropdown_index = None
+
+        if index and index.isValid():
+            self._update_dropdown_highlight_region(index)
+        else:
+            model = self.table_view.model()
+            if model and 0 <= previous_row < model.rowCount() and 0 <= previous_col < model.columnCount():
+                prev_index = model.index(previous_row, previous_col)
+                self._update_dropdown_highlight_region(prev_index)
+
+    def _update_dropdown_highlight_region(self, index):
+        """Repaint the viewport region associated with an index."""
+        if not index or not index.isValid():
+            return
+
+        rect = self.table_view.visualRect(index)
+        if rect.isValid():
+            self.table_view.viewport().update(rect)
+
+    def is_dropdown_menu_active(self, index):
+        """Return True if the dropdown menu highlight should be shown for index."""
+        if not index or not index.isValid() or self._active_dropdown_index is None:
+            return False
+
+        return (index.row(), index.column()) == self._active_dropdown_index
 
     def _on_dropdown_value_added(self, field_name, new_value):
         """Callback when a new value is added to a dropdown list.
