@@ -402,6 +402,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.sg_session = sg_session
         self.show_toolbar = show_toolbar
         self.current_bid = None  # Store reference to current Bid
+        self._asset_menu_open = False  # Guard to prevent re-entry
 
         # Create the model
         self.model = VFXBreakdownModel(sg_session, parent=self)
@@ -706,6 +707,12 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         Args:
             index: QModelIndex of the cell to add asset to
         """
+        # Prevent re-entry while menu is open
+        if self._asset_menu_open:
+            return
+
+        self._asset_menu_open = True
+
         row = index.row()
         col = index.column()
 
@@ -723,6 +730,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         available_assets = self._get_available_bid_assets()
 
         if not available_assets:
+            self._asset_menu_open = False
             QtWidgets.QMessageBox.information(
                 self,
                 "No Assets Available",
@@ -735,6 +743,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         available_assets = [a for a in available_assets if a.get("id") not in current_asset_ids]
 
         if not available_assets:
+            self._asset_menu_open = False
             QtWidgets.QMessageBox.information(
                 self,
                 "All Assets Added",
@@ -794,6 +803,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         else:
             # Position above cell (align bottom of menu with top of cell)
             menu.exec(QtCore.QPoint(top_left.x(), top_left.y() - menu_height))
+
+        # Reset flag after menu closes
+        self._asset_menu_open = False
 
     def _get_available_bid_assets(self):
         """Query and return all Asset items from the current Bid's Bid Assets.
