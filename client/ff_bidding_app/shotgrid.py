@@ -391,6 +391,52 @@ class ShotgridClient:
         result = self.sg.delete("CustomEntity06", int(bid_id))
         return result
 
+    def create_rfq(self, project_id, code):
+        """
+        Create a new RFQ (CustomEntity04).
+
+        Args:
+            project_id: Project ID
+            code: RFQ name/code
+
+        Returns:
+            Created RFQ entity dictionary
+        """
+        data = {
+            "code": code,
+            "project": {"type": "Project", "id": int(project_id)}
+        }
+
+        result = self.sg.create("CustomEntity04", data)
+        return result
+
+    def update_rfq(self, rfq_id, data):
+        """
+        Update an RFQ (CustomEntity04).
+
+        Args:
+            rfq_id: RFQ ID
+            data: Dictionary of field values to update
+
+        Returns:
+            Updated RFQ entity dictionary
+        """
+        result = self.sg.update("CustomEntity04", int(rfq_id), data)
+        return result
+
+    def delete_rfq(self, rfq_id):
+        """
+        Delete an RFQ (CustomEntity04).
+
+        Args:
+            rfq_id: RFQ ID
+
+        Returns:
+            Result of the delete operation
+        """
+        result = self.sg.delete("CustomEntity04", int(rfq_id))
+        return result
+
     def update_rfq_bid(self, rfq_id, bid):
         """
         Update the Bid linked to an RFQ.

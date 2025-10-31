@@ -4,6 +4,8 @@ import logging
 from datetime import datetime, date
 from pathlib import Path
 import sys
+import random
+import string
 
 # Try relative imports first, fall back to absolute
 try:
@@ -126,6 +128,302 @@ class ProjectDetailsDialog(QtWidgets.QDialog):
         layout.addLayout(button_layout)
 
 
+class CreateRFQDialog(QtWidgets.QDialog):
+    """Dialog for creating a new RFQ."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Create New RFQ")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Name field
+        name_layout = QtWidgets.QHBoxLayout()
+        name_label = QtWidgets.QLabel("RFQ Name:")
+        name_layout.addWidget(name_label)
+
+        self.name_field = QtWidgets.QLineEdit()
+        self.name_field.setPlaceholderText("Enter RFQ name...")
+        name_layout.addWidget(self.name_field, stretch=1)
+
+        layout.addLayout(name_layout)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        self.ok_button = QtWidgets.QPushButton("Create")
+        self.ok_button.clicked.connect(self.accept)
+        self.ok_button.setDefault(True)
+        button_layout.addWidget(self.ok_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+    def get_rfq_name(self):
+        """Get the entered RFQ name."""
+        return self.name_field.text().strip()
+
+
+class RenameRFQDialog(QtWidgets.QDialog):
+    """Dialog for renaming an existing RFQ."""
+
+    def __init__(self, existing_rfqs, parent=None):
+        super().__init__(parent)
+        self.existing_rfqs = existing_rfqs
+        self.setWindowTitle("Rename RFQ")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Select RFQ
+        select_layout = QtWidgets.QHBoxLayout()
+        select_label = QtWidgets.QLabel("Select RFQ:")
+        select_layout.addWidget(select_label)
+
+        self.rfq_combo = QtWidgets.QComboBox()
+        self.rfq_combo.addItem("-- Select RFQ --", None)
+        for rfq in self.existing_rfqs:
+            label = rfq.get("code") or f"RFQ {rfq.get('id', 'N/A')}"
+            self.rfq_combo.addItem(label, rfq)
+        self.rfq_combo.currentIndexChanged.connect(self._on_rfq_selected)
+        select_layout.addWidget(self.rfq_combo, stretch=1)
+
+        layout.addLayout(select_layout)
+
+        # New name field
+        name_layout = QtWidgets.QHBoxLayout()
+        name_label = QtWidgets.QLabel("New Name:")
+        name_layout.addWidget(name_label)
+
+        self.name_field = QtWidgets.QLineEdit()
+        self.name_field.setPlaceholderText("Enter new RFQ name...")
+        self.name_field.setEnabled(False)
+        name_layout.addWidget(self.name_field, stretch=1)
+
+        layout.addLayout(name_layout)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        self.ok_button = QtWidgets.QPushButton("Rename")
+        self.ok_button.clicked.connect(self.accept)
+        self.ok_button.setEnabled(False)
+        self.ok_button.setDefault(True)
+        button_layout.addWidget(self.ok_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+    def _on_rfq_selected(self, index):
+        """Handle RFQ selection."""
+        rfq = self.rfq_combo.currentData()
+        if rfq:
+            current_name = rfq.get("code", "")
+            self.name_field.setText(current_name)
+            self.name_field.selectAll()
+            self.name_field.setEnabled(True)
+            self.ok_button.setEnabled(True)
+        else:
+            self.name_field.clear()
+            self.name_field.setEnabled(False)
+            self.ok_button.setEnabled(False)
+
+    def get_selected_rfq(self):
+        """Get the selected RFQ."""
+        return self.rfq_combo.currentData()
+
+    def get_new_name(self):
+        """Get the new RFQ name."""
+        return self.name_field.text().strip()
+
+
+class RemoveRFQDialog(QtWidgets.QDialog):
+    """Dialog for removing an RFQ with confirmation."""
+
+    def __init__(self, existing_rfqs, parent=None):
+        super().__init__(parent)
+        self.existing_rfqs = existing_rfqs
+        self.setWindowTitle("Remove RFQ")
+        self.setModal(True)
+        self.setMinimumWidth(450)
+
+        # Generate random confirmation string
+        self.confirmation_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Warning message
+        warning_label = QtWidgets.QLabel(
+            "⚠️ WARNING: This action cannot be undone!\n"
+            "Deleting an RFQ will remove it permanently from the project."
+        )
+        warning_label.setStyleSheet("color: #ff6666; font-weight: bold; padding: 10px;")
+        warning_label.setWordWrap(True)
+        layout.addWidget(warning_label)
+
+        # Select RFQ to delete
+        select_layout = QtWidgets.QHBoxLayout()
+        select_label = QtWidgets.QLabel("Select RFQ:")
+        select_layout.addWidget(select_label)
+
+        self.rfq_combo = QtWidgets.QComboBox()
+        self.rfq_combo.addItem("-- Select RFQ --", None)
+        for rfq in self.existing_rfqs:
+            label = rfq.get("code") or f"RFQ {rfq.get('id', 'N/A')}"
+            self.rfq_combo.addItem(label, rfq)
+        select_layout.addWidget(self.rfq_combo, stretch=1)
+
+        layout.addLayout(select_layout)
+
+        # Confirmation section
+        layout.addSpacing(20)
+
+        confirm_label = QtWidgets.QLabel(
+            f"To confirm deletion, type the following string:\n\n{self.confirmation_string}"
+        )
+        confirm_label.setStyleSheet("font-weight: bold; padding: 10px;")
+        confirm_label.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(confirm_label)
+
+        # Confirmation input
+        confirm_layout = QtWidgets.QHBoxLayout()
+        confirm_input_label = QtWidgets.QLabel("Confirmation:")
+        confirm_layout.addWidget(confirm_input_label)
+
+        self.confirmation_field = QtWidgets.QLineEdit()
+        self.confirmation_field.setPlaceholderText("Type confirmation string here...")
+        self.confirmation_field.textChanged.connect(self._on_confirmation_changed)
+        confirm_layout.addWidget(self.confirmation_field, stretch=1)
+
+        layout.addLayout(confirm_layout)
+
+        # Buttons
+        layout.addSpacing(20)
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        self.delete_button = QtWidgets.QPushButton("Delete")
+        self.delete_button.setEnabled(False)
+        self.delete_button.setStyleSheet("background-color: #ff6666; color: white; font-weight: bold;")
+        self.delete_button.clicked.connect(self.accept)
+        button_layout.addWidget(self.delete_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+    def _on_confirmation_changed(self, text):
+        """Handle confirmation text change."""
+        is_valid = (text == self.confirmation_string)
+        self.delete_button.setEnabled(is_valid)
+
+    def get_selected_rfq(self):
+        """Get the selected RFQ to delete."""
+        return self.rfq_combo.currentData()
+
+
+class ConfigRFQsDialog(QtWidgets.QDialog):
+    """Main dialog for configuring RFQs with create/rename/remove options."""
+
+    def __init__(self, existing_rfqs, parent=None):
+        super().__init__(parent)
+        self.existing_rfqs = existing_rfqs
+        self.setWindowTitle("Configure RFQs")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+        self.result_action = None
+
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Title
+        title_label = QtWidgets.QLabel("RFQ Configuration")
+        title_font = title_label.font()
+        title_font.setPointSize(14)
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        title_label.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(title_label)
+
+        layout.addSpacing(20)
+
+        # Instruction
+        instruction_label = QtWidgets.QLabel("Choose an action:")
+        layout.addWidget(instruction_label)
+
+        layout.addSpacing(10)
+
+        # Action buttons
+        create_btn = QtWidgets.QPushButton("Create New RFQ")
+        create_btn.clicked.connect(self._on_create_clicked)
+        layout.addWidget(create_btn)
+
+        rename_btn = QtWidgets.QPushButton("Rename Existing RFQ")
+        rename_btn.clicked.connect(self._on_rename_clicked)
+        rename_btn.setEnabled(len(self.existing_rfqs) > 0)
+        layout.addWidget(rename_btn)
+
+        remove_btn = QtWidgets.QPushButton("Remove RFQ")
+        remove_btn.clicked.connect(self._on_remove_clicked)
+        remove_btn.setEnabled(len(self.existing_rfqs) > 0)
+        layout.addWidget(remove_btn)
+
+        layout.addSpacing(20)
+
+        # Close button
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.reject)
+        button_layout.addWidget(close_btn)
+
+        layout.addLayout(button_layout)
+
+    def _on_create_clicked(self):
+        """Handle create button click."""
+        self.result_action = "create"
+        self.accept()
+
+    def _on_rename_clicked(self):
+        """Handle rename button click."""
+        self.result_action = "rename"
+        self.accept()
+
+    def _on_remove_clicked(self):
+        """Handle remove button click."""
+        self.result_action = "remove"
+        self.accept()
+
+    def get_action(self):
+        """Get the selected action."""
+        return self.result_action
+
+
 class PackageManagerApp(QtWidgets.QMainWindow):
     """Main application window."""
 
@@ -147,7 +445,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             logger.info(f"Shotgrid Session: {self.sg_session}")
             self.output_directory = output_directory or str(Path.home() / "shotgrid_packages")
 
-            self.setWindowTitle("Fireframe - Bidding Manager")
+            self.setWindowTitle("Prodigy")
             self.setMinimumSize(1400, 700)
 
             self._build_ui()
@@ -606,6 +904,11 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         self.rfq_combo.currentIndexChanged.connect(self._on_rfq_changed)
         bar_layout.addWidget(self.rfq_combo)
 
+        # Config RFQs button
+        config_rfqs_btn = QtWidgets.QPushButton("Config RFQs")
+        config_rfqs_btn.clicked.connect(self._show_config_rfqs_dialog)
+        bar_layout.addWidget(config_rfqs_btn)
+
         # Spacer
         bar_layout.addSpacing(20)
 
@@ -634,6 +937,168 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
         dialog = ProjectDetailsDialog(project, rfq, parent=self)
         dialog.exec()
+
+    def _show_config_rfqs_dialog(self):
+        """Show the RFQ configuration dialog."""
+        # Get current project
+        project = self.sg_project_combo.itemData(self.sg_project_combo.currentIndex())
+        if not project:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Project Selected",
+                "Please select a project first."
+            )
+            return
+
+        # Get existing RFQs for this project
+        try:
+            existing_rfqs = self.sg_session.get_rfqs(project['id'])
+        except Exception as e:
+            logger.error(f"Error loading RFQs: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to load RFQs: {str(e)}"
+            )
+            return
+
+        # Show main config dialog
+        config_dialog = ConfigRFQsDialog(existing_rfqs, parent=self)
+        if config_dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+
+        action = config_dialog.get_action()
+
+        if action == "create":
+            self._handle_create_rfq(project['id'])
+        elif action == "rename":
+            self._handle_rename_rfq(existing_rfqs)
+        elif action == "remove":
+            self._handle_remove_rfq(existing_rfqs)
+
+    def _handle_create_rfq(self, project_id):
+        """Handle creating a new RFQ."""
+        dialog = CreateRFQDialog(parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+
+        rfq_name = dialog.get_rfq_name()
+        if not rfq_name:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Invalid Name",
+                "Please enter a valid RFQ name."
+            )
+            return
+
+        try:
+            # Create the RFQ in ShotGrid
+            new_rfq = self.sg_session.create_rfq(project_id, rfq_name)
+            logger.info(f"Created new RFQ: {new_rfq}")
+
+            # Reload RFQs
+            self._load_rfqs(project_id)
+
+            # Select the newly created RFQ
+            for index in range(self.rfq_combo.count()):
+                rfq_data = self.rfq_combo.itemData(index)
+                if rfq_data and rfq_data.get('id') == new_rfq['id']:
+                    self.rfq_combo.setCurrentIndex(index)
+                    break
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Success",
+                f"RFQ '{rfq_name}' created successfully."
+            )
+
+        except Exception as e:
+            logger.error(f"Error creating RFQ: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to create RFQ: {str(e)}"
+            )
+
+    def _handle_rename_rfq(self, existing_rfqs):
+        """Handle renaming an existing RFQ."""
+        dialog = RenameRFQDialog(existing_rfqs, parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+
+        rfq = dialog.get_selected_rfq()
+        new_name = dialog.get_new_name()
+
+        if not rfq or not new_name:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Invalid Selection",
+                "Please select an RFQ and enter a valid name."
+            )
+            return
+
+        try:
+            # Update the RFQ in ShotGrid
+            self.sg_session.update_rfq(rfq['id'], {"code": new_name})
+            logger.info(f"Renamed RFQ {rfq['id']} to '{new_name}'")
+
+            # Reload RFQs
+            project = self.sg_project_combo.itemData(self.sg_project_combo.currentIndex())
+            if project:
+                self._load_rfqs(project['id'])
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Success",
+                f"RFQ renamed to '{new_name}' successfully."
+            )
+
+        except Exception as e:
+            logger.error(f"Error renaming RFQ: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to rename RFQ: {str(e)}"
+            )
+
+    def _handle_remove_rfq(self, existing_rfqs):
+        """Handle removing an RFQ."""
+        dialog = RemoveRFQDialog(existing_rfqs, parent=self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+
+        rfq = dialog.get_selected_rfq()
+        if not rfq:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Invalid Selection",
+                "Please select an RFQ to remove."
+            )
+            return
+
+        try:
+            # Delete the RFQ from ShotGrid
+            self.sg_session.delete_rfq(rfq['id'])
+            logger.info(f"Deleted RFQ {rfq['id']}")
+
+            # Reload RFQs
+            project = self.sg_project_combo.itemData(self.sg_project_combo.currentIndex())
+            if project:
+                self._load_rfqs(project['id'])
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Success",
+                f"RFQ '{rfq.get('code', 'N/A')}' removed successfully."
+            )
+
+        except Exception as e:
+            logger.error(f"Error removing RFQ: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to remove RFQ: {str(e)}"
+            )
 
     def _create_packages_tab(self):
         """Create the Packages tab content."""
@@ -679,7 +1144,9 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             projects = self.sg_session.get_projects(status="Bidding")
 
             for project in projects:
-                display_text = f"{project['code']} - {project['name']}"
+                # Beautify project name from snake_case to Title Case
+                project_name = project['name'].replace('_', ' ').title()
+                display_text = project_name
                 self.sg_project_combo.addItem(display_text, project)
 
             self.status_label.setText(f"Loaded {len(projects)} Bidding projects")
