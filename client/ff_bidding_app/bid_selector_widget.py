@@ -2058,13 +2058,12 @@ class BidSelectorWidget(QtWidgets.QWidget):
                     linked_bid_id = linked_bid[0].get("id") if linked_bid[0] else None
 
                 if linked_bid_id:
-                    # Try to select it
+                    # Try to select the linked bid
                     if not self._select_bid_by_id(linked_bid_id):
-                        if self.bid_combo.count() > 1:
-                            self.bid_combo.setCurrentIndex(1)
-                else:
-                    if self.bid_combo.count() > 1:
-                        self.bid_combo.setCurrentIndex(1)
+                        # Linked bid not found in list, don't auto-select anything
+                        logger.warning(f"Linked bid {linked_bid_id} not found in project bids")
+                # If no linked bid, leave at placeholder (index 0)
+                # Don't auto-select the first bid - user must explicitly choose
         else:
             self._set_status("No Bids found in this project.")
 

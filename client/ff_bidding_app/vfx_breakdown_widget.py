@@ -5,6 +5,7 @@ Reusable widget component for displaying and editing VFX bidding scenes data usi
 
 from PySide6 import QtWidgets, QtCore, QtGui
 import logging
+import json
 
 try:
     from .logger import logger
@@ -338,6 +339,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Connect model signals
         self.model.statusMessageChanged.connect(self._on_model_status_changed)
         self.model.rowCountChanged.connect(self._on_model_row_count_changed)
+        self.model.dataChanged.connect(self._on_model_data_changed)
 
         # UI widgets
         self.table_view = None
@@ -1531,7 +1533,20 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             row_data = []
             for col in range(min_col, max_col + 1):
                 index = self.model.index(row, col)
-                text = self.model.data(index, QtCore.Qt.DisplayRole) or ""
+                field_name = self.model.column_fields[col]
+
+                # For multi-entity fields like sg_bid_assets, use EditRole and serialize as JSON
+                if field_name == "sg_bid_assets":
+                    value = self.model.data(index, QtCore.Qt.EditRole)
+                    if isinstance(value, list):
+                        # Serialize entity list as JSON
+                        text = json.dumps(value)
+                    else:
+                        text = ""
+                else:
+                    # For other fields, use DisplayRole
+                    text = self.model.data(index, QtCore.Qt.DisplayRole) or ""
+
                 row_data.append(text)
             clipboard_text.append("\t".join(row_data))
 
@@ -1571,20 +1586,33 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 if not (self.model.flags(index) & QtCore.Qt.ItemIsEditable):
                     continue
 
-                old_value = self.model.data(index, QtCore.Qt.EditRole) or ""
-                if paste_value == old_value:
+                field_name = self.model.column_fields[index.column()]
+
+                # For multi-entity fields, try to parse JSON
+                if field_name == "sg_bid_assets":
+                    try:
+                        parsed_value = json.loads(paste_value) if paste_value else []
+                    except (json.JSONDecodeError, ValueError):
+                        logger.warning(f"Failed to parse JSON for sg_bid_assets: {paste_value}")
+                        continue
+                    new_value = parsed_value
+                    old_value = self.model.data(index, QtCore.Qt.EditRole) or []
+                else:
+                    new_value = paste_value
+                    old_value = self.model.data(index, QtCore.Qt.EditRole) or ""
+
+                if new_value == old_value:
                     continue
 
                 bidding_scene_data = self.model.get_bidding_scene_data_for_row(index.row())
                 if not bidding_scene_data:
                     continue
 
-                field_name = self.model.column_fields[index.column()]
                 changes.append({
                     'row': index.row(),
                     'col': index.column(),
                     'old_value': old_value,
-                    'new_value': paste_value,
+                    'new_value': new_value,
                     'bidding_scene_data': bidding_scene_data,
                     'field_name': field_name
                 })
@@ -1613,20 +1641,33 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                     if not (self.model.flags(index) & QtCore.Qt.ItemIsEditable):
                         continue
 
-                    old_value = self.model.data(index, QtCore.Qt.EditRole) or ""
-                    if cell_value == old_value:
+                    field_name = self.model.column_fields[target_col]
+
+                    # For multi-entity fields, try to parse JSON
+                    if field_name == "sg_bid_assets":
+                        try:
+                            parsed_value = json.loads(cell_value) if cell_value else []
+                        except (json.JSONDecodeError, ValueError):
+                            logger.warning(f"Failed to parse JSON for sg_bid_assets: {cell_value}")
+                            continue
+                        new_value = parsed_value
+                        old_value = self.model.data(index, QtCore.Qt.EditRole) or []
+                    else:
+                        new_value = cell_value
+                        old_value = self.model.data(index, QtCore.Qt.EditRole) or ""
+
+                    if new_value == old_value:
                         continue
 
                     bidding_scene_data = self.model.get_bidding_scene_data_for_row(target_row)
                     if not bidding_scene_data:
                         continue
 
-                    field_name = self.model.column_fields[target_col]
                     changes.append({
                         'row': target_row,
                         'col': target_col,
                         'old_value': old_value,
-                        'new_value': cell_value,
+                        'new_value': new_value,
                         'bidding_scene_data': bidding_scene_data,
                         'field_name': field_name
                     })
@@ -1768,3 +1809,38 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         """Handle row count change from model."""
         if self.row_count_label:
             self.row_count_label.setText(f"Showing {shown_rows} of {total_rows} rows")
+
+    def _on_model_data_changed(self, top_left, bottom_right, roles):
+        """Handle data changes from model (e.g., during undo/redo).
+
+        Args:
+            top_left: Top-left QModelIndex of changed region
+            bottom_right: Bottom-right QModelIndex of changed region
+            roles: List of changed roles
+        """
+        # Check if any of the changed cells are sg_bid_assets columns
+        try:
+            assets_col_idx = self.model.column_fields.index("sg_bid_assets")
+        except ValueError:
+            # Column not present in this table
+            return
+
+        # Update widgets for all changed sg_bid_assets cells
+        for row in range(top_left.row(), bottom_right.row() + 1):
+            for col in range(top_left.column(), bottom_right.column() + 1):
+                if col == assets_col_idx:
+                    # Get the widget for this cell
+                    index = self.model.index(row, col)
+                    widget = self.table_view.indexWidget(index)
+
+                    if isinstance(widget, MultiEntityReferenceWidget):
+                        # Get the updated entities from the model
+                        data_row = self.model.filtered_row_indices[row]
+                        bidding_scene_data = self.model.all_bidding_scenes_data[data_row]
+                        entities = bidding_scene_data.get("sg_bid_assets", [])
+                        if not isinstance(entities, list):
+                            entities = [entities] if entities else []
+
+                        # Update the widget with the new entities
+                        widget.set_entities(entities)
+                        logger.info(f"Refreshed sg_bid_assets widget for row {row} after data change")

@@ -146,17 +146,29 @@ class EditCommand:
 
     def undo(self):
         """Undo the edit."""
-        # Update model data
-        self.model.setData(self.model.index(self.row, self.col), self.old_value, QtCore.Qt.EditRole)
         # Update ShotGrid
         self._update_shotgrid(self.old_value)
 
+        # Update the bidding_scene_data directly (can't use setData due to _updating flag)
+        parsed_value = self._parse_value(self.old_value, self.field_name)
+        self.bidding_scene_data[self.field_name] = parsed_value
+
+        # Emit data changed to refresh the view
+        index = self.model.index(self.row, self.col)
+        self.model.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+
     def redo(self):
         """Redo the edit."""
-        # Update model data
-        self.model.setData(self.model.index(self.row, self.col), self.new_value, QtCore.Qt.EditRole)
         # Update ShotGrid
         self._update_shotgrid(self.new_value)
+
+        # Update the bidding_scene_data directly (can't use setData due to _updating flag)
+        parsed_value = self._parse_value(self.new_value, self.field_name)
+        self.bidding_scene_data[self.field_name] = parsed_value
+
+        # Emit data changed to refresh the view
+        index = self.model.index(self.row, self.col)
+        self.model.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
 
     def _update_shotgrid(self, value):
         """Update ShotGrid with the value."""
@@ -193,6 +205,22 @@ class EditCommand:
                 return text.lower() in ["true", "yes", "1", "checked", "x"]
             # Try to convert to boolean
             return bool(text)
+
+        # Handle multi-entity type (lists of entity dictionaries)
+        if data_type == "multi_entity":
+            # If already a list, return it as-is
+            if isinstance(text, list):
+                logger.debug(f"Returning multi_entity list with {len(text)} entities")
+                return text
+            # Handle empty values
+            if not text or text == "-" or text == "":
+                return []
+            # If it's a single entity dict, wrap it in a list
+            if isinstance(text, dict) and "type" in text and "id" in text:
+                return [text]
+            # Otherwise return empty list
+            logger.warning(f"Unexpected value type for multi_entity field '{field_name}': {type(text)}")
+            return []
 
         # Handle empty values for other types
         if not text or text == "-" or text == "":
@@ -250,16 +278,30 @@ class PasteCommand:
     def undo(self):
         """Undo all paste changes."""
         for change in self.changes:
-            self.model.setData(self.model.index(change['row'], change['col']), change['old_value'], QtCore.Qt.EditRole)
             # Update ShotGrid
             self._update_shotgrid(change['old_value'], change['bidding_scene_data'], change['field_name'])
+
+            # Update the bidding_scene_data directly (can't use setData due to _updating flag)
+            parsed_value = self._parse_value(change['old_value'], change['field_name'])
+            change['bidding_scene_data'][change['field_name']] = parsed_value
+
+            # Emit data changed to refresh the view
+            index = self.model.index(change['row'], change['col'])
+            self.model.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
 
     def redo(self):
         """Redo all paste changes."""
         for change in self.changes:
-            self.model.setData(self.model.index(change['row'], change['col']), change['new_value'], QtCore.Qt.EditRole)
             # Update ShotGrid
             self._update_shotgrid(change['new_value'], change['bidding_scene_data'], change['field_name'])
+
+            # Update the bidding_scene_data directly (can't use setData due to _updating flag)
+            parsed_value = self._parse_value(change['new_value'], change['field_name'])
+            change['bidding_scene_data'][change['field_name']] = parsed_value
+
+            # Emit data changed to refresh the view
+            index = self.model.index(change['row'], change['col'])
+            self.model.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
 
     def _update_shotgrid(self, value, bidding_scene_data, field_name):
         """Update ShotGrid with the value."""
@@ -277,12 +319,29 @@ class PasteCommand:
 
     def _parse_value(self, text, field_name):
         """Parse text value to appropriate type based on ShotGrid schema."""
-        if not text or text == "-" or text == "":
-            return None
-
-        # Get field schema info
+        # Get field schema info first to check for multi_entity
         field_info = self.field_schema.get(field_name, {})
         data_type = field_info.get("data_type")
+
+        # Handle multi-entity type (lists of entity dictionaries)
+        if data_type == "multi_entity":
+            # If already a list, return it as-is
+            if isinstance(text, list):
+                logger.debug(f"Returning multi_entity list with {len(text)} entities")
+                return text
+            # Handle empty values
+            if not text or text == "-" or text == "":
+                return []
+            # If it's a single entity dict, wrap it in a list
+            if isinstance(text, dict) and "type" in text and "id" in text:
+                return [text]
+            # Otherwise return empty list
+            logger.warning(f"Unexpected value type for multi_entity field '{field_name}': {type(text)}")
+            return []
+
+        # Handle empty values for other types
+        if not text or text == "-" or text == "":
+            return None
 
         logger.debug(f"Parsing field '{field_name}' with data_type '{data_type}': '{text}'")
 
