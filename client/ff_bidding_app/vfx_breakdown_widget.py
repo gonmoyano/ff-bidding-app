@@ -616,8 +616,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             widget = MultiEntityReferenceWidget(entities=entities, allow_add=False)
             # Set height to match current row height setting
             current_row_height = self.app_settings.get("vfx_breakdown_row_height", 80)
-            widget.setMinimumHeight(current_row_height)
-            widget.setMaximumHeight(current_row_height)
+            widget.setFixedHeight(current_row_height)
 
             # Connect signal to update model when entities change
             widget.entitiesChanged.connect(
@@ -1263,8 +1262,11 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                     index = self.model.index(row, assets_col_idx)
                     widget = self.table_view.indexWidget(index)
                     if widget:
-                        widget.setMinimumHeight(saved_height)
-                        widget.setMaximumHeight(saved_height)
+                        widget.setFixedHeight(saved_height)
+                        widget.updateGeometry()
+
+                    # Force the row to resize
+                    v_header.resizeSection(row, saved_height)
             except (ValueError, AttributeError):
                 # Column not present or other issue - skip widget updates
                 pass
@@ -1290,6 +1292,11 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                         # Update both minimum and maximum height to match row height
                         widget.setMinimumHeight(value)
                         widget.setMaximumHeight(value)
+                        widget.setFixedHeight(value)
+                        widget.updateGeometry()
+
+                    # Force the row to resize
+                    v_header.resizeSection(row, value)
             except (ValueError, AttributeError):
                 # Column not present or other issue - skip widget updates
                 pass
