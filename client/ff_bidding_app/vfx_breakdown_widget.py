@@ -742,11 +742,19 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Handle list type fields
         if hasattr(self.model, 'field_schema') and self.model.field_schema:
             field_info = self.model.field_schema.get(field_name, {})
+            logger.info(f"Double-click on {field_name}: field_info={field_info}")
             if field_info.get("data_type") == "list":
                 list_values = field_info.get("list_values", [])
+                logger.info(f"List field {field_name} has {len(list_values)} values")
                 if list_values:
                     self._show_list_selection_menu(index, field_name, list_values)
                     return
+                else:
+                    logger.warning(f"List field {field_name} has no list_values")
+            else:
+                logger.info(f"Field {field_name} is not a list type (type={field_info.get('data_type')})")
+        else:
+            logger.warning(f"No field_schema available for {field_name}")
 
     def _show_add_asset_dialog(self, index):
         """Show dialog to select and add a bid asset to the cell.
