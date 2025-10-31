@@ -406,16 +406,16 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Row height slider
             toolbar_layout.addWidget(QtWidgets.QLabel("Row Height:"))
             self.row_height_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-            self.row_height_slider.setMinimum(20)
+            self.row_height_slider.setMinimum(60)  # Minimum to accommodate bid assets widgets
             self.row_height_slider.setMaximum(200)
-            self.row_height_slider.setValue(30)  # Default height
+            self.row_height_slider.setValue(80)  # Default height
             self.row_height_slider.setFixedWidth(120)
             self.row_height_slider.setToolTip("Adjust table row height")
             self.row_height_slider.valueChanged.connect(self._on_row_height_changed)
             toolbar_layout.addWidget(self.row_height_slider)
 
             # Row height value label
-            self.row_height_label = QtWidgets.QLabel("30")
+            self.row_height_label = QtWidgets.QLabel("80")
             self.row_height_label.setMinimumWidth(30)
             self.row_height_label.setStyleSheet("color: #606060; padding: 2px 4px;")
             toolbar_layout.addWidget(self.row_height_label)
@@ -634,8 +634,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 is_selected = self.table_view.selectionModel().isSelected(index)
                 widget.set_selected(is_selected)
 
-        # Increase row height for this column
-        self.table_view.verticalHeader().setDefaultSectionSize(80)
+        # Row height is controlled by the slider - don't override it here
 
     def _on_bid_assets_changed(self, row, col, entities):
         """Handle when bid assets are changed in a cell widget.
@@ -1239,7 +1238,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
     def _load_row_height(self):
         """Load row height setting from AppSettings."""
-        saved_height = self.app_settings.get("vfx_breakdown_row_height", 30)
+        saved_height = self.app_settings.get("vfx_breakdown_row_height", 80)
 
         if self.row_height_slider:
             self.row_height_slider.blockSignals(True)
