@@ -406,7 +406,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Row height slider
             toolbar_layout.addWidget(QtWidgets.QLabel("Row Height:"))
             self.row_height_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-            self.row_height_slider.setMinimum(60)  # Minimum to accommodate bid assets widgets
+            self.row_height_slider.setMinimum(30)
             self.row_height_slider.setMaximum(200)
             self.row_height_slider.setValue(80)  # Default height
             self.row_height_slider.setFixedWidth(120)
