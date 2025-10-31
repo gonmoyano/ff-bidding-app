@@ -547,7 +547,16 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         logger.info("Keyboard shortcuts set up: Ctrl+Z (undo), Ctrl+Y (redo), Ctrl+C (copy), Ctrl+V (paste)")
 
     def eventFilter(self, obj, event):
-        """Event filter to handle Enter and Delete key presses."""
+        """Event filter to handle Enter/Delete keys and double-clicks on index widgets."""
+        # Handle double-click on MultiEntityReferenceWidget (sg_bid_assets cells)
+        if isinstance(obj, MultiEntityReferenceWidget) and event.type() == QtCore.QEvent.MouseButtonDblClick:
+            # Get the stored model index
+            index = obj.property("modelIndex")
+            if index and index.isValid():
+                logger.info(f"Double-click detected on Assets widget at row {index.row()}")
+                self._on_cell_double_clicked(index)
+                return True
+
         if obj == self.table_view and event.type() == QtCore.QEvent.KeyPress:
             if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
                 # Enter pressed - move to next row
@@ -578,6 +587,16 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         """
         if field_schema:
             self.model.set_field_schema(field_schema)
+
+            # Debug: Log list fields and their values
+            logger.info("=== Field Schema Debug ===")
+            for col_idx, field_name in enumerate(self.model.column_fields):
+                if field_name in field_schema:
+                    field_info = field_schema[field_name]
+                    data_type = field_info.get("data_type")
+                    if data_type == "list":
+                        list_values = field_info.get("list_values", [])
+                        logger.info(f"List field: {field_name}, values count: {len(list_values)}, values: {list_values[:5] if list_values else 'NONE'}")
 
             # Set up delegates for checkbox fields (list fields now use QMenu on double-click)
             for col_idx, field_name in enumerate(self.model.column_fields):
@@ -649,6 +668,11 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             widget.entitiesChanged.connect(
                 lambda ents, r=row, col=assets_col_idx: self._on_bid_assets_changed(r, col, ents)
             )
+
+            # Install event filter to catch double-clicks (index widgets consume events)
+            widget.installEventFilter(self)
+            # Store the model index on the widget for later retrieval
+            widget.setProperty("modelIndex", index)
 
             # Set the widget in the table
             self.table_view.setIndexWidget(index, widget)
