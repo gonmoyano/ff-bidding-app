@@ -145,6 +145,11 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         self._is_selected = False  # Track selection state
         self._is_editing = False   # Track edit state
 
+        # Colors for custom painting
+        self.bg_color = QtGui.QColor("#2b2b2b")      # Normal background
+        self.border_color = QtGui.QColor("#555555")  # Normal border
+        self.border_width = 1                         # Border width in pixels
+
         self._setup_ui()
         self._populate_entities()
 
@@ -164,12 +169,6 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
         scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        scroll_area.setStyleSheet("""
-            QScrollArea {
-                background: transparent;
-                border: none;
-            }
-        """)
 
         # Container for pills with flow layout
         self.pills_container = QtWidgets.QWidget()
@@ -178,18 +177,20 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         scroll_area.setWidget(self.pills_container)
         main_layout.addWidget(scroll_area)
 
-        # Apply initial dark theme styling
+        # Make scroll area and pills container transparent (paintEvent handles main widget)
         self.setStyleSheet("""
-            QWidget#entityReferenceWidget {
-                background-color: #2b2b2b;
-                border: 1px solid #555555;
-                border-radius: 4px;
+            QScrollArea {
+                background: transparent;
+                border: none;
             }
             QWidget#pillsContainer {
                 background-color: transparent;
             }
         """)
         self.pills_container.setObjectName("pillsContainer")
+
+        # Enable auto-fill background so paintEvent can draw
+        self.setAutoFillBackground(False)
 
     def _populate_entities(self):
         """Create pill widgets for all entities."""
@@ -305,6 +306,19 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         """Provide size hint for layout."""
         return QtCore.QSize(200, 60)
 
+    def paintEvent(self, event):
+        """Custom paint event to draw the background and border with state colors."""
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+        # Get the widget rectangle
+        rect = self.rect()
+
+        # Draw rounded rectangle background with state-based colors
+        painter.setPen(QtGui.QPen(self.border_color, self.border_width))
+        painter.setBrush(QtGui.QBrush(self.bg_color))
+        painter.drawRoundedRect(rect, 4, 4)
+
     def set_selected(self, selected):
         """Set the selection state of the widget.
 
@@ -331,39 +345,27 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         """Update the widget's visual appearance based on selection and editing states."""
         # Determine background and border colors
         if self._is_editing:
-            # Editing mode: blue border
-            bg_color = "#2b2b2b"
-            border_color = "#0078d4"
-            border_width = "2px"
+            # Editing mode: blue border, dark background
+            self.bg_color = QtGui.QColor("#2b2b2b")
+            self.border_color = QtGui.QColor("#0078d4")
+            self.border_width = 2
             state = "editing"
         elif self._is_selected:
             # Selected mode: blue background
-            bg_color = "#0078d4"
-            border_color = "#0078d4"
-            border_width = "1px"
+            self.bg_color = QtGui.QColor("#0078d4")
+            self.border_color = QtGui.QColor("#0078d4")
+            self.border_width = 1
             state = "selected"
         else:
-            # Normal mode: dark background
-            bg_color = "#2b2b2b"
-            border_color = "#555555"
-            border_width = "1px"
+            # Normal mode: dark background, gray border
+            self.bg_color = QtGui.QColor("#2b2b2b")
+            self.border_color = QtGui.QColor("#555555")
+            self.border_width = 1
             state = "normal"
 
-        print(f"DEBUG: _update_visual_state() - state={state}, bg={bg_color}, border={border_color} {border_width}")
+        print(f"DEBUG: _update_visual_state() - state={state}, bg={self.bg_color.name()}, border={self.border_color.name()} {self.border_width}px")
 
-        # Apply stylesheet using object name for reliable targeting
-        self.setStyleSheet(f"""
-            QWidget#entityReferenceWidget {{
-                background-color: {bg_color};
-                border: {border_width} solid {border_color};
-                border-radius: 4px;
-            }}
-            QWidget#pillsContainer {{
-                background-color: transparent;
-            }}
-        """)
-
-        # Force widget repaint
+        # Trigger repaint with new colors
         self.update()
 
 
