@@ -2045,6 +2045,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             self._set_status(f"Loaded {len(bids)} Bid(s) in project.")
 
             # Auto-select the bid linked to the RFQ if present
+            bid_was_selected = False
             if rfq and auto_select:
                 # Check Early Bid first, then Turnover Bid
                 linked_bid = rfq.get("sg_early_bid")
@@ -2059,13 +2060,22 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
                 if linked_bid_id:
                     # Try to select the linked bid
-                    if not self._select_bid_by_id(linked_bid_id):
+                    if self._select_bid_by_id(linked_bid_id):
+                        bid_was_selected = True
+                    else:
                         # Linked bid not found in list, don't auto-select anything
                         logger.warning(f"Linked bid {linked_bid_id} not found in project bids")
-                # If no linked bid, leave at placeholder (index 0)
-                # Don't auto-select the first bid - user must explicitly choose
+
+            # If no bid was selected (either no linked bid or linked bid not found),
+            # manually trigger bidChanged with None to reset downstream components
+            if rfq and auto_select and not bid_was_selected:
+                logger.info("No bid linked to RFQ - resetting bid selection")
+                self._on_bid_changed(0)  # Trigger with index 0 (placeholder)
         else:
             self._set_status("No Bids found in this project.")
+            # No bids available - reset downstream components
+            if auto_select:
+                self._on_bid_changed(0)  # Trigger with index 0 to reset
 
     def _select_bid_by_id(self, bid_id):
         """Select a bid by its ID.
