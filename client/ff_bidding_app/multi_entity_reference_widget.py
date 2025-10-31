@@ -142,6 +142,8 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self._entities = entities or []
         self._allow_add = allow_add
+        self._is_selected = False  # Track selection state
+        self._is_editing = False   # Track edit state
 
         self._setup_ui()
         self._populate_entities()
@@ -299,6 +301,55 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
     def sizeHint(self):
         """Provide size hint for layout."""
         return QtCore.QSize(200, 60)
+
+    def set_selected(self, selected):
+        """Set the selection state of the widget.
+
+        Args:
+            selected (bool): True if cell is selected, False otherwise
+        """
+        self._is_selected = selected
+        self._update_visual_state()
+
+    def set_editing(self, editing):
+        """Set the editing state of the widget.
+
+        Args:
+            editing (bool): True if cell is being edited (menu open), False otherwise
+        """
+        self._is_editing = editing
+        self._update_visual_state()
+
+    def _update_visual_state(self):
+        """Update the widget's visual appearance based on selection and editing states."""
+        # Determine background and border colors
+        if self._is_editing:
+            # Editing mode: blue border
+            bg_color = "#2b2b2b"
+            border_color = "#0078d4"
+            border_width = "2px"
+        elif self._is_selected:
+            # Selected mode: blue background
+            bg_color = "#0078d4"
+            border_color = "#0078d4"
+            border_width = "1px"
+        else:
+            # Normal mode: dark background
+            bg_color = "#2b2b2b"
+            border_color = "#555555"
+            border_width = "1px"
+
+        # Apply stylesheet
+        self.setStyleSheet(f"""
+            MultiEntityReferenceWidget {{
+                background-color: {bg_color};
+                border: {border_width} solid {border_color};
+                border-radius: 4px;
+            }}
+            QWidget#pillsContainer {{
+                background-color: transparent;
+            }}
+        """)
 
 
 class FlowLayout(QtWidgets.QLayout):

@@ -513,6 +513,11 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Double-click handler for adding bid assets
         self.table_view.doubleClicked.connect(self._on_cell_double_clicked)
 
+        # Selection change handler for visual feedback on bid assets widgets
+        selection_model = self.table_view.selectionModel()
+        if selection_model:
+            selection_model.selectionChanged.connect(self._on_selection_changed)
+
         # Install event filter
         self.table_view.installEventFilter(self)
 
@@ -676,6 +681,29 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.current_bid = bid
         logger.info(f"VFXBreakdownWidget: Current bid set to {bid.get('code') if bid else None}")
 
+    def _on_selection_changed(self, selected, deselected):
+        """Handle table selection changes to update bid assets widget visual state.
+
+        Args:
+            selected: QItemSelection of newly selected items
+            deselected: QItemSelection of newly deselected items
+        """
+        # Update deselected widgets
+        for index in deselected.indexes():
+            field_name = self.model.column_fields[index.column()]
+            if field_name == "sg_bid_assets":
+                widget = self.table_view.indexWidget(index)
+                if isinstance(widget, MultiEntityReferenceWidget):
+                    widget.set_selected(False)
+
+        # Update selected widgets
+        for index in selected.indexes():
+            field_name = self.model.column_fields[index.column()]
+            if field_name == "sg_bid_assets":
+                widget = self.table_view.indexWidget(index)
+                if isinstance(widget, MultiEntityReferenceWidget):
+                    widget.set_selected(True)
+
     def _on_cell_double_clicked(self, index):
         """Handle double-click on a cell.
 
@@ -751,6 +779,11 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             )
             return
 
+        # Set editing state on the widget to show blue border
+        widget = self.table_view.indexWidget(index)
+        if isinstance(widget, MultiEntityReferenceWidget):
+            widget.set_editing(True)
+
         # Create a QMenu for asset selection (simpler and more reliable than QComboBox popup)
         menu = QtWidgets.QMenu(self.table_view)
 
@@ -803,6 +836,10 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         else:
             # Position above cell (align bottom of menu with top of cell)
             menu.exec(QtCore.QPoint(top_left.x(), top_left.y() - menu_height))
+
+        # Reset editing state on widget after menu closes
+        if isinstance(widget, MultiEntityReferenceWidget):
+            widget.set_editing(False)
 
         # Reset flag after menu closes
         self._asset_menu_open = False
