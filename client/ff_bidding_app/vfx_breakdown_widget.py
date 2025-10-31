@@ -347,6 +347,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.clear_filters_btn = None
         self.compound_sort_btn = None
         self.config_columns_btn = None
+        self.row_height_slider = None
+        self.row_height_label = None
         self.template_dropdown = None
         self.row_count_label = None
 
@@ -366,6 +368,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self._load_column_order()  # Load column order first
         self._load_column_visibility()  # Then apply visibility
         self._load_column_dropdowns()  # Load dropdown settings
+        self._load_row_height()  # Load row height
 
     def _build_ui(self):
         """Build the widget UI."""
@@ -399,6 +402,23 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             self.config_columns_btn = QtWidgets.QPushButton("Config Columns")
             self.config_columns_btn.clicked.connect(self._open_config_columns_dialog)
             toolbar_layout.addWidget(self.config_columns_btn)
+
+            # Row height slider
+            toolbar_layout.addWidget(QtWidgets.QLabel("Row Height:"))
+            self.row_height_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+            self.row_height_slider.setMinimum(20)
+            self.row_height_slider.setMaximum(200)
+            self.row_height_slider.setValue(30)  # Default height
+            self.row_height_slider.setFixedWidth(120)
+            self.row_height_slider.setToolTip("Adjust table row height")
+            self.row_height_slider.valueChanged.connect(self._on_row_height_changed)
+            toolbar_layout.addWidget(self.row_height_slider)
+
+            # Row height value label
+            self.row_height_label = QtWidgets.QLabel("30")
+            self.row_height_label.setMinimumWidth(30)
+            self.row_height_label.setStyleSheet("color: #606060; padding: 2px 4px;")
+            toolbar_layout.addWidget(self.row_height_label)
 
             # Template dropdown
             toolbar_layout.addWidget(QtWidgets.QLabel("Template:"))
@@ -1216,6 +1236,38 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # Apply dropdowns
         self._apply_column_dropdowns()
+
+    def _load_row_height(self):
+        """Load row height setting from AppSettings."""
+        saved_height = self.app_settings.get("vfx_breakdown_row_height", 30)
+
+        if self.row_height_slider:
+            self.row_height_slider.blockSignals(True)
+            self.row_height_slider.setValue(saved_height)
+            self.row_height_slider.blockSignals(False)
+
+        if self.row_height_label:
+            self.row_height_label.setText(str(saved_height))
+
+        # Apply the height to the table
+        if self.table_view:
+            v_header = self.table_view.verticalHeader()
+            v_header.setDefaultSectionSize(saved_height)
+
+    def _on_row_height_changed(self, value):
+        """Handle row height slider change."""
+        # Update the label
+        if self.row_height_label:
+            self.row_height_label.setText(str(value))
+
+        # Apply to the table in real-time
+        if self.table_view:
+            v_header = self.table_view.verticalHeader()
+            v_header.setDefaultSectionSize(value)
+
+        # Save to settings
+        self.app_settings.set("vfx_breakdown_row_height", value)
+        logger.info(f"Row height changed to {value}px")
 
     def _apply_column_dropdowns(self):
         """Apply dropdown delegates to columns marked for dropdowns."""

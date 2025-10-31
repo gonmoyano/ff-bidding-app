@@ -445,7 +445,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             logger.info(f"Shotgrid Session: {self.sg_session}")
             self.output_directory = output_directory or str(Path.home() / "shotgrid_packages")
 
-            self.setWindowTitle("Prodigy")
+            self.setWindowTitle("Fireframe Prodigy")
             self.setMinimumSize(1400, 700)
 
             self._build_ui()
@@ -830,7 +830,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
             # Header
             header_layout = QtWidgets.QHBoxLayout()
-            title_label = QtWidgets.QLabel("Bidding Manager")
+            title_label = QtWidgets.QLabel("Fireframe Prodigy")
             title_font = title_label.font()
             title_font.setPointSize(16)
             title_font.setBold(True)
