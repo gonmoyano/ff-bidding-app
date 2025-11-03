@@ -2659,7 +2659,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             project_id: Project ID to search within
 
         Returns:
-            list: List of entity references [{"type": "CustomEntity07", "id": xxx}, ...]
+            list: List of unique entity references [{"type": "CustomEntity07", "id": xxx}, ...]
                   or None if no matches found
         """
         if not value or (isinstance(value, str) and not value.strip()):
@@ -2669,12 +2669,20 @@ class BidSelectorWidget(QtWidgets.QWidget):
         text = str(value)
 
         # Parse asset names - split by newlines and strip whitespace
-        asset_names = [name.strip() for name in text.split('\n') if name.strip()]
+        asset_names_raw = [name.strip() for name in text.split('\n') if name.strip()]
 
-        if not asset_names:
+        if not asset_names_raw:
             return None
 
-        logger.info(f"Looking up assets: {asset_names}")
+        # Remove duplicates while preserving order
+        seen = set()
+        asset_names = []
+        for name in asset_names_raw:
+            if name not in seen:
+                seen.add(name)
+                asset_names.append(name)
+
+        logger.info(f"Looking up assets (deduplicated): {asset_names}")
 
         # Query ShotGrid for CustomEntity07 records matching these names
         try:
@@ -2693,12 +2701,18 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 logger.warning(f"No matching assets found for names: {asset_names}")
                 return None
 
-            # Create entity references
-            entity_refs = [{"type": "CustomEntity07", "id": asset["id"]} for asset in assets]
+            # Create entity references and deduplicate by ID
+            seen_ids = set()
+            entity_refs = []
+            for asset in assets:
+                asset_id = asset["id"]
+                if asset_id not in seen_ids:
+                    seen_ids.add(asset_id)
+                    entity_refs.append({"type": "CustomEntity07", "id": asset_id})
 
             # Log matches
             found_names = [asset["code"] for asset in assets]
-            logger.info(f"Found {len(entity_refs)} asset(s): {found_names}")
+            logger.info(f"Found {len(entity_refs)} unique asset(s): {found_names}")
 
             # Warn about any missing assets
             missing = set(asset_names) - set(found_names)
@@ -2934,6 +2948,31 @@ class BidSelectorWidget(QtWidgets.QWidget):
         logger.info(f"Starting Assets import with {len(df)} rows")
         logger.info(f"Column mapping: {column_mapping}")
         logger.info(f"Importing Assets for Bid: {bid_name} (ID: {bid_id})")
+
+        # Check for duplicate asset codes in the Excel sheet
+        code_column = column_mapping.get("code")
+        if code_column and code_column in df.columns:
+            # Get all non-empty codes
+            codes = df[code_column].dropna()
+            codes = codes[codes != ""]
+
+            # Check for duplicates
+            duplicates = codes[codes.duplicated()].unique()
+
+            if len(duplicates) > 0:
+                duplicate_list = "\n".join([f"  - {code}" for code in duplicates])
+                error_msg = (
+                    f"Duplicate asset names found in the Assets sheet:\n\n"
+                    f"{duplicate_list}\n\n"
+                    f"Please fix the Excel file to ensure all asset names are unique before importing."
+                )
+                logger.error(f"Duplicate assets found: {list(duplicates)}")
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Duplicate Assets Found",
+                    error_msg
+                )
+                return 0, None
 
         # Step 2: Determine version number for Bid Assets
         # Query existing Bid Assets with pattern: {bid_name}-Bid Assets-v*
