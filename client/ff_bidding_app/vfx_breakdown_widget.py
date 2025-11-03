@@ -613,6 +613,10 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Column not present in this table
             return
 
+        # Get valid asset IDs from the current bid for validation
+        valid_entity_ids = self._get_valid_asset_ids()
+        logger.info(f"Setting up bid assets widgets with validation: {valid_entity_ids}")
+
         # Create widget for each row
         for row in range(self.model.rowCount()):
             # Get the model index for this cell
@@ -627,8 +631,12 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             if not isinstance(entities, list):
                 entities = [entities] if entities else []
 
-            # Create the widget (without add button for now)
-            widget = MultiEntityReferenceWidget(entities=entities, allow_add=False)
+            # Create the widget with validation
+            widget = MultiEntityReferenceWidget(
+                entities=entities,
+                allow_add=False,
+                valid_entity_ids=valid_entity_ids
+            )
             # Set height to match current row height setting
             current_row_height = self.app_settings.get("vfx_breakdown_row_height", 80)
             widget.setFixedHeight(current_row_height)
@@ -678,6 +686,32 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         """
         self.current_bid = bid
         logger.info(f"VFXBreakdownWidget: Current bid set to {bid.get('code') if bid else None}")
+
+        # Refresh asset widgets with new validation when bid changes
+        self._refresh_asset_widgets_validation()
+
+    def _refresh_asset_widgets_validation(self):
+        """Refresh validation for all asset widgets based on current bid."""
+        # Find the column index for sg_bid_assets
+        try:
+            assets_col_idx = self.model.column_fields.index("sg_bid_assets")
+        except ValueError:
+            # Column not present in this table
+            return
+
+        # Get the new valid asset IDs
+        valid_entity_ids = self._get_valid_asset_ids()
+        logger.info(f"Refreshing asset widgets validation with IDs: {valid_entity_ids}")
+
+        # Update all existing asset widgets
+        for row in range(self.model.rowCount()):
+            index = self.model.index(row, assets_col_idx)
+            widget = self.table_view.indexWidget(index)
+
+            if isinstance(widget, MultiEntityReferenceWidget):
+                # Update the validation IDs for this widget
+                widget.set_valid_entity_ids(valid_entity_ids)
+                logger.debug(f"Updated validation for row {row}")
 
     def _on_selection_changed(self, selected, deselected):
         """Handle table selection changes to update bid assets widget visual state.
@@ -1054,6 +1088,26 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         except Exception as e:
             logger.error(f"Failed to query Asset items: {e}", exc_info=True)
             return []
+
+    def _get_valid_asset_ids(self):
+        """Get the set of valid asset IDs from the current bid's Assets tab.
+
+        Returns:
+            set: Set of asset IDs (integers) that are valid for the current bid.
+                 Returns None if no bid is selected (meaning all assets are valid/no validation).
+        """
+        if not self.current_bid:
+            # No bid selected - no validation
+            return None
+
+        # Get all assets from the current bid
+        assets = self._get_available_bid_assets()
+
+        # Extract IDs into a set
+        valid_ids = {asset['id'] for asset in assets if 'id' in asset}
+
+        logger.info(f"Valid asset IDs for current bid: {valid_ids}")
+        return valid_ids
 
     def clear_data(self):
         """Clear all data from the widget."""

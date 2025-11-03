@@ -27,23 +27,32 @@ class EntityPillWidget(QtWidgets.QWidget):
     """
 
     removeRequested = QtCore.Signal(object)  # Emits the entity dict
+    clicked = QtCore.Signal(object)  # Emits the entity dict when pill is clicked
 
-    def __init__(self, entity, parent=None):
+    def __init__(self, entity, is_valid=True, parent=None):
         """
         Initialize an entity pill widget.
 
         Args:
             entity (dict): ShotGrid entity dict with 'type', 'id', 'name' keys
+            is_valid (bool): Whether this entity reference is valid (exists in current bid's assets)
             parent (QWidget): Parent widget
         """
         super().__init__(parent)
         self.entity = entity
+        self.is_valid = is_valid
         # Try 'code' first (used by Asset items), then 'name', finally fallback to ID
         self.entity_name = entity.get("code") or entity.get("name") or f"ID {entity.get('id', 'N/A')}"
 
-        # Colors for custom painting
-        self.bg_color = QtGui.QColor("#b0b0b0")
-        self.border_color = QtGui.QColor("#888888")
+        # Colors for custom painting - blue for valid, red for invalid
+        if self.is_valid:
+            self.bg_color = QtGui.QColor("#4a90e2")  # Blue for valid
+            self.border_color = QtGui.QColor("#357abd")
+            self.text_color = "#ffffff"
+        else:
+            self.bg_color = QtGui.QColor("#e74c3c")  # Red for invalid
+            self.border_color = QtGui.QColor("#c0392b")
+            self.text_color = "#ffffff"
 
         self._setup_ui()
 
@@ -56,14 +65,21 @@ class EntityPillWidget(QtWidgets.QWidget):
 
         # Entity name label
         self.name_label = QtWidgets.QLabel(self.entity_name)
-        self.name_label.setStyleSheet("""
-            QLabel {
-                color: #2b2b2b;
+        self.name_label.setStyleSheet(f"""
+            QLabel {{
+                color: {self.text_color};
                 font-size: 11px;
                 background: transparent;
                 border: none;
-            }
+            }}
         """)
+        self.name_label.setCursor(QtCore.Qt.PointingHandCursor)
+        self.name_label.mousePressEvent = self._on_label_clicked
+
+        # Add tooltip for invalid pills showing the asset name
+        if not self.is_valid:
+            self.name_label.setToolTip(f"Invalid asset reference: {self.entity_name}\n(Asset not found in current bid)")
+
         layout.addWidget(self.name_label)
 
         # Close button (X)
@@ -105,6 +121,21 @@ class EntityPillWidget(QtWidgets.QWidget):
         """Handle remove button click."""
         self.removeRequested.emit(self.entity)
 
+    def _on_label_clicked(self, event):
+        """Handle label click - show asset info for invalid pills."""
+        if not self.is_valid:
+            # Show a message box with the asset name details
+            QtWidgets.QMessageBox.information(
+                self,
+                "Invalid Asset Reference",
+                f"Asset Name: {self.entity_name}\n"
+                f"Entity Type: {self.entity.get('type', 'N/A')}\n"
+                f"Entity ID: {self.entity.get('id', 'N/A')}\n\n"
+                f"This asset is not found in the current bid's Assets tab.\n"
+                f"It may have been removed or belongs to a different bid."
+            )
+        self.clicked.emit(self.entity)
+
     def get_entity(self):
         """Get the entity dict for this pill.
 
@@ -131,18 +162,20 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
 
     entitiesChanged = QtCore.Signal(list)  # Emits list of entity dicts
 
-    def __init__(self, entities=None, allow_add=True, parent=None):
+    def __init__(self, entities=None, allow_add=True, valid_entity_ids=None, parent=None):
         """
         Initialize the multi-entity reference widget.
 
         Args:
             entities (list): List of ShotGrid entity dicts
             allow_add (bool): Whether to show the Add button
+            valid_entity_ids (set): Set of valid entity IDs for the current bid (for validation)
             parent (QWidget): Parent widget
         """
         super().__init__(parent)
         self._entities = entities or []
         self._allow_add = allow_add
+        self._valid_entity_ids = valid_entity_ids  # Set of valid entity IDs
         self._is_selected = False  # Track selection state
         self._is_editing = False   # Track edit state
 
@@ -219,7 +252,13 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         Args:
             entity (dict): Entity dictionary
         """
-        pill = EntityPillWidget(entity, self)
+        # Check if this entity is valid (in the current bid's assets)
+        is_valid = True
+        if self._valid_entity_ids is not None:
+            entity_id = entity.get('id')
+            is_valid = entity_id in self._valid_entity_ids
+
+        pill = EntityPillWidget(entity, is_valid=is_valid, parent=self)
         pill.removeRequested.connect(self._on_pill_remove)
         self.pills_layout.addWidget(pill)
 
@@ -293,6 +332,16 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
             entities (list): List of entity dictionaries
         """
         self._entities = entities or []
+        self._populate_entities()
+
+    def set_valid_entity_ids(self, valid_entity_ids):
+        """Update the set of valid entity IDs and refresh pills.
+
+        Args:
+            valid_entity_ids (set): Set of valid entity IDs for validation
+        """
+        self._valid_entity_ids = valid_entity_ids
+        # Refresh pills to update validation colors
         self._populate_entities()
 
     def get_entities(self):
