@@ -3096,11 +3096,15 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         # Step 7: Create Asset items (CustomEntity07) linked to Bid Assets
         created_count = 0
+        reused_count = 0
         failed_count = 0
+
+        # Cache for existing assets by code (to avoid repeated queries)
+        existing_assets_cache = {}
 
         for index, row in df.iterrows():
             # Update progress
-            progress.setLabelText(f"Creating Asset item {created_count + 1} of {len(df)}...")
+            progress.setLabelText(f"Processing Asset item {created_count + reused_count + 1} of {len(df)}...")
             progress.setValue(1 + index + 1)
             QtWidgets.QApplication.processEvents()
 
@@ -3154,26 +3158,89 @@ class BidSelectorWidget(QtWidgets.QWidget):
                             # Only convert non-string values
                             sg_data[sg_field] = str(value)
 
-                # Create the record
-                result = self.sg_session.sg.create("CustomEntity07", sg_data)
-                created_count += 1
-                logger.info(f"Created CustomEntity07 (Asset item): {result['id']} with code '{sg_data.get('code', 'N/A')}' linked to Bid Assets {bid_assets_id}")
+                # Check if asset with this code already exists
+                asset_code = sg_data.get("code")
+                if not asset_code:
+                    logger.warning(f"Row {index}: No code specified, skipping")
+                    failed_count += 1
+                    continue
+
+                # Check cache first
+                if asset_code in existing_assets_cache:
+                    existing_asset = existing_assets_cache[asset_code]
+                    logger.info(f"Row {index}: Reusing existing asset '{asset_code}' (ID: {existing_asset['id']}) from cache")
+
+                    # Update the existing asset to link it to this Bid Assets
+                    try:
+                        self.sg_session.sg.update(
+                            "CustomEntity07",
+                            existing_asset['id'],
+                            {"sg_bid_assets": {"type": "CustomEntity08", "id": bid_assets_id}}
+                        )
+                        reused_count += 1
+                        logger.info(f"Linked existing asset '{asset_code}' to Bid Assets {bid_assets_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to link existing asset: {e}", exc_info=True)
+                        failed_count += 1
+                    continue
+
+                # Query ShotGrid to check if asset exists
+                try:
+                    filters = [
+                        ["project", "is", {"type": "Project", "id": self.current_project_id}],
+                        ["code", "is", asset_code]
+                    ]
+                    existing_assets = self.sg_session.sg.find(
+                        "CustomEntity07",
+                        filters,
+                        ["id", "code"]
+                    )
+
+                    if existing_assets:
+                        # Asset exists - reuse it
+                        existing_asset = existing_assets[0]
+                        existing_assets_cache[asset_code] = existing_asset
+                        logger.info(f"Row {index}: Found existing asset '{asset_code}' (ID: {existing_asset['id']})")
+
+                        # Update the existing asset to link it to this Bid Assets
+                        try:
+                            self.sg_session.sg.update(
+                                "CustomEntity07",
+                                existing_asset['id'],
+                                {"sg_bid_assets": {"type": "CustomEntity08", "id": bid_assets_id}}
+                            )
+                            reused_count += 1
+                            logger.info(f"Linked existing asset '{asset_code}' to Bid Assets {bid_assets_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to link existing asset: {e}", exc_info=True)
+                            failed_count += 1
+                    else:
+                        # Asset doesn't exist - create new one
+                        result = self.sg_session.sg.create("CustomEntity07", sg_data)
+                        existing_assets_cache[asset_code] = result
+                        created_count += 1
+                        logger.info(f"Created new CustomEntity07 (Asset): {result['id']} with code '{asset_code}' linked to Bid Assets {bid_assets_id}")
+
+                except Exception as e:
+                    logger.error(f"Failed to check/create asset for row {index}: {e}", exc_info=True)
+                    failed_count += 1
 
             except Exception as e:
                 failed_count += 1
-                logger.error(f"Failed to create CustomEntity07 (Asset item) for row {index}: {e}", exc_info=True)
+                logger.error(f"Failed to process Asset item for row {index}: {e}", exc_info=True)
 
         # Close progress dialog
         progress.setValue(total_steps)
         progress.close()
 
         # Log summary (detailed message shown at end of all imports)
+        total_processed = created_count + reused_count
         if failed_count > 0:
-            logger.warning(f"Created Bid Assets '{bid_assets_name}' with {created_count} Asset items ({failed_count} failed)")
+            logger.warning(f"Created Bid Assets '{bid_assets_name}' with {total_processed} Asset items ({created_count} new, {reused_count} reused, {failed_count} failed)")
         else:
-            logger.info(f"Successfully created Bid Assets '{bid_assets_name}' with {created_count} Asset items")
+            logger.info(f"Successfully created Bid Assets '{bid_assets_name}' with {total_processed} Asset items ({created_count} new, {reused_count} reused)")
 
-        return created_count, bid_assets_id
+        return total_processed, bid_assets_id
 
     def _import_scenes(self, df, column_mapping, bid_id, bid_name):
         """Import Scenes data to ShotGrid.
