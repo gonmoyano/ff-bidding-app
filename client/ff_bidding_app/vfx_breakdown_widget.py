@@ -19,7 +19,16 @@ except ImportError:
     from multi_entity_reference_widget import MultiEntityReferenceWidget
 
 
-class DropdownMenuDelegate(QtWidgets.QStyledItemDelegate):
+class NoElideDelegate(QtWidgets.QStyledItemDelegate):
+    """Base delegate that prevents text elision (truncation with '...')."""
+
+    def paint(self, painter, option, index):
+        # Ensure text is not elided (truncated with "...")
+        option.textElideMode = QtCore.Qt.ElideNone
+        super().paint(painter, option, index)
+
+
+class DropdownMenuDelegate(NoElideDelegate):
     """Delegate that paints the blue editing border when a dropdown menu is active."""
 
     def __init__(self, parent_widget, parent=None):
@@ -31,6 +40,8 @@ class DropdownMenuDelegate(QtWidgets.QStyledItemDelegate):
         return None
 
     def paint(self, painter, option, index):
+        # Ensure text is not elided (truncated with "...")
+        option.textElideMode = QtCore.Qt.ElideNone
         super().paint(painter, option, index)
 
         if not self.parent_widget:
@@ -438,6 +449,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Table view
         self.table_view = QtWidgets.QTableView()
         self.table_view.setModel(self.model)
+
+        # Set default delegate to prevent text elision on all columns
+        self.table_view.setItemDelegate(NoElideDelegate(self.table_view))
 
         # Configure table view
         self.table_view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
