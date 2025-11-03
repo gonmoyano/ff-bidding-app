@@ -604,6 +604,35 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Set up MultiEntityReferenceWidget for sg_bid_assets column
         self._setup_bid_assets_widgets()
 
+    def _deduplicate_entities(self, entities):
+        """Remove duplicate entities from a list, keeping only unique IDs.
+
+        Args:
+            entities (list): List of entity dicts
+
+        Returns:
+            list: Deduplicated list of entity dicts
+        """
+        if not entities:
+            return []
+
+        seen_ids = set()
+        unique_entities = []
+
+        for entity in entities:
+            if not isinstance(entity, dict):
+                continue
+
+            entity_id = entity.get("id")
+            if entity_id and entity_id not in seen_ids:
+                seen_ids.add(entity_id)
+                unique_entities.append(entity)
+
+        if len(unique_entities) < len(entities):
+            logger.info(f"Deduplicated entities: {len(entities)} -> {len(unique_entities)}")
+
+        return unique_entities
+
     def _setup_bid_assets_widgets(self):
         """Set up MultiEntityReferenceWidget for each row in the sg_bid_assets column."""
         # Find the column index for sg_bid_assets
@@ -630,6 +659,14 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             entities = bidding_scene_data.get("sg_bid_assets", [])
             if not isinstance(entities, list):
                 entities = [entities] if entities else []
+
+            # Deduplicate entities by ID before creating widget
+            entities = self._deduplicate_entities(entities)
+
+            # Update the model data with deduplicated entities
+            if entities != bidding_scene_data.get("sg_bid_assets", []):
+                bidding_scene_data["sg_bid_assets"] = entities
+                logger.info(f"Updated row {row} with deduplicated entities")
 
             # Create the widget with validation
             widget = MultiEntityReferenceWidget(
@@ -669,6 +706,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             col: Column index
             entities: Updated list of entity dicts
         """
+        # Deduplicate entities before saving
+        entities = self._deduplicate_entities(entities)
+
         # Get the model index
         index = self.model.index(row, col)
 

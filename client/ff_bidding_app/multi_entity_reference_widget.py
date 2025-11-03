@@ -173,7 +173,7 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
             parent (QWidget): Parent widget
         """
         super().__init__(parent)
-        self._entities = entities or []
+        self._entities = self._deduplicate_entities(entities or [])
         self._allow_add = allow_add
         self._valid_entity_ids = valid_entity_ids  # Set of valid entity IDs
         self._is_selected = False  # Track selection state
@@ -186,6 +186,32 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
 
         self._setup_ui()
         self._populate_entities()
+
+    def _deduplicate_entities(self, entities):
+        """Remove duplicate entities from a list, keeping only unique IDs.
+
+        Args:
+            entities (list): List of entity dicts
+
+        Returns:
+            list: Deduplicated list of entity dicts
+        """
+        if not entities:
+            return []
+
+        seen_ids = set()
+        unique_entities = []
+
+        for entity in entities:
+            if not isinstance(entity, dict):
+                continue
+
+            entity_id = entity.get("id")
+            if entity_id and entity_id not in seen_ids:
+                seen_ids.add(entity_id)
+                unique_entities.append(entity)
+
+        return unique_entities
 
     def _setup_ui(self):
         """Build the main UI with flow layout."""
@@ -331,7 +357,7 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         Args:
             entities (list): List of entity dictionaries
         """
-        self._entities = entities or []
+        self._entities = self._deduplicate_entities(entities or [])
         self._populate_entities()
 
     def set_valid_entity_ids(self, valid_entity_ids):
