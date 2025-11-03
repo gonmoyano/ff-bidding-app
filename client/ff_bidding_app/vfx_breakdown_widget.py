@@ -19,7 +19,16 @@ except ImportError:
     from multi_entity_reference_widget import MultiEntityReferenceWidget
 
 
-class DropdownMenuDelegate(QtWidgets.QStyledItemDelegate):
+class NoElideDelegate(QtWidgets.QStyledItemDelegate):
+    """Base delegate that prevents text elision (truncation with '...')."""
+
+    def paint(self, painter, option, index):
+        # Ensure text is not elided (truncated with "...")
+        option.textElideMode = QtCore.Qt.ElideNone
+        super().paint(painter, option, index)
+
+
+class DropdownMenuDelegate(NoElideDelegate):
     """Delegate that paints the blue editing border when a dropdown menu is active."""
 
     def __init__(self, parent_widget, parent=None):
@@ -31,6 +40,8 @@ class DropdownMenuDelegate(QtWidgets.QStyledItemDelegate):
         return None
 
     def paint(self, painter, option, index):
+        # Ensure text is not elided (truncated with "...")
+        option.textElideMode = QtCore.Qt.ElideNone
         super().paint(painter, option, index)
 
         if not self.parent_widget:
@@ -347,6 +358,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.clear_filters_btn = None
         self.compound_sort_btn = None
         self.config_columns_btn = None
+        self.row_height_slider = None
+        self.row_height_label = None
         self.template_dropdown = None
         self.row_count_label = None
 
@@ -366,6 +379,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self._load_column_order()  # Load column order first
         self._load_column_visibility()  # Then apply visibility
         self._load_column_dropdowns()  # Load dropdown settings
+        self._load_row_height()  # Load row height
 
     def _build_ui(self):
         """Build the widget UI."""
@@ -400,6 +414,23 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             self.config_columns_btn.clicked.connect(self._open_config_columns_dialog)
             toolbar_layout.addWidget(self.config_columns_btn)
 
+            # Row height slider
+            toolbar_layout.addWidget(QtWidgets.QLabel("Row Height:"))
+            self.row_height_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+            self.row_height_slider.setMinimum(30)
+            self.row_height_slider.setMaximum(200)
+            self.row_height_slider.setValue(80)  # Default height
+            self.row_height_slider.setFixedWidth(120)
+            self.row_height_slider.setToolTip("Adjust table row height")
+            self.row_height_slider.valueChanged.connect(self._on_row_height_changed)
+            toolbar_layout.addWidget(self.row_height_slider)
+
+            # Row height value label
+            self.row_height_label = QtWidgets.QLabel("80")
+            self.row_height_label.setMinimumWidth(30)
+            self.row_height_label.setStyleSheet("color: #606060; padding: 2px 4px;")
+            toolbar_layout.addWidget(self.row_height_label)
+
             # Template dropdown
             toolbar_layout.addWidget(QtWidgets.QLabel("Template:"))
             self.template_dropdown = QtWidgets.QComboBox()
@@ -419,11 +450,15 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.table_view = QtWidgets.QTableView()
         self.table_view.setModel(self.model)
 
+        # Set default delegate to prevent text elision on all columns
+        self.table_view.setItemDelegate(NoElideDelegate(self.table_view))
+
         # Configure table view
         self.table_view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
         self.table_view.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.table_view.setAlternatingRowColors(False)
         self.table_view.setWordWrap(True)
+        self.table_view.setTextElideMode(QtCore.Qt.ElideNone)  # Don't truncate text with "..."
 
         # Configure headers
         h_header = self.table_view.horizontalHeader()
@@ -569,6 +604,35 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Set up MultiEntityReferenceWidget for sg_bid_assets column
         self._setup_bid_assets_widgets()
 
+    def _deduplicate_entities(self, entities):
+        """Remove duplicate entities from a list, keeping only unique IDs.
+
+        Args:
+            entities (list): List of entity dicts
+
+        Returns:
+            list: Deduplicated list of entity dicts
+        """
+        if not entities:
+            return []
+
+        seen_ids = set()
+        unique_entities = []
+
+        for entity in entities:
+            if not isinstance(entity, dict):
+                continue
+
+            entity_id = entity.get("id")
+            if entity_id and entity_id not in seen_ids:
+                seen_ids.add(entity_id)
+                unique_entities.append(entity)
+
+        if len(unique_entities) < len(entities):
+            logger.info(f"Deduplicated entities: {len(entities)} -> {len(unique_entities)}")
+
+        return unique_entities
+
     def _setup_bid_assets_widgets(self):
         """Set up MultiEntityReferenceWidget for each row in the sg_bid_assets column."""
         # Find the column index for sg_bid_assets
@@ -577,6 +641,10 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         except ValueError:
             # Column not present in this table
             return
+
+        # Get valid asset IDs from the current bid for validation
+        valid_entity_ids = self._get_valid_asset_ids()
+        logger.info(f"Setting up bid assets widgets with validation: {valid_entity_ids}")
 
         # Create widget for each row
         for row in range(self.model.rowCount()):
@@ -592,9 +660,23 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             if not isinstance(entities, list):
                 entities = [entities] if entities else []
 
-            # Create the widget (without add button for now)
-            widget = MultiEntityReferenceWidget(entities=entities, allow_add=False)
-            widget.setMinimumHeight(60)
+            # Deduplicate entities by ID before creating widget
+            entities = self._deduplicate_entities(entities)
+
+            # Update the model data with deduplicated entities
+            if entities != bidding_scene_data.get("sg_bid_assets", []):
+                bidding_scene_data["sg_bid_assets"] = entities
+                logger.info(f"Updated row {row} with deduplicated entities")
+
+            # Create the widget with validation
+            widget = MultiEntityReferenceWidget(
+                entities=entities,
+                allow_add=False,
+                valid_entity_ids=valid_entity_ids
+            )
+            # Set height to match current row height setting
+            current_row_height = self.app_settings.get("vfx_breakdown_row_height", 80)
+            widget.setFixedHeight(current_row_height)
 
             # Connect signal to update model when entities change
             widget.entitiesChanged.connect(
@@ -614,8 +696,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 is_selected = self.table_view.selectionModel().isSelected(index)
                 widget.set_selected(is_selected)
 
-        # Increase row height for this column
-        self.table_view.verticalHeader().setDefaultSectionSize(80)
+        # Row height is controlled by the slider - don't override it here
 
     def _on_bid_assets_changed(self, row, col, entities):
         """Handle when bid assets are changed in a cell widget.
@@ -625,6 +706,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             col: Column index
             entities: Updated list of entity dicts
         """
+        # Deduplicate entities before saving
+        entities = self._deduplicate_entities(entities)
+
         # Get the model index
         index = self.model.index(row, col)
 
@@ -642,6 +726,32 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         """
         self.current_bid = bid
         logger.info(f"VFXBreakdownWidget: Current bid set to {bid.get('code') if bid else None}")
+
+        # Refresh asset widgets with new validation when bid changes
+        self._refresh_asset_widgets_validation()
+
+    def _refresh_asset_widgets_validation(self):
+        """Refresh validation for all asset widgets based on current bid."""
+        # Find the column index for sg_bid_assets
+        try:
+            assets_col_idx = self.model.column_fields.index("sg_bid_assets")
+        except ValueError:
+            # Column not present in this table
+            return
+
+        # Get the new valid asset IDs
+        valid_entity_ids = self._get_valid_asset_ids()
+        logger.info(f"Refreshing asset widgets validation with IDs: {valid_entity_ids}")
+
+        # Update all existing asset widgets
+        for row in range(self.model.rowCount()):
+            index = self.model.index(row, assets_col_idx)
+            widget = self.table_view.indexWidget(index)
+
+            if isinstance(widget, MultiEntityReferenceWidget):
+                # Update the validation IDs for this widget
+                widget.set_valid_entity_ids(valid_entity_ids)
+                logger.debug(f"Updated validation for row {row}")
 
     def _on_selection_changed(self, selected, deselected):
         """Handle table selection changes to update bid assets widget visual state.
@@ -1019,6 +1129,26 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             logger.error(f"Failed to query Asset items: {e}", exc_info=True)
             return []
 
+    def _get_valid_asset_ids(self):
+        """Get the set of valid asset IDs from the current bid's Assets tab.
+
+        Returns:
+            set: Set of asset IDs (integers) that are valid for the current bid.
+                 Returns None if no bid is selected (meaning all assets are valid/no validation).
+        """
+        if not self.current_bid:
+            # No bid selected - no validation
+            return None
+
+        # Get all assets from the current bid
+        assets = self._get_available_bid_assets()
+
+        # Extract IDs into a set
+        valid_ids = {asset['id'] for asset in assets if 'id' in asset}
+
+        logger.info(f"Valid asset IDs for current bid: {valid_ids}")
+        return valid_ids
+
     def clear_data(self):
         """Clear all data from the widget."""
         self.model.clear_data()
@@ -1216,6 +1346,73 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # Apply dropdowns
         self._apply_column_dropdowns()
+
+    def _load_row_height(self):
+        """Load row height setting from AppSettings."""
+        saved_height = self.app_settings.get("vfx_breakdown_row_height", 80)
+
+        if self.row_height_slider:
+            self.row_height_slider.blockSignals(True)
+            self.row_height_slider.setValue(saved_height)
+            self.row_height_slider.blockSignals(False)
+
+        if self.row_height_label:
+            self.row_height_label.setText(str(saved_height))
+
+        # Apply the height to the table
+        if self.table_view:
+            v_header = self.table_view.verticalHeader()
+            v_header.setDefaultSectionSize(saved_height)
+
+            # Update any existing asset widgets
+            try:
+                assets_col_idx = self.model.column_fields.index("sg_bid_assets")
+                for row in range(self.model.rowCount()):
+                    index = self.model.index(row, assets_col_idx)
+                    widget = self.table_view.indexWidget(index)
+                    if widget:
+                        widget.setFixedHeight(saved_height)
+                        widget.updateGeometry()
+
+                    # Force the row to resize
+                    v_header.resizeSection(row, saved_height)
+            except (ValueError, AttributeError):
+                # Column not present or other issue - skip widget updates
+                pass
+
+    def _on_row_height_changed(self, value):
+        """Handle row height slider change."""
+        # Update the label
+        if self.row_height_label:
+            self.row_height_label.setText(str(value))
+
+        # Apply to the table in real-time
+        if self.table_view:
+            v_header = self.table_view.verticalHeader()
+            v_header.setDefaultSectionSize(value)
+
+            # Update all MultiEntityReferenceWidget heights in the sg_bid_assets column
+            try:
+                assets_col_idx = self.model.column_fields.index("sg_bid_assets")
+                for row in range(self.model.rowCount()):
+                    index = self.model.index(row, assets_col_idx)
+                    widget = self.table_view.indexWidget(index)
+                    if widget:
+                        # Update both minimum and maximum height to match row height
+                        widget.setMinimumHeight(value)
+                        widget.setMaximumHeight(value)
+                        widget.setFixedHeight(value)
+                        widget.updateGeometry()
+
+                    # Force the row to resize
+                    v_header.resizeSection(row, value)
+            except (ValueError, AttributeError):
+                # Column not present or other issue - skip widget updates
+                pass
+
+        # Save to settings
+        self.app_settings.set("vfx_breakdown_row_height", value)
+        logger.info(f"Row height changed to {value}px")
 
     def _apply_column_dropdowns(self):
         """Apply dropdown delegates to columns marked for dropdowns."""

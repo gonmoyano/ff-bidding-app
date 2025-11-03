@@ -2045,6 +2045,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             self._set_status(f"Loaded {len(bids)} Bid(s) in project.")
 
             # Auto-select the bid linked to the RFQ if present
+            bid_was_selected = False
             if rfq and auto_select:
                 # Check Early Bid first, then Turnover Bid
                 linked_bid = rfq.get("sg_early_bid")
@@ -2059,13 +2060,22 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
                 if linked_bid_id:
                     # Try to select the linked bid
-                    if not self._select_bid_by_id(linked_bid_id):
+                    if self._select_bid_by_id(linked_bid_id):
+                        bid_was_selected = True
+                    else:
                         # Linked bid not found in list, don't auto-select anything
                         logger.warning(f"Linked bid {linked_bid_id} not found in project bids")
-                # If no linked bid, leave at placeholder (index 0)
-                # Don't auto-select the first bid - user must explicitly choose
+
+            # If no bid was selected (either no linked bid or linked bid not found),
+            # manually trigger bidChanged with None to reset downstream components
+            if rfq and auto_select and not bid_was_selected:
+                logger.info("No bid linked to RFQ - resetting bid selection")
+                self._on_bid_changed(0)  # Trigger with index 0 (placeholder)
         else:
             self._set_status("No Bids found in this project.")
+            # No bids available - reset downstream components
+            if auto_select:
+                self._on_bid_changed(0)  # Trigger with index 0 to reset
 
     def _select_bid_by_id(self, bid_id):
         """Select a bid by its ID.
@@ -2640,6 +2650,119 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         logger.info("Completed post-import refresh")
 
+    def _deduplicate_entity_refs(self, entity_refs):
+        """
+        Deduplicate entity references by ID, keeping only unique entries.
+
+        Args:
+            entity_refs (list): List of entity reference dicts [{"type": "...", "id": xxx}, ...]
+
+        Returns:
+            list: Deduplicated list of entity references
+        """
+        if not entity_refs:
+            return []
+
+        seen_ids = set()
+        unique_refs = []
+
+        for ref in entity_refs:
+            if not isinstance(ref, dict):
+                continue
+
+            entity_id = ref.get("id")
+            if entity_id and entity_id not in seen_ids:
+                seen_ids.add(entity_id)
+                unique_refs.append(ref)
+
+        if len(unique_refs) < len(entity_refs):
+            logger.info(f"Deduplicated entity references: {len(entity_refs)} -> {len(unique_refs)}")
+
+        return unique_refs
+
+    def _parse_and_lookup_assets(self, value, project_id):
+        """
+        Parse asset names from text and look up their ShotGrid entity references.
+
+        Args:
+            value: Text value containing asset names (possibly multiline)
+            project_id: Project ID to search within
+
+        Returns:
+            list: List of unique entity references [{"type": "CustomEntity07", "id": xxx}, ...]
+                  or None if no matches found
+        """
+        if not value or (isinstance(value, str) and not value.strip()):
+            return None
+
+        # Convert to string if not already
+        text = str(value)
+
+        # Parse asset names - split by newlines and strip whitespace
+        asset_names_raw = [name.strip() for name in text.split('\n') if name.strip()]
+
+        if not asset_names_raw:
+            return None
+
+        # Remove duplicates while preserving order
+        seen = set()
+        asset_names = []
+        for name in asset_names_raw:
+            if name not in seen:
+                seen.add(name)
+                asset_names.append(name)
+
+        logger.info(f"Looking up assets (deduplicated): {asset_names}")
+
+        # Query ShotGrid for CustomEntity07 records matching these names
+        try:
+            filters = [
+                ["project", "is", {"type": "Project", "id": int(project_id)}],
+                ["code", "in", asset_names]
+            ]
+
+            assets = self.sg_session.sg.find(
+                "CustomEntity07",
+                filters,
+                ["id", "code"]
+            )
+
+            if not assets:
+                logger.warning(f"No matching assets found for names: {asset_names}")
+                return None
+
+            # Deduplicate by code name first (in case of duplicate assets in SG)
+            # Keep only the first asset found for each unique code
+            seen_codes = set()
+            unique_assets = []
+            for asset in assets:
+                asset_code = asset.get("code")
+                if asset_code and asset_code not in seen_codes:
+                    seen_codes.add(asset_code)
+                    unique_assets.append(asset)
+                elif asset_code and asset_code in seen_codes:
+                    logger.warning(f"Duplicate asset found in ShotGrid: '{asset_code}' (ID: {asset['id']}), skipping")
+
+            # Create entity references from unique assets
+            entity_refs = []
+            for asset in unique_assets:
+                entity_refs.append({"type": "CustomEntity07", "id": asset["id"]})
+
+            # Log matches
+            found_names = [asset["code"] for asset in unique_assets]
+            logger.info(f"Found {len(entity_refs)} unique asset(s): {found_names}")
+
+            # Warn about any missing assets
+            missing = set(asset_names) - set(found_names)
+            if missing:
+                logger.warning(f"Could not find assets: {missing}")
+
+            return entity_refs
+
+        except Exception as e:
+            logger.error(f"Error looking up assets: {e}", exc_info=True)
+            return None
+
     def _import_vfx_breakdown(self, df, column_mapping, bid_id, bid_name):
         """Import VFX Breakdown data to ShotGrid.
 
@@ -2799,9 +2922,31 @@ class BidSelectorWidget(QtWidgets.QWidget):
                             sg_data[sg_field] = value.lower() in ["true", "yes", "1", "x"]
                         else:
                             sg_data[sg_field] = bool(value)
+                    elif field_type == "entity":
+                        # Handle entity references (e.g., sg_bid_assets)
+                        # Parse the text to extract asset names and look them up in ShotGrid
+                        if sg_field == "sg_bid_assets":
+                            entity_refs = self._parse_and_lookup_assets(value, self.current_project_id)
+                            if entity_refs:
+                                # Deduplicate entity references before saving to ShotGrid
+                                entity_refs = self._deduplicate_entity_refs(entity_refs)
+                                sg_data[sg_field] = entity_refs
+                                logger.info(f"Row {index}: Setting {len(entity_refs)} deduplicated asset reference(s)")
+                            # If no matches found, skip this field (don't set it)
+                        else:
+                            # For other entity fields, store as text for now
+                            if isinstance(value, str):
+                                sg_data[sg_field] = value
+                            else:
+                                sg_data[sg_field] = str(value)
                     else:
-                        # Text and list fields - store as string
-                        sg_data[sg_field] = str(value)
+                        # Text and list fields - import as-is without modification
+                        # If it's already a string, use it directly to preserve exact formatting
+                        if isinstance(value, str):
+                            sg_data[sg_field] = value
+                        else:
+                            # Only convert non-string values
+                            sg_data[sg_field] = str(value)
 
                 # Create the record
                 result = self.sg_session.sg.create("CustomEntity02", sg_data)
@@ -2844,6 +2989,31 @@ class BidSelectorWidget(QtWidgets.QWidget):
         logger.info(f"Starting Assets import with {len(df)} rows")
         logger.info(f"Column mapping: {column_mapping}")
         logger.info(f"Importing Assets for Bid: {bid_name} (ID: {bid_id})")
+
+        # Check for duplicate asset codes in the Excel sheet
+        code_column = column_mapping.get("code")
+        if code_column and code_column in df.columns:
+            # Get all non-empty codes
+            codes = df[code_column].dropna()
+            codes = codes[codes != ""]
+
+            # Check for duplicates
+            duplicates = codes[codes.duplicated()].unique()
+
+            if len(duplicates) > 0:
+                duplicate_list = "\n".join([f"  - {code}" for code in duplicates])
+                error_msg = (
+                    f"Duplicate asset names found in the Assets sheet:\n\n"
+                    f"{duplicate_list}\n\n"
+                    f"Please fix the Excel file to ensure all asset names are unique before importing."
+                )
+                logger.error(f"Duplicate assets found: {list(duplicates)}")
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Duplicate Assets Found",
+                    error_msg
+                )
+                return 0, None
 
         # Step 2: Determine version number for Bid Assets
         # Query existing Bid Assets with pattern: {bid_name}-Bid Assets-v*
@@ -2934,11 +3104,15 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         # Step 7: Create Asset items (CustomEntity07) linked to Bid Assets
         created_count = 0
+        reused_count = 0
         failed_count = 0
+
+        # Cache for existing assets by code (to avoid repeated queries)
+        existing_assets_cache = {}
 
         for index, row in df.iterrows():
             # Update progress
-            progress.setLabelText(f"Creating Asset item {created_count + 1} of {len(df)}...")
+            progress.setLabelText(f"Processing Asset item {created_count + reused_count + 1} of {len(df)}...")
             progress.setValue(1 + index + 1)
             QtWidgets.QApplication.processEvents()
 
@@ -2984,29 +3158,97 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         else:
                             sg_data[sg_field] = bool(value)
                     else:
-                        # Text and list fields - store as string
-                        sg_data[sg_field] = str(value)
+                        # Text and list fields - import as-is without modification
+                        # If it's already a string, use it directly to preserve exact formatting
+                        if isinstance(value, str):
+                            sg_data[sg_field] = value
+                        else:
+                            # Only convert non-string values
+                            sg_data[sg_field] = str(value)
 
-                # Create the record
-                result = self.sg_session.sg.create("CustomEntity07", sg_data)
-                created_count += 1
-                logger.info(f"Created CustomEntity07 (Asset item): {result['id']} with code '{sg_data.get('code', 'N/A')}' linked to Bid Assets {bid_assets_id}")
+                # Check if asset with this code already exists
+                asset_code = sg_data.get("code")
+                if not asset_code:
+                    logger.warning(f"Row {index}: No code specified, skipping")
+                    failed_count += 1
+                    continue
+
+                # Check cache first
+                if asset_code in existing_assets_cache:
+                    existing_asset = existing_assets_cache[asset_code]
+                    logger.info(f"Row {index}: Reusing existing asset '{asset_code}' (ID: {existing_asset['id']}) from cache")
+
+                    # Update the existing asset to link it to this Bid Assets
+                    try:
+                        self.sg_session.sg.update(
+                            "CustomEntity07",
+                            existing_asset['id'],
+                            {"sg_bid_assets": {"type": "CustomEntity08", "id": bid_assets_id}}
+                        )
+                        reused_count += 1
+                        logger.info(f"Linked existing asset '{asset_code}' to Bid Assets {bid_assets_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to link existing asset: {e}", exc_info=True)
+                        failed_count += 1
+                    continue
+
+                # Query ShotGrid to check if asset exists
+                try:
+                    filters = [
+                        ["project", "is", {"type": "Project", "id": self.current_project_id}],
+                        ["code", "is", asset_code]
+                    ]
+                    existing_assets = self.sg_session.sg.find(
+                        "CustomEntity07",
+                        filters,
+                        ["id", "code"]
+                    )
+
+                    if existing_assets:
+                        # Asset exists - reuse it
+                        existing_asset = existing_assets[0]
+                        existing_assets_cache[asset_code] = existing_asset
+                        logger.info(f"Row {index}: Found existing asset '{asset_code}' (ID: {existing_asset['id']})")
+
+                        # Update the existing asset to link it to this Bid Assets
+                        try:
+                            self.sg_session.sg.update(
+                                "CustomEntity07",
+                                existing_asset['id'],
+                                {"sg_bid_assets": {"type": "CustomEntity08", "id": bid_assets_id}}
+                            )
+                            reused_count += 1
+                            logger.info(f"Linked existing asset '{asset_code}' to Bid Assets {bid_assets_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to link existing asset: {e}", exc_info=True)
+                            failed_count += 1
+                    else:
+                        # Asset doesn't exist - create new one
+                        result = self.sg_session.sg.create("CustomEntity07", sg_data)
+                        existing_assets_cache[asset_code] = result
+                        created_count += 1
+                        logger.info(f"Created new CustomEntity07 (Asset): {result['id']} with code '{asset_code}' linked to Bid Assets {bid_assets_id}")
+
+                except Exception as e:
+                    logger.error(f"Failed to check/create asset for row {index}: {e}", exc_info=True)
+                    failed_count += 1
 
             except Exception as e:
                 failed_count += 1
-                logger.error(f"Failed to create CustomEntity07 (Asset item) for row {index}: {e}", exc_info=True)
+                logger.error(f"Failed to process Asset item for row {index}: {e}", exc_info=True)
 
         # Close progress dialog
         progress.setValue(total_steps)
         progress.close()
 
         # Log summary (detailed message shown at end of all imports)
+        total_processed = created_count + reused_count
         if failed_count > 0:
-            logger.warning(f"Created Bid Assets '{bid_assets_name}' with {created_count} Asset items ({failed_count} failed)")
+            logger.warning(f"Created Bid Assets '{bid_assets_name}' with {total_processed} Asset items ({created_count} new, {reused_count} reused, {failed_count} failed)")
         else:
-            logger.info(f"Successfully created Bid Assets '{bid_assets_name}' with {created_count} Asset items")
+            logger.info(f"Successfully created Bid Assets '{bid_assets_name}' with {total_processed} Asset items ({created_count} new, {reused_count} reused)")
 
-        return created_count, bid_assets_id
+        return total_processed, bid_assets_id
 
     def _import_scenes(self, df, column_mapping, bid_id, bid_name):
         """Import Scenes data to ShotGrid.
