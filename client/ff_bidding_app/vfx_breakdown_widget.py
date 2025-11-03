@@ -351,6 +351,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.model.statusMessageChanged.connect(self._on_model_status_changed)
         self.model.rowCountChanged.connect(self._on_model_row_count_changed)
         self.model.dataChanged.connect(self._on_model_data_changed)
+        self.model.modelReset.connect(self._on_model_reset)
 
         # UI widgets
         self.table_view = None
@@ -1936,9 +1937,71 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.statusMessageChanged.emit("Add bidding scene functionality requires parent tab context", False)
 
     def _delete_bidding_scene(self, row):
-        """Delete the specified bidding scene."""
-        # This requires access to parent context
-        self.statusMessageChanged.emit("Delete bidding scene functionality requires parent tab context", False)
+        """Delete the specified row (bidding scene or asset item)."""
+        # Check entity type to determine how to handle deletion
+        entity_type = self.model.entity_type
+
+        if entity_type == "CustomEntity07":
+            # Asset item deletion - we can handle this directly
+            self._delete_asset_item(row)
+        else:
+            # Bidding scene deletion requires access to parent context
+            self.statusMessageChanged.emit("Delete bidding scene functionality requires parent tab context", False)
+
+    def _delete_asset_item(self, row):
+        """Delete the specified asset item (CustomEntity07).
+
+        Args:
+            row: Display row index to delete
+        """
+        # Get the actual data row index
+        if row not in self.model.display_row_to_data_row:
+            logger.error(f"Invalid row index for deletion: {row}")
+            return
+
+        data_row = self.model.display_row_to_data_row[row]
+        asset_data = self.model.all_bidding_scenes_data[data_row]
+
+        asset_id = asset_data.get("id")
+        asset_code = asset_data.get("code", "Unknown")
+
+        if not asset_id:
+            logger.error("Cannot delete asset: missing ID")
+            self.statusMessageChanged.emit("Cannot delete asset: missing ID", True)
+            return
+
+        # Confirm deletion
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete Asset item '{asset_code}'?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        try:
+            # Delete from ShotGrid
+            self.sg_session.sg.delete("CustomEntity07", asset_id)
+            logger.info(f"Deleted Asset item: {asset_code} (ID: {asset_id})")
+
+            # Remove from model data
+            self.model.all_bidding_scenes_data.pop(data_row)
+
+            # Reapply filters to update the view
+            self.model.apply_filters()
+
+            self.statusMessageChanged.emit(f"Deleted Asset item '{asset_code}'.", False)
+
+        except Exception as e:
+            logger.error(f"Failed to delete Asset item: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to delete Asset item:\n{str(e)}"
+            )
+            self.statusMessageChanged.emit(f"Failed to delete Asset item: {str(e)}", True)
 
     def _autosize_columns(self, min_px=80, max_px=700, extra_padding=28):
         """Auto-size columns to fit content.
@@ -2041,3 +2104,12 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                         # Update the widget with the new entities
                         widget.set_entities(entities)
                         logger.info(f"Refreshed sg_bid_assets widget for row {row} after data change")
+
+    def _on_model_reset(self):
+        """Handle model reset (e.g., after sorting or filtering).
+
+        Recreates the bid assets widgets since they are cleared when the model resets.
+        """
+        # Recreate bid assets widgets after model reset
+        self._setup_bid_assets_widgets()
+        logger.info("Recreated bid assets widgets after model reset")
