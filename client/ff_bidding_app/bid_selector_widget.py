@@ -2731,17 +2731,25 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 logger.warning(f"No matching assets found for names: {asset_names}")
                 return None
 
-            # Create entity references and deduplicate by ID
-            seen_ids = set()
-            entity_refs = []
+            # Deduplicate by code name first (in case of duplicate assets in SG)
+            # Keep only the first asset found for each unique code
+            seen_codes = set()
+            unique_assets = []
             for asset in assets:
-                asset_id = asset["id"]
-                if asset_id not in seen_ids:
-                    seen_ids.add(asset_id)
-                    entity_refs.append({"type": "CustomEntity07", "id": asset_id})
+                asset_code = asset.get("code")
+                if asset_code and asset_code not in seen_codes:
+                    seen_codes.add(asset_code)
+                    unique_assets.append(asset)
+                elif asset_code and asset_code in seen_codes:
+                    logger.warning(f"Duplicate asset found in ShotGrid: '{asset_code}' (ID: {asset['id']}), skipping")
+
+            # Create entity references from unique assets
+            entity_refs = []
+            for asset in unique_assets:
+                entity_refs.append({"type": "CustomEntity07", "id": asset["id"]})
 
             # Log matches
-            found_names = [asset["code"] for asset in assets]
+            found_names = [asset["code"] for asset in unique_assets]
             logger.info(f"Found {len(entity_refs)} unique asset(s): {found_names}")
 
             # Warn about any missing assets
