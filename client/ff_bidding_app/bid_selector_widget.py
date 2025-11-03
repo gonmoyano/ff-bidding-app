@@ -2650,6 +2650,67 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         logger.info("Completed post-import refresh")
 
+    def _parse_and_lookup_assets(self, value, project_id):
+        """
+        Parse asset names from text and look up their ShotGrid entity references.
+
+        Args:
+            value: Text value containing asset names (possibly multiline)
+            project_id: Project ID to search within
+
+        Returns:
+            list: List of entity references [{"type": "CustomEntity07", "id": xxx}, ...]
+                  or None if no matches found
+        """
+        if not value or (isinstance(value, str) and not value.strip()):
+            return None
+
+        # Convert to string if not already
+        text = str(value)
+
+        # Parse asset names - split by newlines and strip whitespace
+        asset_names = [name.strip() for name in text.split('\n') if name.strip()]
+
+        if not asset_names:
+            return None
+
+        logger.info(f"Looking up assets: {asset_names}")
+
+        # Query ShotGrid for CustomEntity07 records matching these names
+        try:
+            filters = [
+                ["project", "is", {"type": "Project", "id": int(project_id)}],
+                ["code", "in", asset_names]
+            ]
+
+            assets = self.sg_session.sg.find(
+                "CustomEntity07",
+                filters,
+                ["id", "code"]
+            )
+
+            if not assets:
+                logger.warning(f"No matching assets found for names: {asset_names}")
+                return None
+
+            # Create entity references
+            entity_refs = [{"type": "CustomEntity07", "id": asset["id"]} for asset in assets]
+
+            # Log matches
+            found_names = [asset["code"] for asset in assets]
+            logger.info(f"Found {len(entity_refs)} asset(s): {found_names}")
+
+            # Warn about any missing assets
+            missing = set(asset_names) - set(found_names)
+            if missing:
+                logger.warning(f"Could not find assets: {missing}")
+
+            return entity_refs
+
+        except Exception as e:
+            logger.error(f"Error looking up assets: {e}", exc_info=True)
+            return None
+
     def _import_vfx_breakdown(self, df, column_mapping, bid_id, bid_name):
         """Import VFX Breakdown data to ShotGrid.
 
@@ -2809,6 +2870,20 @@ class BidSelectorWidget(QtWidgets.QWidget):
                             sg_data[sg_field] = value.lower() in ["true", "yes", "1", "x"]
                         else:
                             sg_data[sg_field] = bool(value)
+                    elif field_type == "entity":
+                        # Handle entity references (e.g., sg_bid_assets)
+                        # Parse the text to extract asset names and look them up in ShotGrid
+                        if sg_field == "sg_bid_assets":
+                            entity_refs = self._parse_and_lookup_assets(value, self.current_project_id)
+                            if entity_refs:
+                                sg_data[sg_field] = entity_refs
+                            # If no matches found, skip this field (don't set it)
+                        else:
+                            # For other entity fields, store as text for now
+                            if isinstance(value, str):
+                                sg_data[sg_field] = value
+                            else:
+                                sg_data[sg_field] = str(value)
                     else:
                         # Text and list fields - import as-is without modification
                         # If it's already a string, use it directly to preserve exact formatting
