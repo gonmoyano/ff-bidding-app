@@ -46,6 +46,7 @@ class AssetsTab(QtWidgets.QWidget):
 
         # Fields to display for Asset items, in order
         self.asset_field_allowlist = [
+            "id",
             "code",
             "sg_bid_asset_type",
             "sg_bidding_notes",
