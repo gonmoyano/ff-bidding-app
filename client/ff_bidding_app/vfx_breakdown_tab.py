@@ -2052,6 +2052,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     self.field_schema[field_name]["list_values"] = list_values
                     logger.info(f"Field '{field_name}' is a list with values: {list_values}")
 
+            # Override display name for 'id' field to show 'SG ID'
+            if "id" in display_names:
+                display_names["id"] = "SG ID"
+
             # Update the model's column headers with display names
             if self.breakdown_widget and hasattr(self.breakdown_widget, 'model'):
                 self.breakdown_widget.model.set_column_headers(display_names)
