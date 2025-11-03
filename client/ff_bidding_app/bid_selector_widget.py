@@ -2650,6 +2650,36 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         logger.info("Completed post-import refresh")
 
+    def _deduplicate_entity_refs(self, entity_refs):
+        """
+        Deduplicate entity references by ID, keeping only unique entries.
+
+        Args:
+            entity_refs (list): List of entity reference dicts [{"type": "...", "id": xxx}, ...]
+
+        Returns:
+            list: Deduplicated list of entity references
+        """
+        if not entity_refs:
+            return []
+
+        seen_ids = set()
+        unique_refs = []
+
+        for ref in entity_refs:
+            if not isinstance(ref, dict):
+                continue
+
+            entity_id = ref.get("id")
+            if entity_id and entity_id not in seen_ids:
+                seen_ids.add(entity_id)
+                unique_refs.append(ref)
+
+        if len(unique_refs) < len(entity_refs):
+            logger.info(f"Deduplicated entity references: {len(entity_refs)} -> {len(unique_refs)}")
+
+        return unique_refs
+
     def _parse_and_lookup_assets(self, value, project_id):
         """
         Parse asset names from text and look up their ShotGrid entity references.
@@ -2890,7 +2920,10 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         if sg_field == "sg_bid_assets":
                             entity_refs = self._parse_and_lookup_assets(value, self.current_project_id)
                             if entity_refs:
+                                # Deduplicate entity references before saving to ShotGrid
+                                entity_refs = self._deduplicate_entity_refs(entity_refs)
                                 sg_data[sg_field] = entity_refs
+                                logger.info(f"Row {index}: Setting {len(entity_refs)} deduplicated asset reference(s)")
                             # If no matches found, skip this field (don't set it)
                         else:
                             # For other entity fields, store as text for now

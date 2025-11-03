@@ -2794,6 +2794,11 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
     def _populate_bidding_scenes_table(self, bidding_scenes):
         """Populate the bidding scenes table using the breakdown widget."""
+        # Deduplicate sg_bid_assets in each bidding scene before displaying
+        for scene in bidding_scenes:
+            if "sg_bid_assets" in scene and isinstance(scene["sg_bid_assets"], list):
+                scene["sg_bid_assets"] = self._deduplicate_entity_refs(scene["sg_bid_assets"])
+
         # Use the breakdown widget to load bidding scenes
         self.breakdown_widget.load_bidding_scenes(bidding_scenes, field_schema=self.field_schema)
 
@@ -2802,6 +2807,36 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             self._set_vfx_breakdown_status(f"Loaded {len(bidding_scenes)} Bidding Scene(s) for '{display_name}'.")
         else:
             self._set_vfx_breakdown_status("No Bidding Scenes linked to this VFX Breakdown.")
+
+    def _deduplicate_entity_refs(self, entity_refs):
+        """
+        Deduplicate entity references by ID.
+
+        Args:
+            entity_refs (list): List of entity reference dicts
+
+        Returns:
+            list: Deduplicated list of entity references
+        """
+        if not entity_refs:
+            return []
+
+        seen_ids = set()
+        unique_refs = []
+
+        for ref in entity_refs:
+            if not isinstance(ref, dict):
+                continue
+
+            entity_id = ref.get("id")
+            if entity_id and entity_id not in seen_ids:
+                seen_ids.add(entity_id)
+                unique_refs.append(ref)
+
+        if len(unique_refs) < len(entity_refs):
+            logger.info(f"Deduplicated loaded entity references: {len(entity_refs)} -> {len(unique_refs)}")
+
+        return unique_refs
 
     def _format_sg_value(self, value):
         """Format a ShotGrid value for display."""
