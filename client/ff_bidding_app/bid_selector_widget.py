@@ -2810,8 +2810,13 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         else:
                             sg_data[sg_field] = bool(value)
                     else:
-                        # Text and list fields - store as string
-                        sg_data[sg_field] = str(value)
+                        # Text and list fields - import as-is without modification
+                        # If it's already a string, use it directly to preserve exact formatting
+                        if isinstance(value, str):
+                            sg_data[sg_field] = value
+                        else:
+                            # Only convert non-string values
+                            sg_data[sg_field] = str(value)
 
                 # Create the record
                 result = self.sg_session.sg.create("CustomEntity02", sg_data)
@@ -2994,8 +2999,13 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         else:
                             sg_data[sg_field] = bool(value)
                     else:
-                        # Text and list fields - store as string
-                        sg_data[sg_field] = str(value)
+                        # Text and list fields - import as-is without modification
+                        # If it's already a string, use it directly to preserve exact formatting
+                        if isinstance(value, str):
+                            sg_data[sg_field] = value
+                        else:
+                            # Only convert non-string values
+                            sg_data[sg_field] = str(value)
 
                 # Create the record
                 result = self.sg_session.sg.create("CustomEntity07", sg_data)
