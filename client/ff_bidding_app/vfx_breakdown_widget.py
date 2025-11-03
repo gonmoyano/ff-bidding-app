@@ -444,6 +444,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.table_view.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.table_view.setAlternatingRowColors(False)
         self.table_view.setWordWrap(True)
+        self.table_view.setTextElideMode(QtCore.Qt.ElideNone)  # Don't truncate text with "..."
 
         # Configure headers
         h_header = self.table_view.horizontalHeader()
