@@ -652,6 +652,12 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Get the model index for this cell
             index = self.model.index(row, assets_col_idx)
 
+            # Check if widget already exists - if so, skip recreation
+            existing_widget = self.table_view.indexWidget(index)
+            if isinstance(existing_widget, MultiEntityReferenceWidget):
+                logger.debug(f"Widget already exists for row {row}, skipping creation")
+                continue
+
             # Get the actual data row index
             data_row = self.model.filtered_row_indices[row]
             bidding_scene_data = self.model.all_bidding_scenes_data[data_row]
@@ -680,8 +686,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             widget.setFixedHeight(current_row_height)
 
             # Connect signal to update model when entities change
+            # Use functools.partial to properly bind the widget so we can look up its position dynamically
             widget.entitiesChanged.connect(
-                lambda ents, r=row, col=assets_col_idx: self._on_bid_assets_changed(r, col, ents)
+                lambda ents, w=widget: self._on_bid_assets_changed_from_widget(w, ents)
             )
 
             # Install event filter to catch double-clicks (index widgets consume events)
@@ -697,7 +704,40 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 is_selected = self.table_view.selectionModel().isSelected(index)
                 widget.set_selected(is_selected)
 
+            logger.debug(f"Created widget for row {row}, col {assets_col_idx}")
+
+        logger.info(f"Finished setting up bid assets widgets for {self.model.rowCount()} rows")
+
         # Row height is controlled by the slider - don't override it here
+
+    def _on_bid_assets_changed_from_widget(self, widget, entities):
+        """Handle when bid assets are changed in a cell widget, looking up position dynamically.
+
+        Args:
+            widget: The MultiEntityReferenceWidget that emitted the signal
+            entities: Updated list of entity dicts
+        """
+        # Find the widget's current position in the table by searching all cells
+        try:
+            assets_col_idx = self.model.column_fields.index("sg_bid_assets")
+        except ValueError:
+            logger.error("sg_bid_assets column not found")
+            return
+
+        # Search for the widget in the table
+        row = None
+        for r in range(self.model.rowCount()):
+            index = self.model.index(r, assets_col_idx)
+            if self.table_view.indexWidget(index) == widget:
+                row = r
+                break
+
+        if row is None:
+            logger.error("Could not find widget in table")
+            return
+
+        # Now call the original handler with the correct current row
+        self._on_bid_assets_changed(row, assets_col_idx, entities)
 
     def _on_bid_assets_changed(self, row, col, entities):
         """Handle when bid assets are changed in a cell widget.
@@ -2110,6 +2150,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         Recreates the bid assets widgets since they are cleared when the model resets.
         """
-        # Recreate bid assets widgets after model reset
-        self._setup_bid_assets_widgets()
-        logger.info("Recreated bid assets widgets after model reset")
+        # Use QTimer to defer widget creation until after the view has processed the model reset
+        # This ensures the view's internal state is fully updated before we create widgets
+        QtCore.QTimer.singleShot(0, self._setup_bid_assets_widgets)
+        logger.info("Scheduled bid assets widgets recreation after model reset")
