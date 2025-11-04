@@ -7,12 +7,14 @@ from PySide6 import QtWidgets, QtCore
 
 try:
     from .logger import logger
+    from .settings import AppSettings
     from .bid_selector_widget import CollapsibleGroupBox
     from .vfx_breakdown_widget import VFXBreakdownWidget, FormulaDelegate
     from .formula_evaluator import FormulaEvaluator
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
+    from settings import AppSettings
     from bid_selector_widget import CollapsibleGroupBox
     from vfx_breakdown_widget import VFXBreakdownWidget, FormulaDelegate
     from formula_evaluator import FormulaEvaluator
@@ -31,6 +33,9 @@ class RatesTab(QtWidgets.QWidget):
         super().__init__(parent)
         self.sg_session = sg_session
         self.parent_app = parent
+
+        # Settings
+        self.app_settings = AppSettings()
 
         # Current context
         self.current_project_id = None
@@ -950,8 +955,8 @@ class RatesTab(QtWidgets.QWidget):
 
             # Add virtual fields to the returned data with default values
             if line_items_list:
-                # Default formula for Price column
-                default_price_formula = "=('Rate Card'!model.1*model) + ('Rate Card'!tex.1*tex) + ('Rate Card'!rig.1*rig) + ('Rate Card'!mm.1*mm) + ('Rate Card'!prep.1*prep) + ('Rate Card'!gen.1*gen) + ('Rate Card'!anim.1*anim) + ('Rate Card'!lookdev.1*lookdev) + ('Rate Card'!lgt.1*lgt) + ('Rate Card'!fx.1*fx) + ('Rate Card'!cmp.1*cmp)"
+                # Get default formula for Price column from settings
+                default_price_formula = self.app_settings.get_default_line_items_price_formula()
 
                 for item in line_items_list:
                     for virtual_field in virtual_fields:
@@ -959,6 +964,7 @@ class RatesTab(QtWidgets.QWidget):
                             # Set default formula for Price column
                             if virtual_field == "_calc_price":
                                 item[virtual_field] = default_price_formula
+                                logger.debug(f"Set default Price formula for Line Item: {default_price_formula}")
                             else:
                                 item[virtual_field] = ""  # Initialize with empty string
 
@@ -1035,6 +1041,12 @@ class RatesTab(QtWidgets.QWidget):
             # Update model's column fields and headers
             if hasattr(self.line_items_widget, 'model') and self.line_items_widget.model:
                 self.line_items_widget.model.column_fields = self.line_items_field_allowlist.copy()
+
+                # Make the Price column read-only
+                if "_calc_price" in self.line_items_field_allowlist:
+                    if "_calc_price" not in self.line_items_widget.model.readonly_columns:
+                        self.line_items_widget.model.readonly_columns.append("_calc_price")
+                        logger.info("Set _calc_price column as read-only")
 
                 display_names = {field: self.line_items_field_schema[field]["display_name"]
                                 for field in self.line_items_field_allowlist

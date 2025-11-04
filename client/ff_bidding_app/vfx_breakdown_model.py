@@ -539,6 +539,11 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
             if field_name in self.readonly_columns:
                 return QtGui.QColor("#888888")
 
+        elif role == QtCore.Qt.BackgroundRole:
+            # Light gray background for calculated Price field
+            if field_name == "_calc_price":
+                return QtGui.QColor("#E8E8E8")
+
         elif role == QtCore.Qt.ToolTipRole:
             # Show cell reference (e.g., A1, B2, C3)
             column_letter = self._column_index_to_letter(col)
