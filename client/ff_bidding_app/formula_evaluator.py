@@ -35,6 +35,12 @@ class FormulaEvaluator:
         self.parser = formulas.Parser() if formulas else None
         self.calculating = set()  # Track cells being calculated to detect circular references
 
+        # Log available sheets for debugging
+        if self.sheet_models:
+            logger.info(f"FormulaEvaluator initialized with {len(self.sheet_models)} sheet(s): {list(self.sheet_models.keys())}")
+        else:
+            logger.info("FormulaEvaluator initialized with no cross-sheet references")
+
     @staticmethod
     def col_index_to_letter(col):
         """Convert column index to letter (0->A, 1->B, ..., 25->Z, 26->AA)"""
@@ -380,7 +386,8 @@ class FormulaEvaluator:
 
             # Check if sheet exists
             if sheet_name not in self.sheet_models:
-                logger.warning(f"Sheet not found: {sheet_name} in reference {full_ref}")
+                available_sheets = list(self.sheet_models.keys()) if self.sheet_models else []
+                logger.warning(f"Sheet not found: '{sheet_name}' in reference {full_ref}. Available sheets: {available_sheets}")
                 return "#REF!"
 
             target_model = self.sheet_models[sheet_name]
@@ -421,7 +428,8 @@ class FormulaEvaluator:
 
             # Check if sheet exists
             if sheet_name not in self.sheet_models:
-                logger.warning(f"Sheet not found: {sheet_name} in reference {full_ref}")
+                available_sheets = list(self.sheet_models.keys()) if self.sheet_models else []
+                logger.warning(f"Sheet not found: '{sheet_name}' in reference {full_ref}. Available sheets: {available_sheets}")
                 return "#REF!"
 
             target_model = self.sheet_models[sheet_name]
