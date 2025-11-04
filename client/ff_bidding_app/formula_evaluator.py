@@ -194,6 +194,49 @@ class FormulaEvaluator:
 
         return None
 
+    def _get_cell_value_from_model(self, ref: str, model) -> Any:
+        """Get the numeric/string value of a cell from a specific model.
+
+        Args:
+            ref: Cell reference like "A1", "B2"
+            model: The table model to fetch from
+
+        Returns:
+            Cell value (number, string, or 0)
+        """
+        # Parse the cell reference (A1 -> row 0, col 0)
+        ref = ref.strip().replace('$', '')
+        match = re.match(r'^([A-Z]+)(\d+)$', ref.upper())
+        if not match or not model:
+            return 0
+
+        col_letter, row_num = match.groups()
+        col = self.letter_to_col(col_letter)
+        row = int(row_num) - 1  # Convert to 0-based
+
+        # Check if the row and column are valid for this model
+        if row < 0 or col < 0 or row >= model.rowCount() or col >= model.columnCount():
+            return 0
+
+        # Get the raw value from the model
+        index = model.index(row, col)
+        value = model.data(index, QtCore.Qt.EditRole)
+
+        # If value is a formula, get the calculated value instead
+        if isinstance(value, str) and value.startswith('='):
+            # Get the display value which should be calculated
+            value = model.data(index, QtCore.Qt.DisplayRole)
+
+        # Try to convert to number
+        try:
+            # Handle percentage
+            if isinstance(value, str) and value.endswith('%'):
+                return float(value[:-1]) / 100
+            return float(value) if value else 0
+        except (ValueError, TypeError):
+            # Return the string value or 0
+            return value if value else 0
+
     def get_cell_value(self, ref: str) -> Any:
         """Get the numeric/string value of a cell for formula calculation.
 
@@ -335,25 +378,40 @@ class FormulaEvaluator:
             cell_ref = match.group(2)
             full_ref = match.group(0)
 
-            # Determine which model to use
-            target_model = self.table_model
-            if sheet_name in self.sheet_models:
-                target_model = self.sheet_models[sheet_name]
-                logger.debug(f"Using model for sheet: {sheet_name}")
-            else:
-                logger.debug(f"Sheet not found: {sheet_name}, using current sheet")
+            # Check if sheet exists
+            if sheet_name not in self.sheet_models:
+                logger.warning(f"Sheet not found: {sheet_name} in reference {full_ref}")
+                return "#REF!"
+
+            target_model = self.sheet_models[sheet_name]
+            logger.debug(f"Using model for sheet: {sheet_name}")
 
             # Resolve the cell reference (with or without explicit row)
             standard_ref = self.resolve_header_reference(cell_ref, current_row=row, model=target_model)
 
-            if standard_ref:
-                # TODO: Support actual cross-sheet references by fetching from target_model
-                logger.debug(f"Resolved {full_ref} to {standard_ref} (cross-sheet reference)")
-                return standard_ref
+            if not standard_ref:
+                # Field not found in target sheet
+                logger.warning(f"Could not resolve field reference in sheet '{sheet_name}': {cell_ref}")
+                return "#REF!"
+
+            # Fetch the actual value from the target sheet
+            value = self._get_cell_value_from_model(standard_ref, target_model)
+
+            # Return the value as a literal
+            if value is None or value == "":
+                return "0"
+            elif isinstance(value, str):
+                # If it's a string, we need to quote it for the formula
+                # But if it's a number string, keep it as number
+                try:
+                    float(value)
+                    return str(value)
+                except (ValueError, TypeError):
+                    # It's a text string, return as 0 or handle as text
+                    # For formulas, text in calculations usually becomes 0
+                    return "0"
             else:
-                # If field not found, keep as-is (will likely cause parse error)
-                logger.debug(f"Could not resolve reference: {full_ref}")
-                return full_ref
+                return str(value)
 
         def replace_sheet_reference_unquoted(match):
             """Replace unquoted sheet reference like Sheet!field.row or Sheet!field"""
@@ -361,25 +419,40 @@ class FormulaEvaluator:
             cell_ref = match.group(2)
             full_ref = match.group(0)
 
-            # Determine which model to use
-            target_model = self.table_model
-            if sheet_name in self.sheet_models:
-                target_model = self.sheet_models[sheet_name]
-                logger.debug(f"Using model for sheet: {sheet_name}")
-            else:
-                logger.debug(f"Sheet not found: {sheet_name}, using current sheet")
+            # Check if sheet exists
+            if sheet_name not in self.sheet_models:
+                logger.warning(f"Sheet not found: {sheet_name} in reference {full_ref}")
+                return "#REF!"
+
+            target_model = self.sheet_models[sheet_name]
+            logger.debug(f"Using model for sheet: {sheet_name}")
 
             # Resolve the cell reference (with or without explicit row)
             standard_ref = self.resolve_header_reference(cell_ref, current_row=row, model=target_model)
 
-            if standard_ref:
-                # TODO: Support actual cross-sheet references by fetching from target_model
-                logger.debug(f"Resolved {full_ref} to {standard_ref} (cross-sheet reference)")
-                return standard_ref
+            if not standard_ref:
+                # Field not found in target sheet
+                logger.warning(f"Could not resolve field reference in sheet '{sheet_name}': {cell_ref}")
+                return "#REF!"
+
+            # Fetch the actual value from the target sheet
+            value = self._get_cell_value_from_model(standard_ref, target_model)
+
+            # Return the value as a literal
+            if value is None or value == "":
+                return "0"
+            elif isinstance(value, str):
+                # If it's a string, we need to quote it for the formula
+                # But if it's a number string, keep it as number
+                try:
+                    float(value)
+                    return str(value)
+                except (ValueError, TypeError):
+                    # It's a text string, return as 0 or handle as text
+                    # For formulas, text in calculations usually becomes 0
+                    return "0"
             else:
-                # If field not found, keep as-is (will likely cause parse error)
-                logger.debug(f"Could not resolve reference: {full_ref}")
-                return full_ref
+                return str(value)
 
         def replace_local_reference(match):
             """Replace local reference like field.row or field"""
@@ -396,7 +469,12 @@ class FormulaEvaluator:
             if standard_ref:
                 return standard_ref
             else:
-                # Not a valid field reference, keep as-is
+                # Not a valid field reference - check if it looks like a field.row pattern
+                if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*\.\d+$', full_ref):
+                    # This looks like a field reference that couldn't be resolved
+                    logger.warning(f"Could not resolve field reference: {full_ref}")
+                    return "#REF!"
+                # Otherwise keep as-is (might be something else)
                 return full_ref
 
         def replace_field_only(match):
