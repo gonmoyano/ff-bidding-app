@@ -7,12 +7,14 @@ from PySide6 import QtWidgets, QtCore
 
 try:
     from .logger import logger
+    from .settings import AppSettings
     from .bid_selector_widget import CollapsibleGroupBox
     from .vfx_breakdown_widget import VFXBreakdownWidget, FormulaDelegate
     from .formula_evaluator import FormulaEvaluator
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
+    from settings import AppSettings
     from bid_selector_widget import CollapsibleGroupBox
     from vfx_breakdown_widget import VFXBreakdownWidget, FormulaDelegate
     from formula_evaluator import FormulaEvaluator
@@ -31,6 +33,9 @@ class RatesTab(QtWidgets.QWidget):
         super().__init__(parent)
         self.sg_session = sg_session
         self.parent_app = parent
+
+        # Settings
+        self.app_settings = AppSettings()
 
         # Current context
         self.current_project_id = None
@@ -203,8 +208,17 @@ class RatesTab(QtWidgets.QWidget):
             self.line_items_widget.model.entity_type = "CustomEntity03"
             logger.info(f"Configured Line Items widget model for CustomEntity03")
 
-            # Create formula evaluator for this table
-            self.line_items_formula_evaluator = FormulaEvaluator(self.line_items_widget.model)
+            # Create formula evaluator for this table with cross-sheet references
+            # Build sheet_models dictionary for cross-sheet references
+            sheet_models = {}
+            if hasattr(self, 'rate_card_widget') and hasattr(self.rate_card_widget, 'model') and self.rate_card_widget.model:
+                sheet_models['Rate Card'] = self.rate_card_widget.model
+                logger.info("Added 'Rate Card' sheet to Line Items formula evaluator")
+
+            self.line_items_formula_evaluator = FormulaEvaluator(
+                self.line_items_widget.model,
+                sheet_models=sheet_models
+            )
             # Set the formula evaluator on the model for dependency tracking
             self.line_items_widget.model.set_formula_evaluator(self.line_items_formula_evaluator)
 
@@ -939,12 +953,20 @@ class RatesTab(QtWidgets.QWidget):
                 query_fields
             )
 
-            # Add virtual fields to the returned data with empty values
+            # Add virtual fields to the returned data with default values
             if line_items_list:
+                # Get default formula for Price column from settings
+                default_price_formula = self.app_settings.get_default_line_items_price_formula()
+
                 for item in line_items_list:
                     for virtual_field in virtual_fields:
                         if virtual_field not in item:
-                            item[virtual_field] = ""  # Initialize with empty string
+                            # Set default formula for Price column
+                            if virtual_field == "_calc_price":
+                                item[virtual_field] = default_price_formula
+                                logger.debug(f"Set default Price formula for Line Item: {default_price_formula}")
+                            else:
+                                item[virtual_field] = ""  # Initialize with empty string
 
             logger.info(f"Query returned {len(line_items_list) if line_items_list else 0} Line Item(s)")
 
@@ -1019,6 +1041,12 @@ class RatesTab(QtWidgets.QWidget):
             # Update model's column fields and headers
             if hasattr(self.line_items_widget, 'model') and self.line_items_widget.model:
                 self.line_items_widget.model.column_fields = self.line_items_field_allowlist.copy()
+
+                # Make the Price column read-only
+                if "_calc_price" in self.line_items_field_allowlist:
+                    if "_calc_price" not in self.line_items_widget.model.readonly_columns:
+                        self.line_items_widget.model.readonly_columns.append("_calc_price")
+                        logger.info("Set _calc_price column as read-only")
 
                 display_names = {field: self.line_items_field_schema[field]["display_name"]
                                 for field in self.line_items_field_allowlist

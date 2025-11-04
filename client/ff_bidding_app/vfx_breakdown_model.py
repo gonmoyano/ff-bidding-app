@@ -192,6 +192,18 @@ class EditCommand:
 
         logger.debug(f"Parsing field '{field_name}' with data_type '{data_type}': '{text}'")
 
+        # Special handling for rate and mandays fields - always convert to float
+        if field_name.endswith("_rate") or field_name.endswith("_mandays"):
+            if not text or text == "-" or text == "":
+                return None
+            try:
+                value = float(text)
+                logger.debug(f"Parsed '{text}' as float for rate/mandays field: {value}")
+                return value
+            except (ValueError, TypeError):
+                logger.warning(f"Failed to parse '{text}' as float for field '{field_name}'")
+                raise ValueError(f"Invalid number format for rate/mandays field: '{text}'")
+
         # Handle checkbox/boolean type
         if data_type == "checkbox":
             # If already a boolean, return it
@@ -319,6 +331,18 @@ class PasteCommand:
 
     def _parse_value(self, text, field_name):
         """Parse text value to appropriate type based on ShotGrid schema."""
+        # Special handling for rate and mandays fields - always convert to float
+        if field_name.endswith("_rate") or field_name.endswith("_mandays"):
+            if not text or text == "-" or text == "":
+                return None
+            try:
+                value = float(text)
+                logger.debug(f"Parsed '{text}' as float for rate/mandays field: {value}")
+                return value
+            except (ValueError, TypeError):
+                logger.warning(f"Failed to parse '{text}' as float for field '{field_name}'")
+                return None
+
         # Get field schema info first to check for multi_entity
         field_info = self.field_schema.get(field_name, {})
         data_type = field_info.get("data_type")
@@ -539,6 +563,11 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
             if field_name in self.readonly_columns:
                 return QtGui.QColor("#888888")
 
+        elif role == QtCore.Qt.BackgroundRole:
+            # Light gray background for calculated Price field
+            if field_name == "_calc_price":
+                return QtGui.QColor("#E8E8E8")
+
         elif role == QtCore.Qt.ToolTipRole:
             # Show cell reference (e.g., A1, B2, C3)
             column_letter = self._column_index_to_letter(col)
@@ -661,8 +690,10 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
             except Exception as e:
                 self._updating = False
-                logger.error(f"Failed to update ShotGrid field '{field_name}': {e}", exc_info=True)
-                self.statusMessageChanged.emit(f"Failed to update {field_name}", True)
+                error_msg = str(e)
+                logger.error(f"Failed to update ShotGrid field '{field_name}': {error_msg}", exc_info=True)
+                logger.error(f"Entity type: {self.entity_type}, Entity ID: {bidding_scene_data.get('id')}, Field: {field_name}, Value: {new_value}")
+                self.statusMessageChanged.emit(f"Failed to update {field_name}: {error_msg}", True)
                 return False
 
     def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):

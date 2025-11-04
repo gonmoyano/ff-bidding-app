@@ -68,6 +68,16 @@ class FormulaDelegate(NoElideDelegate):
         super().__init__(parent)
         self.formula_evaluator = formula_evaluator
 
+    def paint(self, painter, option, index):
+        """Paint the cell with background color from model."""
+        # Get background color from model
+        bg_color = index.data(QtCore.Qt.BackgroundRole)
+        if bg_color:
+            painter.fillRect(option.rect, bg_color)
+
+        # Call parent paint to draw the text
+        super().paint(painter, option, index)
+
     def displayText(self, value, locale):
         """Display the calculated value instead of the formula."""
         if not value:

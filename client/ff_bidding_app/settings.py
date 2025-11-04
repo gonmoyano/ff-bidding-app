@@ -254,3 +254,35 @@ class AppSettings:
         self.settings["column_dropdowns"][context_key] = dropdowns
         self._save()
         logger.info(f"Column dropdowns '{context_key}' saved with {len(dropdowns)} columns")
+
+    def get_line_items_price_formula(self):
+        """Get the default formula for Line Items Price column.
+
+        Returns:
+            String containing the default formula, or None if not set
+        """
+        return self.settings.get("line_items_price_formula")
+
+    def set_line_items_price_formula(self, formula):
+        """Set the default formula for Line Items Price column.
+
+        Args:
+            formula: Formula string (e.g., "=('Rate Card'!model.1*model) + ...")
+        """
+        self.settings["line_items_price_formula"] = formula
+        self._save()
+        logger.info(f"Line Items price formula saved")
+
+    def get_default_line_items_price_formula(self):
+        """Get the default formula for Line Items Price column, with fallback to hardcoded default.
+
+        Returns:
+            String containing the formula
+        """
+        # Try to get from settings first
+        formula = self.get_line_items_price_formula()
+        if formula:
+            return formula
+
+        # Fallback to hardcoded default
+        return "=('Rate Card'!model.1*model) + ('Rate Card'!tex.1*tex) + ('Rate Card'!rig.1*rig) + ('Rate Card'!mm.1*mm) + ('Rate Card'!prep.1*prep) + ('Rate Card'!gen.1*gen) + ('Rate Card'!anim.1*anim) + ('Rate Card'!lookdev.1*lookdev) + ('Rate Card'!lgt.1*lgt) + ('Rate Card'!fx.1*fx) + ('Rate Card'!cmp.1*cmp)"
