@@ -124,7 +124,8 @@ class FormulaDelegate(NoElideDelegate):
         # If it's a formula, show the calculated result
         if isinstance(value, str) and value.startswith('='):
             try:
-                result = self.formula_evaluator.evaluate(value)
+                # Pass row and col for circular reference detection
+                result = self.formula_evaluator.evaluate(value, index.row(), index.column())
                 # Format the result
                 if isinstance(result, float):
                     display_text = f"{result:.2f}"
@@ -132,7 +133,7 @@ class FormulaDelegate(NoElideDelegate):
                     display_text = str(result)
 
                 # Set text color based on result type
-                if isinstance(result, str) and result.startswith('#ERROR'):
+                if isinstance(result, str) and (result.startswith('#ERROR') or result.startswith('#CIRCULAR') or result.startswith('#PARSE')):
                     option.palette.setColor(QtGui.QPalette.Text, QtGui.QColor("#ff6b6b"))
                 else:
                     # Right-align numbers

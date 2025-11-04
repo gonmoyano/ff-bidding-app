@@ -446,6 +446,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         # Sorting state
         self.sort_column = None
         self.sort_direction = None
+
+        # Formula evaluator for calculated fields
+        self.formula_evaluator = None
         self.compound_sort_columns = []
 
         # Filtering state
@@ -601,6 +604,11 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
                 self._updating = False
 
                 logger.info(f"Updated virtual field '{field_name}' to '{new_value}' (local only)")
+
+                # Recalculate dependent cells if formula evaluator is available
+                if self.formula_evaluator:
+                    self.formula_evaluator.recalculate_dependents(row, col)
+
                 return True
 
             except Exception as e:
@@ -644,6 +652,10 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
                 self.statusMessageChanged.emit(f"✓ Updated {field_name} on ShotGrid", False)
                 logger.info(f"Successfully updated Bidding Scene {bidding_scene_data.get('id')} field '{field_name}' to '{new_value}'")
+
+                # Recalculate dependent cells if formula evaluator is available
+                if self.formula_evaluator:
+                    self.formula_evaluator.recalculate_dependents(row, col)
 
                 return True
 
@@ -765,6 +777,14 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
         # Emit header data changed signal
         self.headerDataChanged.emit(QtCore.Qt.Horizontal, 0, len(self.column_fields) - 1)
+
+    def set_formula_evaluator(self, formula_evaluator):
+        """Set the formula evaluator for calculated fields.
+
+        Args:
+            formula_evaluator: FormulaEvaluator instance
+        """
+        self.formula_evaluator = formula_evaluator
 
     def set_global_search(self, search_text):
         """Set the global search filter text.

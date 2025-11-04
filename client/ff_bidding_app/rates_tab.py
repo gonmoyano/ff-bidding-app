@@ -205,6 +205,8 @@ class RatesTab(QtWidgets.QWidget):
 
             # Create formula evaluator for this table
             self.line_items_formula_evaluator = FormulaEvaluator(self.line_items_widget.model)
+            # Set the formula evaluator on the model for dependency tracking
+            self.line_items_widget.model.set_formula_evaluator(self.line_items_formula_evaluator)
 
         # Connect widget signals
         self.line_items_widget.statusMessageChanged.connect(lambda msg, err: logger.info(f"Line Items status: {msg}"))

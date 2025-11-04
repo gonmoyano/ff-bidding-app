@@ -1,11 +1,17 @@
 """
 Formula Evaluator
-Evaluates Google Sheets-style formulas for calculated fields in tables.
+Evaluates Google Sheets/Excel-style formulas for calculated fields in tables.
+Uses the 'formulas' library for full Excel formula compatibility.
 """
 
 import re
-from typing import Any, Dict, List, Optional
-from PySide6 import QtWidgets
+from typing import Any, Dict, Optional, Set, Tuple
+from PySide6 import QtCore
+
+try:
+    import formulas
+except ImportError:
+    formulas = None
 
 try:
     from .logger import logger
@@ -15,7 +21,7 @@ except ImportError:
 
 
 class FormulaEvaluator:
-    """Evaluates formulas similar to Google Sheets."""
+    """Evaluates formulas using Excel-compatible formulas library."""
 
     def __init__(self, table_model=None):
         """Initialize the formula evaluator.
@@ -24,22 +30,94 @@ class FormulaEvaluator:
             table_model: The table model to access cell data
         """
         self.table_model = table_model
-        self.functions = {
-            'SUM': self._func_sum,
-            'AVERAGE': self._func_average,
-            'AVG': self._func_average,
-            'COUNT': self._func_count,
-            'MIN': self._func_min,
-            'MAX': self._func_max,
-            'IF': self._func_if,
-        }
+        self.parser = formulas.Parser() if formulas else None
+        self.calculating = set()  # Track cells being calculated to detect circular references
 
-    def evaluate(self, formula: str, current_row: int = None) -> Any:
+    @staticmethod
+    def col_index_to_letter(col):
+        """Convert column index to letter (0->A, 1->B, ..., 25->Z, 26->AA)"""
+        result = ""
+        while col >= 0:
+            result = chr(65 + (col % 26)) + result
+            col = col // 26 - 1
+        return result
+
+    @staticmethod
+    def letter_to_col(letter):
+        """Convert column letter to index (A->0, B->1, ..., Z->25, AA->26)"""
+        col = 0
+        for char in letter:
+            col = col * 26 + (ord(char) - 65 + 1)
+        return col - 1
+
+    def parse_cell_reference(self, ref: str) -> Optional[Tuple[int, int]]:
+        """Parse cell reference like 'A1' into (row, col).
+
+        Args:
+            ref: Cell reference like "A1", "$B$2", "C10"
+
+        Returns:
+            Tuple of (row, col) or None if invalid
+        """
+        # Remove $ signs for absolute references
+        ref = ref.strip().replace('$', '')
+
+        match = re.match(r'^([A-Z]+)(\d+)$', ref.upper())
+        if match:
+            col_letter, row_num = match.groups()
+            col = self.letter_to_col(col_letter)
+            row = int(row_num) - 1  # Convert to 0-based
+
+            if self.table_model:
+                if 0 <= row < self.table_model.rowCount() and 0 <= col < self.table_model.columnCount():
+                    return (row, col)
+        return None
+
+    def get_cell_reference(self, row: int, col: int) -> str:
+        """Get cell reference string like 'A1' from row/col indices."""
+        return f"{self.col_index_to_letter(col)}{row + 1}"
+
+    def get_cell_value(self, ref: str) -> Any:
+        """Get the numeric/string value of a cell for formula calculation.
+
+        Args:
+            ref: Cell reference like "A1", "B2"
+
+        Returns:
+            Cell value (number, string, or 0)
+        """
+        coords = self.parse_cell_reference(ref)
+        if not coords or not self.table_model:
+            return 0
+
+        row, col = coords
+
+        # Get the raw value from the model
+        index = self.table_model.index(row, col)
+        value = self.table_model.data(index, QtCore.Qt.EditRole)
+
+        # If value is a formula, get the calculated value instead
+        if isinstance(value, str) and value.startswith('='):
+            # Get the display value which should be calculated
+            value = self.table_model.data(index, QtCore.Qt.DisplayRole)
+
+        # Try to convert to number
+        try:
+            # Handle percentage
+            if isinstance(value, str) and value.endswith('%'):
+                return float(value[:-1]) / 100
+            return float(value) if value else 0
+        except (ValueError, TypeError):
+            # Return the string value or 0
+            return value if value else 0
+
+    def evaluate(self, formula: str, row: int = None, col: int = None) -> Any:
         """Evaluate a formula and return the result.
 
         Args:
             formula: The formula string (e.g., "=SUM(A1:A10)")
-            current_row: The current row index for relative references
+            row: The row index of the cell being calculated (for circular ref detection)
+            col: The column index of the cell being calculated
 
         Returns:
             The calculated value or error message
@@ -47,7 +125,6 @@ class FormulaEvaluator:
         if not formula:
             return ""
 
-        # Remove leading/trailing whitespace
         formula = formula.strip()
 
         # Check if it's a formula
@@ -55,293 +132,109 @@ class FormulaEvaluator:
             # Not a formula, return as-is
             return formula
 
-        # Remove the = sign
-        formula = formula[1:].strip()
+        # Check for formulas library availability
+        if not formulas or not self.parser:
+            return "#ERROR: formulas library not available"
+
+        # Check for circular reference
+        if row is not None and col is not None:
+            cell_ref = self.get_cell_reference(row, col)
+            if cell_ref in self.calculating:
+                return "#CIRCULAR!"
+            self.calculating.add(cell_ref)
 
         try:
-            result = self._evaluate_expression(formula, current_row)
-            return result
-        except Exception as e:
-            logger.error(f"Error evaluating formula '{formula}': {e}", exc_info=True)
-            return f"#ERROR: {str(e)}"
+            # Parse and compile the formula
+            parsed = self.parser.ast(formula)
 
-    def _evaluate_expression(self, expr: str, current_row: int = None) -> Any:
-        """Evaluate an expression (without the = sign)."""
-        # Handle function calls
-        func_match = re.match(r'([A-Z]+)\((.*)\)$', expr, re.IGNORECASE)
-        if func_match:
-            func_name = func_match.group(1).upper()
-            args_str = func_match.group(2)
+            if not parsed or len(parsed) <= 1:
+                return "#PARSE_ERROR!"
 
-            if func_name in self.functions:
-                return self.functions[func_name](args_str, current_row)
-            else:
-                return f"#ERROR: Unknown function {func_name}"
+            compiled_formula = parsed[1].compile()
 
-        # Handle cell references
-        if self._is_cell_reference(expr):
-            return self._get_cell_value(expr, current_row)
+            # Get input cell references
+            inputs = list(compiled_formula.inputs)
 
-        # Handle range references (convert to list)
-        if ':' in expr:
-            values = self._get_range_values(expr, current_row)
-            return values
+            # Get values for each input
+            input_values = []
+            for input_ref in inputs:
+                input_values.append(self.get_cell_value(input_ref))
 
-        # Handle arithmetic expressions
-        try:
-            # Simple arithmetic evaluation (be careful with eval!)
-            # Replace cell references with their values
-            evaluated_expr = self._replace_cell_references(expr, current_row)
-            result = eval(evaluated_expr, {"__builtins__": {}}, {})
-            return result
-        except:
-            # If eval fails, try to parse as a number
+            # Execute the formula
             try:
-                return float(expr)
-            except:
-                return expr
+                result = compiled_formula(*input_values)
 
-    def _is_cell_reference(self, ref: str) -> bool:
-        """Check if a string is a valid cell reference (e.g., A1, $B$2)."""
-        pattern = r'^\$?[A-Z]+\$?\d+$'
-        return bool(re.match(pattern, ref, re.IGNORECASE))
+                # Handle array results
+                if hasattr(result, 'tolist'):
+                    result = result.tolist()
+                if isinstance(result, list):
+                    result = result[0] if result else 0
 
-    def _parse_cell_reference(self, ref: str) -> tuple:
-        """Parse a cell reference into column and row indices.
+                # Format the result
+                if isinstance(result, float):
+                    if abs(result - round(result)) < 1e-10:
+                        result = int(round(result))
+                    else:
+                        result = round(result, 10)
+
+                return result
+
+            except Exception as e:
+                logger.debug(f"Error executing formula '{formula}': {e}")
+                return "#ERROR!"
+
+        except Exception as e:
+            logger.debug(f"Error parsing formula '{formula}': {e}")
+            return "#PARSE_ERROR!"
+        finally:
+            # Remove from calculating set
+            if row is not None and col is not None:
+                cell_ref = self.get_cell_reference(row, col)
+                self.calculating.discard(cell_ref)
+
+    def find_dependent_cells(self, changed_row: int, changed_col: int) -> Set[Tuple[int, int]]:
+        """Find all cells that depend on the changed cell.
 
         Args:
-            ref: Cell reference like "A1", "$B$2", "C10"
+            changed_row: Row index of the changed cell
+            changed_col: Column index of the changed cell
 
         Returns:
-            Tuple of (column_index, row_index) or (None, None) if invalid
+            Set of (row, col) tuples that depend on the changed cell
         """
-        # Remove $ signs for absolute references
-        ref = ref.replace('$', '')
-
-        # Extract column letters and row number
-        match = re.match(r'([A-Z]+)(\d+)', ref, re.IGNORECASE)
-        if not match:
-            return None, None
-
-        col_letters = match.group(1).upper()
-        row_num = int(match.group(2))
-
-        # Convert column letters to index (A=0, B=1, ..., Z=25, AA=26, etc.)
-        col_index = 0
-        for i, letter in enumerate(reversed(col_letters)):
-            col_index += (ord(letter) - ord('A') + 1) * (26 ** i)
-        col_index -= 1  # Make it 0-based
-
-        # Row is 1-based in formulas, 0-based in code
-        row_index = row_num - 1
-
-        return col_index, row_index
-
-    def _get_cell_value(self, ref: str, current_row: int = None) -> Any:
-        """Get the value of a cell reference."""
         if not self.table_model:
-            return 0
+            return set()
 
-        col_index, row_index = self._parse_cell_reference(ref)
-        if col_index is None or row_index is None:
-            return 0
+        changed_ref = self.get_cell_reference(changed_row, changed_col)
+        dependents = set()
 
-        # Get value from the model
-        try:
-            index = self.table_model.index(row_index, col_index)
-            value = self.table_model.data(index, QtWidgets.Qt.DisplayRole)
+        # Scan all cells to find those with formulas referencing the changed cell
+        for row in range(self.table_model.rowCount()):
+            for col in range(self.table_model.columnCount()):
+                index = self.table_model.index(row, col)
+                value = self.table_model.data(index, QtCore.Qt.EditRole)
 
-            # Try to convert to number
-            try:
-                return float(value) if value else 0
-            except (ValueError, TypeError):
-                return value if value else ""
-        except:
-            return 0
+                # Check if it's a formula
+                if isinstance(value, str) and value.startswith('='):
+                    # Check if this formula references the changed cell
+                    if re.search(r'\b' + changed_ref + r'\b', value, re.IGNORECASE):
+                        dependents.add((row, col))
 
-    def _get_range_values(self, range_ref: str, current_row: int = None) -> List[float]:
-        """Get values from a range reference (e.g., A1:A10)."""
-        if ':' not in range_ref:
-            return []
+        return dependents
 
-        start_ref, end_ref = range_ref.split(':', 1)
-        start_col, start_row = self._parse_cell_reference(start_ref.strip())
-        end_col, end_row = self._parse_cell_reference(end_ref.strip())
+    def recalculate_dependents(self, changed_row: int, changed_col: int):
+        """Recalculate all cells that depend on the changed cell.
 
-        if None in (start_col, start_row, end_col, end_row):
-            return []
+        Args:
+            changed_row: Row index of the changed cell
+            changed_col: Column index of the changed cell
+        """
+        dependents = self.find_dependent_cells(changed_row, changed_col)
 
-        values = []
-        for row in range(start_row, end_row + 1):
-            for col in range(start_col, end_col + 1):
-                val = self._get_cell_value(f"{self._col_index_to_letter(col)}{row + 1}", current_row)
-                try:
-                    values.append(float(val))
-                except (ValueError, TypeError):
-                    pass  # Skip non-numeric values
+        for dep_row, dep_col in dependents:
+            index = self.table_model.index(dep_row, dep_col)
+            formula = self.table_model.data(index, QtCore.Qt.EditRole)
 
-        return values
-
-    def _col_index_to_letter(self, index: int) -> str:
-        """Convert column index to letter(s) (0 -> A, 25 -> Z, 26 -> AA, etc.)."""
-        result = ""
-        index += 1  # Make it 1-based
-        while index > 0:
-            index -= 1
-            result = chr(ord('A') + (index % 26)) + result
-            index //= 26
-        return result
-
-    def _replace_cell_references(self, expr: str, current_row: int = None) -> str:
-        """Replace cell references in an expression with their values."""
-        # Find all cell references
-        pattern = r'\$?[A-Z]+\$?\d+'
-
-        def replacer(match):
-            ref = match.group(0)
-            value = self._get_cell_value(ref, current_row)
-            return str(value)
-
-        return re.sub(pattern, replacer, expr, flags=re.IGNORECASE)
-
-    # Formula functions
-
-    def _func_sum(self, args_str: str, current_row: int = None) -> float:
-        """SUM function."""
-        values = self._parse_function_args(args_str, current_row)
-        numeric_values = []
-        for val in values:
-            if isinstance(val, list):
-                numeric_values.extend(val)
-            else:
-                try:
-                    numeric_values.append(float(val))
-                except (ValueError, TypeError):
-                    pass
-        return sum(numeric_values)
-
-    def _func_average(self, args_str: str, current_row: int = None) -> float:
-        """AVERAGE function."""
-        values = self._parse_function_args(args_str, current_row)
-        numeric_values = []
-        for val in values:
-            if isinstance(val, list):
-                numeric_values.extend(val)
-            else:
-                try:
-                    numeric_values.append(float(val))
-                except (ValueError, TypeError):
-                    pass
-
-        if not numeric_values:
-            return 0
-        return sum(numeric_values) / len(numeric_values)
-
-    def _func_count(self, args_str: str, current_row: int = None) -> int:
-        """COUNT function."""
-        values = self._parse_function_args(args_str, current_row)
-        count = 0
-        for val in values:
-            if isinstance(val, list):
-                count += len(val)
-            else:
-                count += 1
-        return count
-
-    def _func_min(self, args_str: str, current_row: int = None) -> float:
-        """MIN function."""
-        values = self._parse_function_args(args_str, current_row)
-        numeric_values = []
-        for val in values:
-            if isinstance(val, list):
-                numeric_values.extend(val)
-            else:
-                try:
-                    numeric_values.append(float(val))
-                except (ValueError, TypeError):
-                    pass
-
-        return min(numeric_values) if numeric_values else 0
-
-    def _func_max(self, args_str: str, current_row: int = None) -> float:
-        """MAX function."""
-        values = self._parse_function_args(args_str, current_row)
-        numeric_values = []
-        for val in values:
-            if isinstance(val, list):
-                numeric_values.extend(val)
-            else:
-                try:
-                    numeric_values.append(float(val))
-                except (ValueError, TypeError):
-                    pass
-
-        return max(numeric_values) if numeric_values else 0
-
-    def _func_if(self, args_str: str, current_row: int = None) -> Any:
-        """IF function: IF(condition, value_if_true, value_if_false)."""
-        # Split by comma, but respect nested functions
-        args = self._split_args(args_str)
-
-        if len(args) < 2:
-            return "#ERROR: IF requires at least 2 arguments"
-
-        condition = args[0].strip()
-        value_if_true = args[1].strip() if len(args) > 1 else ""
-        value_if_false = args[2].strip() if len(args) > 2 else ""
-
-        # Evaluate condition
-        try:
-            cond_result = self._evaluate_expression(condition, current_row)
-            if cond_result:
-                return self._evaluate_expression(value_if_true, current_row)
-            else:
-                return self._evaluate_expression(value_if_false, current_row)
-        except:
-            return "#ERROR: Invalid IF condition"
-
-    def _parse_function_args(self, args_str: str, current_row: int = None) -> List[Any]:
-        """Parse function arguments."""
-        args = self._split_args(args_str)
-        values = []
-
-        for arg in args:
-            arg = arg.strip()
-            if ':' in arg:
-                # Range reference
-                range_vals = self._get_range_values(arg, current_row)
-                values.append(range_vals)
-            elif self._is_cell_reference(arg):
-                # Cell reference
-                values.append(self._get_cell_value(arg, current_row))
-            else:
-                # Try to evaluate as expression
-                try:
-                    val = self._evaluate_expression(arg, current_row)
-                    values.append(val)
-                except:
-                    values.append(arg)
-
-        return values
-
-    def _split_args(self, args_str: str) -> List[str]:
-        """Split function arguments by comma, respecting nested parentheses."""
-        args = []
-        current_arg = ""
-        paren_depth = 0
-
-        for char in args_str:
-            if char == ',' and paren_depth == 0:
-                args.append(current_arg)
-                current_arg = ""
-            else:
-                if char == '(':
-                    paren_depth += 1
-                elif char == ')':
-                    paren_depth -= 1
-                current_arg += char
-
-        if current_arg:
-            args.append(current_arg)
-
-        return args
+            if isinstance(formula, str) and formula.startswith('='):
+                # Trigger recalculation by emitting dataChanged
+                self.table_model.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole])
