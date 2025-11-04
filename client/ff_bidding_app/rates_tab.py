@@ -7,16 +7,10 @@ from PySide6 import QtWidgets, QtCore
 
 try:
     from .logger import logger
-    from .settings import AppSettings
-    from .vfx_breakdown_model import VFXBreakdownModel
-    from .vfx_breakdown_widget import VFXBreakdownWidget
     from .bid_selector_widget import CollapsibleGroupBox
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
-    from settings import AppSettings
-    from vfx_breakdown_model import VFXBreakdownModel
-    from vfx_breakdown_widget import VFXBreakdownWidget
     from bid_selector_widget import CollapsibleGroupBox
 
 
@@ -38,21 +32,7 @@ class RatesTab(QtWidgets.QWidget):
         self.current_project_id = None
         self.current_bid_id = None
         self.current_bid_data = None  # Store full bid data for accessing sg_price_list
-
-        # Cached schema information for Price Lists
-        self.price_list_entity_type = "CustomEntity10"
-        self.price_list_field_names = []
-        self.price_list_field_labels = {}
-
-        # Fields to display for Price List items, in order
-        self.price_list_field_allowlist = [
-            "id",
-            "code",
-            "description",
-        ]
-
-        # Field schema information (data types and list values)
-        self.field_schema = {}
+        self.current_price_list_id = None  # Store currently selected price list
 
         # UI widgets for price lists selector
         self.price_lists_combo = None
@@ -60,8 +40,8 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_refresh_btn = None
         self.price_lists_status_label = None
 
-        # Reusable price lists widget (uses VFXBreakdownWidget for table display)
-        self.price_lists_widget = None
+        # Nested tabs
+        self.nested_tab_widget = None
 
         self._build_ui()
 
@@ -112,25 +92,80 @@ class RatesTab(QtWidgets.QWidget):
 
         layout.addWidget(selector_group)
 
-        # Create reusable Price Lists widget (reusing VFXBreakdownWidget)
-        self.price_lists_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
+        # Create nested tab widget for Rate Card, Line Items, and Prices
+        self.nested_tab_widget = QtWidgets.QTabWidget()
 
-        # Configure the model to use Price List-specific columns
-        # Override the default VFX Breakdown columns with Price List columns
-        if hasattr(self.price_lists_widget, 'model') and self.price_lists_widget.model:
-            self.price_lists_widget.model.column_fields = self.price_list_field_allowlist.copy()
-            # Set entity type to CustomEntity10 (Price Lists) instead of default CustomEntity02
-            self.price_lists_widget.model.entity_type = "CustomEntity10"
-            logger.info(f"Configured Price Lists widget model with fields: {self.price_list_field_allowlist} and entity_type: CustomEntity10")
+        # Create and add nested tabs
+        rate_card_tab = self._create_rate_card_tab()
+        self.nested_tab_widget.addTab(rate_card_tab, "Rate Card")
 
-        # Connect widget signals
-        self.price_lists_widget.statusMessageChanged.connect(self._on_widget_status_changed)
+        line_items_tab = self._create_line_items_tab()
+        self.nested_tab_widget.addTab(line_items_tab, "Line Items")
 
-        layout.addWidget(self.price_lists_widget)
+        prices_tab = self._create_prices_tab()
+        self.nested_tab_widget.addTab(prices_tab, "Prices")
 
-    def _on_widget_status_changed(self, message, is_error):
-        """Handle status message from price lists widget."""
-        self._set_price_lists_status(message, is_error)
+        layout.addWidget(self.nested_tab_widget)
+
+    def _create_rate_card_tab(self):
+        """Create the Rate Card nested tab content."""
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+
+        # Title
+        title_label = QtWidgets.QLabel("Rate Card")
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 20px;")
+        layout.addWidget(title_label)
+
+        # Placeholder content
+        info_label = QtWidgets.QLabel("Rate Card content will be displayed here.\nThis section will contain rate card information for the selected Price List.")
+        info_label.setStyleSheet("padding: 20px;")
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+
+        layout.addStretch()
+
+        return widget
+
+    def _create_line_items_tab(self):
+        """Create the Line Items nested tab content."""
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+
+        # Title
+        title_label = QtWidgets.QLabel("Line Items")
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 20px;")
+        layout.addWidget(title_label)
+
+        # Placeholder content
+        info_label = QtWidgets.QLabel("Line Items content will be displayed here.\nThis section will contain line item information for the selected Price List.")
+        info_label.setStyleSheet("padding: 20px;")
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+
+        layout.addStretch()
+
+        return widget
+
+    def _create_prices_tab(self):
+        """Create the Prices nested tab content."""
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+
+        # Title
+        title_label = QtWidgets.QLabel("Prices")
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 20px;")
+        layout.addWidget(title_label)
+
+        # Placeholder content
+        info_label = QtWidgets.QLabel("Prices content will be displayed here.\nThis section will contain pricing information for the selected Price List.")
+        info_label.setStyleSheet("padding: 20px;")
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+
+        layout.addStretch()
+
+        return widget
 
     def _set_price_lists_status(self, message, is_error=False):
         """Set the status message for price lists.
@@ -164,58 +199,12 @@ class RatesTab(QtWidgets.QWidget):
 
         if not self.current_bid_id or not project_id:
             self._set_price_lists_status("Select a Bid to view Price Lists.")
-            self.price_lists_widget.clear_table()
             self.price_lists_set_btn.setEnabled(False)
+            self.current_price_list_id = None
             return
-
-        # Fetch schema if not already loaded
-        if not self.field_schema:
-            self._fetch_price_list_schema()
 
         # Refresh the price lists and auto-select the one linked to this bid
         self._refresh_price_lists()
-
-    def _fetch_price_list_schema(self):
-        """Fetch the schema for CustomEntity10 (Price Lists) from ShotGrid."""
-        try:
-            # Get schema for CustomEntity10
-            schema = self.sg_session.sg.schema_field_read("CustomEntity10")
-
-            # Build field schema dictionary for allowlisted fields only
-            for field_name in self.price_list_field_allowlist:
-                if field_name not in schema:
-                    logger.warning(f"Field {field_name} not found in CustomEntity10 schema")
-                    continue
-
-                field_info = schema[field_name]
-                self.field_schema[field_name] = {
-                    "data_type": field_info.get("data_type", {}).get("value"),
-                    "properties": field_info.get("properties", {}),
-                    "editable": field_info.get("editable", {}).get("value", True),
-                    "display_name": field_info.get("name", {}).get("value", field_name)
-                }
-
-                # Store list values for list fields
-                if field_info.get("data_type", {}).get("value") == "list":
-                    list_values = field_info.get("properties", {}).get("valid_values", {}).get("value", [])
-                    self.field_schema[field_name]["list_values"] = list_values
-
-            logger.info(f"Fetched schema for CustomEntity10 with {len(self.field_schema)} fields from allowlist")
-
-            # Update the model's column headers with display names
-            if hasattr(self.price_lists_widget, 'model') and self.price_lists_widget.model:
-                display_names = {field: self.field_schema[field]["display_name"]
-                                for field in self.price_list_field_allowlist
-                                if field in self.field_schema}
-                # Override display name for 'id' field to show 'SG ID'
-                if "id" in display_names:
-                    display_names["id"] = "SG ID"
-                self.price_lists_widget.model.set_column_headers(display_names)
-                logger.info(f"Set column headers with display names: {display_names}")
-
-        except Exception as e:
-            logger.error(f"Failed to fetch schema for CustomEntity10: {e}", exc_info=True)
-            self._set_price_lists_status("Failed to fetch price list schema.", is_error=True)
 
     def _refresh_price_lists(self):
         """Refresh the list of Price Lists for the current bid."""
@@ -270,7 +259,6 @@ class RatesTab(QtWidgets.QWidget):
             else:
                 self._set_price_lists_status("No Price Lists found for this project.")
                 self.price_lists_set_btn.setEnabled(False)
-                self.price_lists_widget.clear_table()
 
         except Exception as e:
             logger.error(f"Failed to refresh Price Lists: {e}", exc_info=True)
@@ -279,52 +267,21 @@ class RatesTab(QtWidgets.QWidget):
     def _on_price_lists_changed(self, index):
         """Handle Price Lists selection change."""
         if index < 0:
-            self.price_lists_widget.clear_table()
+            self.current_price_list_id = None
             return
 
         price_list_id = self.price_lists_combo.currentData()
         if not price_list_id:
-            # Placeholder selected, clear the table
-            self.price_lists_widget.clear_table()
+            # Placeholder selected
+            self.current_price_list_id = None
+            self._set_price_lists_status("Select a Price List to view details.")
             return
 
-        # Load the selected price list details
-        self._load_price_list_details(price_list_id)
-
-    def _load_price_list_details(self, price_list_id):
-        """Load details for the selected Price List.
-
-        Args:
-            price_list_id: ID of the Price List (CustomEntity10)
-        """
-        try:
-            # Query CustomEntity10 (Price List) for details
-            filters = [
-                ["id", "is", price_list_id]
-            ]
-
-            # Get all fields from schema
-            fields = list(self.field_schema.keys()) if self.field_schema else ["code", "description"]
-
-            price_list_data = self.sg_session.sg.find_one(
-                "CustomEntity10",
-                filters,
-                fields
-            )
-
-            if price_list_data:
-                # Display the price list details as a single row
-                self.price_lists_widget.load_bidding_scenes([price_list_data], field_schema=self.field_schema)
-
-                display_name = self.price_lists_combo.currentText()
-                self._set_price_lists_status(f"Loaded Price List '{display_name}'.")
-            else:
-                self._set_price_lists_status(f"Price List not found.")
-                self.price_lists_widget.clear_table()
-
-        except Exception as e:
-            logger.error(f"Failed to load price list details: {e}", exc_info=True)
-            self._set_price_lists_status("Failed to load price list details.", is_error=True)
+        # Store the selected price list ID
+        self.current_price_list_id = price_list_id
+        display_name = self.price_lists_combo.currentText()
+        self._set_price_lists_status(f"Selected Price List: '{display_name}'.")
+        logger.info(f"Price List changed to: {display_name} (ID: {price_list_id})")
 
     def _on_set_current_price_list(self):
         """Set the selected Price List as current for the Bid."""
