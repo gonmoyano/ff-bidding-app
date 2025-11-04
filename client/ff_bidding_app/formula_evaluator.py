@@ -83,7 +83,7 @@ class FormulaEvaluator:
         """Get column index by field/header name.
 
         Args:
-            field_name: The field name (e.g., "comp", "sg_comp_mandays")
+            field_name: The field name (e.g., "comp", "sg_comp_mandays", "cmp")
             model: The model to search (defaults to self.table_model)
 
         Returns:
@@ -99,10 +99,29 @@ class FormulaEvaluator:
         if field_name in model.column_fields:
             return model.column_fields.index(field_name)
 
-        # Try case-insensitive match
+        # Try case-insensitive exact match
         field_name_lower = field_name.lower()
         for idx, col_field in enumerate(model.column_fields):
             if col_field.lower() == field_name_lower:
+                return idx
+
+        # Try partial match: find first field containing the search term
+        # This allows "cmp" to match "sg_cmp_rate" or "sg_cmp_mandays"
+        for idx, col_field in enumerate(model.column_fields):
+            col_field_lower = col_field.lower()
+            # Check if field_name appears in col_field (as a substring)
+            if field_name_lower in col_field_lower:
+                # Prefer fields where the match is at a word boundary
+                # e.g., "cmp" should match "sg_cmp_rate" but not "sg_compute_time"
+                if (f"_{field_name_lower}_" in col_field_lower or
+                    col_field_lower.startswith(field_name_lower + "_") or
+                    col_field_lower.endswith("_" + field_name_lower) or
+                    col_field_lower == field_name_lower):
+                    return idx
+
+        # Last resort: simple substring match (first occurrence)
+        for idx, col_field in enumerate(model.column_fields):
+            if field_name_lower in col_field.lower():
                 return idx
 
         return None
