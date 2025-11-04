@@ -49,6 +49,7 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_set_btn = None
         self.price_lists_refresh_btn = None
         self.price_lists_status_label = None
+        self.price_lists_group_box = None  # CollapsibleGroupBox for Price Lists
 
         # Nested tabs
         self.nested_tab_widget = None
@@ -75,6 +76,7 @@ class RatesTab(QtWidgets.QWidget):
 
         # Selector group (collapsible)
         selector_group = CollapsibleGroupBox("Price Lists")
+        self.price_lists_group_box = selector_group
 
         selector_row = QtWidgets.QHBoxLayout()
         selector_label = QtWidgets.QLabel("Price Lists:")
@@ -281,6 +283,7 @@ class RatesTab(QtWidgets.QWidget):
 
         if not self.current_bid_id or not project_id:
             self._set_price_lists_status("Select a Bid to view Price Lists.")
+            self._update_price_list_info_label(None)
             self.price_lists_set_btn.setEnabled(False)
             self.current_price_list_id = None
             return
@@ -351,6 +354,7 @@ class RatesTab(QtWidgets.QWidget):
         if index < 0:
             self.current_price_list_id = None
             self.current_price_list_data = None
+            self._update_price_list_info_label(None)
             return
 
         price_list_id = self.price_lists_combo.currentData()
@@ -359,6 +363,7 @@ class RatesTab(QtWidgets.QWidget):
             self.current_price_list_id = None
             self.current_price_list_data = None
             self._set_price_lists_status("Select a Price List to view details.")
+            self._update_price_list_info_label(None)
             # Clear Rate Card and Line Items tabs
             if hasattr(self, 'rate_card_combo'):
                 self._clear_rate_card_tab()
@@ -391,9 +396,66 @@ class RatesTab(QtWidgets.QWidget):
             )
             self.current_price_list_data = price_list_data
             logger.info(f"Fetched Price List data: {price_list_data}")
+            # Update the info label with Rate Card and Line Item details
+            self._update_price_list_info_label(price_list_data)
         except Exception as e:
             logger.error(f"Failed to fetch Price List data: {e}", exc_info=True)
             self.current_price_list_data = None
+            self._update_price_list_info_label(None)
+
+    def _update_price_list_info_label(self, price_list_data):
+        """Update the price list info label and group box title with Rate Card and Line Item info.
+
+        Args:
+            price_list_data: Price List data dict or None
+        """
+        if not price_list_data:
+            # Clear label and group box title if no price list selected
+            self.price_lists_status_label.setText("Select a Bid to view Price Lists.")
+            self.price_lists_group_box.setAdditionalInfo("")
+            return
+
+        info_parts = []
+
+        # Get price list name for title bar
+        price_list_name = price_list_data.get("code") or f"Price List {price_list_data.get('id', 'N/A')}"
+        # Start with "Current Price List: (name)"
+        title_text = f"Current Price List: {price_list_name}"
+
+        # Add Rate Card info
+        rate_card = price_list_data.get("sg_rate_card")
+        if rate_card:
+            # Extract rate card name/code
+            if isinstance(rate_card, dict):
+                rate_card_name = rate_card.get("name") or rate_card.get("code") or f"ID {rate_card.get('id', 'N/A')}"
+            elif isinstance(rate_card, list) and rate_card:
+                rate_card_name = rate_card[0].get("name") or rate_card[0].get("code") or f"ID {rate_card[0].get('id', 'N/A')}"
+            else:
+                rate_card_name = str(rate_card)
+            info_parts.append(f"Rate Card: {rate_card_name}")
+            title_text += f" | Rate Card: {rate_card_name}"
+
+        # Add Line Item info
+        line_items = price_list_data.get("sg_line_items")
+        if line_items:
+            # Extract line item name/code
+            if isinstance(line_items, dict):
+                line_item_name = line_items.get("name") or line_items.get("code") or f"ID {line_items.get('id', 'N/A')}"
+            elif isinstance(line_items, list) and line_items:
+                line_item_name = line_items[0].get("name") or line_items[0].get("code") or f"ID {line_items[0].get('id', 'N/A')}"
+            else:
+                line_item_name = str(line_items)
+            info_parts.append(f"Line Item: {line_item_name}")
+            title_text += f" | Line Item: {line_item_name}"
+
+        # Update the label with the info (for display under dropdown)
+        if info_parts:
+            self.price_lists_status_label.setText("  ".join(info_parts))
+        else:
+            self.price_lists_status_label.setText(f"Selected Price List: '{price_list_name}'.")
+
+        # Update the group box title with price list name and info (for collapsed state)
+        self.price_lists_group_box.setAdditionalInfo(title_text)
 
     def _on_set_current_price_list(self):
         """Set the selected Price List as current for the Bid."""
