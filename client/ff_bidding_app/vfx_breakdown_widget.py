@@ -6,17 +6,20 @@ Reusable widget component for displaying and editing VFX bidding scenes data usi
 from PySide6 import QtWidgets, QtCore, QtGui
 import logging
 import json
+import re
 
 try:
     from .logger import logger
     from .vfx_breakdown_model import VFXBreakdownModel, PasteCommand, CheckBoxDelegate
     from .settings import AppSettings
     from .multi_entity_reference_widget import MultiEntityReferenceWidget
+    from .formula_evaluator import FormulaEvaluator
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
     from vfx_breakdown_model import VFXBreakdownModel, PasteCommand, CheckBoxDelegate
     from settings import AppSettings
     from multi_entity_reference_widget import MultiEntityReferenceWidget
+    from formula_evaluator import FormulaEvaluator
 
 
 class NoElideDelegate(QtWidgets.QStyledItemDelegate):
@@ -56,6 +59,98 @@ class DropdownMenuDelegate(NoElideDelegate):
             border_rect = option.rect.adjusted(1, 1, -1, -1)
             painter.drawRoundedRect(border_rect, 4, 4)
             painter.restore()
+
+
+class FormulaDelegate(NoElideDelegate):
+    """Delegate for editing formula cells - displays calculated value, edits formula."""
+
+    def __init__(self, formula_evaluator, parent=None):
+        super().__init__(parent)
+        self.formula_evaluator = formula_evaluator
+
+    def displayText(self, value, locale):
+        """Display the calculated value instead of the formula."""
+        if not value:
+            return ""
+
+        # If it's a formula, evaluate and display the result
+        if isinstance(value, str) and value.startswith('='):
+            try:
+                result = self.formula_evaluator.evaluate(value)
+                # Format the result nicely
+                if isinstance(result, float):
+                    return f"{result:.2f}"
+                return str(result)
+            except:
+                return "#ERROR"
+
+        return str(value)
+
+    def createEditor(self, parent, option, index):
+        """Create a line edit for formula editing."""
+        editor = QtWidgets.QLineEdit(parent)
+        editor.setFrame(False)
+        editor.setStyleSheet("""
+            QLineEdit {
+                background-color: #ffffff;
+                color: #000000;
+                padding: 2px;
+                border: 2px solid #0078d4;
+            }
+        """)
+        return editor
+
+    def setEditorData(self, editor, index):
+        """Set the editor to show the formula, not the calculated value."""
+        value = index.model().data(index, QtCore.Qt.EditRole)
+        if value is None:
+            value = ""
+        editor.setText(str(value))
+
+    def setModelData(self, editor, model, index):
+        """Save the formula to the model."""
+        formula = editor.text()
+        model.setData(index, formula, QtCore.Qt.EditRole)
+
+    def updateEditorGeometry(self, editor, option, index):
+        """Update the editor geometry."""
+        editor.setGeometry(option.rect)
+
+    def paint(self, painter, option, index):
+        """Paint the cell with calculated value."""
+        # Get the value
+        value = index.model().data(index, QtCore.Qt.DisplayRole)
+
+        # If it's a formula, show the calculated result
+        if isinstance(value, str) and value.startswith('='):
+            try:
+                # Pass row and col for circular reference detection
+                result = self.formula_evaluator.evaluate(value, index.row(), index.column())
+                # Format the result
+                if isinstance(result, float):
+                    display_text = f"{result:.2f}"
+                else:
+                    display_text = str(result)
+
+                # Set text color based on result type
+                if isinstance(result, str) and (result.startswith('#ERROR') or result.startswith('#CIRCULAR') or result.startswith('#PARSE') or result.startswith('#NOT_SUPPORTED')):
+                    option.palette.setColor(QtGui.QPalette.Text, QtGui.QColor("#ff6b6b"))
+                else:
+                    # Right-align numbers
+                    option.displayAlignment = QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+
+                # Create a new option with the calculated value
+                new_option = QtWidgets.QStyleOptionViewItem(option)
+                new_option.text = display_text
+                QtWidgets.QApplication.style().drawControl(
+                    QtWidgets.QStyle.CE_ItemViewItem, new_option, painter
+                )
+                return
+            except:
+                pass
+
+        # Default painting
+        super().paint(painter, option, index)
 
 
 class ConfigColumnsDialog(QtWidgets.QDialog):
@@ -470,6 +565,10 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         h_header.sectionClicked.connect(self._on_header_clicked)
         h_header.sectionMoved.connect(self._on_column_moved)  # Save order when moved
         h_header.sectionResized.connect(self._on_column_resized)  # Save width when resized
+
+        # Enable tooltips for column headers (shows column letter for calculated fields)
+        h_header.setToolTip("")  # Enable tooltip support
+        h_header.viewport().setMouseTracking(True)  # Required for tooltips to work
 
         v_header = self.table_view.verticalHeader()
         v_header.sectionClicked.connect(self._on_row_header_clicked)

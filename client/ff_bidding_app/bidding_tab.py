@@ -1,6 +1,6 @@
 """
 Bidding Tab
-Contains nested tabs for VFX Breakdown, Assets, Scene, Rates, and Summary.
+Contains nested tabs for VFX Breakdown, Assets, Rates, and Reports.
 """
 
 from PySide6 import QtWidgets, QtCore
@@ -8,11 +8,13 @@ from PySide6 import QtWidgets, QtCore
 try:
     from .vfx_breakdown_tab import VFXBreakdownTab
     from .assets_tab import AssetsTab
+    from .rates_tab import RatesTab
     from .bid_selector_widget import BidSelectorWidget
     from .logger import logger
 except ImportError:
     from vfx_breakdown_tab import VFXBreakdownTab
     from assets_tab import AssetsTab
+    from rates_tab import RatesTab
     from bid_selector_widget import BidSelectorWidget
     import logging
     logger = logging.getLogger("FFPackageManager")
@@ -64,14 +66,11 @@ class BiddingTab(QtWidgets.QWidget):
         assets_tab = self._create_assets_tab()
         self.nested_tab_widget.addTab(assets_tab, "Assets")
 
-        scene_tab = self._create_scene_tab()
-        self.nested_tab_widget.addTab(scene_tab, "Scene")
-
         rates_tab = self._create_rates_tab()
         self.nested_tab_widget.addTab(rates_tab, "Rates")
 
-        summary_tab = self._create_summary_tab()
-        self.nested_tab_widget.addTab(summary_tab, "Summary")
+        reports_tab = self._create_reports_tab()
+        self.nested_tab_widget.addTab(reports_tab, "Reports")
 
         main_layout.addWidget(self.nested_tab_widget)
 
@@ -95,58 +94,28 @@ class BiddingTab(QtWidgets.QWidget):
 
         return tab
 
-    def _create_scene_tab(self):
-        """Create the Scene nested tab content."""
-        widget = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(widget)
-
-        # Title
-        title_label = QtWidgets.QLabel("Scene")
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 20px;")
-        layout.addWidget(title_label)
-
-        # Placeholder content
-        info_label = QtWidgets.QLabel("Scene content will be displayed here.\nThis tab will contain scene-level information for bidding.")
-        info_label.setStyleSheet("padding: 20px;")
-        info_label.setWordWrap(True)
-        layout.addWidget(info_label)
-
-        layout.addStretch()
-
-        return widget
-
     def _create_rates_tab(self):
-        """Create the Rates nested tab content."""
+        """Create the Rates nested tab content with full functionality."""
+        # Use the full RatesTab (includes selector, Add/Remove/Rename buttons, etc.)
+        tab = RatesTab(self.sg_session, parent=self.parent_app)
+
+        # Store reference to use in set_bid if needed
+        self.rates_tab = tab
+
+        return tab
+
+    def _create_reports_tab(self):
+        """Create the Reports nested tab content."""
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
 
         # Title
-        title_label = QtWidgets.QLabel("Rates")
+        title_label = QtWidgets.QLabel("Reports")
         title_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 20px;")
         layout.addWidget(title_label)
 
         # Placeholder content
-        info_label = QtWidgets.QLabel("Rates content will be displayed here.\nThis tab will contain rate cards and pricing information for the bid.")
-        info_label.setStyleSheet("padding: 20px;")
-        info_label.setWordWrap(True)
-        layout.addWidget(info_label)
-
-        layout.addStretch()
-
-        return widget
-
-    def _create_summary_tab(self):
-        """Create the Summary nested tab content."""
-        widget = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(widget)
-
-        # Title
-        title_label = QtWidgets.QLabel("Summary")
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 20px;")
-        layout.addWidget(title_label)
-
-        # Placeholder content
-        info_label = QtWidgets.QLabel("Summary content will be displayed here.\nThis tab will contain a summary of the entire bid including totals and key information.")
+        info_label = QtWidgets.QLabel("Reports content will be displayed here.\nThis tab will contain reports and summaries of the entire bid including totals and key information.")
         info_label.setStyleSheet("padding: 20px;")
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
@@ -222,6 +191,15 @@ class BiddingTab(QtWidgets.QWidget):
             else:
                 # Clear assets tab if no bid selected (cascading reset)
                 self.assets_tab.set_bid(None, None)
+
+        # Update Rates tab with the current bid
+        if hasattr(self, 'rates_tab'):
+            if bid_data and self.current_project_id:
+                # Pass full bid_data so rates_tab can access sg_price_list field
+                self.rates_tab.set_bid(bid_data, self.current_project_id)
+            else:
+                # Clear rates tab if no bid selected (cascading reset)
+                self.rates_tab.set_bid(None, None)
 
     def _on_bid_status_message(self, message, is_error):
         """Handle status messages from bid selector.

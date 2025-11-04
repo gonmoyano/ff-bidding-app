@@ -446,6 +446,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         # Sorting state
         self.sort_column = None
         self.sort_direction = None
+
+        # Formula evaluator for calculated fields
+        self.formula_evaluator = None
         self.compound_sort_columns = []
 
         # Filtering state
@@ -536,6 +539,12 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
             if field_name in self.readonly_columns:
                 return QtGui.QColor("#888888")
 
+        elif role == QtCore.Qt.ToolTipRole:
+            # Show cell reference (e.g., A1, B2, C3)
+            column_letter = self._column_index_to_letter(col)
+            row_number = row + 1  # 1-based for display
+            return f"{column_letter}{row_number}"
+
         return None
 
     def setData(self, index, value, role=QtCore.Qt.EditRole):
@@ -578,49 +587,83 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         if new_value == old_value:
             return False
 
-        # Create undo command
-        command = EditCommand(
-            self,
-            row,
-            col,
-            old_value,
-            new_value,
-            bidding_scene_data,
-            field_name,
-            self.sg_session,
-            field_schema=self.field_schema,
-            entity_type=self.entity_type
-        )
+        # Check if this is a virtual field (starts with underscore)
+        is_virtual_field = field_name.startswith("_")
 
-        # Execute the command (update ShotGrid)
-        try:
-            self._updating = True
-            command._update_shotgrid(new_value)
+        if is_virtual_field:
+            # Virtual fields are not stored in ShotGrid, only update locally
+            try:
+                self._updating = True
 
-            # Update the bidding_scene_data with new value
-            parsed_value = command._parse_value(new_value, field_name)
-            bidding_scene_data[field_name] = parsed_value
+                # Update the bidding_scene_data with new value
+                bidding_scene_data[field_name] = new_value
 
-            # Emit data changed
-            self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+                # Emit data changed
+                self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
 
-            # Add to undo stack
-            self.undo_stack.append(command)
-            # Clear redo stack on new edit
-            self.redo_stack.clear()
+                self._updating = False
 
-            self._updating = False
+                logger.info(f"Updated virtual field '{field_name}' to '{new_value}' (local only)")
 
-            self.statusMessageChanged.emit(f"✓ Updated {field_name} on ShotGrid", False)
-            logger.info(f"Successfully updated Bidding Scene {bidding_scene_data.get('id')} field '{field_name}' to '{new_value}'")
+                # Recalculate dependent cells if formula evaluator is available
+                if self.formula_evaluator:
+                    self.formula_evaluator.recalculate_dependents(row, col)
 
-            return True
+                return True
 
-        except Exception as e:
-            self._updating = False
-            logger.error(f"Failed to update ShotGrid field '{field_name}': {e}", exc_info=True)
-            self.statusMessageChanged.emit(f"Failed to update {field_name}", True)
-            return False
+            except Exception as e:
+                self._updating = False
+                logger.error(f"Failed to update virtual field '{field_name}': {e}", exc_info=True)
+                return False
+        else:
+            # Regular field - update ShotGrid
+            # Create undo command
+            command = EditCommand(
+                self,
+                row,
+                col,
+                old_value,
+                new_value,
+                bidding_scene_data,
+                field_name,
+                self.sg_session,
+                field_schema=self.field_schema,
+                entity_type=self.entity_type
+            )
+
+            # Execute the command (update ShotGrid)
+            try:
+                self._updating = True
+                command._update_shotgrid(new_value)
+
+                # Update the bidding_scene_data with new value
+                parsed_value = command._parse_value(new_value, field_name)
+                bidding_scene_data[field_name] = parsed_value
+
+                # Emit data changed
+                self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+
+                # Add to undo stack
+                self.undo_stack.append(command)
+                # Clear redo stack on new edit
+                self.redo_stack.clear()
+
+                self._updating = False
+
+                self.statusMessageChanged.emit(f"✓ Updated {field_name} on ShotGrid", False)
+                logger.info(f"Successfully updated Bidding Scene {bidding_scene_data.get('id')} field '{field_name}' to '{new_value}'")
+
+                # Recalculate dependent cells if formula evaluator is available
+                if self.formula_evaluator:
+                    self.formula_evaluator.recalculate_dependents(row, col)
+
+                return True
+
+            except Exception as e:
+                self._updating = False
+                logger.error(f"Failed to update ShotGrid field '{field_name}': {e}", exc_info=True)
+                self.statusMessageChanged.emit(f"Failed to update {field_name}", True)
+                return False
 
     def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
         """Return header data."""
@@ -629,7 +672,25 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
                 return self.column_headers[section]
             elif orientation == QtCore.Qt.Vertical:
                 return str(section + 1)
+        elif role == QtCore.Qt.ToolTipRole:
+            # Show column letter for calculated fields in horizontal headers
+            if orientation == QtCore.Qt.Horizontal and 0 <= section < len(self.column_fields):
+                field_name = self.column_fields[section]
+                # Show column letter for virtual/calculated fields
+                if field_name.startswith("_"):
+                    column_letter = self._column_index_to_letter(section)
+                    return f"Column {column_letter}"
         return None
+
+    def _column_index_to_letter(self, index):
+        """Convert column index to Excel-style letter (0=A, 1=B, 25=Z, 26=AA, etc.)."""
+        result = ""
+        index += 1  # Convert to 1-based
+        while index > 0:
+            index -= 1
+            result = chr(65 + (index % 26)) + result
+            index //= 26
+        return result
 
     def flags(self, index):
         """Return item flags for the given index."""
@@ -716,6 +777,14 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
         # Emit header data changed signal
         self.headerDataChanged.emit(QtCore.Qt.Horizontal, 0, len(self.column_fields) - 1)
+
+    def set_formula_evaluator(self, formula_evaluator):
+        """Set the formula evaluator for calculated fields.
+
+        Args:
+            formula_evaluator: FormulaEvaluator instance
+        """
+        self.formula_evaluator = formula_evaluator
 
     def set_global_search(self, search_text):
         """Set the global search filter text.
