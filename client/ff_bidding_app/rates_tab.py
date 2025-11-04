@@ -52,7 +52,7 @@ class RatesTab(QtWidgets.QWidget):
         self.rate_card_status_label = None
         self.rate_card_widget = None
         self.rate_card_field_schema = {}
-        self.rate_card_field_allowlist = ["id", "code", "description"]
+        self.rate_card_field_allowlist = []  # Will be populated dynamically with _rate fields
 
         # Line Items widgets and data
         self.line_items_combo = None
@@ -60,7 +60,7 @@ class RatesTab(QtWidgets.QWidget):
         self.line_items_status_label = None
         self.line_items_widget = None
         self.line_items_field_schema = {}
-        self.line_items_field_allowlist = ["id", "code", "description"]
+        self.line_items_field_allowlist = []  # Will be populated dynamically with _mandays fields
 
         self._build_ui()
 
@@ -704,10 +704,26 @@ class RatesTab(QtWidgets.QWidget):
             self._set_rate_card_status("Failed to load rate card details.", is_error=True)
 
     def _fetch_rate_card_schema(self):
-        """Fetch the schema for CustomEntity09 (Rate Cards)."""
+        """Fetch the schema for CustomEntity09 (Rate Cards) and build field allowlist."""
         try:
             schema = self.sg_session.sg.schema_field_read("CustomEntity09")
 
+            # Build field allowlist: start with basic fields, then add all fields ending with "_rate"
+            self.rate_card_field_allowlist = ["id", "code"]
+
+            # Find all fields ending with "_rate"
+            rate_fields = []
+            for field_name in schema.keys():
+                if field_name.endswith("_rate"):
+                    rate_fields.append(field_name)
+
+            # Sort rate fields alphabetically for consistent display
+            rate_fields.sort()
+            self.rate_card_field_allowlist.extend(rate_fields)
+
+            logger.info(f"Built Rate Card field allowlist with {len(self.rate_card_field_allowlist)} fields: {self.rate_card_field_allowlist}")
+
+            # Build field schema dictionary for allowlisted fields
             for field_name in self.rate_card_field_allowlist:
                 if field_name not in schema:
                     logger.warning(f"Field {field_name} not found in CustomEntity09 schema")
@@ -723,8 +739,10 @@ class RatesTab(QtWidgets.QWidget):
 
             logger.info(f"Fetched schema for CustomEntity09 with {len(self.rate_card_field_schema)} fields")
 
-            # Update model's column headers
+            # Update model's column fields and headers
             if hasattr(self.rate_card_widget, 'model') and self.rate_card_widget.model:
+                self.rate_card_widget.model.column_fields = self.rate_card_field_allowlist.copy()
+
                 display_names = {field: self.rate_card_field_schema[field]["display_name"]
                                 for field in self.rate_card_field_allowlist
                                 if field in self.rate_card_field_schema}
@@ -1007,10 +1025,26 @@ class RatesTab(QtWidgets.QWidget):
             self._set_line_items_status("Failed to load line items details.", is_error=True)
 
     def _fetch_line_items_schema(self):
-        """Fetch the schema for CustomEntity03 (Line Items)."""
+        """Fetch the schema for CustomEntity03 (Line Items) and build field allowlist."""
         try:
             schema = self.sg_session.sg.schema_field_read("CustomEntity03")
 
+            # Build field allowlist: start with basic fields, then add all fields ending with "_mandays"
+            self.line_items_field_allowlist = ["id", "code"]
+
+            # Find all fields ending with "_mandays"
+            mandays_fields = []
+            for field_name in schema.keys():
+                if field_name.endswith("_mandays"):
+                    mandays_fields.append(field_name)
+
+            # Sort mandays fields alphabetically for consistent display
+            mandays_fields.sort()
+            self.line_items_field_allowlist.extend(mandays_fields)
+
+            logger.info(f"Built Line Items field allowlist with {len(self.line_items_field_allowlist)} fields: {self.line_items_field_allowlist}")
+
+            # Build field schema dictionary for allowlisted fields
             for field_name in self.line_items_field_allowlist:
                 if field_name not in schema:
                     logger.warning(f"Field {field_name} not found in CustomEntity03 schema")
@@ -1026,8 +1060,10 @@ class RatesTab(QtWidgets.QWidget):
 
             logger.info(f"Fetched schema for CustomEntity03 with {len(self.line_items_field_schema)} fields")
 
-            # Update model's column headers
+            # Update model's column fields and headers
             if hasattr(self.line_items_widget, 'model') and self.line_items_widget.model:
+                self.line_items_widget.model.column_fields = self.line_items_field_allowlist.copy()
+
                 display_names = {field: self.line_items_field_schema[field]["display_name"]
                                 for field in self.line_items_field_allowlist
                                 if field in self.line_items_field_schema}
