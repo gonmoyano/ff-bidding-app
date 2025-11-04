@@ -673,6 +673,8 @@ class RatesTab(QtWidgets.QWidget):
                         if self.rate_card_combo.itemData(i) == linked_rate_card_id:
                             self.rate_card_combo.setCurrentIndex(i)
                             logger.info(f"Auto-selected Rate Card {linked_rate_card_id} linked to current Price List")
+                            # Explicitly load rate card details to ensure table is updated
+                            self._load_rate_card_details(linked_rate_card_id)
                             break
                     else:
                         logger.warning(f"Linked Rate Card {linked_rate_card_id} not found in project")
