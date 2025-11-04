@@ -192,6 +192,18 @@ class EditCommand:
 
         logger.debug(f"Parsing field '{field_name}' with data_type '{data_type}': '{text}'")
 
+        # Special handling for rate and mandays fields - always convert to float
+        if field_name.endswith("_rate") or field_name.endswith("_mandays"):
+            if not text or text == "-" or text == "":
+                return None
+            try:
+                value = float(text)
+                logger.debug(f"Parsed '{text}' as float for rate/mandays field: {value}")
+                return value
+            except (ValueError, TypeError):
+                logger.warning(f"Failed to parse '{text}' as float for field '{field_name}'")
+                raise ValueError(f"Invalid number format for rate/mandays field: '{text}'")
+
         # Handle checkbox/boolean type
         if data_type == "checkbox":
             # If already a boolean, return it
@@ -319,6 +331,18 @@ class PasteCommand:
 
     def _parse_value(self, text, field_name):
         """Parse text value to appropriate type based on ShotGrid schema."""
+        # Special handling for rate and mandays fields - always convert to float
+        if field_name.endswith("_rate") or field_name.endswith("_mandays"):
+            if not text or text == "-" or text == "":
+                return None
+            try:
+                value = float(text)
+                logger.debug(f"Parsed '{text}' as float for rate/mandays field: {value}")
+                return value
+            except (ValueError, TypeError):
+                logger.warning(f"Failed to parse '{text}' as float for field '{field_name}'")
+                return None
+
         # Get field schema info first to check for multi_entity
         field_info = self.field_schema.get(field_name, {})
         data_type = field_info.get("data_type")
