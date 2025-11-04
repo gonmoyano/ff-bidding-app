@@ -77,6 +77,56 @@ class FormulaEvaluator:
         """Get cell reference string like 'A1' from row/col indices."""
         return f"{self.col_index_to_letter(col)}{row + 1}"
 
+    def get_column_index_by_field(self, field_name: str) -> Optional[int]:
+        """Get column index by field/header name.
+
+        Args:
+            field_name: The field name (e.g., "comp", "sg_comp_mandays")
+
+        Returns:
+            Column index (0-based) or None if not found
+        """
+        if not self.table_model or not hasattr(self.table_model, 'column_fields'):
+            return None
+
+        # Try exact match first
+        if field_name in self.table_model.column_fields:
+            return self.table_model.column_fields.index(field_name)
+
+        # Try case-insensitive match
+        field_name_lower = field_name.lower()
+        for idx, col_field in enumerate(self.table_model.column_fields):
+            if col_field.lower() == field_name_lower:
+                return idx
+
+        return None
+
+    def resolve_header_reference(self, ref: str) -> Optional[str]:
+        """Resolve a header-based reference to a standard cell reference.
+
+        Args:
+            ref: Header-based reference like "comp.1", "sg_comp_mandays.5"
+
+        Returns:
+            Standard cell reference like "E1", "C5", or None if invalid
+        """
+        # Pattern: fieldname.row (e.g., comp.1, sg_anim_mandays.10)
+        match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*?)\.(\d+)$', ref)
+        if not match:
+            return None
+
+        field_name, row_str = match.groups()
+        row_num = int(row_str)
+
+        # Get column index for this field
+        col_idx = self.get_column_index_by_field(field_name)
+        if col_idx is None:
+            return None
+
+        # Convert to standard reference
+        col_letter = self.col_index_to_letter(col_idx)
+        return f"{col_letter}{row_num}"
+
     def get_cell_value(self, ref: str) -> Any:
         """Get the numeric/string value of a cell for formula calculation.
 
@@ -208,8 +258,27 @@ class FormulaEvaluator:
             col: Current column index (0-based)
 
         Returns:
-            Processed formula with ROW(), COLUMN(), INDIRECT() replaced
+            Processed formula with ROW(), COLUMN(), INDIRECT(), and header refs replaced
         """
+        # Replace header-based references (e.g., comp.1, sg_anim_mandays.5)
+        # Pattern: fieldname.rownum
+        def replace_header_ref(match):
+            header_ref = match.group(0)
+            standard_ref = self.resolve_header_reference(header_ref)
+            if standard_ref:
+                return standard_ref
+            else:
+                # If field not found, keep as-is (will likely cause parse error)
+                logger.debug(f"Could not resolve header reference: {header_ref}")
+                return header_ref
+
+        # Match fieldname.number pattern (e.g., comp.1, sg_comp_mandays.10)
+        formula = re.sub(
+            r'\b([a-zA-Z_][a-zA-Z0-9_]*?)\.(\d+)\b',
+            replace_header_ref,
+            formula
+        )
+
         # Replace ROW() with the actual row number (1-based for Excel)
         formula = re.sub(r'\bROW\(\s*\)', str(row + 1), formula, flags=re.IGNORECASE)
 
@@ -302,6 +371,12 @@ class FormulaEvaluator:
         changed_ref = self.get_cell_reference(changed_row, changed_col)
         dependents = set()
 
+        # Also get the header-based reference for the changed cell
+        changed_header_ref = None
+        if hasattr(self.table_model, 'column_fields') and changed_col < len(self.table_model.column_fields):
+            field_name = self.table_model.column_fields[changed_col]
+            changed_header_ref = f"{field_name}.{changed_row + 1}"
+
         # Scan all cells to find those with formulas referencing the changed cell
         for row in range(self.table_model.rowCount()):
             for col in range(self.table_model.columnCount()):
@@ -310,8 +385,10 @@ class FormulaEvaluator:
 
                 # Check if it's a formula
                 if isinstance(value, str) and value.startswith('='):
-                    # Check if this formula references the changed cell
+                    # Check if this formula references the changed cell (standard or header-based)
                     if re.search(r'\b' + changed_ref + r'\b', value, re.IGNORECASE):
+                        dependents.add((row, col))
+                    elif changed_header_ref and re.search(r'\b' + re.escape(changed_header_ref) + r'\b', value, re.IGNORECASE):
                         dependents.add((row, col))
 
         return dependents
