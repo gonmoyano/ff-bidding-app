@@ -924,14 +924,25 @@ class RatesTab(QtWidgets.QWidget):
                 logger.warning("Field allowlist is empty, using default fields")
                 fields = ["id", "code"]
 
+            # Remove virtual fields from query (they don't exist in ShotGrid)
+            virtual_fields = ["_calc_price"]
+            query_fields = [f for f in fields if f not in virtual_fields]
+
             logger.info(f"Querying CustomEntity03 with filters: {filters}")
-            logger.info(f"Requesting fields: {fields}")
+            logger.info(f"Requesting fields: {query_fields}")
 
             line_items_list = self.sg_session.sg.find(
                 "CustomEntity03",
                 filters,
-                fields
+                query_fields
             )
+
+            # Add virtual fields to the returned data with empty values
+            if line_items_list:
+                for item in line_items_list:
+                    for virtual_field in virtual_fields:
+                        if virtual_field not in item:
+                            item[virtual_field] = ""  # Initialize with empty string
 
             logger.info(f"Query returned {len(line_items_list) if line_items_list else 0} Line Item(s)")
 
@@ -965,15 +976,30 @@ class RatesTab(QtWidgets.QWidget):
             mandays_fields.sort()
             self.line_items_field_allowlist.extend(mandays_fields)
 
-            # Add the Price calculated field (stored in sg_price_formula)
+            # Always add the Price calculated field (may or may not exist in ShotGrid)
+            # This is a client-side calculated column
+            self.line_items_field_allowlist.append("_calc_price")
+            logger.info("Added _calc_price as calculated Price field")
+
+            # If sg_price_formula exists, also include it for storing formulas
             if "sg_price_formula" in schema:
                 self.line_items_field_allowlist.append("sg_price_formula")
-                logger.info("Added sg_price_formula field for Price calculated field")
+                logger.info("Added sg_price_formula field for formula storage")
 
             logger.info(f"Built Line Items field allowlist with {len(self.line_items_field_allowlist)} fields: {self.line_items_field_allowlist}")
 
             # Build field schema dictionary for allowlisted fields
             for field_name in self.line_items_field_allowlist:
+                if field_name == "_calc_price":
+                    # Virtual calculated field
+                    self.line_items_field_schema[field_name] = {
+                        "data_type": "text",
+                        "properties": {},
+                        "editable": True,
+                        "display_name": "Price (Calculated)"
+                    }
+                    continue
+
                 if field_name not in schema:
                     logger.warning(f"Field {field_name} not found in CustomEntity03 schema")
                     continue
@@ -997,14 +1023,14 @@ class RatesTab(QtWidgets.QWidget):
                                 if field in self.line_items_field_schema}
                 if "id" in display_names:
                     display_names["id"] = "SG ID"
-                # Rename sg_price_formula to "Price" for display
-                if "sg_price_formula" in display_names:
-                    display_names["sg_price_formula"] = "Price"
+                # Rename calculated field to "Price"
+                if "_calc_price" in display_names:
+                    display_names["_calc_price"] = "Price"
                 self.line_items_widget.model.set_column_headers(display_names)
 
                 # Set up formula delegate for the Price column
                 if hasattr(self, 'line_items_formula_evaluator'):
-                    price_col_index = self.line_items_field_allowlist.index("sg_price_formula") if "sg_price_formula" in self.line_items_field_allowlist else -1
+                    price_col_index = self.line_items_field_allowlist.index("_calc_price") if "_calc_price" in self.line_items_field_allowlist else -1
                     if price_col_index >= 0:
                         formula_delegate = FormulaDelegate(self.line_items_formula_evaluator)
                         self.line_items_widget.table_view.setItemDelegateForColumn(price_col_index, formula_delegate)
