@@ -565,6 +565,10 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         h_header.sectionMoved.connect(self._on_column_moved)  # Save order when moved
         h_header.sectionResized.connect(self._on_column_resized)  # Save width when resized
 
+        # Enable tooltips for column headers (shows column letter for calculated fields)
+        h_header.setToolTip("")  # Enable tooltip support
+        h_header.viewport().setMouseTracking(True)  # Required for tooltips to work
+
         v_header = self.table_view.verticalHeader()
         v_header.sectionClicked.connect(self._on_row_header_clicked)
 
