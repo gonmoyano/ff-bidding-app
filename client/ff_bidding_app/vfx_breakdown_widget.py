@@ -133,7 +133,7 @@ class FormulaDelegate(NoElideDelegate):
                     display_text = str(result)
 
                 # Set text color based on result type
-                if isinstance(result, str) and (result.startswith('#ERROR') or result.startswith('#CIRCULAR') or result.startswith('#PARSE')):
+                if isinstance(result, str) and (result.startswith('#ERROR') or result.startswith('#CIRCULAR') or result.startswith('#PARSE') or result.startswith('#NOT_SUPPORTED')):
                     option.palette.setColor(QtGui.QPalette.Text, QtGui.QColor("#ff6b6b"))
                 else:
                     # Right-align numbers

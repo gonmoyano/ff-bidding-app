@@ -136,6 +136,10 @@ class FormulaEvaluator:
         if not formulas or not self.parser:
             return "#ERROR: formulas library not available"
 
+        # Pre-process formula to handle ROW(), COLUMN(), and INDIRECT()
+        if row is not None and col is not None:
+            formula = self._preprocess_formula(formula, row, col)
+
         # Check for circular reference
         if row is not None and col is not None:
             cell_ref = self.get_cell_reference(row, col)
@@ -179,6 +183,9 @@ class FormulaEvaluator:
 
                 return result
 
+            except NotImplementedError:
+                logger.debug(f"Formula contains unsupported function: '{formula}'")
+                return "#NOT_SUPPORTED!"
             except Exception as e:
                 logger.debug(f"Error executing formula '{formula}': {e}")
                 return "#ERROR!"
@@ -191,6 +198,93 @@ class FormulaEvaluator:
             if row is not None and col is not None:
                 cell_ref = self.get_cell_reference(row, col)
                 self.calculating.discard(cell_ref)
+
+    def _preprocess_formula(self, formula: str, row: int, col: int) -> str:
+        """Pre-process formula to replace ROW(), COLUMN(), and resolve INDIRECT().
+
+        Args:
+            formula: The original formula
+            row: Current row index (0-based)
+            col: Current column index (0-based)
+
+        Returns:
+            Processed formula with ROW(), COLUMN(), INDIRECT() replaced
+        """
+        # Replace ROW() with the actual row number (1-based for Excel)
+        formula = re.sub(r'\bROW\(\s*\)', str(row + 1), formula, flags=re.IGNORECASE)
+
+        # Replace COLUMN() with the actual column number (1-based for Excel)
+        formula = re.sub(r'\bCOLUMN\(\s*\)', str(col + 1), formula, flags=re.IGNORECASE)
+
+        # Handle INDIRECT() - resolve the indirect reference
+        # Match INDIRECT("...") or INDIRECT('...')
+        def replace_indirect(match):
+            try:
+                # Get the argument to INDIRECT
+                arg = match.group(1)
+
+                # Evaluate the argument (could be a string concatenation like "A"&ROW())
+                # First, replace any ROW() or COLUMN() in the argument
+                arg = re.sub(r'\bROW\(\s*\)', str(row + 1), arg, flags=re.IGNORECASE)
+                arg = re.sub(r'\bCOLUMN\(\s*\)', str(col + 1), arg, flags=re.IGNORECASE)
+
+                # Evaluate the string expression
+                # Remove quotes and evaluate string concatenation
+                # Handle patterns like "A"&5 or "A"&ROW()
+                evaluated_ref = self._evaluate_indirect_argument(arg)
+
+                # Return the evaluated cell reference
+                return evaluated_ref
+            except Exception as e:
+                logger.debug(f"Error resolving INDIRECT: {e}")
+                return "A1"  # Fallback to A1
+
+        # Replace INDIRECT(...) with the resolved reference
+        formula = re.sub(
+            r'\bINDIRECT\(\s*([^)]+)\s*\)',
+            replace_indirect,
+            formula,
+            flags=re.IGNORECASE
+        )
+
+        return formula
+
+    def _evaluate_indirect_argument(self, arg: str) -> str:
+        """Evaluate the argument to INDIRECT() to get a cell reference.
+
+        Args:
+            arg: The argument expression (e.g., "A"&5, "B2", etc.)
+
+        Returns:
+            The evaluated cell reference as a string
+        """
+        # Remove outer quotes if present
+        arg = arg.strip()
+
+        # Handle simple quoted strings
+        if (arg.startswith('"') and arg.endswith('"')) or (arg.startswith("'") and arg.endswith("'")):
+            return arg[1:-1]
+
+        # Handle string concatenation with &
+        if '&' in arg:
+            # Split by & and evaluate each part
+            parts = arg.split('&')
+            result = ""
+            for part in parts:
+                part = part.strip()
+                # Remove quotes
+                if (part.startswith('"') and part.endswith('"')) or (part.startswith("'") and part.endswith("'")):
+                    result += part[1:-1]
+                else:
+                    # It's a number or expression
+                    try:
+                        result += str(int(part))
+                    except:
+                        result += part
+            return result
+
+        # Return as-is
+        return arg
 
     def find_dependent_cells(self, changed_row: int, changed_col: int) -> Set[Tuple[int, int]]:
         """Find all cells that depend on the changed cell.
