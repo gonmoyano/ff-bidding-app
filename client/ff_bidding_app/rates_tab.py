@@ -55,9 +55,6 @@ class RatesTab(QtWidgets.QWidget):
         self.rate_card_field_allowlist = []  # Will be populated dynamically with _rate fields
 
         # Line Items widgets and data
-        self.line_items_combo = None
-        self.line_items_set_btn = None
-        self.line_items_status_label = None
         self.line_items_widget = None
         self.line_items_field_schema = {}
         self.line_items_field_allowlist = []  # Will be populated dynamically with _mandays fields
@@ -191,54 +188,12 @@ class RatesTab(QtWidgets.QWidget):
         return widget
 
     def _create_line_items_tab(self):
-        """Create the Line Items nested tab content with full functionality."""
+        """Create the Line Items nested tab content with auto-loading from Price List."""
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(6, 6, 6, 6)
 
-        # Selector group (collapsible)
-        selector_group = CollapsibleGroupBox("Line Items")
-
-        selector_row = QtWidgets.QHBoxLayout()
-        selector_label = QtWidgets.QLabel("Line Items:")
-        selector_row.addWidget(selector_label)
-
-        self.line_items_combo = QtWidgets.QComboBox()
-        self.line_items_combo.setMinimumWidth(250)
-        self.line_items_combo.currentIndexChanged.connect(self._on_line_items_changed)
-        selector_row.addWidget(self.line_items_combo, stretch=1)
-
-        self.line_items_set_btn = QtWidgets.QPushButton("Set as Current")
-        self.line_items_set_btn.setEnabled(False)
-        self.line_items_set_btn.clicked.connect(self._on_set_current_line_items)
-        selector_row.addWidget(self.line_items_set_btn)
-
-        self.line_items_add_btn = QtWidgets.QPushButton("Add")
-        self.line_items_add_btn.clicked.connect(self._on_add_line_items)
-        selector_row.addWidget(self.line_items_add_btn)
-
-        self.line_items_remove_btn = QtWidgets.QPushButton("Remove")
-        self.line_items_remove_btn.clicked.connect(self._on_remove_line_items)
-        selector_row.addWidget(self.line_items_remove_btn)
-
-        self.line_items_rename_btn = QtWidgets.QPushButton("Rename")
-        self.line_items_rename_btn.clicked.connect(self._on_rename_line_items)
-        selector_row.addWidget(self.line_items_rename_btn)
-
-        self.line_items_refresh_btn = QtWidgets.QPushButton("Refresh")
-        self.line_items_refresh_btn.clicked.connect(self._refresh_line_items)
-        selector_row.addWidget(self.line_items_refresh_btn)
-
-        selector_group.addLayout(selector_row)
-
-        self.line_items_status_label = QtWidgets.QLabel("Select a Price List to view Line Items.")
-        self.line_items_status_label.setObjectName("lineItemsStatusLabel")
-        self.line_items_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        selector_group.addWidget(self.line_items_status_label)
-
-        layout.addWidget(selector_group)
-
-        # Create reusable Line Items widget (reusing VFXBreakdownWidget)
+        # Create Line Items widget (reusing VFXBreakdownWidget) with toolbar for search/sort
         self.line_items_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
 
         # Configure the model to use Line Items-specific columns
@@ -248,7 +203,7 @@ class RatesTab(QtWidgets.QWidget):
             logger.info(f"Configured Line Items widget model with fields: {self.line_items_field_allowlist}")
 
         # Connect widget signals
-        self.line_items_widget.statusMessageChanged.connect(lambda msg, err: self._set_line_items_status(msg, err))
+        self.line_items_widget.statusMessageChanged.connect(lambda msg, err: logger.info(f"Line Items status: {msg}"))
 
         layout.addWidget(self.line_items_widget)
 
@@ -387,7 +342,7 @@ class RatesTab(QtWidgets.QWidget):
             # Clear Rate Card and Line Items tabs
             if hasattr(self, 'rate_card_combo'):
                 self._clear_rate_card_tab()
-            if hasattr(self, 'line_items_combo'):
+            if hasattr(self, 'line_items_widget'):
                 self._clear_line_items_tab()
             return
 
@@ -403,8 +358,8 @@ class RatesTab(QtWidgets.QWidget):
         # Refresh Rate Card and Line Items tabs
         if hasattr(self, 'rate_card_combo'):
             self._refresh_rate_cards()
-        if hasattr(self, 'line_items_combo'):
-            self._refresh_line_items()
+        if hasattr(self, 'line_items_widget'):
+            self._load_line_items()
 
     def _fetch_price_list_data(self, price_list_id):
         """Fetch full price list data including linked entities."""
@@ -907,122 +862,47 @@ class RatesTab(QtWidgets.QWidget):
     # Line Items Methods
     # ===========================
 
-    def _set_line_items_status(self, message, is_error=False):
-        """Set the status message for line items."""
-        if is_error:
-            self.line_items_status_label.setStyleSheet("color: #ff6b6b; padding: 2px 0;")
-        else:
-            self.line_items_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        self.line_items_status_label.setText(message)
-
     def _clear_line_items_tab(self):
         """Clear the Line Items tab."""
-        self.line_items_combo.blockSignals(True)
-        self.line_items_combo.clear()
-        self.line_items_combo.addItem("-- Select Line Items --", None)
-        self.line_items_combo.blockSignals(False)
-        self.line_items_widget.clear_table()
-        self.line_items_set_btn.setEnabled(False)
-        self._set_line_items_status("Select a Price List to view Line Items.")
+        if self.line_items_widget:
+            self.line_items_widget.clear_table()
+        logger.info("Cleared Line Items tab")
 
-    def _refresh_line_items(self):
-        """Refresh the list of Line Items for the current price list."""
-        if not self.current_project_id or not self.current_price_list_id:
+    def _load_line_items(self):
+        """Load Line Items linked to the current Price List."""
+        if not self.current_price_list_id:
             self._clear_line_items_tab()
             return
 
         try:
-            # Query CustomEntity03 (Line Items) filtered by project
+            # Fetch schema if not already loaded
+            if not self.line_items_field_schema:
+                self._fetch_line_items_schema()
+
+            # Query CustomEntity03 (Line Items) linked to this Price List
+            # The link is via sg_price_list field on CustomEntity03
             filters = [
-                ["project", "is", {"type": "Project", "id": self.current_project_id}]
+                ["sg_price_list", "is", {"type": "CustomEntity10", "id": self.current_price_list_id}]
             ]
 
-            line_items_list = self.sg_session.sg.find(
-                "CustomEntity03",
-                filters,
-                ["code", "id", "description"]
-            )
-
-            # Update combo box
-            self.line_items_combo.blockSignals(True)
-            self.line_items_combo.clear()
-            self.line_items_combo.addItem("-- Select Line Items --", None)
-
-            for line_items in sorted(line_items_list, key=lambda x: x.get("code", "")):
-                self.line_items_combo.addItem(line_items.get("code", "Unnamed"), line_items["id"])
-
-            self.line_items_combo.blockSignals(False)
-
-            if line_items_list:
-                self._set_line_items_status(f"Found {len(line_items_list)} Line Items")
-                self.line_items_set_btn.setEnabled(True)
-
-                # Auto-select the Line Items linked to this Price List (if any)
-                linked_line_items_id = None
-                if self.current_price_list_data:
-                    linked_line_items = self.current_price_list_data.get("sg_line_items")
-                    if linked_line_items and isinstance(linked_line_items, dict):
-                        linked_line_items_id = linked_line_items.get("id")
-
-                # Try to find and select the linked Line Items
-                if linked_line_items_id:
-                    for i in range(self.line_items_combo.count()):
-                        if self.line_items_combo.itemData(i) == linked_line_items_id:
-                            self.line_items_combo.setCurrentIndex(i)
-                            logger.info(f"Auto-selected Line Items {linked_line_items_id} linked to current Price List")
-                            break
-                    else:
-                        logger.warning(f"Linked Line Items {linked_line_items_id} not found in project")
-            else:
-                self._set_line_items_status("No Line Items found for this project.")
-                self.line_items_set_btn.setEnabled(False)
-                self.line_items_widget.clear_table()
-
-        except Exception as e:
-            logger.error(f"Failed to refresh Line Items: {e}", exc_info=True)
-            self._set_line_items_status("Failed to load Line Items.", is_error=True)
-
-    def _on_line_items_changed(self, index):
-        """Handle Line Items selection change."""
-        if index < 0:
-            self.line_items_widget.clear_table()
-            return
-
-        line_items_id = self.line_items_combo.currentData()
-        if not line_items_id:
-            self.line_items_widget.clear_table()
-            return
-
-        # Load the selected line items details
-        self._load_line_items_details(line_items_id)
-
-    def _load_line_items_details(self, line_items_id):
-        """Load details for the selected Line Items."""
-        try:
-            filters = [["id", "is", line_items_id]]
             fields = self.line_items_field_allowlist.copy()
 
-            line_items_data = self.sg_session.sg.find_one(
+            line_items_list = self.sg_session.sg.find(
                 "CustomEntity03",
                 filters,
                 fields
             )
 
-            if line_items_data:
-                # Fetch schema if not already loaded
-                if not self.line_items_field_schema:
-                    self._fetch_line_items_schema()
-
-                self.line_items_widget.load_bidding_scenes([line_items_data], field_schema=self.line_items_field_schema)
-                display_name = self.line_items_combo.currentText()
-                self._set_line_items_status(f"Loaded Line Items '{display_name}'.")
+            if line_items_list:
+                self.line_items_widget.load_bidding_scenes(line_items_list, field_schema=self.line_items_field_schema)
+                logger.info(f"Loaded {len(line_items_list)} Line Item(s) for Price List {self.current_price_list_id}")
             else:
-                self._set_line_items_status("Line Items not found.")
                 self.line_items_widget.clear_table()
+                logger.info(f"No Line Items found for Price List {self.current_price_list_id}")
 
         except Exception as e:
-            logger.error(f"Failed to load line items details: {e}", exc_info=True)
-            self._set_line_items_status("Failed to load line items details.", is_error=True)
+            logger.error(f"Failed to load Line Items: {e}", exc_info=True)
+            self.line_items_widget.clear_table()
 
     def _fetch_line_items_schema(self):
         """Fetch the schema for CustomEntity03 (Line Items) and build field allowlist."""
@@ -1073,153 +953,3 @@ class RatesTab(QtWidgets.QWidget):
 
         except Exception as e:
             logger.error(f"Failed to fetch schema for CustomEntity03: {e}", exc_info=True)
-
-    def _on_set_current_line_items(self):
-        """Set the selected Line Items as current for the Price List."""
-        if not self.current_price_list_id:
-            QtWidgets.QMessageBox.warning(self, "No Price List Selected", "Please select a Price List first.")
-            return
-
-        line_items_id = self.line_items_combo.currentData()
-        if not line_items_id:
-            QtWidgets.QMessageBox.warning(self, "No Line Items Selected", "Please select Line Items.")
-            return
-
-        try:
-            self.sg_session.sg.update(
-                "CustomEntity10",
-                self.current_price_list_id,
-                {"sg_line_items": {"type": "CustomEntity03", "id": line_items_id}}
-            )
-
-            line_items_name = self.line_items_combo.currentText()
-            self._set_line_items_status(f"Set '{line_items_name}' as current Line Items.")
-            QtWidgets.QMessageBox.information(
-                self,
-                "Success",
-                f"'{line_items_name}' are now the current Line Items for this Price List."
-            )
-
-            logger.info(f"Set Line Items {line_items_id} as current for Price List {self.current_price_list_id}")
-
-        except Exception as e:
-            logger.error(f"Failed to set current Line Items: {e}", exc_info=True)
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to set current Line Items:\n{str(e)}"
-            )
-
-    def _on_add_line_items(self):
-        """Add new Line Items."""
-        if not self.current_project_id:
-            QtWidgets.QMessageBox.warning(self, "No Project Selected", "Please select a project first.")
-            return
-
-        name, ok = QtWidgets.QInputDialog.getText(
-            self,
-            "Add Line Items",
-            "Enter name for new Line Items:"
-        )
-
-        if not ok or not name:
-            return
-
-        try:
-            line_items_data = {
-                "code": name,
-                "project": {"type": "Project", "id": self.current_project_id}
-            }
-
-            new_line_items = self.sg_session.sg.create("CustomEntity03", line_items_data)
-
-            logger.info(f"Created Line Items: {name} (ID: {new_line_items['id']})")
-            self._set_line_items_status(f"Created Line Items '{name}'.")
-
-            self._refresh_line_items()
-
-            for i in range(self.line_items_combo.count()):
-                if self.line_items_combo.itemData(i) == new_line_items['id']:
-                    self.line_items_combo.setCurrentIndex(i)
-                    break
-
-        except Exception as e:
-            logger.error(f"Failed to create Line Items: {e}", exc_info=True)
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to create Line Items:\n{str(e)}"
-            )
-
-    def _on_remove_line_items(self):
-        """Remove the selected Line Items."""
-        line_items_id = self.line_items_combo.currentData()
-        if not line_items_id:
-            QtWidgets.QMessageBox.warning(self, "No Line Items Selected", "Please select Line Items to remove.")
-            return
-
-        line_items_name = self.line_items_combo.currentText()
-
-        reply = QtWidgets.QMessageBox.question(
-            self,
-            "Confirm Deletion",
-            f"Are you sure you want to delete Line Items '{line_items_name}'?",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
-        )
-
-        if reply != QtWidgets.QMessageBox.Yes:
-            return
-
-        try:
-            self.sg_session.sg.delete("CustomEntity03", line_items_id)
-
-            logger.info(f"Deleted Line Items: {line_items_name} (ID: {line_items_id})")
-            self._set_line_items_status(f"Deleted Line Items '{line_items_name}'.")
-
-            self._refresh_line_items()
-
-        except Exception as e:
-            logger.error(f"Failed to delete Line Items: {e}", exc_info=True)
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to delete Line Items:\n{str(e)}"
-            )
-
-    def _on_rename_line_items(self):
-        """Rename the selected Line Items."""
-        line_items_id = self.line_items_combo.currentData()
-        if not line_items_id:
-            QtWidgets.QMessageBox.warning(self, "No Line Items Selected", "Please select Line Items to rename.")
-            return
-
-        current_name = self.line_items_combo.currentText()
-
-        new_name, ok = QtWidgets.QInputDialog.getText(
-            self,
-            "Rename Line Items",
-            "Enter new name:",
-            text=current_name
-        )
-
-        if not ok or not new_name or new_name == current_name:
-            return
-
-        try:
-            self.sg_session.sg.update("CustomEntity03", line_items_id, {"code": new_name})
-
-            logger.info(f"Renamed Line Items from '{current_name}' to '{new_name}' (ID: {line_items_id})")
-            self._set_line_items_status(f"Renamed to '{new_name}'.")
-
-            current_index = self.line_items_combo.currentIndex()
-            self._refresh_line_items()
-            if current_index < self.line_items_combo.count():
-                self.line_items_combo.setCurrentIndex(current_index)
-
-        except Exception as e:
-            logger.error(f"Failed to rename Line Items: {e}", exc_info=True)
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to rename Line Items:\n{str(e)}"
-            )
