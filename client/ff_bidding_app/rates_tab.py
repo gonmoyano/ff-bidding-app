@@ -196,11 +196,10 @@ class RatesTab(QtWidgets.QWidget):
         # Create Line Items widget (reusing VFXBreakdownWidget) with toolbar for search/sort
         self.line_items_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
 
-        # Configure the model to use Line Items-specific columns
+        # Set entity type - columns will be configured when schema is fetched
         if hasattr(self.line_items_widget, 'model') and self.line_items_widget.model:
-            self.line_items_widget.model.column_fields = self.line_items_field_allowlist.copy()
             self.line_items_widget.model.entity_type = "CustomEntity03"
-            logger.info(f"Configured Line Items widget model with fields: {self.line_items_field_allowlist}")
+            logger.info(f"Configured Line Items widget model for CustomEntity03")
 
         # Connect widget signals
         self.line_items_widget.statusMessageChanged.connect(lambda msg, err: logger.info(f"Line Items status: {msg}"))
@@ -870,22 +869,58 @@ class RatesTab(QtWidgets.QWidget):
 
     def _load_line_items(self):
         """Load Line Items linked to the current Price List."""
-        if not self.current_price_list_id:
+        if not self.current_price_list_id or not self.current_price_list_data:
             self._clear_line_items_tab()
             return
 
         try:
+            logger.info(f"Loading Line Items for Price List ID: {self.current_price_list_id}")
+
             # Fetch schema if not already loaded
             if not self.line_items_field_schema:
+                logger.info("Fetching Line Items schema...")
                 self._fetch_line_items_schema()
 
-            # Query CustomEntity03 (Line Items) linked to this Price List
-            # The link is via sg_price_list field on CustomEntity03
+            # Get Line Items from the Price List's sg_line_items field
+            sg_line_items = self.current_price_list_data.get("sg_line_items")
+            logger.info(f"Price List sg_line_items field: {sg_line_items}")
+
+            if not sg_line_items:
+                logger.info("No Line Items linked to this Price List (sg_line_items is empty)")
+                self.line_items_widget.clear_table()
+                return
+
+            # sg_line_items could be a list of entity references or a single entity reference
+            line_item_ids = []
+            if isinstance(sg_line_items, list):
+                # Multi-entity reference
+                line_item_ids = [item.get("id") for item in sg_line_items if isinstance(item, dict) and item.get("id")]
+            elif isinstance(sg_line_items, dict):
+                # Single entity reference
+                if sg_line_items.get("id"):
+                    line_item_ids = [sg_line_items.get("id")]
+
+            logger.info(f"Line Item IDs to fetch: {line_item_ids}")
+
+            if not line_item_ids:
+                logger.info("No valid Line Item IDs found")
+                self.line_items_widget.clear_table()
+                return
+
+            # Query CustomEntity03 (Line Items) by IDs
             filters = [
-                ["sg_price_list", "is", {"type": "CustomEntity10", "id": self.current_price_list_id}]
+                ["id", "in", line_item_ids]
             ]
 
             fields = self.line_items_field_allowlist.copy()
+
+            # Ensure we have at least basic fields
+            if not fields:
+                logger.warning("Field allowlist is empty, using default fields")
+                fields = ["id", "code"]
+
+            logger.info(f"Querying CustomEntity03 with filters: {filters}")
+            logger.info(f"Requesting fields: {fields}")
 
             line_items_list = self.sg_session.sg.find(
                 "CustomEntity03",
@@ -893,12 +928,15 @@ class RatesTab(QtWidgets.QWidget):
                 fields
             )
 
+            logger.info(f"Query returned {len(line_items_list) if line_items_list else 0} Line Item(s)")
+
             if line_items_list:
+                logger.info(f"Line Items data: {line_items_list}")
                 self.line_items_widget.load_bidding_scenes(line_items_list, field_schema=self.line_items_field_schema)
-                logger.info(f"Loaded {len(line_items_list)} Line Item(s) for Price List {self.current_price_list_id}")
+                logger.info(f"Successfully loaded {len(line_items_list)} Line Item(s) into table")
             else:
                 self.line_items_widget.clear_table()
-                logger.info(f"No Line Items found for Price List {self.current_price_list_id}")
+                logger.info(f"No Line Items found for the given IDs")
 
         except Exception as e:
             logger.error(f"Failed to load Line Items: {e}", exc_info=True)
