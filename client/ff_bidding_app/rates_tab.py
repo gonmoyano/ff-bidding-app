@@ -203,8 +203,17 @@ class RatesTab(QtWidgets.QWidget):
             self.line_items_widget.model.entity_type = "CustomEntity03"
             logger.info(f"Configured Line Items widget model for CustomEntity03")
 
-            # Create formula evaluator for this table
-            self.line_items_formula_evaluator = FormulaEvaluator(self.line_items_widget.model)
+            # Create formula evaluator for this table with cross-sheet references
+            # Build sheet_models dictionary for cross-sheet references
+            sheet_models = {}
+            if hasattr(self, 'rate_card_widget') and hasattr(self.rate_card_widget, 'model') and self.rate_card_widget.model:
+                sheet_models['Rate Card'] = self.rate_card_widget.model
+                logger.info("Added 'Rate Card' sheet to Line Items formula evaluator")
+
+            self.line_items_formula_evaluator = FormulaEvaluator(
+                self.line_items_widget.model,
+                sheet_models=sheet_models
+            )
             # Set the formula evaluator on the model for dependency tracking
             self.line_items_widget.model.set_formula_evaluator(self.line_items_formula_evaluator)
 
