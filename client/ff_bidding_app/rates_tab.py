@@ -8,12 +8,14 @@ from PySide6 import QtWidgets, QtCore
 try:
     from .logger import logger
     from .bid_selector_widget import CollapsibleGroupBox
-    from .vfx_breakdown_widget import VFXBreakdownWidget
+    from .vfx_breakdown_widget import VFXBreakdownWidget, FormulaDelegate
+    from .formula_evaluator import FormulaEvaluator
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
     from bid_selector_widget import CollapsibleGroupBox
-    from vfx_breakdown_widget import VFXBreakdownWidget
+    from vfx_breakdown_widget import VFXBreakdownWidget, FormulaDelegate
+    from formula_evaluator import FormulaEvaluator
 
 
 class RatesTab(QtWidgets.QWidget):
@@ -200,6 +202,9 @@ class RatesTab(QtWidgets.QWidget):
         if hasattr(self.line_items_widget, 'model') and self.line_items_widget.model:
             self.line_items_widget.model.entity_type = "CustomEntity03"
             logger.info(f"Configured Line Items widget model for CustomEntity03")
+
+            # Create formula evaluator for this table
+            self.line_items_formula_evaluator = FormulaEvaluator(self.line_items_widget.model)
 
         # Connect widget signals
         self.line_items_widget.statusMessageChanged.connect(lambda msg, err: logger.info(f"Line Items status: {msg}"))
@@ -960,6 +965,11 @@ class RatesTab(QtWidgets.QWidget):
             mandays_fields.sort()
             self.line_items_field_allowlist.extend(mandays_fields)
 
+            # Add the Price calculated field (stored in sg_price_formula)
+            if "sg_price_formula" in schema:
+                self.line_items_field_allowlist.append("sg_price_formula")
+                logger.info("Added sg_price_formula field for Price calculated field")
+
             logger.info(f"Built Line Items field allowlist with {len(self.line_items_field_allowlist)} fields: {self.line_items_field_allowlist}")
 
             # Build field schema dictionary for allowlisted fields
@@ -987,7 +997,18 @@ class RatesTab(QtWidgets.QWidget):
                                 if field in self.line_items_field_schema}
                 if "id" in display_names:
                     display_names["id"] = "SG ID"
+                # Rename sg_price_formula to "Price" for display
+                if "sg_price_formula" in display_names:
+                    display_names["sg_price_formula"] = "Price"
                 self.line_items_widget.model.set_column_headers(display_names)
+
+                # Set up formula delegate for the Price column
+                if hasattr(self, 'line_items_formula_evaluator'):
+                    price_col_index = self.line_items_field_allowlist.index("sg_price_formula") if "sg_price_formula" in self.line_items_field_allowlist else -1
+                    if price_col_index >= 0:
+                        formula_delegate = FormulaDelegate(self.line_items_formula_evaluator)
+                        self.line_items_widget.table_view.setItemDelegateForColumn(price_col_index, formula_delegate)
+                        logger.info(f"Set formula delegate for Price column (index {price_col_index})")
 
         except Exception as e:
             logger.error(f"Failed to fetch schema for CustomEntity03: {e}", exc_info=True)
