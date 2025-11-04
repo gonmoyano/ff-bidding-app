@@ -948,12 +948,19 @@ class RatesTab(QtWidgets.QWidget):
                 query_fields
             )
 
-            # Add virtual fields to the returned data with empty values
+            # Add virtual fields to the returned data with default values
             if line_items_list:
+                # Default formula for Price column
+                default_price_formula = "=('Rate Card'!model.1*model) + ('Rate Card'!tex.1*tex) + ('Rate Card'!rig.1*rig) + ('Rate Card'!mm.1*mm) + ('Rate Card'!prep.1*prep) + ('Rate Card'!gen.1*gen) + ('Rate Card'!anim.1*anim) + ('Rate Card'!lookdev.1*lookdev) + ('Rate Card'!lgt.1*lgt) + ('Rate Card'!fx.1*fx) + ('Rate Card'!cmp.1*cmp)"
+
                 for item in line_items_list:
                     for virtual_field in virtual_fields:
                         if virtual_field not in item:
-                            item[virtual_field] = ""  # Initialize with empty string
+                            # Set default formula for Price column
+                            if virtual_field == "_calc_price":
+                                item[virtual_field] = default_price_formula
+                            else:
+                                item[virtual_field] = ""  # Initialize with empty string
 
             logger.info(f"Query returned {len(line_items_list) if line_items_list else 0} Line Item(s)")
 
