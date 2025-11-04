@@ -404,7 +404,7 @@ class RatesTab(QtWidgets.QWidget):
             self._update_price_list_info_label(None)
 
     def _update_price_list_info_label(self, price_list_data):
-        """Update the price list info label and group box title with Rate Card and Line Item info.
+        """Update the price list info label and group box title with Rate Card info.
 
         Args:
             price_list_data: Price List data dict or None
@@ -434,19 +434,6 @@ class RatesTab(QtWidgets.QWidget):
                 rate_card_name = str(rate_card)
             info_parts.append(f"Rate Card: {rate_card_name}")
             title_text += f" | Rate Card: {rate_card_name}"
-
-        # Add Line Item info
-        line_items = price_list_data.get("sg_line_items")
-        if line_items:
-            # Extract line item name/code
-            if isinstance(line_items, dict):
-                line_item_name = line_items.get("name") or line_items.get("code") or f"ID {line_items.get('id', 'N/A')}"
-            elif isinstance(line_items, list) and line_items:
-                line_item_name = line_items[0].get("name") or line_items[0].get("code") or f"ID {line_items[0].get('id', 'N/A')}"
-            else:
-                line_item_name = str(line_items)
-            info_parts.append(f"Line Item: {line_item_name}")
-            title_text += f" | Line Item: {line_item_name}"
 
         # Update the label with the info (for display under dropdown)
         if info_parts:
