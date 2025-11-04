@@ -666,8 +666,10 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
             except Exception as e:
                 self._updating = False
-                logger.error(f"Failed to update ShotGrid field '{field_name}': {e}", exc_info=True)
-                self.statusMessageChanged.emit(f"Failed to update {field_name}", True)
+                error_msg = str(e)
+                logger.error(f"Failed to update ShotGrid field '{field_name}': {error_msg}", exc_info=True)
+                logger.error(f"Entity type: {self.entity_type}, Entity ID: {bidding_scene_data.get('id')}, Field: {field_name}, Value: {new_value}")
+                self.statusMessageChanged.emit(f"Failed to update {field_name}: {error_msg}", True)
                 return False
 
     def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
