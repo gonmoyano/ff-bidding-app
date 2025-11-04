@@ -46,6 +46,7 @@ class AssetsTab(QtWidgets.QWidget):
 
         # Fields to display for Asset items, in order
         self.asset_field_allowlist = [
+            "id",
             "code",
             "sg_bid_asset_type",
             "sg_bidding_notes",
@@ -207,6 +208,9 @@ class AssetsTab(QtWidgets.QWidget):
                 display_names = {field: self.field_schema[field]["display_name"]
                                 for field in self.asset_field_allowlist
                                 if field in self.field_schema}
+                # Override display name for 'id' field to show 'SG ID'
+                if "id" in display_names:
+                    display_names["id"] = "SG ID"
                 self.assets_widget.model.set_column_headers(display_names)
                 logger.info(f"Set column headers with display names: {display_names}")
 

@@ -351,6 +351,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.model.statusMessageChanged.connect(self._on_model_status_changed)
         self.model.rowCountChanged.connect(self._on_model_row_count_changed)
         self.model.dataChanged.connect(self._on_model_data_changed)
+        self.model.modelReset.connect(self._on_model_reset)
 
         # UI widgets
         self.table_view = None
@@ -651,6 +652,12 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Get the model index for this cell
             index = self.model.index(row, assets_col_idx)
 
+            # Check if widget already exists - if so, skip recreation
+            existing_widget = self.table_view.indexWidget(index)
+            if isinstance(existing_widget, MultiEntityReferenceWidget):
+                logger.debug(f"Widget already exists for row {row}, skipping creation")
+                continue
+
             # Get the actual data row index
             data_row = self.model.filtered_row_indices[row]
             bidding_scene_data = self.model.all_bidding_scenes_data[data_row]
@@ -679,8 +686,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             widget.setFixedHeight(current_row_height)
 
             # Connect signal to update model when entities change
+            # Use functools.partial to properly bind the widget so we can look up its position dynamically
             widget.entitiesChanged.connect(
-                lambda ents, r=row, col=assets_col_idx: self._on_bid_assets_changed(r, col, ents)
+                lambda ents, w=widget: self._on_bid_assets_changed_from_widget(w, ents)
             )
 
             # Install event filter to catch double-clicks (index widgets consume events)
@@ -696,7 +704,40 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 is_selected = self.table_view.selectionModel().isSelected(index)
                 widget.set_selected(is_selected)
 
+            logger.debug(f"Created widget for row {row}, col {assets_col_idx}")
+
+        logger.info(f"Finished setting up bid assets widgets for {self.model.rowCount()} rows")
+
         # Row height is controlled by the slider - don't override it here
+
+    def _on_bid_assets_changed_from_widget(self, widget, entities):
+        """Handle when bid assets are changed in a cell widget, looking up position dynamically.
+
+        Args:
+            widget: The MultiEntityReferenceWidget that emitted the signal
+            entities: Updated list of entity dicts
+        """
+        # Find the widget's current position in the table by searching all cells
+        try:
+            assets_col_idx = self.model.column_fields.index("sg_bid_assets")
+        except ValueError:
+            logger.error("sg_bid_assets column not found")
+            return
+
+        # Search for the widget in the table
+        row = None
+        for r in range(self.model.rowCount()):
+            index = self.model.index(r, assets_col_idx)
+            if self.table_view.indexWidget(index) == widget:
+                row = r
+                break
+
+        if row is None:
+            logger.error("Could not find widget in table")
+            return
+
+        # Now call the original handler with the correct current row
+        self._on_bid_assets_changed(row, assets_col_idx, entities)
 
     def _on_bid_assets_changed(self, row, col, entities):
         """Handle when bid assets are changed in a cell widget.
@@ -1936,9 +1977,71 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.statusMessageChanged.emit("Add bidding scene functionality requires parent tab context", False)
 
     def _delete_bidding_scene(self, row):
-        """Delete the specified bidding scene."""
-        # This requires access to parent context
-        self.statusMessageChanged.emit("Delete bidding scene functionality requires parent tab context", False)
+        """Delete the specified row (bidding scene or asset item)."""
+        # Check entity type to determine how to handle deletion
+        entity_type = self.model.entity_type
+
+        if entity_type == "CustomEntity07":
+            # Asset item deletion - we can handle this directly
+            self._delete_asset_item(row)
+        else:
+            # Bidding scene deletion requires access to parent context
+            self.statusMessageChanged.emit("Delete bidding scene functionality requires parent tab context", False)
+
+    def _delete_asset_item(self, row):
+        """Delete the specified asset item (CustomEntity07).
+
+        Args:
+            row: Display row index to delete
+        """
+        # Get the actual data row index
+        if row not in self.model.display_row_to_data_row:
+            logger.error(f"Invalid row index for deletion: {row}")
+            return
+
+        data_row = self.model.display_row_to_data_row[row]
+        asset_data = self.model.all_bidding_scenes_data[data_row]
+
+        asset_id = asset_data.get("id")
+        asset_code = asset_data.get("code", "Unknown")
+
+        if not asset_id:
+            logger.error("Cannot delete asset: missing ID")
+            self.statusMessageChanged.emit("Cannot delete asset: missing ID", True)
+            return
+
+        # Confirm deletion
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete Asset item '{asset_code}'?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        try:
+            # Delete from ShotGrid
+            self.sg_session.sg.delete("CustomEntity07", asset_id)
+            logger.info(f"Deleted Asset item: {asset_code} (ID: {asset_id})")
+
+            # Remove from model data
+            self.model.all_bidding_scenes_data.pop(data_row)
+
+            # Reapply filters to update the view
+            self.model.apply_filters()
+
+            self.statusMessageChanged.emit(f"Deleted Asset item '{asset_code}'.", False)
+
+        except Exception as e:
+            logger.error(f"Failed to delete Asset item: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to delete Asset item:\n{str(e)}"
+            )
+            self.statusMessageChanged.emit(f"Failed to delete Asset item: {str(e)}", True)
 
     def _autosize_columns(self, min_px=80, max_px=700, extra_padding=28):
         """Auto-size columns to fit content.
@@ -2041,3 +2144,13 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                         # Update the widget with the new entities
                         widget.set_entities(entities)
                         logger.info(f"Refreshed sg_bid_assets widget for row {row} after data change")
+
+    def _on_model_reset(self):
+        """Handle model reset (e.g., after sorting or filtering).
+
+        Recreates the bid assets widgets since they are cleared when the model resets.
+        """
+        # Use QTimer to defer widget creation until after the view has processed the model reset
+        # This ensures the view's internal state is fully updated before we create widgets
+        QtCore.QTimer.singleShot(0, self._setup_bid_assets_widgets)
+        logger.info("Scheduled bid assets widgets recreation after model reset")
