@@ -536,6 +536,12 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
             if field_name in self.readonly_columns:
                 return QtGui.QColor("#888888")
 
+        elif role == QtCore.Qt.ToolTipRole:
+            # Show cell reference (e.g., A1, B2, C3)
+            column_letter = self._column_index_to_letter(col)
+            row_number = row + 1  # 1-based for display
+            return f"{column_letter}{row_number}"
+
         return None
 
     def setData(self, index, value, role=QtCore.Qt.EditRole):
