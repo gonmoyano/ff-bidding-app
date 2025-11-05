@@ -2194,9 +2194,23 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Get context from context_provider (preferred) or parent widget (fallback)
         context = self.context_provider if self.context_provider else self.parent()
 
+        # Enhanced logging for debugging
+        logger.info(f"_add_line_item_at_position called:")
+        logger.info(f"  - self.context_provider: {self.context_provider}")
+        logger.info(f"  - self.parent(): {self.parent()}")
+        logger.info(f"  - context: {context}")
+        logger.info(f"  - context type: {type(context).__name__ if context else 'None'}")
+        if context:
+            logger.info(f"  - hasattr(context, 'current_price_list_id'): {hasattr(context, 'current_price_list_id')}")
+            logger.info(f"  - hasattr(context, 'current_project_id'): {hasattr(context, 'current_project_id')}")
+            if hasattr(context, 'current_price_list_id'):
+                logger.info(f"  - context.current_price_list_id: {context.current_price_list_id}")
+            if hasattr(context, 'current_project_id'):
+                logger.info(f"  - context.current_project_id: {context.current_project_id}")
+
         if not context or not hasattr(context, 'current_price_list_id') or not hasattr(context, 'current_project_id'):
             QtWidgets.QMessageBox.warning(self, "No Context", "Cannot add Line Item: no Price List selected.")
-            logger.warning(f"Cannot add Line Item: context={context}, has context_provider={self.context_provider is not None}")
+            logger.warning(f"Cannot add Line Item: context validation failed")
             return
 
         price_list_id = context.current_price_list_id
