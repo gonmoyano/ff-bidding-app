@@ -274,20 +274,29 @@ class RatesTab(QtWidgets.QWidget):
         CASCADE LOGIC:
         - If Bid == placeholder OR no linked Price List → Price List set to placeholder → cascade continues
         """
+        logger.info(f"set_bid() called with bid_data={bid_data}, project_id={project_id}")
+
         self.current_bid_data = bid_data
         self.current_bid_id = bid_data.get('id') if bid_data else None
         self.current_project_id = project_id
 
-        # ALWAYS reset Price List to placeholder first
+        # ALWAYS reset Price List to placeholder first - do this BEFORE any checks
+        logger.info("Resetting Price List dropdown to placeholder")
         self.price_lists_combo.blockSignals(True)
         self.price_lists_combo.clear()
         self.price_lists_combo.addItem("-- Select Price List --", None)
         self.price_lists_combo.setCurrentIndex(0)
         self.price_lists_combo.blockSignals(False)
 
+        # Verify the dropdown is actually at placeholder
+        current_text = self.price_lists_combo.currentText()
+        current_data = self.price_lists_combo.currentData()
+        logger.info(f"Price List dropdown after reset: text='{current_text}', data={current_data}, index={self.price_lists_combo.currentIndex()}")
+
         if not self.current_bid_id or not project_id:
             # No bid selected - ALWAYS trigger cascade to clear downstream
             logger.info("No Bid selected - triggering cascade to clear Price List, Rate Card, and Line Items")
+            self._set_price_lists_status("Select a Bid to view Price Lists.")
             self._on_price_lists_changed(0)
             return
 
@@ -306,15 +315,30 @@ class RatesTab(QtWidgets.QWidget):
         if not has_valid_price_list:
             # Bid has no valid linked Price List - ALWAYS trigger cascade
             logger.info(f"Bid has no valid linked Price List (sg_price_list={linked_price_list}) - triggering cascade")
+            self._set_price_lists_status("Select a Bid to view Price Lists.")
             self._on_price_lists_changed(0)
             return
 
         # Refresh the price lists and auto-select the one linked to this bid
+        logger.info(f"Bid has valid linked Price List - refreshing Price Lists")
         self._refresh_price_lists()
 
     def _refresh_price_lists(self):
-        """Refresh the list of Price Lists for the current bid."""
+        """Refresh the list of Price Lists for the current bid.
+
+        IMPORTANT: This should only be called when a valid Bid is selected.
+        If called with no Bid, it will reset to placeholder and cascade.
+        """
         if not self.current_project_id or not self.current_bid_id:
+            logger.warning("_refresh_price_lists() called with no Bid/Project - resetting to placeholder")
+            # Ensure dropdown is at placeholder
+            self.price_lists_combo.blockSignals(True)
+            self.price_lists_combo.clear()
+            self.price_lists_combo.addItem("-- Select Price List --", None)
+            self.price_lists_combo.setCurrentIndex(0)
+            self.price_lists_combo.blockSignals(False)
+            # Trigger cascade
+            self._on_price_lists_changed(0)
             return
 
         try:
