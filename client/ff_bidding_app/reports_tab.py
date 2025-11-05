@@ -268,40 +268,21 @@ class ReportsTab(QtWidgets.QMainWindow):
         # TODO: Implement actual report generation
         pass
 
-    def set_rfq(self, rfq_data):
-        """Set the current RFQ and update all reports.
+    def set_bid(self, bid_data, project_id):
+        """Set the current bid and update all reports.
 
         Args:
-            rfq_data: Dictionary containing RFQ (CustomEntity04) data, or None
+            bid_data: Dictionary containing Bid (CustomEntity06) data, or None
+            project_id: ID of the project
         """
-        logger.info(f"set_rfq() called with rfq_data={rfq_data}")
+        logger.info(f"set_bid() called with bid_data={bid_data}, project_id={project_id}")
 
-        if rfq_data:
-            # Get the linked Bid from the RFQ
-            bid = rfq_data.get('sg_bid')
-            if bid:
-                if isinstance(bid, list) and bid:
-                    self.current_bid_id = bid[0].get('id')
-                elif isinstance(bid, dict):
-                    self.current_bid_id = bid.get('id')
-                else:
-                    self.current_bid_id = None
-            else:
-                self.current_bid_id = None
-
-            # Get project from RFQ
-            project = rfq_data.get('project')
-            if project:
-                if isinstance(project, dict):
-                    self.current_project_id = project.get('id')
-                else:
-                    self.current_project_id = None
-            else:
-                self.current_project_id = None
+        if bid_data and project_id:
+            self.current_bid_id = bid_data.get('id')
+            self.current_project_id = project_id
 
             # Refresh all reports with new context
-            if self.current_bid_id and self.current_project_id:
-                self._refresh_all_reports()
+            self._refresh_all_reports()
         else:
             self.current_bid_id = None
             self.current_project_id = None

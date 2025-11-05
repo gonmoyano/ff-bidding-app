@@ -13,7 +13,6 @@ try:
     from .package_data_treeview import PackageTreeView, CustomCheckBox
     from .packages_tab import PackagesTab
     from .bidding_tab import BiddingTab
-    from .reports_tab import ReportsTab
     from .bid_selector_widget import CollapsibleGroupBox
     from .logger import logger
 except ImportError:
@@ -28,7 +27,6 @@ except ImportError:
     from package_data_treeview import PackageTreeView, CustomCheckBox
     from packages_tab import PackagesTab
     from bidding_tab import BiddingTab
-    from reports_tab import ReportsTab
     from bid_selector_widget import CollapsibleGroupBox
 
     # Setup basic logger for standalone mode
@@ -861,7 +859,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             # Tabbed section
             self.tab_widget = QtWidgets.QTabWidget()
 
-            # Create Bidding tab (contains VFX Breakdown as nested tab)
+            # Create Bidding tab (contains VFX Breakdown, Assets, Rates, and Reports as nested tabs)
             bidding_tab = self._create_bidding_tab()
             self.tab_widget.addTab(bidding_tab, "Bidding")
 
@@ -872,10 +870,6 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             # Create Delivery tab
             delivery_tab = self._create_delivery_tab()
             self.tab_widget.addTab(delivery_tab, "Delivery")
-
-            # Create Reports tab
-            reports_tab = self._create_reports_tab()
-            self.tab_widget.addTab(reports_tab, "Reports")
 
             main_layout.addWidget(self.tab_widget)
 
@@ -1177,11 +1171,6 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
         return delivery_widget
 
-    def _create_reports_tab(self):
-        """Create the Reports tab content with dockable report widgets."""
-        self.reports_tab = ReportsTab(self.sg_session, parent=self)
-        return self.reports_tab
-
     def _create_bidding_tab(self):
         """Create the Bidding tab content."""
         self.bidding_tab = BiddingTab(self.sg_session, parent=self)
@@ -1348,22 +1337,14 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             if hasattr(self, "packages_tab"):
                 self.packages_tab.set_rfq(rfq)
 
-            # Update the bidding tab with RFQ data
+            # Update the bidding tab with RFQ data (includes Reports nested tab)
             if hasattr(self, "bidding_tab"):
                 self.bidding_tab.set_rfq(rfq)
-
-            # Update the reports tab with RFQ data
-            if hasattr(self, "reports_tab"):
-                self.reports_tab.set_rfq(rfq)
         else:
             if hasattr(self, "rfq_bid_label"):
                 self.rfq_bid_label.setText("-")
             if hasattr(self, "packages_tab"):
                 self.packages_tab.clear()
-
-            # Clear reports tab
-            if hasattr(self, "reports_tab"):
-                self.reports_tab.set_rfq(None)
 
     def showEvent(self, event):
         """Called when window is shown."""

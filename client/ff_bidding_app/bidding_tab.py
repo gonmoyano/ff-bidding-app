@@ -9,12 +9,14 @@ try:
     from .vfx_breakdown_tab import VFXBreakdownTab
     from .assets_tab import AssetsTab
     from .rates_tab import RatesTab
+    from .reports_tab import ReportsTab
     from .bid_selector_widget import BidSelectorWidget
     from .logger import logger
 except ImportError:
     from vfx_breakdown_tab import VFXBreakdownTab
     from assets_tab import AssetsTab
     from rates_tab import RatesTab
+    from reports_tab import ReportsTab
     from bid_selector_widget import BidSelectorWidget
     import logging
     logger = logging.getLogger("FFPackageManager")
@@ -105,24 +107,14 @@ class BiddingTab(QtWidgets.QWidget):
         return tab
 
     def _create_reports_tab(self):
-        """Create the Reports nested tab content."""
-        widget = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(widget)
+        """Create the Reports nested tab content with dockable report widgets."""
+        # Use the full ReportsTab (QMainWindow with dockable reports)
+        tab = ReportsTab(self.sg_session, parent=self.parent_app)
 
-        # Title
-        title_label = QtWidgets.QLabel("Reports")
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 20px;")
-        layout.addWidget(title_label)
+        # Store reference to use in set_bid
+        self.reports_tab = tab
 
-        # Placeholder content
-        info_label = QtWidgets.QLabel("Reports content will be displayed here.\nThis tab will contain reports and summaries of the entire bid including totals and key information.")
-        info_label.setStyleSheet("padding: 20px;")
-        info_label.setWordWrap(True)
-        layout.addWidget(info_label)
-
-        layout.addStretch()
-
-        return widget
+        return tab
 
     def set_rfq(self, rfq_data):
         """
@@ -200,6 +192,15 @@ class BiddingTab(QtWidgets.QWidget):
             else:
                 # Clear rates tab if no bid selected (cascading reset)
                 self.rates_tab.set_bid(None, None)
+
+        # Update Reports tab with the current bid
+        if hasattr(self, 'reports_tab'):
+            if bid_data and self.current_project_id:
+                # Pass full bid_data for reports generation
+                self.reports_tab.set_bid(bid_data, self.current_project_id)
+            else:
+                # Clear reports tab if no bid selected (cascading reset)
+                self.reports_tab.set_bid(None, None)
 
     def _on_bid_status_message(self, message, is_error):
         """Handle status messages from bid selector.
