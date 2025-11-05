@@ -282,6 +282,8 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_combo.blockSignals(False)
 
         if not self.current_bid_id or not project_id:
+            # Explicitly set to placeholder (index 0)
+            self.price_lists_combo.setCurrentIndex(0)
             self._set_price_lists_status("Select a Bid to view Price Lists.")
             self._update_price_list_info_label(None)
             self.price_lists_set_btn.setEnabled(False)
