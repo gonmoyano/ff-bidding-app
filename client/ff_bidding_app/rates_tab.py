@@ -270,12 +270,15 @@ class RatesTab(QtWidgets.QWidget):
         Args:
             bid_data: Dictionary containing Bid (CustomEntity06) data, or None
             project_id: ID of the project
+
+        CASCADE LOGIC:
+        - If Bid == placeholder OR no linked Price List → Price List set to placeholder → cascade continues
         """
         self.current_bid_data = bid_data
         self.current_bid_id = bid_data.get('id') if bid_data else None
         self.current_project_id = project_id
 
-        # Clear current selection and add placeholder
+        # ALWAYS reset Price List to placeholder first
         self.price_lists_combo.blockSignals(True)
         self.price_lists_combo.clear()
         self.price_lists_combo.addItem("-- Select Price List --", None)
@@ -283,7 +286,26 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_combo.blockSignals(False)
 
         if not self.current_bid_id or not project_id:
-            # No bid selected - trigger cascade by manually calling handler
+            # No bid selected - ALWAYS trigger cascade to clear downstream
+            logger.info("No Bid selected - triggering cascade to clear Price List, Rate Card, and Line Items")
+            self._on_price_lists_changed(0)
+            return
+
+        # Check if Bid has a valid linked Price List
+        linked_price_list = bid_data.get("sg_price_list") if bid_data else None
+        has_valid_price_list = False
+
+        if linked_price_list:
+            if isinstance(linked_price_list, dict):
+                # Single entity reference - check if it has an ID
+                has_valid_price_list = bool(linked_price_list.get("id"))
+            elif isinstance(linked_price_list, list) and linked_price_list:
+                # Multi-entity reference - check if first item has an ID
+                has_valid_price_list = bool(linked_price_list[0].get("id") if linked_price_list[0] else None)
+
+        if not has_valid_price_list:
+            # Bid has no valid linked Price List - ALWAYS trigger cascade
+            logger.info(f"Bid has no valid linked Price List (sg_price_list={linked_price_list}) - triggering cascade")
             self._on_price_lists_changed(0)
             return
 
@@ -354,25 +376,36 @@ class RatesTab(QtWidgets.QWidget):
             self._set_price_lists_status("Failed to load Price Lists.", is_error=True)
 
     def _on_price_lists_changed(self, index):
-        """Handle Price Lists selection change."""
+        """Handle Price Lists selection change.
+
+        CASCADE LOGIC:
+        - If Price List == placeholder → ALWAYS clear Rate Card & Line Items
+        - If Price List is valid → ALWAYS refresh Rate Card & Line Items
+        """
         if index < 0:
             self.current_price_list_id = None
             self.current_price_list_data = None
             self._update_price_list_info_label(None)
-            return
-
-        price_list_id = self.price_lists_combo.currentData()
-        if not price_list_id:
-            # Placeholder selected
-            self.current_price_list_id = None
-            self.current_price_list_data = None
-            self._set_price_lists_status("Select a Price List to view details.")
-            self._update_price_list_info_label(None)
-            # Clear Rate Card and Line Items tabs
+            # Ensure cascade happens even for invalid index
             if hasattr(self, 'rate_card_combo'):
                 self._clear_rate_card_tab()
             if hasattr(self, 'line_items_widget'):
                 self._clear_line_items_tab()
+            return
+
+        price_list_id = self.price_lists_combo.currentData()
+        if not price_list_id:
+            # Placeholder selected - ALWAYS cascade to clear downstream
+            self.current_price_list_id = None
+            self.current_price_list_data = None
+            self._set_price_lists_status("Select a Price List to view details.")
+            self._update_price_list_info_label(None)
+            # ALWAYS Clear Rate Card and Line Items tabs when placeholder selected
+            if hasattr(self, 'rate_card_combo'):
+                self._clear_rate_card_tab()
+            if hasattr(self, 'line_items_widget'):
+                self._clear_line_items_tab()
+            logger.info("Price List set to placeholder - cascaded to clear Rate Card and Line Items")
             return
 
         # Store the selected price list ID
@@ -384,7 +417,7 @@ class RatesTab(QtWidgets.QWidget):
         # Fetch full price list data with linked entities
         self._fetch_price_list_data(price_list_id)
 
-        # Refresh Rate Card and Line Items tabs
+        # ALWAYS Refresh Rate Card and Line Items tabs when valid Price List selected
         if hasattr(self, 'rate_card_combo'):
             self._refresh_rate_cards()
         if hasattr(self, 'line_items_widget'):
@@ -623,7 +656,12 @@ class RatesTab(QtWidgets.QWidget):
         self.rate_card_status_label.setText(message)
 
     def _clear_rate_card_tab(self):
-        """Clear the Rate Card tab."""
+        """Clear the Rate Card tab and trigger cascade.
+
+        CASCADE LOGIC:
+        - ALWAYS resets Rate Card dropdown to placeholder
+        - ALWAYS triggers _on_rate_card_changed(0) to clear Rate Card table
+        """
         self.rate_card_combo.blockSignals(True)
         self.rate_card_combo.clear()
         self.rate_card_combo.addItem("-- Select Rate Card --", None)
@@ -631,8 +669,9 @@ class RatesTab(QtWidgets.QWidget):
         self.rate_card_combo.blockSignals(False)
         self.rate_card_set_btn.setEnabled(False)
         self._set_rate_card_status("Select a Price List to view Rate Cards.")
-        # Trigger cascade to clear table
+        # ALWAYS trigger cascade to clear Rate Card table
         self._on_rate_card_changed(0)
+        logger.info("Rate Card tab cleared - triggered cascade to clear Rate Card table")
 
     def _refresh_rate_cards(self):
         """Refresh the list of Rate Cards for the current price list."""
@@ -700,14 +739,22 @@ class RatesTab(QtWidgets.QWidget):
             self._set_rate_card_status("Failed to load Rate Cards.", is_error=True)
 
     def _on_rate_card_changed(self, index):
-        """Handle Rate Card selection change."""
+        """Handle Rate Card selection change.
+
+        CASCADE LOGIC:
+        - If Rate Card == placeholder → ALWAYS clear Rate Card table
+        - If Rate Card is valid → ALWAYS load Rate Card details
+        """
         if index < 0:
             self.rate_card_widget.clear_table()
+            logger.info("Rate Card index invalid - cleared Rate Card table")
             return
 
         rate_card_id = self.rate_card_combo.currentData()
         if not rate_card_id:
+            # Placeholder selected - ALWAYS clear Rate Card table
             self.rate_card_widget.clear_table()
+            logger.info("Rate Card set to placeholder - cleared Rate Card table")
             return
 
         # Load the selected rate card details
@@ -946,10 +993,14 @@ class RatesTab(QtWidgets.QWidget):
     # ===========================
 
     def _clear_line_items_tab(self):
-        """Clear the Line Items tab."""
+        """Clear the Line Items tab.
+
+        CASCADE LOGIC:
+        - ALWAYS clears Line Items table when called
+        """
         if self.line_items_widget:
             self.line_items_widget.clear_table()
-        logger.info("Cleared Line Items tab")
+        logger.info("Line Items tab cleared - cleared Line Items table")
 
     def _load_line_items(self):
         """Load Line Items linked to the current Price List."""
