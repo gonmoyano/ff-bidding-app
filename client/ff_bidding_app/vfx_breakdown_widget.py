@@ -2335,18 +2335,18 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         logger.info(f"Inserting local line item at bottom (position {insert_position})")
 
-        # Insert into model data
-        self.model.all_bidding_scenes_data.insert(insert_position, new_item_data)
+        # Add to model data at the end
+        self.model.all_bidding_scenes_data.append(new_item_data)
 
-        # Rebuild display mappings
-        self.model._rebuild_display_mappings()
+        # Rebuild display mappings and notify views
+        self.model.apply_filters()
 
-        # Notify view of data change
-        self.model.layoutChanged.emit()
+        # Find the display row for the new item (should be at the end after apply_filters)
+        # The new item is at index = len(all_bidding_scenes_data) - 1
+        new_data_idx = len(self.model.all_bidding_scenes_data) - 1
 
-        # Find the display row for the new item and start editing the code field
         for display_row, data_idx in self.model.display_row_to_data_row.items():
-            if data_idx == insert_position:
+            if data_idx == new_data_idx:
                 # Get the index for the 'code' column
                 code_col = self.model.column_fields.index('code') if 'code' in self.model.column_fields else 0
                 code_index = self.model.index(display_row, code_col)
@@ -2492,8 +2492,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         if not line_item_id or is_unsaved:
             logger.info(f"Removing unsaved Line Item from local data: {line_item_code}")
             self.model.all_bidding_scenes_data.pop(data_row)
-            self.model._rebuild_display_mappings()
-            self.model.layoutChanged.emit()
+            # Rebuild display mappings and notify views
+            self.model.apply_filters()
             self.statusMessageChanged.emit(f"Removed unsaved Line Item", False)
             return
 
