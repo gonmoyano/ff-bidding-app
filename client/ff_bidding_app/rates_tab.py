@@ -49,6 +49,7 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_set_btn = None
         self.price_lists_refresh_btn = None
         self.price_lists_status_label = None
+        self.price_lists_group_box = None  # CollapsibleGroupBox for Price Lists
 
         # Nested tabs
         self.nested_tab_widget = None
@@ -75,6 +76,7 @@ class RatesTab(QtWidgets.QWidget):
 
         # Selector group (collapsible)
         selector_group = CollapsibleGroupBox("Price Lists")
+        self.price_lists_group_box = selector_group
 
         selector_row = QtWidgets.QHBoxLayout()
         selector_label = QtWidgets.QLabel("Price Lists:")
@@ -201,7 +203,7 @@ class RatesTab(QtWidgets.QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
 
         # Create Line Items widget (reusing VFXBreakdownWidget) with toolbar for search/sort
-        self.line_items_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
+        self.line_items_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, entity_name="Line Item", parent=self)
 
         # Set entity type - columns will be configured when schema is fetched
         if hasattr(self.line_items_widget, 'model') and self.line_items_widget.model:
@@ -277,12 +279,12 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_combo.blockSignals(True)
         self.price_lists_combo.clear()
         self.price_lists_combo.addItem("-- Select Price List --", None)
+        self.price_lists_combo.setCurrentIndex(0)
         self.price_lists_combo.blockSignals(False)
 
         if not self.current_bid_id or not project_id:
-            self._set_price_lists_status("Select a Bid to view Price Lists.")
-            self.price_lists_set_btn.setEnabled(False)
-            self.current_price_list_id = None
+            # No bid selected - trigger cascade by manually calling handler
+            self._on_price_lists_changed(0)
             return
 
         # Refresh the price lists and auto-select the one linked to this bid
@@ -334,13 +336,18 @@ class RatesTab(QtWidgets.QWidget):
                             logger.info(f"Auto-selected Price List {linked_price_list_id} linked to current Bid")
                             break
                     else:
-                        # Linked Price List not found
+                        # Linked Price List not found - trigger cascade
                         logger.warning(f"Linked Price List {linked_price_list_id} not found in project")
-                # If no linked Price List, leave at placeholder (index 0)
-                # Don't auto-select - user must explicitly choose
+                        self._on_price_lists_changed(0)  # Manually trigger cascade
+                else:
+                    # No linked Price List - trigger cascade
+                    logger.info("No Price List linked to Bid - selecting placeholder")
+                    self._on_price_lists_changed(0)  # Manually trigger cascade
             else:
                 self._set_price_lists_status("No Price Lists found for this project.")
                 self.price_lists_set_btn.setEnabled(False)
+                # Trigger cascade to clear downstream
+                self._on_price_lists_changed(0)
 
         except Exception as e:
             logger.error(f"Failed to refresh Price Lists: {e}", exc_info=True)
@@ -351,6 +358,7 @@ class RatesTab(QtWidgets.QWidget):
         if index < 0:
             self.current_price_list_id = None
             self.current_price_list_data = None
+            self._update_price_list_info_label(None)
             return
 
         price_list_id = self.price_lists_combo.currentData()
@@ -359,6 +367,7 @@ class RatesTab(QtWidgets.QWidget):
             self.current_price_list_id = None
             self.current_price_list_data = None
             self._set_price_lists_status("Select a Price List to view details.")
+            self._update_price_list_info_label(None)
             # Clear Rate Card and Line Items tabs
             if hasattr(self, 'rate_card_combo'):
                 self._clear_rate_card_tab()
@@ -391,9 +400,53 @@ class RatesTab(QtWidgets.QWidget):
             )
             self.current_price_list_data = price_list_data
             logger.info(f"Fetched Price List data: {price_list_data}")
+            # Update the info label with Rate Card and Line Item details
+            self._update_price_list_info_label(price_list_data)
         except Exception as e:
             logger.error(f"Failed to fetch Price List data: {e}", exc_info=True)
             self.current_price_list_data = None
+            self._update_price_list_info_label(None)
+
+    def _update_price_list_info_label(self, price_list_data):
+        """Update the price list info label and group box title with Rate Card info.
+
+        Args:
+            price_list_data: Price List data dict or None
+        """
+        if not price_list_data:
+            # Clear label and group box title if no price list selected
+            self.price_lists_status_label.setText("Select a Bid to view Price Lists.")
+            self.price_lists_group_box.setAdditionalInfo("")
+            return
+
+        info_parts = []
+
+        # Get price list name for title bar
+        price_list_name = price_list_data.get("code") or f"Price List {price_list_data.get('id', 'N/A')}"
+        # Start with "Current Price List: (name)"
+        title_text = f"Current Price List: {price_list_name}"
+
+        # Add Rate Card info
+        rate_card = price_list_data.get("sg_rate_card")
+        if rate_card:
+            # Extract rate card name/code
+            if isinstance(rate_card, dict):
+                rate_card_name = rate_card.get("name") or rate_card.get("code") or f"ID {rate_card.get('id', 'N/A')}"
+            elif isinstance(rate_card, list) and rate_card:
+                rate_card_name = rate_card[0].get("name") or rate_card[0].get("code") or f"ID {rate_card[0].get('id', 'N/A')}"
+            else:
+                rate_card_name = str(rate_card)
+            info_parts.append(f"Rate Card: {rate_card_name}")
+            title_text += f" | Rate Card: {rate_card_name}"
+
+        # Update the label with the info (for display under dropdown)
+        if info_parts:
+            self.price_lists_status_label.setText("  ".join(info_parts))
+        else:
+            self.price_lists_status_label.setText(f"Selected Price List: '{price_list_name}'.")
+
+        # Update the group box title with price list name and info (for collapsed state)
+        self.price_lists_group_box.setAdditionalInfo(title_text)
 
     def _on_set_current_price_list(self):
         """Set the selected Price List as current for the Bid."""
@@ -574,10 +627,12 @@ class RatesTab(QtWidgets.QWidget):
         self.rate_card_combo.blockSignals(True)
         self.rate_card_combo.clear()
         self.rate_card_combo.addItem("-- Select Rate Card --", None)
+        self.rate_card_combo.setCurrentIndex(0)
         self.rate_card_combo.blockSignals(False)
-        self.rate_card_widget.clear_table()
         self.rate_card_set_btn.setEnabled(False)
         self._set_rate_card_status("Select a Price List to view Rate Cards.")
+        # Trigger cascade to clear table
+        self._on_rate_card_changed(0)
 
     def _refresh_rate_cards(self):
         """Refresh the list of Rate Cards for the current price list."""
@@ -624,13 +679,21 @@ class RatesTab(QtWidgets.QWidget):
                         if self.rate_card_combo.itemData(i) == linked_rate_card_id:
                             self.rate_card_combo.setCurrentIndex(i)
                             logger.info(f"Auto-selected Rate Card {linked_rate_card_id} linked to current Price List")
+                            # Explicitly load rate card details to ensure table is updated
+                            self._load_rate_card_details(linked_rate_card_id)
                             break
                     else:
+                        # Linked Rate Card not found - trigger cascade
                         logger.warning(f"Linked Rate Card {linked_rate_card_id} not found in project")
+                        self._on_rate_card_changed(0)
+                else:
+                    # No linked Rate Card - trigger cascade
+                    self._on_rate_card_changed(0)
             else:
                 self._set_rate_card_status("No Rate Cards found for this project.")
                 self.rate_card_set_btn.setEnabled(False)
-                self.rate_card_widget.clear_table()
+                # Trigger cascade to clear table
+                self._on_rate_card_changed(0)
 
         except Exception as e:
             logger.error(f"Failed to refresh Rate Cards: {e}", exc_info=True)

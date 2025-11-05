@@ -435,17 +435,19 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
     # Signals
     statusMessageChanged = QtCore.Signal(str, bool)  # message, is_error
 
-    def __init__(self, sg_session, show_toolbar=True, parent=None):
+    def __init__(self, sg_session, show_toolbar=True, entity_name="Bidding Scene", parent=None):
         """Initialize the widget.
 
         Args:
             sg_session: ShotGrid session for API access
             show_toolbar: Whether to show the search/filter toolbar
+            entity_name: Display name for the entity type in context menus (default: "Bidding Scene")
             parent: Parent widget
         """
         super().__init__(parent)
         self.sg_session = sg_session
         self.show_toolbar = show_toolbar
+        self.entity_name = entity_name  # Entity display name for context menus
         self.current_bid = None  # Store reference to current Bid
         self._asset_menu_open = False  # Guard to prevent re-entry
 
@@ -2057,45 +2059,58 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Create context menu
         menu = QtWidgets.QMenu(self)
 
-        # Add bidding scene above
-        add_above_action = menu.addAction("Add Bidding Scene Above")
+        # Add item above
+        add_above_action = menu.addAction(f"Add {self.entity_name} Above")
         add_above_action.triggered.connect(lambda: self._add_bidding_scene_above(row))
 
-        # Add bidding scene below
-        add_below_action = menu.addAction("Add Bidding Scene Below")
+        # Add item below
+        add_below_action = menu.addAction(f"Add {self.entity_name} Below")
         add_below_action.triggered.connect(lambda: self._add_bidding_scene_below(row))
 
         menu.addSeparator()
 
-        # Delete bidding scene
-        delete_action = menu.addAction("Delete Bidding Scene")
+        # Delete item
+        delete_action = menu.addAction(f"Delete {self.entity_name}")
         delete_action.triggered.connect(lambda: self._delete_bidding_scene(row))
 
         # Show menu
         menu.exec(self.table_view.viewport().mapToGlobal(position))
 
     def _add_bidding_scene_above(self, row):
-        """Add a new bidding scene above the specified row."""
-        # This requires access to parent context (project, breakdown, etc.)
-        # Signal to parent to handle
-        self.statusMessageChanged.emit("Add bidding scene functionality requires parent tab context", False)
+        """Add a new item above the specified row."""
+        entity_type = self.model.entity_type
+
+        if entity_type == "CustomEntity03":
+            # Line Items - we can handle this directly
+            self._add_line_item_above(row)
+        else:
+            # Other types require parent context
+            self.statusMessageChanged.emit(f"Add {self.entity_name} functionality requires parent tab context", False)
 
     def _add_bidding_scene_below(self, row):
-        """Add a new bidding scene below the specified row."""
-        # This requires access to parent context
-        self.statusMessageChanged.emit("Add bidding scene functionality requires parent tab context", False)
+        """Add a new item below the specified row."""
+        entity_type = self.model.entity_type
+
+        if entity_type == "CustomEntity03":
+            # Line Items - we can handle this directly
+            self._add_line_item_below(row)
+        else:
+            # Other types require parent context
+            self.statusMessageChanged.emit(f"Add {self.entity_name} functionality requires parent tab context", False)
 
     def _delete_bidding_scene(self, row):
-        """Delete the specified row (bidding scene or asset item)."""
-        # Check entity type to determine how to handle deletion
+        """Delete the specified row."""
         entity_type = self.model.entity_type
 
         if entity_type == "CustomEntity07":
             # Asset item deletion - we can handle this directly
             self._delete_asset_item(row)
+        elif entity_type == "CustomEntity03":
+            # Line Item deletion - we can handle this directly
+            self._delete_line_item(row)
         else:
-            # Bidding scene deletion requires access to parent context
-            self.statusMessageChanged.emit("Delete bidding scene functionality requires parent tab context", False)
+            # Other types require parent context
+            self.statusMessageChanged.emit(f"Delete {self.entity_name} functionality requires parent tab context", False)
 
     def _delete_asset_item(self, row):
         """Delete the specified asset item (CustomEntity07).
@@ -2151,6 +2166,175 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 f"Failed to delete Asset item:\n{str(e)}"
             )
             self.statusMessageChanged.emit(f"Failed to delete Asset item: {str(e)}", True)
+
+    def _add_line_item_above(self, row):
+        """Add a new Line Item (CustomEntity03) above the specified row.
+
+        Args:
+            row: Display row index to add above
+        """
+        self._add_line_item_at_position(row, insert_below=False)
+
+    def _add_line_item_below(self, row):
+        """Add a new Line Item (CustomEntity03) below the specified row.
+
+        Args:
+            row: Display row index to add below
+        """
+        self._add_line_item_at_position(row, insert_below=True)
+
+    def _add_line_item_at_position(self, row, insert_below=True):
+        """Add a new Line Item (CustomEntity03) at the specified position.
+
+        Args:
+            row: Display row index
+            insert_below: If True, insert below; if False, insert above
+        """
+        # Get parent context from parent widget
+        if not hasattr(self.parent(), 'current_price_list_id') or not hasattr(self.parent(), 'current_project_id'):
+            QtWidgets.QMessageBox.warning(self, "No Context", "Cannot add Line Item: no Price List selected.")
+            return
+
+        price_list_id = self.parent().current_price_list_id
+        project_id = self.parent().current_project_id
+
+        if not price_list_id or not project_id:
+            QtWidgets.QMessageBox.warning(self, "No Context", "Cannot add Line Item: no Price List selected.")
+            return
+
+        try:
+            # Create new Line Item in ShotGrid
+            sg_data = {
+                "project": {"type": "Project", "id": project_id},
+                "code": "New Line Item"
+            }
+
+            new_line_item = self.sg_session.sg.create("CustomEntity03", sg_data)
+            logger.info(f"Created new Line Item: {new_line_item}")
+
+            # Link it to the Price List
+            # Get current sg_line_items
+            current_line_items = []
+            if hasattr(self.parent(), 'current_price_list_data'):
+                sg_line_items = self.parent().current_price_list_data.get("sg_line_items")
+                if sg_line_items:
+                    if isinstance(sg_line_items, list):
+                        current_line_items = [{"type": "CustomEntity03", "id": item.get("id")} for item in sg_line_items if isinstance(item, dict) and item.get("id")]
+                    elif isinstance(sg_line_items, dict) and sg_line_items.get("id"):
+                        current_line_items = [{"type": "CustomEntity03", "id": sg_line_items.get("id")}]
+
+            # Insert new line item at appropriate position
+            data_row = self.model.display_row_to_data_row.get(row)
+            if data_row is not None and data_row < len(self.model.all_bidding_scenes_data):
+                target_item_data = self.model.all_bidding_scenes_data[data_row]
+                target_item_id = target_item_data.get("id")
+
+                # Find position in current_line_items
+                insert_index = 0
+                for i, item in enumerate(current_line_items):
+                    if item["id"] == target_item_id:
+                        insert_index = i + 1 if insert_below else i
+                        break
+
+                current_line_items.insert(insert_index, {"type": "CustomEntity03", "id": new_line_item["id"]})
+            else:
+                # Add to end if can't find position
+                current_line_items.append({"type": "CustomEntity03", "id": new_line_item["id"]})
+
+            # Update Price List with new line items list
+            self.sg_session.sg.update(
+                "CustomEntity10",
+                price_list_id,
+                {"sg_line_items": current_line_items}
+            )
+
+            # Reload data
+            self.parent()._load_line_items()
+            self.statusMessageChanged.emit(f"Added new Line Item", False)
+
+        except Exception as e:
+            logger.error(f"Failed to add Line Item: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to add Line Item:\n{str(e)}"
+            )
+            self.statusMessageChanged.emit(f"Failed to add Line Item: {str(e)}", True)
+
+    def _delete_line_item(self, row):
+        """Delete the specified Line Item (CustomEntity03).
+
+        Args:
+            row: Display row index to delete
+        """
+        # Get the actual data row index
+        if row not in self.model.display_row_to_data_row:
+            logger.error(f"Invalid row index for deletion: {row}")
+            return
+
+        data_row = self.model.display_row_to_data_row[row]
+        line_item_data = self.model.all_bidding_scenes_data[data_row]
+
+        line_item_id = line_item_data.get("id")
+        line_item_code = line_item_data.get("code", "Unknown")
+
+        if not line_item_id:
+            logger.error("Cannot delete Line Item: missing ID")
+            self.statusMessageChanged.emit("Cannot delete Line Item: missing ID", True)
+            return
+
+        # Confirm deletion
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete Line Item '{line_item_code}'?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        try:
+            # Get parent context
+            if not hasattr(self.parent(), 'current_price_list_id'):
+                raise Exception("No Price List context found")
+
+            price_list_id = self.parent().current_price_list_id
+
+            # Remove from Price List's sg_line_items
+            current_line_items = []
+            if hasattr(self.parent(), 'current_price_list_data'):
+                sg_line_items = self.parent().current_price_list_data.get("sg_line_items")
+                if sg_line_items:
+                    if isinstance(sg_line_items, list):
+                        current_line_items = [{"type": "CustomEntity03", "id": item.get("id")} for item in sg_line_items if isinstance(item, dict) and item.get("id") and item.get("id") != line_item_id]
+                    elif isinstance(sg_line_items, dict) and sg_line_items.get("id") and sg_line_items.get("id") != line_item_id:
+                        # Don't include the deleted item
+                        pass
+
+            # Update Price List
+            self.sg_session.sg.update(
+                "CustomEntity10",
+                price_list_id,
+                {"sg_line_items": current_line_items if current_line_items else None}
+            )
+
+            # Delete from ShotGrid
+            self.sg_session.sg.delete("CustomEntity03", line_item_id)
+            logger.info(f"Deleted Line Item: {line_item_code} (ID: {line_item_id})")
+
+            # Reload data
+            self.parent()._load_line_items()
+            self.statusMessageChanged.emit(f"Deleted Line Item '{line_item_code}'.", False)
+
+        except Exception as e:
+            logger.error(f"Failed to delete Line Item: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to delete Line Item:\n{str(e)}"
+            )
+            self.statusMessageChanged.emit(f"Failed to delete Line Item: {str(e)}", True)
 
     def _autosize_columns(self, min_px=80, max_px=700, extra_padding=28):
         """Auto-size columns to fit content.
