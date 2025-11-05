@@ -770,14 +770,14 @@ class RatesTab(QtWidgets.QWidget):
         - If Rate Card is valid → ALWAYS load Rate Card details
         """
         if index < 0:
-            self.rate_card_widget.clear_table()
+            self.rate_card_widget.clear_data()
             logger.info("Rate Card index invalid - cleared Rate Card table")
             return
 
         rate_card_id = self.rate_card_combo.currentData()
         if not rate_card_id:
             # Placeholder selected - ALWAYS clear Rate Card table
-            self.rate_card_widget.clear_table()
+            self.rate_card_widget.clear_data()
             logger.info("Rate Card set to placeholder - cleared Rate Card table")
             return
 
@@ -806,7 +806,7 @@ class RatesTab(QtWidgets.QWidget):
                 self._set_rate_card_status(f"Loaded Rate Card '{display_name}'.")
             else:
                 self._set_rate_card_status("Rate Card not found.")
-                self.rate_card_widget.clear_table()
+                self.rate_card_widget.clear_data()
 
         except Exception as e:
             logger.error(f"Failed to load rate card details: {e}", exc_info=True)
@@ -1023,7 +1023,7 @@ class RatesTab(QtWidgets.QWidget):
         - ALWAYS clears Line Items table when called
         """
         if self.line_items_widget:
-            self.line_items_widget.clear_table()
+            self.line_items_widget.clear_data()
         logger.info("Line Items tab cleared - cleared Line Items table")
 
     def _load_line_items(self):
@@ -1046,7 +1046,7 @@ class RatesTab(QtWidgets.QWidget):
 
             if not sg_line_items:
                 logger.info("No Line Items linked to this Price List (sg_line_items is empty)")
-                self.line_items_widget.clear_table()
+                self.line_items_widget.clear_data()
                 return
 
             # sg_line_items could be a list of entity references or a single entity reference
@@ -1063,7 +1063,7 @@ class RatesTab(QtWidgets.QWidget):
 
             if not line_item_ids:
                 logger.info("No valid Line Item IDs found")
-                self.line_items_widget.clear_table()
+                self.line_items_widget.clear_data()
                 return
 
             # Query CustomEntity03 (Line Items) by IDs
@@ -1113,12 +1113,12 @@ class RatesTab(QtWidgets.QWidget):
                 self.line_items_widget.load_bidding_scenes(line_items_list, field_schema=self.line_items_field_schema)
                 logger.info(f"Successfully loaded {len(line_items_list)} Line Item(s) into table")
             else:
-                self.line_items_widget.clear_table()
+                self.line_items_widget.clear_data()
                 logger.info(f"No Line Items found for the given IDs")
 
         except Exception as e:
             logger.error(f"Failed to load Line Items: {e}", exc_info=True)
-            self.line_items_widget.clear_table()
+            self.line_items_widget.clear_data()
 
     def _fetch_line_items_schema(self):
         """Fetch the schema for CustomEntity03 (Line Items) and build field allowlist."""
