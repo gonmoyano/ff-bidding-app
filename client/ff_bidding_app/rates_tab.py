@@ -1044,32 +1044,31 @@ class RatesTab(QtWidgets.QWidget):
             sg_line_items = self.current_price_list_data.get("sg_line_items")
             logger.info(f"Price List sg_line_items field: {sg_line_items}")
 
-            if not sg_line_items:
-                logger.info("No Line Items linked to this Price List (sg_line_items is empty)")
-                self.line_items_widget.clear_data()
-                return
-
-            # sg_line_items could be a list of entity references or a single entity reference
+            # Build filters for querying Line Items
+            filters = []
             line_item_ids = []
-            if isinstance(sg_line_items, list):
-                # Multi-entity reference
-                line_item_ids = [item.get("id") for item in sg_line_items if isinstance(item, dict) and item.get("id")]
-            elif isinstance(sg_line_items, dict):
-                # Single entity reference
-                if sg_line_items.get("id"):
-                    line_item_ids = [sg_line_items.get("id")]
 
-            logger.info(f"Line Item IDs to fetch: {line_item_ids}")
+            if sg_line_items:
+                # sg_line_items could be a list of entity references or a single entity reference
+                if isinstance(sg_line_items, list):
+                    # Multi-entity reference
+                    line_item_ids = [item.get("id") for item in sg_line_items if isinstance(item, dict) and item.get("id")]
+                elif isinstance(sg_line_items, dict):
+                    # Single entity reference
+                    if sg_line_items.get("id"):
+                        line_item_ids = [sg_line_items.get("id")]
 
-            if not line_item_ids:
-                logger.info("No valid Line Item IDs found")
-                self.line_items_widget.clear_data()
-                return
+                if line_item_ids:
+                    # Query specific Line Items by IDs
+                    filters = [["id", "in", line_item_ids]]
+                    logger.info(f"Line Item IDs to fetch: {line_item_ids}")
+                else:
+                    logger.info("sg_line_items present but no valid IDs found")
 
-            # Query CustomEntity03 (Line Items) by IDs
-            filters = [
-                ["id", "in", line_item_ids]
-            ]
+            # Fallback: if no Line Items linked via sg_line_items, query all Line Items in project
+            if not filters:
+                logger.info("No Line Items linked to Price List - querying all Line Items in project as fallback")
+                filters = [["project", "is", {"type": "Project", "id": self.current_project_id}]]
 
             fields = self.line_items_field_allowlist.copy()
 
