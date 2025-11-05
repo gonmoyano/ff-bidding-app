@@ -639,6 +639,8 @@ class RatesTab(QtWidgets.QWidget):
         self.rate_card_combo.clear()
         self.rate_card_combo.addItem("-- Select Rate Card --", None)
         self.rate_card_combo.blockSignals(False)
+        # Explicitly set to placeholder (index 0)
+        self.rate_card_combo.setCurrentIndex(0)
         self.rate_card_widget.clear_table()
         self.rate_card_set_btn.setEnabled(False)
         self._set_rate_card_status("Select a Price List to view Rate Cards.")
