@@ -2051,11 +2051,14 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
     def _on_context_menu(self, position):
         """Handle right-click context menu."""
+        logger.info(f"_on_context_menu called at position {position}")
         index = self.table_view.indexAt(position)
         if not index.isValid():
+            logger.info("Invalid index, returning")
             return
 
         row = index.row()
+        logger.info(f"Context menu for row {row}, entity_type={self.model.entity_type}")
 
         # Create context menu
         menu = QtWidgets.QMenu(self)
@@ -2080,23 +2083,29 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
     def _add_bidding_scene_above(self, row):
         """Add a new item above the specified row."""
         entity_type = self.model.entity_type
+        logger.info(f"_add_bidding_scene_above called: row={row}, entity_type={entity_type}")
 
         if entity_type == "CustomEntity03":
             # Line Items - we can handle this directly
+            logger.info(f"Calling _add_line_item_above for row {row}")
             self._add_line_item_above(row)
         else:
             # Other types require parent context
+            logger.info(f"Entity type {entity_type} requires parent tab context")
             self.statusMessageChanged.emit(f"Add {self.entity_name} functionality requires parent tab context", False)
 
     def _add_bidding_scene_below(self, row):
         """Add a new item below the specified row."""
         entity_type = self.model.entity_type
+        logger.info(f"_add_bidding_scene_below called: row={row}, entity_type={entity_type}")
 
         if entity_type == "CustomEntity03":
             # Line Items - we can handle this directly
+            logger.info(f"Calling _add_line_item_below for row {row}")
             self._add_line_item_below(row)
         else:
             # Other types require parent context
+            logger.info(f"Entity type {entity_type} requires parent tab context")
             self.statusMessageChanged.emit(f"Add {self.entity_name} functionality requires parent tab context", False)
 
     def _delete_bidding_scene(self, row):
@@ -2174,6 +2183,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         Args:
             row: Display row index to add above
         """
+        logger.info(f"_add_line_item_above called: row={row}")
         self._add_line_item_at_position(row, insert_below=False)
 
     def _add_line_item_below(self, row):
@@ -2182,6 +2192,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         Args:
             row: Display row index to add below
         """
+        logger.info(f"_add_line_item_below called: row={row}")
         self._add_line_item_at_position(row, insert_below=True)
 
     def _add_line_item_at_position(self, row, insert_below=True):
