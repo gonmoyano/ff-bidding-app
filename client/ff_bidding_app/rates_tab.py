@@ -342,19 +342,13 @@ class RatesTab(QtWidgets.QWidget):
                             logger.info(f"Auto-selected Price List {linked_price_list_id} linked to current Bid")
                             break
                     else:
-                        # Linked Price List not found
+                        # Linked Price List not found - select placeholder
                         logger.warning(f"Linked Price List {linked_price_list_id} not found in project")
-                        # Clear downstream tabs since we can't auto-select
-                        if hasattr(self, 'rate_card_combo'):
-                            self._clear_rate_card_tab()
-                        if hasattr(self, 'line_items_widget'):
-                            self._clear_line_items_tab()
+                        self.price_lists_combo.setCurrentIndex(0)  # Select placeholder
                 else:
-                    # No linked Price List, clear downstream tabs
-                    if hasattr(self, 'rate_card_combo'):
-                        self._clear_rate_card_tab()
-                    if hasattr(self, 'line_items_widget'):
-                        self._clear_line_items_tab()
+                    # No linked Price List - select placeholder
+                    logger.info("No Price List linked to Bid - selecting placeholder")
+                    self.price_lists_combo.setCurrentIndex(0)  # Select placeholder
             else:
                 self._set_price_lists_status("No Price Lists found for this project.")
                 self.price_lists_set_btn.setEnabled(False)
