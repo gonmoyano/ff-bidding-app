@@ -203,7 +203,7 @@ class RatesTab(QtWidgets.QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
 
         # Create Line Items widget (reusing VFXBreakdownWidget) with toolbar for search/sort
-        self.line_items_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
+        self.line_items_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, entity_name="Line Item", parent=self)
 
         # Set entity type - columns will be configured when schema is fetched
         if hasattr(self.line_items_widget, 'model') and self.line_items_widget.model:
@@ -286,6 +286,11 @@ class RatesTab(QtWidgets.QWidget):
             self._update_price_list_info_label(None)
             self.price_lists_set_btn.setEnabled(False)
             self.current_price_list_id = None
+            # Clear cascading tabs
+            if hasattr(self, 'rate_card_combo'):
+                self._clear_rate_card_tab()
+            if hasattr(self, 'line_items_widget'):
+                self._clear_line_items_tab()
             return
 
         # Refresh the price lists and auto-select the one linked to this bid
@@ -339,11 +344,25 @@ class RatesTab(QtWidgets.QWidget):
                     else:
                         # Linked Price List not found
                         logger.warning(f"Linked Price List {linked_price_list_id} not found in project")
-                # If no linked Price List, leave at placeholder (index 0)
-                # Don't auto-select - user must explicitly choose
+                        # Clear downstream tabs since we can't auto-select
+                        if hasattr(self, 'rate_card_combo'):
+                            self._clear_rate_card_tab()
+                        if hasattr(self, 'line_items_widget'):
+                            self._clear_line_items_tab()
+                else:
+                    # No linked Price List, clear downstream tabs
+                    if hasattr(self, 'rate_card_combo'):
+                        self._clear_rate_card_tab()
+                    if hasattr(self, 'line_items_widget'):
+                        self._clear_line_items_tab()
             else:
                 self._set_price_lists_status("No Price Lists found for this project.")
                 self.price_lists_set_btn.setEnabled(False)
+                # Clear downstream tabs
+                if hasattr(self, 'rate_card_combo'):
+                    self._clear_rate_card_tab()
+                if hasattr(self, 'line_items_widget'):
+                    self._clear_line_items_tab()
 
         except Exception as e:
             logger.error(f"Failed to refresh Price Lists: {e}", exc_info=True)
