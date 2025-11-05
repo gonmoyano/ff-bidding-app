@@ -450,6 +450,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.entity_name = entity_name  # Entity display name for context menus
         self.current_bid = None  # Store reference to current Bid
         self._asset_menu_open = False  # Guard to prevent re-entry
+        self.context_provider = None  # Widget that provides context (price_list_id, project_id, etc.)
 
         # Create the model
         self.model = VFXBreakdownModel(sg_session, parent=self)
@@ -2190,16 +2191,20 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             row: Display row index
             insert_below: If True, insert below; if False, insert above
         """
-        # Get parent context from parent widget
-        if not hasattr(self.parent(), 'current_price_list_id') or not hasattr(self.parent(), 'current_project_id'):
+        # Get context from context_provider (preferred) or parent widget (fallback)
+        context = self.context_provider if self.context_provider else self.parent()
+
+        if not context or not hasattr(context, 'current_price_list_id') or not hasattr(context, 'current_project_id'):
             QtWidgets.QMessageBox.warning(self, "No Context", "Cannot add Line Item: no Price List selected.")
+            logger.warning(f"Cannot add Line Item: context={context}, has context_provider={self.context_provider is not None}")
             return
 
-        price_list_id = self.parent().current_price_list_id
-        project_id = self.parent().current_project_id
+        price_list_id = context.current_price_list_id
+        project_id = context.current_project_id
 
         if not price_list_id or not project_id:
             QtWidgets.QMessageBox.warning(self, "No Context", "Cannot add Line Item: no Price List selected.")
+            logger.warning(f"Cannot add Line Item: price_list_id={price_list_id}, project_id={project_id}")
             return
 
         try:
@@ -2215,8 +2220,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Link it to the Price List
             # Get current sg_line_items
             current_line_items = []
-            if hasattr(self.parent(), 'current_price_list_data'):
-                sg_line_items = self.parent().current_price_list_data.get("sg_line_items")
+            if hasattr(context, 'current_price_list_data'):
+                sg_line_items = context.current_price_list_data.get("sg_line_items")
                 if sg_line_items:
                     if isinstance(sg_line_items, list):
                         current_line_items = [{"type": "CustomEntity03", "id": item.get("id")} for item in sg_line_items if isinstance(item, dict) and item.get("id")]
@@ -2249,7 +2254,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             )
 
             # Reload data
-            self.parent()._load_line_items()
+            if hasattr(context, '_load_line_items'):
+                context._load_line_items()
             self.statusMessageChanged.emit(f"Added new Line Item", False)
 
         except Exception as e:
@@ -2295,16 +2301,18 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             return
 
         try:
-            # Get parent context
-            if not hasattr(self.parent(), 'current_price_list_id'):
+            # Get context from context_provider (preferred) or parent widget (fallback)
+            context = self.context_provider if self.context_provider else self.parent()
+
+            if not context or not hasattr(context, 'current_price_list_id'):
                 raise Exception("No Price List context found")
 
-            price_list_id = self.parent().current_price_list_id
+            price_list_id = context.current_price_list_id
 
             # Remove from Price List's sg_line_items
             current_line_items = []
-            if hasattr(self.parent(), 'current_price_list_data'):
-                sg_line_items = self.parent().current_price_list_data.get("sg_line_items")
+            if hasattr(context, 'current_price_list_data'):
+                sg_line_items = context.current_price_list_data.get("sg_line_items")
                 if sg_line_items:
                     if isinstance(sg_line_items, list):
                         current_line_items = [{"type": "CustomEntity03", "id": item.get("id")} for item in sg_line_items if isinstance(item, dict) and item.get("id") and item.get("id") != line_item_id]
@@ -2324,7 +2332,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             logger.info(f"Deleted Line Item: {line_item_code} (ID: {line_item_id})")
 
             # Reload data
-            self.parent()._load_line_items()
+            if hasattr(context, '_load_line_items'):
+                context._load_line_items()
             self.statusMessageChanged.emit(f"Deleted Line Item '{line_item_code}'.", False)
 
         except Exception as e:
