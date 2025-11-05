@@ -165,7 +165,7 @@ class AssetsTab(QtWidgets.QWidget):
 
         if not self.current_bid_id or not project_id:
             self._set_bid_assets_status("Select a Bid to view Bid Assets.")
-            self.assets_widget.clear_table()
+            self.assets_widget.clear_data()
             self.bid_assets_set_btn.setEnabled(False)
             return
 
@@ -271,7 +271,7 @@ class AssetsTab(QtWidgets.QWidget):
             else:
                 self._set_bid_assets_status("No Bid Assets found for this project.")
                 self.bid_assets_set_btn.setEnabled(False)
-                self.assets_widget.clear_table()
+                self.assets_widget.clear_data()
 
         except Exception as e:
             logger.error(f"Failed to refresh Bid Assets: {e}", exc_info=True)
@@ -280,13 +280,13 @@ class AssetsTab(QtWidgets.QWidget):
     def _on_bid_assets_changed(self, index):
         """Handle Bid Assets selection change."""
         if index < 0:
-            self.assets_widget.clear_table()
+            self.assets_widget.clear_data()
             return
 
         bid_assets_id = self.bid_assets_combo.currentData()
         if not bid_assets_id:
             # Placeholder selected, clear the table
-            self.assets_widget.clear_table()
+            self.assets_widget.clear_data()
             return
 
         # Load asset items for this Bid Assets
