@@ -2308,13 +2308,13 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
     def _add_line_item_local(self, row):
         """Add a new Line Item locally (not saved to ShotGrid yet).
 
-        Creates an empty row below the specified row. The item will be saved to ShotGrid
+        Creates an empty row at the bottom of the table. The item will be saved to ShotGrid
         when the user enters a name and presses Enter.
 
         Args:
-            row: Display row index to add below
+            row: Display row index (not used - always adds to bottom)
         """
-        logger.info(f"_add_line_item_local called: row={row}")
+        logger.info(f"_add_line_item_local called: adding to bottom of table")
 
         # Create empty line item data with a special marker indicating it's unsaved
         new_item_data = {
@@ -2330,14 +2330,10 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 if field not in new_item_data:
                     new_item_data[field] = ""
 
-        # Get the data row index for insertion
-        data_row = self.model.display_row_to_data_row.get(row)
-        if data_row is not None:
-            insert_position = data_row + 1  # Insert below
-        else:
-            insert_position = len(self.model.all_bidding_scenes_data)  # Add to end
+        # Always add at the bottom of the table
+        insert_position = len(self.model.all_bidding_scenes_data)
 
-        logger.info(f"Inserting local line item at data position {insert_position}")
+        logger.info(f"Inserting local line item at bottom (position {insert_position})")
 
         # Insert into model data
         self.model.all_bidding_scenes_data.insert(insert_position, new_item_data)
