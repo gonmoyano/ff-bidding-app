@@ -2063,19 +2063,32 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Create context menu
         menu = QtWidgets.QMenu(self)
 
-        # Add item above
-        add_above_action = menu.addAction(f"Add {self.entity_name} Above")
-        add_above_action.triggered.connect(lambda: self._add_bidding_scene_above(row))
+        # For Line Items (CustomEntity03), show simplified menu
+        if self.model.entity_type == "CustomEntity03":
+            # Add Line Item (no above/below, just add)
+            add_action = menu.addAction(f"Add {self.entity_name}")
+            add_action.triggered.connect(lambda: self._add_line_item_local(row))
 
-        # Add item below
-        add_below_action = menu.addAction(f"Add {self.entity_name} Below")
-        add_below_action.triggered.connect(lambda: self._add_bidding_scene_below(row))
+            menu.addSeparator()
 
-        menu.addSeparator()
+            # Delete item
+            delete_action = menu.addAction(f"Delete {self.entity_name}")
+            delete_action.triggered.connect(lambda: self._delete_bidding_scene(row))
+        else:
+            # For other entity types, keep the original behavior
+            # Add item above
+            add_above_action = menu.addAction(f"Add {self.entity_name} Above")
+            add_above_action.triggered.connect(lambda: self._add_bidding_scene_above(row))
 
-        # Delete item
-        delete_action = menu.addAction(f"Delete {self.entity_name}")
-        delete_action.triggered.connect(lambda: self._delete_bidding_scene(row))
+            # Add item below
+            add_below_action = menu.addAction(f"Add {self.entity_name} Below")
+            add_below_action.triggered.connect(lambda: self._add_bidding_scene_below(row))
+
+            menu.addSeparator()
+
+            # Delete item
+            delete_action = menu.addAction(f"Delete {self.entity_name}")
+            delete_action.triggered.connect(lambda: self._delete_bidding_scene(row))
 
         # Show menu
         menu.exec(self.table_view.viewport().mapToGlobal(position))
@@ -2292,6 +2305,175 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             )
             self.statusMessageChanged.emit(f"Failed to add Line Item: {str(e)}", True)
 
+    def _add_line_item_local(self, row):
+        """Add a new Line Item locally (not saved to ShotGrid yet).
+
+        Creates an empty row below the specified row. The item will be saved to ShotGrid
+        when the user enters a name and presses Enter.
+
+        Args:
+            row: Display row index to add below
+        """
+        logger.info(f"_add_line_item_local called: row={row}")
+
+        # Create empty line item data with a special marker indicating it's unsaved
+        new_item_data = {
+            "id": None,  # No ID yet - will be assigned when saved to ShotGrid
+            "code": "",  # Empty name
+            "type": "CustomEntity03",
+            "_is_unsaved": True,  # Special marker for unsaved items
+        }
+
+        # Add empty values for all other fields
+        if hasattr(self.model, 'column_fields'):
+            for field in self.model.column_fields:
+                if field not in new_item_data:
+                    new_item_data[field] = ""
+
+        # Get the data row index for insertion
+        data_row = self.model.display_row_to_data_row.get(row)
+        if data_row is not None:
+            insert_position = data_row + 1  # Insert below
+        else:
+            insert_position = len(self.model.all_bidding_scenes_data)  # Add to end
+
+        logger.info(f"Inserting local line item at data position {insert_position}")
+
+        # Insert into model data
+        self.model.all_bidding_scenes_data.insert(insert_position, new_item_data)
+
+        # Rebuild display mappings
+        self.model._rebuild_display_mappings()
+
+        # Notify view of data change
+        self.model.layoutChanged.emit()
+
+        # Find the display row for the new item and start editing the code field
+        for display_row, data_idx in self.model.display_row_to_data_row.items():
+            if data_idx == insert_position:
+                # Get the index for the 'code' column
+                code_col = self.model.column_fields.index('code') if 'code' in self.model.column_fields else 0
+                code_index = self.model.index(display_row, code_col)
+
+                # Scroll to and edit the cell
+                self.table_view.scrollTo(code_index)
+                self.table_view.setCurrentIndex(code_index)
+                self.table_view.edit(code_index)
+                break
+
+        self.statusMessageChanged.emit(f"Added new Line Item (not saved yet)", False)
+
+    def _save_unsaved_line_item(self, data_row, name):
+        """Save an unsaved Line Item to ShotGrid after name validation.
+
+        Args:
+            data_row: Index in all_bidding_scenes_data
+            name: The name entered by the user
+        """
+        logger.info(f"_save_unsaved_line_item called: data_row={data_row}, name={name}")
+
+        # Get context
+        context = self.context_provider if self.context_provider else self.parent()
+
+        if not context or not hasattr(context, 'current_price_list_id') or not hasattr(context, 'current_project_id'):
+            QtWidgets.QMessageBox.warning(self, "No Context", "Cannot save Line Item: no Price List selected.")
+            # Reset the name to empty
+            self.model.all_bidding_scenes_data[data_row]["code"] = ""
+            self.model.layoutChanged.emit()
+            return
+
+        price_list_id = context.current_price_list_id
+        project_id = context.current_project_id
+
+        if not price_list_id or not project_id:
+            QtWidgets.QMessageBox.warning(self, "No Context", "Cannot save Line Item: no Price List selected.")
+            # Reset the name to empty
+            self.model.all_bidding_scenes_data[data_row]["code"] = ""
+            self.model.layoutChanged.emit()
+            return
+
+        try:
+            # Check if a Line Item with this name already exists in this project
+            logger.info(f"Checking if Line Item '{name}' already exists in project {project_id}")
+            existing_items = self.sg_session.sg.find(
+                "CustomEntity03",
+                [
+                    ["project", "is", {"type": "Project", "id": project_id}],
+                    ["code", "is", name]
+                ],
+                ["id", "code"]
+            )
+
+            if existing_items:
+                # Name already exists - show dialog and reset
+                logger.warning(f"Line Item name '{name}' already exists")
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Duplicate Name",
+                    f"A Line Item with the name '{name}' already exists.\nPlease enter a different name."
+                )
+                # Reset the name to empty so user can try again
+                self.model.all_bidding_scenes_data[data_row]["code"] = ""
+                self.model.layoutChanged.emit()
+
+                # Re-trigger editing on the code field
+                for display_row, data_idx in self.model.display_row_to_data_row.items():
+                    if data_idx == data_row:
+                        code_col = self.model.column_fields.index('code') if 'code' in self.model.column_fields else 0
+                        code_index = self.model.index(display_row, code_col)
+                        self.table_view.edit(code_index)
+                        break
+                return
+
+            # Name is unique - create in ShotGrid
+            logger.info(f"Creating Line Item '{name}' in ShotGrid")
+            sg_data = {
+                "project": {"type": "Project", "id": project_id},
+                "code": name
+            }
+
+            new_line_item = self.sg_session.sg.create("CustomEntity03", sg_data)
+            logger.info(f"Created new Line Item: {new_line_item}")
+
+            # Update the local data with the new ID and remove the unsaved marker
+            self.model.all_bidding_scenes_data[data_row]["id"] = new_line_item["id"]
+            self.model.all_bidding_scenes_data[data_row]["_is_unsaved"] = False
+
+            # Link it to the Price List
+            current_line_items = []
+            if hasattr(context, 'current_price_list_data'):
+                sg_line_items = context.current_price_list_data.get("sg_line_items")
+                if sg_line_items:
+                    if isinstance(sg_line_items, list):
+                        current_line_items = [{"type": "CustomEntity03", "id": item.get("id")} for item in sg_line_items if isinstance(item, dict) and item.get("id")]
+                    elif isinstance(sg_line_items, dict) and sg_line_items.get("id"):
+                        current_line_items = [{"type": "CustomEntity03", "id": sg_line_items.get("id")}]
+
+            # Add the new line item
+            current_line_items.append({"type": "CustomEntity03", "id": new_line_item["id"]})
+
+            # Update Price List with new line items list
+            self.sg_session.sg.update(
+                "CustomEntity10",
+                price_list_id,
+                {"sg_line_items": current_line_items}
+            )
+
+            self.statusMessageChanged.emit(f"Created Line Item '{name}'", False)
+            logger.info(f"Successfully saved Line Item '{name}' with ID {new_line_item['id']}")
+
+        except Exception as e:
+            logger.error(f"Failed to save Line Item: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to save Line Item:\n{str(e)}"
+            )
+            # Reset the name to empty so user can try again
+            self.model.all_bidding_scenes_data[data_row]["code"] = ""
+            self.model.layoutChanged.emit()
+            self.statusMessageChanged.emit(f"Failed to save Line Item: {str(e)}", True)
+
     def _delete_line_item(self, row):
         """Delete the specified Line Item (CustomEntity03).
 
@@ -2308,10 +2490,15 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         line_item_id = line_item_data.get("id")
         line_item_code = line_item_data.get("code", "Unknown")
+        is_unsaved = line_item_data.get("_is_unsaved", False)
 
-        if not line_item_id:
-            logger.error("Cannot delete Line Item: missing ID")
-            self.statusMessageChanged.emit("Cannot delete Line Item: missing ID", True)
+        # If it's an unsaved local item, just remove it from the model
+        if not line_item_id or is_unsaved:
+            logger.info(f"Removing unsaved Line Item from local data: {line_item_code}")
+            self.model.all_bidding_scenes_data.pop(data_row)
+            self.model._rebuild_display_mappings()
+            self.model.layoutChanged.emit()
+            self.statusMessageChanged.emit(f"Removed unsaved Line Item", False)
             return
 
         # Confirm deletion
@@ -2445,6 +2632,28 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             bottom_right: Bottom-right QModelIndex of changed region
             roles: List of changed roles
         """
+        # Check for unsaved Line Item name changes
+        if self.model.entity_type == "CustomEntity03":
+            try:
+                code_col_idx = self.model.column_fields.index("code")
+            except ValueError:
+                code_col_idx = None
+
+            if code_col_idx is not None:
+                for row in range(top_left.row(), bottom_right.row() + 1):
+                    for col in range(top_left.column(), bottom_right.column() + 1):
+                        if col == code_col_idx:
+                            # Check if this is an unsaved item
+                            data_row = self.model.display_row_to_data_row.get(row)
+                            if data_row is not None and data_row < len(self.model.all_bidding_scenes_data):
+                                item_data = self.model.all_bidding_scenes_data[data_row]
+                                if item_data.get("_is_unsaved"):
+                                    # This is an unsaved item and the name was just changed
+                                    new_name = item_data.get("code", "").strip()
+                                    if new_name:  # Only process if name is not empty
+                                        logger.info(f"Unsaved Line Item name changed to: {new_name}")
+                                        self._save_unsaved_line_item(data_row, new_name)
+
         # Check if any of the changed cells are sg_bid_assets columns
         try:
             assets_col_idx = self.model.column_fields.index("sg_bid_assets")
