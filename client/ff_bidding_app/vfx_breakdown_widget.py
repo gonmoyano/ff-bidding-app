@@ -452,6 +452,12 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self._asset_menu_open = False  # Guard to prevent re-entry
         self.context_provider = None  # Widget that provides context (price_list_id, project_id, etc.)
 
+        # Pending unsaved item save (debounced)
+        self._pending_unsaved_save = None  # (data_row, name) tuple
+        self._unsaved_save_timer = QtCore.QTimer()
+        self._unsaved_save_timer.setSingleShot(True)
+        self._unsaved_save_timer.timeout.connect(self._process_pending_unsaved_save)
+
         # Create the model
         self.model = VFXBreakdownModel(sg_session, parent=self)
 
@@ -2359,6 +2365,14 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         self.statusMessageChanged.emit(f"Added new Line Item (not saved yet)", False)
 
+    def _process_pending_unsaved_save(self):
+        """Process the pending unsaved Line Item save (called by timer after debounce period)."""
+        if self._pending_unsaved_save:
+            data_row, name = self._pending_unsaved_save
+            self._pending_unsaved_save = None
+            logger.info(f"Debounce period ended, processing save for Line Item: {name}")
+            self._save_unsaved_line_item(data_row, name)
+
     def _save_unsaved_line_item(self, data_row, name):
         """Save an unsaved Line Item to ShotGrid after name validation.
 
@@ -2647,8 +2661,10 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                                     # This is an unsaved item and the name was just changed
                                     new_name = item_data.get("code", "").strip()
                                     if new_name:  # Only process if name is not empty
-                                        logger.info(f"Unsaved Line Item name changed to: {new_name}")
-                                        self._save_unsaved_line_item(data_row, new_name)
+                                        # Debounce: wait 500ms after last keystroke before saving
+                                        logger.info(f"Unsaved Line Item name changed to: {new_name} (debouncing...)")
+                                        self._pending_unsaved_save = (data_row, new_name)
+                                        self._unsaved_save_timer.start(500)  # 500ms delay
 
         # Check if any of the changed cells are sg_bid_assets columns
         try:

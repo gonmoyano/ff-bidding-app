@@ -616,6 +616,31 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         if new_value == old_value:
             return False
 
+        # Check if this is an unsaved item (no ID yet)
+        is_unsaved = bidding_scene_data.get("_is_unsaved", False) or bidding_scene_data.get("id") is None
+
+        if is_unsaved:
+            # Unsaved items are not stored in ShotGrid yet, only update locally
+            try:
+                self._updating = True
+
+                # Update the bidding_scene_data with new value
+                bidding_scene_data[field_name] = new_value
+
+                # Emit data changed - this will trigger the widget's handler to save to ShotGrid
+                self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+
+                self._updating = False
+
+                logger.info(f"Updated unsaved item field '{field_name}' to '{new_value}' (local only, pending save)")
+
+                return True
+
+            except Exception as e:
+                self._updating = False
+                logger.error(f"Failed to update unsaved item field '{field_name}': {e}", exc_info=True)
+                return False
+
         # Check if this is a virtual field (starts with underscore)
         is_virtual_field = field_name.startswith("_")
 
