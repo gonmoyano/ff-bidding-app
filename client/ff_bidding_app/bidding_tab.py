@@ -1,6 +1,6 @@
 """
 Bidding Tab
-Contains nested tabs for VFX Breakdown, Assets, Rates, and Reports.
+Contains nested tabs for VFX Breakdown, Assets, Rates, and Costs.
 """
 
 from PySide6 import QtWidgets, QtCore
@@ -9,14 +9,14 @@ try:
     from .vfx_breakdown_tab import VFXBreakdownTab
     from .assets_tab import AssetsTab
     from .rates_tab import RatesTab
-    from .reports_tab import ReportsTab
+    from .costs_tab import CostsTab
     from .bid_selector_widget import BidSelectorWidget
     from .logger import logger
 except ImportError:
     from vfx_breakdown_tab import VFXBreakdownTab
     from assets_tab import AssetsTab
     from rates_tab import RatesTab
-    from reports_tab import ReportsTab
+    from costs_tab import CostsTab
     from bid_selector_widget import BidSelectorWidget
     import logging
     logger = logging.getLogger("FFPackageManager")
@@ -71,8 +71,8 @@ class BiddingTab(QtWidgets.QWidget):
         rates_tab = self._create_rates_tab()
         self.nested_tab_widget.addTab(rates_tab, "Rates")
 
-        reports_tab = self._create_reports_tab()
-        self.nested_tab_widget.addTab(reports_tab, "Reports")
+        costs_tab = self._create_costs_tab()
+        self.nested_tab_widget.addTab(costs_tab, "Costs")
 
         main_layout.addWidget(self.nested_tab_widget)
 
@@ -106,13 +106,13 @@ class BiddingTab(QtWidgets.QWidget):
 
         return tab
 
-    def _create_reports_tab(self):
-        """Create the Reports nested tab content with dockable report widgets."""
-        # Use the full ReportsTab (QMainWindow with dockable reports)
-        tab = ReportsTab(self.sg_session, parent=self.parent_app)
+    def _create_costs_tab(self):
+        """Create the Costs nested tab content with dockable cost widgets."""
+        # Use the full CostsTab (QMainWindow with dockable cost widgets)
+        tab = CostsTab(self.sg_session, parent=self.parent_app)
 
         # Store reference to use in set_bid
-        self.reports_tab = tab
+        self.costs_tab = tab
 
         return tab
 
@@ -193,14 +193,14 @@ class BiddingTab(QtWidgets.QWidget):
                 # Clear rates tab if no bid selected (cascading reset)
                 self.rates_tab.set_bid(None, None)
 
-        # Update Reports tab with the current bid
-        if hasattr(self, 'reports_tab'):
+        # Update Costs tab with the current bid
+        if hasattr(self, 'costs_tab'):
             if bid_data and self.current_project_id:
-                # Pass full bid_data for reports generation
-                self.reports_tab.set_bid(bid_data, self.current_project_id)
+                # Pass full bid_data for costs calculation
+                self.costs_tab.set_bid(bid_data, self.current_project_id)
             else:
-                # Clear reports tab if no bid selected (cascading reset)
-                self.reports_tab.set_bid(None, None)
+                # Clear costs tab if no bid selected (cascading reset)
+                self.costs_tab.set_bid(None, None)
 
     def _on_bid_status_message(self, message, is_error):
         """Handle status messages from bid selector.
