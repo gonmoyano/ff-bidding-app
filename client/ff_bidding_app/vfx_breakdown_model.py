@@ -447,6 +447,7 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
             "sg_vfx_questions",
             "sg_vfx_supervisor_notes",
             "sg_vfx_type",
+            "sg_vfx_shot_work",
         ]
 
         # Default headers (will be replaced with display names from ShotGrid)

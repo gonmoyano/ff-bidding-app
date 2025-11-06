@@ -298,7 +298,7 @@ class CostsTab(QtWidgets.QMainWindow):
                 "sg_page_eights", "sg_previs", "sg_script_excerpt", "sg_set", "sg_sim",
                 "sg_sorting_priority", "sg_team_notes", "sg_time_of_day", "sg_unit",
                 "sg_vfx_assumptions", "sg_vfx_description", "sg_vfx_questions",
-                "sg_vfx_supervisor_notes", "sg_vfx_type",
+                "sg_vfx_supervisor_notes", "sg_vfx_type", "sg_vfx_shot_work",
             ]
 
             # Use the ShotGrid session helper method to get bidding scenes for this VFX Breakdown
