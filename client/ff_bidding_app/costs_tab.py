@@ -249,39 +249,9 @@ class CostsTab(QtWidgets.QMainWindow):
         logger.info(f"  ✓ Found VFX Breakdown ID: {breakdown_id}")
 
         try:
-            # Fetch the VFX Breakdown entity with linked bidding scenes
-            vfx_breakdown_data = self.sg_session.sg.find_one(
-                "CustomEntity01",  # VFX Breakdown entity type
-                [["id", "is", breakdown_id]],
-                ["code", "sg_bidding_scenes"]
-            )
-
-            if not vfx_breakdown_data:
-                logger.warning(f"  ❌ VFX Breakdown {breakdown_id} not found in ShotGrid")
-                self.shots_cost_widget.load_bidding_scenes([])
-                return
-
-            # Get the linked bidding scenes
-            bidding_scenes = vfx_breakdown_data.get("sg_bidding_scenes", [])
-
-            if not bidding_scenes:
-                logger.info("  ℹ No bidding scenes linked to this VFX Breakdown")
-                self.shots_cost_widget.load_bidding_scenes([])
-                return
-
-            # Extract scene IDs
-            scene_ids = []
-            if isinstance(bidding_scenes, list):
-                scene_ids = [scene.get("id") for scene in bidding_scenes if isinstance(scene, dict) and scene.get("id")]
-            elif isinstance(bidding_scenes, dict) and bidding_scenes.get("id"):
-                scene_ids = [bidding_scenes.get("id")]
-
-            if not scene_ids:
-                logger.warning("  ❌ No valid scene IDs found")
-                self.shots_cost_widget.load_bidding_scenes([])
-                return
-
-            logger.info(f"  ✓ Found {len(scene_ids)} bidding scenes")
+            # Bidding Scenes (CustomEntity02) link TO the VFX Breakdown via sg_parent field
+            # Use the ShotGrid session method to query bidding scenes by parent
+            logger.info(f"  Fetching bidding scenes where sg_parent = VFX Breakdown {breakdown_id}...")
 
             # Get field schema for CustomEntity02 (Bidding Scenes)
             raw_schema = self.sg_session.sg.schema_field_read("CustomEntity02")
@@ -320,15 +290,29 @@ class CostsTab(QtWidgets.QMainWindow):
             if "id" in display_names:
                 display_names["id"] = "SG ID"
 
-            # Fetch all bidding scenes
-            fields_to_fetch = list(raw_schema.keys())
-            bidding_scenes_data = self.sg_session.sg.find(
-                "CustomEntity02",
-                [["id", "in", scene_ids]],
-                fields_to_fetch
+            # Define fields to fetch (matches VFXBreakdownModel.column_fields)
+            fields_to_fetch = [
+                "id", "code", "sg_bid_assets", "sg_sequence_code", "sg_vfx_breakdown_scene",
+                "sg_interior_exterior", "sg_number_of_shots", "sg_on_set_vfx_needs",
+                "sg_page_eights", "sg_previs", "sg_script_excerpt", "sg_set", "sg_sim",
+                "sg_sorting_priority", "sg_team_notes", "sg_time_of_day", "sg_unit",
+                "sg_vfx_assumptions", "sg_vfx_description", "sg_vfx_questions",
+                "sg_vfx_supervisor_notes", "sg_vfx_type",
+            ]
+
+            # Use the ShotGrid session helper method to get bidding scenes for this VFX Breakdown
+            # This queries bidding scenes WHERE sg_parent = VFX Breakdown
+            bidding_scenes_data = self.sg_session.get_bidding_scenes_for_vfx_breakdown(
+                breakdown_id,
+                fields=fields_to_fetch
             )
 
             logger.info(f"  ✓ Fetched {len(bidding_scenes_data)} bidding scenes from ShotGrid")
+
+            if not bidding_scenes_data:
+                logger.info("  ℹ No bidding scenes found for this VFX Breakdown")
+                self.shots_cost_widget.load_bidding_scenes([])
+                return
 
             # Load into the VFXBreakdownWidget FIRST
             self.shots_cost_widget.load_bidding_scenes(bidding_scenes_data, field_schema=field_schema)
