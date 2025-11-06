@@ -1430,13 +1430,13 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
             # Check if DPI scale changed
             if abs(dpi_scale - old_dpi_scale) > 0.01:
-                # Apply font scaling to the entire application in real-time
+                # Scaling is already applied via real-time preview, just ensure it's set
                 self._apply_app_font_scaling(dpi_scale)
 
                 QtWidgets.QMessageBox.information(
                     self,
                     "Settings Saved",
-                    f"Settings have been saved.\n\nDPI scaling has been applied ({int(dpi_scale * 100)}%).\n\nFor best results, restart the application to apply full scaling."
+                    f"Settings saved successfully!\n\nDPI scaling: {int(dpi_scale * 100)}%\n\nRestart the application for full effect."
                 )
             else:
                 QtWidgets.QMessageBox.information(

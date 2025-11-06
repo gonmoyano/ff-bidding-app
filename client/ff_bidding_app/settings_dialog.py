@@ -14,13 +14,17 @@ class SettingsDialog(QtWidgets.QDialog):
 
         Args:
             app_settings: AppSettings instance
-            parent: Parent widget
+            parent: Parent widget (should be the main app window)
         """
         super().__init__(parent)
         self.app_settings = app_settings
+        self.parent_app = parent  # Store reference to main app
         self.setWindowTitle("Application Settings")
         self.setModal(True)
         self.setMinimumWidth(500)
+
+        # Store original DPI scale to restore on cancel
+        self.original_dpi_scale = app_settings.get_dpi_scale()
 
         self._build_ui()
 
@@ -175,47 +179,23 @@ class SettingsDialog(QtWidgets.QDialog):
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
 
-        # Store original font sizes for all widgets in the dialog
-        self._original_font_sizes = {}
-        self._store_original_font_sizes(self)
-
-    def _store_original_font_sizes(self, widget):
-        """Recursively store original font sizes for all widgets."""
-        self._original_font_sizes[widget] = widget.font().pointSize()
-        for child in widget.findChildren(QtWidgets.QWidget):
-            if child not in self._original_font_sizes:
-                self._original_font_sizes[child] = child.font().pointSize()
-
     def _on_dpi_slider_changed(self, value):
-        """Handle DPI slider value change - update label and apply preview."""
+        """Handle DPI slider value change - update label and apply preview to main app."""
         # Update percentage label
         self.dpi_percentage_label.setText(f"{value}%")
 
-        # Apply real-time preview by scaling fonts
-        scale_factor = value / 100.0
-        self._apply_font_scaling(self, scale_factor)
+        # Apply real-time preview to the parent app (not this dialog)
+        if self.parent_app and hasattr(self.parent_app, '_apply_app_font_scaling'):
+            scale_factor = value / 100.0
+            self.parent_app._apply_app_font_scaling(scale_factor)
 
-    def _apply_font_scaling(self, widget, scale_factor):
-        """Apply font scaling to widget and all children."""
-        # Scale this widget's font
-        original_size = self._original_font_sizes.get(widget, 10)
-        new_size = max(6, int(original_size * scale_factor))  # Min size 6pt
-        font = widget.font()
-        font.setPointSize(new_size)
-        widget.setFont(font)
+    def reject(self):
+        """Handle Cancel - restore original DPI scale."""
+        # Restore original scaling to parent app
+        if self.parent_app and hasattr(self.parent_app, '_apply_app_font_scaling'):
+            self.parent_app._apply_app_font_scaling(self.original_dpi_scale)
 
-        # Scale all child widgets
-        for child in widget.findChildren(QtWidgets.QWidget):
-            original_size = self._original_font_sizes.get(child, 10)
-            new_size = max(6, int(original_size * scale_factor))
-            font = child.font()
-            font.setPointSize(new_size)
-            child.setFont(font)
-
-        # Force layout update
-        widget.updateGeometry()
-        if hasattr(widget, 'layout') and widget.layout():
-            widget.layout().update()
+        super().reject()
 
     def _toggle_custom_currency(self):
         """Show/hide custom currency input based on selection."""
