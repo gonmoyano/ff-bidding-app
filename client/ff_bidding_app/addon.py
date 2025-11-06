@@ -51,6 +51,13 @@ def setup_logging():
 # Initialize logger
 logger = setup_logging()
 
+# Apply DPI scaling from settings (must be done before creating QApplication or windows)
+try:
+    from .app import PackageManagerApp
+    PackageManagerApp.apply_dpi_scaling()
+except Exception as e:
+    logger.error(f"Failed to apply DPI scaling on module import: {e}")
+
 
 class FFPackageManagerAddon(AYONAddon, ITrayAddon):
     """FF Package Manager Addon for AYON Tray."""
@@ -248,13 +255,15 @@ def open_manager(project):
     """Open the Package Manager GUI."""
     logger.info(f"CLI open_manager: project={project}")
 
+    # Apply DPI scaling before creating QApplication
+    from .app import PackageManagerApp
+    PackageManagerApp.apply_dpi_scaling()
+
     app = QtWidgets.QApplication.instance()
     if app is None:
         app = QtWidgets.QApplication(sys.argv)
 
     try:
-        from .app import PackageManagerApp
-
         window = PackageManagerApp(
             sg_url="",
             sg_script_name="",

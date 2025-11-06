@@ -478,6 +478,41 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             raise
 
     @staticmethod
+    def apply_dpi_scaling():
+        """Apply DPI scaling from settings if configured.
+
+        Note: This must be called before QApplication is created for full effect.
+        If QApplication already exists, it will apply what it can.
+        """
+        try:
+            from .settings import AppSettings
+            settings = AppSettings()
+            dpi_scale = settings.get_dpi_scale()
+
+            if dpi_scale != 1.0:
+                logger.info(f"Applying DPI scaling: {dpi_scale}")
+
+                # Try to set Qt attributes (only works if QApplication not yet created)
+                try:
+                    QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
+                    QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
+                except RuntimeError:
+                    logger.info("QApplication already exists, cannot set Qt attributes")
+
+                # Set environment variable (works if set before Qt init)
+                import os
+                os.environ["QT_SCALE_FACTOR"] = str(dpi_scale)
+
+                logger.info(f"DPI scaling configured: {dpi_scale}x")
+            else:
+                logger.info("DPI scaling set to default (1.0x)")
+
+            return dpi_scale
+        except Exception as e:
+            logger.error(f"Failed to apply DPI scaling: {e}")
+            return 1.0
+
+    @staticmethod
     def apply_dark_theme(app):
         """Apply dark theme stylesheet to the application.
 
@@ -850,6 +885,31 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             title_label.setFont(title_font)
             header_layout.addWidget(title_label)
             header_layout.addStretch()
+
+            # Settings button (cog icon, no text)
+            self.settings_button = QtWidgets.QPushButton("⚙")  # Gear/cog Unicode character
+            self.settings_button.setToolTip("Application Settings")
+            settings_font = self.settings_button.font()
+            settings_font.setPointSize(14)
+            self.settings_button.setFont(settings_font)
+            self.settings_button.setFixedSize(32, 32)
+            self.settings_button.setStyleSheet("""
+                QPushButton {
+                    border: 1px solid #555555;
+                    border-radius: 4px;
+                    background-color: #2b2b2b;
+                }
+                QPushButton:hover {
+                    background-color: #3b3b3b;
+                    border-color: #0078d4;
+                }
+                QPushButton:pressed {
+                    background-color: #1b1b1b;
+                }
+            """)
+            self.settings_button.clicked.connect(self._show_settings_dialog)
+            header_layout.addWidget(self.settings_button)
+
             main_layout.addLayout(header_layout)
 
             # Compact top bar with dropdowns and Current Bid (always visible)
@@ -1345,6 +1405,27 @@ class PackageManagerApp(QtWidgets.QMainWindow):
                 self.rfq_bid_label.setText("-")
             if hasattr(self, "packages_tab"):
                 self.packages_tab.clear()
+
+    def _show_settings_dialog(self):
+        """Show the application settings dialog."""
+        from .settings_dialog import SettingsDialog
+
+        dialog = SettingsDialog(self.app_settings, parent=self)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            # Get the new settings
+            dpi_scale = dialog.get_dpi_scale()
+            currency = dialog.get_currency()
+
+            # Save to settings
+            self.app_settings.set_dpi_scale(dpi_scale)
+            self.app_settings.set_currency(currency)
+
+            # Show message that restart is required for DPI changes
+            QtWidgets.QMessageBox.information(
+                self,
+                "Settings Saved",
+                "Settings have been saved.\n\nPlease restart the application for DPI scaling changes to take effect."
+            )
 
     def showEvent(self, event):
         """Called when window is shown."""
