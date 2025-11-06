@@ -14,6 +14,8 @@ try:
     from .packages_tab import PackagesTab
     from .bidding_tab import BiddingTab
     from .bid_selector_widget import CollapsibleGroupBox
+    from .settings import AppSettings
+    from .settings_dialog import SettingsDialog
     from .logger import logger
 except ImportError:
     # Standalone mode - add to path and import
@@ -28,6 +30,8 @@ except ImportError:
     from packages_tab import PackagesTab
     from bidding_tab import BiddingTab
     from bid_selector_widget import CollapsibleGroupBox
+    from settings import AppSettings
+    from settings_dialog import SettingsDialog
 
     # Setup basic logger for standalone mode
     try:
@@ -459,7 +463,6 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self.output_directory = output_directory or str(Path.home() / "shotgrid_packages")
 
             # Initialize app settings
-            from .settings import AppSettings
             self.app_settings = AppSettings()
             logger.info("AppSettings initialized")
 
@@ -490,7 +493,6 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         If QApplication already exists, it will apply what it can.
         """
         try:
-            from .settings import AppSettings
             settings = AppSettings()
             dpi_scale = settings.get_dpi_scale()
 
@@ -1413,8 +1415,6 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
     def _show_settings_dialog(self):
         """Show the application settings dialog."""
-        from .settings_dialog import SettingsDialog
-
         dialog = SettingsDialog(self.app_settings, parent=self)
         if dialog.exec() == QtWidgets.QDialog.Accepted:
             # Get the new settings
