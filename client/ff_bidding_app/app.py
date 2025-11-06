@@ -1415,6 +1415,9 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
     def _show_settings_dialog(self):
         """Show the application settings dialog."""
+        # Store current DPI scale
+        old_dpi_scale = self.app_settings.get_dpi_scale()
+
         dialog = SettingsDialog(self.app_settings, parent=self)
         if dialog.exec() == QtWidgets.QDialog.Accepted:
             # Get the new settings
@@ -1425,12 +1428,49 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self.app_settings.set_dpi_scale(dpi_scale)
             self.app_settings.set_currency(currency)
 
-            # Show message that restart is required for DPI changes
-            QtWidgets.QMessageBox.information(
-                self,
-                "Settings Saved",
-                "Settings have been saved.\n\nPlease restart the application for DPI scaling changes to take effect."
-            )
+            # Check if DPI scale changed
+            if abs(dpi_scale - old_dpi_scale) > 0.01:
+                # Apply font scaling to the entire application in real-time
+                self._apply_app_font_scaling(dpi_scale)
+
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Settings Saved",
+                    f"Settings have been saved.\n\nDPI scaling has been applied ({int(dpi_scale * 100)}%).\n\nFor best results, restart the application to apply full scaling."
+                )
+            else:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Settings Saved",
+                    "Settings have been saved."
+                )
+
+    def _apply_app_font_scaling(self, scale_factor):
+        """Apply font scaling to the entire application."""
+        try:
+            # Get the application instance
+            app = QtWidgets.QApplication.instance()
+            if not app:
+                return
+
+            # Store original font if not already stored
+            if not hasattr(self, '_original_app_font'):
+                self._original_app_font = app.font()
+
+            # Scale the application-wide font
+            new_font = QtGui.QFont(self._original_app_font)
+            original_size = self._original_app_font.pointSize()
+            new_size = max(6, int(original_size * scale_factor))
+            new_font.setPointSize(new_size)
+            app.setFont(new_font)
+
+            # Force update of all widgets
+            for widget in app.allWidgets():
+                widget.updateGeometry()
+
+            logger.info(f"Applied font scaling: {scale_factor}x (font size: {new_size}pt)")
+        except Exception as e:
+            logger.error(f"Failed to apply app font scaling: {e}", exc_info=True)
 
     def showEvent(self, event):
         """Called when window is shown."""

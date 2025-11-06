@@ -52,33 +52,54 @@ class SettingsDialog(QtWidgets.QDialog):
         dpi_layout = QtWidgets.QVBoxLayout(dpi_group)
 
         dpi_label = QtWidgets.QLabel(
-            "Adjust the size of UI elements. Requires application restart."
+            "Adjust the size of UI elements (50% - 200%). Changes apply in real-time."
         )
         dpi_label.setWordWrap(True)
         dpi_label.setStyleSheet("color: #888888; font-size: 11px;")
         dpi_layout.addWidget(dpi_label)
 
-        # DPI scale combo box
-        dpi_combo_layout = QtWidgets.QHBoxLayout()
-        dpi_combo_label = QtWidgets.QLabel("Scale Factor:")
-        self.dpi_combo = QtWidgets.QComboBox()
-        self.dpi_combo.addItem("100% (Default)", 1.0)
-        self.dpi_combo.addItem("125%", 1.25)
-        self.dpi_combo.addItem("150%", 1.5)
-        self.dpi_combo.addItem("175%", 1.75)
-        self.dpi_combo.addItem("200%", 2.0)
+        # DPI scale slider with percentage display
+        slider_layout = QtWidgets.QHBoxLayout()
+        slider_label = QtWidgets.QLabel("Scale Factor:")
+
+        self.dpi_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.dpi_slider.setMinimum(50)   # 50%
+        self.dpi_slider.setMaximum(200)  # 200%
+        self.dpi_slider.setSingleStep(5)
+        self.dpi_slider.setPageStep(25)
+        self.dpi_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self.dpi_slider.setTickInterval(25)
 
         # Set current value
         current_dpi = self.app_settings.get_dpi_scale()
-        for i in range(self.dpi_combo.count()):
-            if abs(self.dpi_combo.itemData(i) - current_dpi) < 0.01:
-                self.dpi_combo.setCurrentIndex(i)
-                break
+        self.dpi_slider.setValue(int(current_dpi * 100))
 
-        dpi_combo_layout.addWidget(dpi_combo_label)
-        dpi_combo_layout.addWidget(self.dpi_combo)
-        dpi_combo_layout.addStretch()
-        dpi_layout.addLayout(dpi_combo_layout)
+        # Percentage label that updates in real-time
+        self.dpi_percentage_label = QtWidgets.QLabel(f"{int(current_dpi * 100)}%")
+        self.dpi_percentage_label.setMinimumWidth(50)
+        self.dpi_percentage_label.setStyleSheet("font-weight: bold; color: #0078d4;")
+
+        # Connect slider to update label and apply preview
+        self.dpi_slider.valueChanged.connect(self._on_dpi_slider_changed)
+
+        slider_layout.addWidget(slider_label)
+        slider_layout.addWidget(self.dpi_slider)
+        slider_layout.addWidget(self.dpi_percentage_label)
+        dpi_layout.addLayout(slider_layout)
+
+        # Add min/max labels
+        limits_layout = QtWidgets.QHBoxLayout()
+        limits_layout.addWidget(QtWidgets.QLabel("50%"))
+        limits_layout.addStretch()
+        limits_layout.addWidget(QtWidgets.QLabel("100%"))
+        limits_layout.addStretch()
+        limits_layout.addWidget(QtWidgets.QLabel("200%"))
+        limits_layout.setContentsMargins(45, 0, 50, 5)
+        for i in range(limits_layout.count()):
+            widget = limits_layout.itemAt(i).widget()
+            if widget:
+                widget.setStyleSheet("color: #666666; font-size: 10px;")
+        dpi_layout.addLayout(limits_layout)
 
         layout.addWidget(dpi_group)
 
@@ -154,6 +175,48 @@ class SettingsDialog(QtWidgets.QDialog):
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
 
+        # Store original font sizes for all widgets in the dialog
+        self._original_font_sizes = {}
+        self._store_original_font_sizes(self)
+
+    def _store_original_font_sizes(self, widget):
+        """Recursively store original font sizes for all widgets."""
+        self._original_font_sizes[widget] = widget.font().pointSize()
+        for child in widget.findChildren(QtWidgets.QWidget):
+            if child not in self._original_font_sizes:
+                self._original_font_sizes[child] = child.font().pointSize()
+
+    def _on_dpi_slider_changed(self, value):
+        """Handle DPI slider value change - update label and apply preview."""
+        # Update percentage label
+        self.dpi_percentage_label.setText(f"{value}%")
+
+        # Apply real-time preview by scaling fonts
+        scale_factor = value / 100.0
+        self._apply_font_scaling(self, scale_factor)
+
+    def _apply_font_scaling(self, widget, scale_factor):
+        """Apply font scaling to widget and all children."""
+        # Scale this widget's font
+        original_size = self._original_font_sizes.get(widget, 10)
+        new_size = max(6, int(original_size * scale_factor))  # Min size 6pt
+        font = widget.font()
+        font.setPointSize(new_size)
+        widget.setFont(font)
+
+        # Scale all child widgets
+        for child in widget.findChildren(QtWidgets.QWidget):
+            original_size = self._original_font_sizes.get(child, 10)
+            new_size = max(6, int(original_size * scale_factor))
+            font = child.font()
+            font.setPointSize(new_size)
+            child.setFont(font)
+
+        # Force layout update
+        widget.updateGeometry()
+        if hasattr(widget, 'layout') and widget.layout():
+            widget.layout().update()
+
     def _toggle_custom_currency(self):
         """Show/hide custom currency input based on selection."""
         is_custom = self.currency_combo.currentData() == "custom"
@@ -167,7 +230,7 @@ class SettingsDialog(QtWidgets.QDialog):
         Returns:
             float: DPI scale factor
         """
-        return self.dpi_combo.currentData()
+        return self.dpi_slider.value() / 100.0
 
     def get_currency(self):
         """Get the selected currency symbol.
