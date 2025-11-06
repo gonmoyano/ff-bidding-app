@@ -114,7 +114,7 @@ class AssetsTab(QtWidgets.QWidget):
         layout.addWidget(selector_group)
 
         # Create reusable Assets widget (reusing VFXBreakdownWidget)
-        self.assets_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
+        self.assets_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, settings_key="assets", parent=self)
 
         # Configure the model to use Asset-specific columns
         # Override the default VFX Breakdown columns with Asset columns

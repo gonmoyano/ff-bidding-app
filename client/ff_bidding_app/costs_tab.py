@@ -127,6 +127,7 @@ class CostsTab(QtWidgets.QMainWindow):
             self.sg_session,
             show_toolbar=True,  # Keep sorting and filtering bar
             entity_name="Shot",
+            settings_key="shots_cost",  # Unique settings key for Shots Cost table
             parent=self
         )
 

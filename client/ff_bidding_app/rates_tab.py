@@ -181,7 +181,7 @@ class RatesTab(QtWidgets.QWidget):
         layout.addWidget(selector_group)
 
         # Create reusable Rate Card widget (reusing VFXBreakdownWidget)
-        self.rate_card_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
+        self.rate_card_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, settings_key="rate_card", parent=self)
 
         # Set context provider so the widget can access current_price_list_id, current_project_id, etc.
         self.rate_card_widget.context_provider = self
@@ -206,7 +206,7 @@ class RatesTab(QtWidgets.QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
 
         # Create Line Items widget (reusing VFXBreakdownWidget) with toolbar for search/sort
-        self.line_items_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, entity_name="Line Item", parent=self)
+        self.line_items_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, entity_name="Line Item", settings_key="line_items", parent=self)
 
         # Set context provider so the widget can access current_price_list_id, current_project_id, etc.
         self.line_items_widget.context_provider = self

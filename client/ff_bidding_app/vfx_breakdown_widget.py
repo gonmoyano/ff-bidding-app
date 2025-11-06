@@ -435,19 +435,21 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
     # Signals
     statusMessageChanged = QtCore.Signal(str, bool)  # message, is_error
 
-    def __init__(self, sg_session, show_toolbar=True, entity_name="Bidding Scene", parent=None):
+    def __init__(self, sg_session, show_toolbar=True, entity_name="Bidding Scene", settings_key="vfx_breakdown", parent=None):
         """Initialize the widget.
 
         Args:
             sg_session: ShotGrid session for API access
             show_toolbar: Whether to show the search/filter toolbar
             entity_name: Display name for the entity type in context menus (default: "Bidding Scene")
+            settings_key: Unique key for saving/loading settings (default: "vfx_breakdown")
             parent: Parent widget
         """
         super().__init__(parent)
         self.sg_session = sg_session
         self.show_toolbar = show_toolbar
         self.entity_name = entity_name  # Entity display name for context menus
+        self.settings_key = settings_key  # Unique settings key for this widget instance
         self.current_bid = None  # Store reference to current Bid
         self._asset_menu_open = False  # Guard to prevent re-entry
         self.context_provider = None  # Widget that provides context (price_list_id, project_id, etc.)
@@ -705,7 +707,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         QtWidgets.QApplication.processEvents()
 
         # Check if we have saved column widths
-        saved_widths = self.app_settings.get_column_widths("vfx_breakdown")
+        saved_widths = self.app_settings.get_column_widths(self.settings_key)
 
         if saved_widths:
             # If we have saved widths, use them (skip auto-sizing)
@@ -715,7 +717,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             self._autosize_columns()
             # Save the auto-sized widths so they persist
             widths = self._get_current_column_widths()
-            self.app_settings.set_column_widths("vfx_breakdown", widths)
+            self.app_settings.set_column_widths(self.settings_key, widths)
 
         # Apply dropdown delegates to columns marked for dropdowns
         self._apply_column_dropdowns()
@@ -1455,8 +1457,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             new_dropdowns = dialog.get_column_dropdowns()
 
             # Save to settings
-            self.app_settings.set_column_visibility("vfx_breakdown", new_visibility)
-            self.app_settings.set_column_dropdowns("vfx_breakdown", new_dropdowns)
+            self.app_settings.set_column_visibility(self.settings_key, new_visibility)
+            self.app_settings.set_column_dropdowns(self.settings_key, new_dropdowns)
 
             # Update local state
             self.column_visibility = new_visibility
@@ -1473,7 +1475,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
     def _load_column_visibility(self):
         """Load column visibility settings from AppSettings."""
-        saved_visibility = self.app_settings.get_column_visibility("vfx_breakdown")
+        saved_visibility = self.app_settings.get_column_visibility(self.settings_key)
 
         if saved_visibility:
             self.column_visibility = saved_visibility
@@ -1495,7 +1497,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
     def _load_column_dropdowns(self):
         """Load column dropdown settings from AppSettings."""
-        saved_dropdowns = self.app_settings.get_column_dropdowns("vfx_breakdown")
+        saved_dropdowns = self.app_settings.get_column_dropdowns(self.settings_key)
 
         if saved_dropdowns:
             self.column_dropdowns = saved_dropdowns
@@ -1708,7 +1710,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         column_order = self._get_current_column_order()
 
         # Save to settings
-        self.app_settings.set_column_order("vfx_breakdown", column_order)
+        self.app_settings.set_column_order(self.settings_key, column_order)
 
         logger.info(f"Column moved: {self.model.column_fields[logical_index]} from position {old_visual_index} to {new_visual_index}")
 
@@ -1734,7 +1736,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
     def _load_column_order(self):
         """Load and apply saved column order."""
-        saved_order = self.app_settings.get_column_order("vfx_breakdown")
+        saved_order = self.app_settings.get_column_order(self.settings_key)
 
         if not saved_order or not self.table_view:
             return
@@ -1773,7 +1775,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         widths = self._get_current_column_widths()
 
         # Save to settings
-        self.app_settings.set_column_widths("vfx_breakdown", widths)
+        self.app_settings.set_column_widths(self.settings_key, widths)
 
         logger.info(f"Column '{field_name}' resized from {old_size}px to {new_size}px")
 
@@ -1795,7 +1797,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
     def _load_column_widths(self):
         """Load and apply saved column widths."""
-        saved_widths = self.app_settings.get_column_widths("vfx_breakdown")
+        saved_widths = self.app_settings.get_column_widths(self.settings_key)
 
         if not saved_widths or not self.table_view:
             return
