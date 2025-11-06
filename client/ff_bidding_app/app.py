@@ -471,6 +471,12 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
             self._build_ui()
 
+            # Apply saved DPI scaling to the UI
+            saved_dpi_scale = self.app_settings.get_dpi_scale()
+            if saved_dpi_scale != 1.0:
+                logger.info(f"Applying saved DPI scale: {saved_dpi_scale}")
+                self._apply_app_font_scaling(saved_dpi_scale)
+
             # Auto-load the latest project on startup
             logger.info("Auto-loading latest project...")
             self._auto_load_latest_project()
@@ -1480,6 +1486,27 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         font.setPointSize(new_size)
         widget.setFont(font)
 
+        # Special handling for checkboxes - scale the indicator size
+        if isinstance(widget, QtWidgets.QCheckBox):
+            # Scale the indicator (checkbox icon) size
+            indicator_size = int(20 * scale_factor)  # Base size: 20px
+            widget.setStyleSheet(f"""
+                QCheckBox::indicator {{
+                    width: {indicator_size}px;
+                    height: {indicator_size}px;
+                }}
+            """)
+
+        # Special handling for buttons - add minimum height
+        if isinstance(widget, QtWidgets.QPushButton):
+            min_height = int(24 * scale_factor)  # Base min height: 24px
+            widget.setMinimumHeight(min_height)
+
+        # Special handling for combo boxes
+        if isinstance(widget, QtWidgets.QComboBox):
+            min_height = int(24 * scale_factor)
+            widget.setMinimumHeight(min_height)
+
         # Recursively apply to all children
         for child in widget.findChildren(QtWidgets.QWidget):
             # Skip the settings dialog itself
@@ -1491,6 +1518,26 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             font = child.font()
             font.setPointSize(new_size)
             child.setFont(font)
+
+            # Special handling for child checkboxes
+            if isinstance(child, QtWidgets.QCheckBox):
+                indicator_size = int(20 * scale_factor)
+                child.setStyleSheet(f"""
+                    QCheckBox::indicator {{
+                        width: {indicator_size}px;
+                        height: {indicator_size}px;
+                    }}
+                """)
+
+            # Special handling for child buttons
+            if isinstance(child, QtWidgets.QPushButton):
+                min_height = int(24 * scale_factor)
+                child.setMinimumHeight(min_height)
+
+            # Special handling for child combo boxes
+            if isinstance(child, QtWidgets.QComboBox):
+                min_height = int(24 * scale_factor)
+                child.setMinimumHeight(min_height)
 
         # Force layout update
         widget.updateGeometry()
