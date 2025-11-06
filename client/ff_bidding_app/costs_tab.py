@@ -221,9 +221,12 @@ class CostsTab(QtWidgets.QMainWindow):
 
         # Get the linked VFX Breakdown from the bid
         vfx_breakdown = bid_data.get("sg_vfx_breakdown")
+        logger.info(f"  Raw sg_vfx_breakdown value: {vfx_breakdown}")
+        logger.info(f"  Type: {type(vfx_breakdown)}")
 
         if not vfx_breakdown:
             logger.warning("  ❌ No VFX Breakdown linked to this bid")
+            logger.warning("  Please link a VFX Breakdown to this Bid in ShotGrid")
             self.shots_cost_widget.load_bidding_scenes([])
             return
 
@@ -231,11 +234,15 @@ class CostsTab(QtWidgets.QMainWindow):
         breakdown_id = None
         if isinstance(vfx_breakdown, dict):
             breakdown_id = vfx_breakdown.get('id')
+            logger.info(f"  VFX Breakdown is dict, extracted ID: {breakdown_id}")
         elif isinstance(vfx_breakdown, list) and vfx_breakdown:
-            breakdown_id = vfx_breakdown[0].get('id')
+            breakdown_id = vfx_breakdown[0].get('id') if isinstance(vfx_breakdown[0], dict) else None
+            logger.info(f"  VFX Breakdown is list, extracted ID: {breakdown_id}")
+        else:
+            logger.warning(f"  Unexpected VFX Breakdown type: {type(vfx_breakdown)}")
 
         if not breakdown_id:
-            logger.warning("  ❌ Invalid VFX Breakdown data")
+            logger.warning("  ❌ Invalid VFX Breakdown data - could not extract ID")
             self.shots_cost_widget.load_bidding_scenes([])
             return
 
@@ -323,7 +330,11 @@ class CostsTab(QtWidgets.QMainWindow):
 
             logger.info(f"  ✓ Fetched {len(bidding_scenes_data)} bidding scenes from ShotGrid")
 
-            # Set the display names on the model BEFORE loading data
+            # Load into the VFXBreakdownWidget FIRST
+            self.shots_cost_widget.load_bidding_scenes(bidding_scenes_data, field_schema=field_schema)
+            logger.info(f"  ✓ Loaded bidding scenes into Shots Cost table")
+
+            # Set the display names on the model AFTER loading data
             if hasattr(self.shots_cost_widget, 'model'):
                 self.shots_cost_widget.model.set_column_headers(display_names)
                 logger.info(f"  ✓ Set {len(display_names)} column headers with display names")
@@ -331,9 +342,11 @@ class CostsTab(QtWidgets.QMainWindow):
                 examples = list(display_names.items())[:5]
                 logger.info(f"     Examples: {examples}")
 
-            # Load into the VFXBreakdownWidget
-            self.shots_cost_widget.load_bidding_scenes(bidding_scenes_data, field_schema=field_schema)
-            logger.info(f"  ✓ Loaded bidding scenes into Shots Cost table")
+                # Force the header view to update
+                if hasattr(self.shots_cost_widget, 'table_view'):
+                    self.shots_cost_widget.table_view.horizontalHeader().viewport().update()
+                    logger.info(f"  ✓ Forced header view update")
+
             logger.info("="*80)
 
         except Exception as e:
