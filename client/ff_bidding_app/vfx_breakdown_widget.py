@@ -2057,14 +2057,11 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
     def _on_context_menu(self, position):
         """Handle right-click context menu."""
-        logger.info(f"_on_context_menu called at position {position}")
         index = self.table_view.indexAt(position)
         if not index.isValid():
-            logger.info("Invalid index, returning")
             return
 
         row = index.row()
-        logger.info(f"Context menu for row {row}, entity_type={self.model.entity_type}")
 
         # Create context menu
         menu = QtWidgets.QMenu(self)
@@ -2102,29 +2099,23 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
     def _add_bidding_scene_above(self, row):
         """Add a new item above the specified row."""
         entity_type = self.model.entity_type
-        logger.info(f"_add_bidding_scene_above called: row={row}, entity_type={entity_type}")
 
         if entity_type == "CustomEntity03":
             # Line Items - we can handle this directly
-            logger.info(f"Calling _add_line_item_above for row {row}")
             self._add_line_item_above(row)
         else:
             # Other types require parent context
-            logger.info(f"Entity type {entity_type} requires parent tab context")
             self.statusMessageChanged.emit(f"Add {self.entity_name} functionality requires parent tab context", False)
 
     def _add_bidding_scene_below(self, row):
         """Add a new item below the specified row."""
         entity_type = self.model.entity_type
-        logger.info(f"_add_bidding_scene_below called: row={row}, entity_type={entity_type}")
 
         if entity_type == "CustomEntity03":
             # Line Items - we can handle this directly
-            logger.info(f"Calling _add_line_item_below for row {row}")
             self._add_line_item_below(row)
         else:
             # Other types require parent context
-            logger.info(f"Entity type {entity_type} requires parent tab context")
             self.statusMessageChanged.emit(f"Add {self.entity_name} functionality requires parent tab context", False)
 
     def _delete_bidding_scene(self, row):
@@ -2202,7 +2193,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         Args:
             row: Display row index to add above
         """
-        logger.info(f"_add_line_item_above called: row={row}")
         self._add_line_item_at_position(row, insert_below=False)
 
     def _add_line_item_below(self, row):
@@ -2211,7 +2201,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         Args:
             row: Display row index to add below
         """
-        logger.info(f"_add_line_item_below called: row={row}")
         self._add_line_item_at_position(row, insert_below=True)
 
     def _add_line_item_at_position(self, row, insert_below=True):
@@ -2224,23 +2213,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Get context from context_provider (preferred) or parent widget (fallback)
         context = self.context_provider if self.context_provider else self.parent()
 
-        # Enhanced logging for debugging
-        logger.info(f"_add_line_item_at_position called:")
-        logger.info(f"  - self.context_provider: {self.context_provider}")
-        logger.info(f"  - self.parent(): {self.parent()}")
-        logger.info(f"  - context: {context}")
-        logger.info(f"  - context type: {type(context).__name__ if context else 'None'}")
-        if context:
-            logger.info(f"  - hasattr(context, 'current_price_list_id'): {hasattr(context, 'current_price_list_id')}")
-            logger.info(f"  - hasattr(context, 'current_project_id'): {hasattr(context, 'current_project_id')}")
-            if hasattr(context, 'current_price_list_id'):
-                logger.info(f"  - context.current_price_list_id: {context.current_price_list_id}")
-            if hasattr(context, 'current_project_id'):
-                logger.info(f"  - context.current_project_id: {context.current_project_id}")
-
         if not context or not hasattr(context, 'current_price_list_id') or not hasattr(context, 'current_project_id'):
             QtWidgets.QMessageBox.warning(self, "No Context", "Cannot add Line Item: no Price List selected.")
-            logger.warning(f"Cannot add Line Item: context validation failed")
             return
 
         price_list_id = context.current_price_list_id
@@ -2248,7 +2222,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         if not price_list_id or not project_id:
             QtWidgets.QMessageBox.warning(self, "No Context", "Cannot add Line Item: no Price List selected.")
-            logger.warning(f"Cannot add Line Item: price_list_id={price_list_id}, project_id={project_id}")
             return
 
         try:
@@ -2320,8 +2293,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         Args:
             row: Display row index (not used - always adds to bottom)
         """
-        logger.info(f"_add_line_item_local called: adding to bottom of table")
-
         # Create empty line item data with a special marker indicating it's unsaved
         new_item_data = {
             "id": None,  # No ID yet - will be assigned when saved to ShotGrid
@@ -2335,11 +2306,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             for field in self.model.column_fields:
                 if field not in new_item_data:
                     new_item_data[field] = ""
-
-        # Always add at the bottom of the table
-        insert_position = len(self.model.all_bidding_scenes_data)
-
-        logger.info(f"Inserting local line item at bottom (position {insert_position})")
 
         # Add to model data at the end
         self.model.all_bidding_scenes_data.append(new_item_data)
@@ -2370,7 +2336,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         if self._pending_unsaved_save:
             data_row, name = self._pending_unsaved_save
             self._pending_unsaved_save = None
-            logger.info(f"Debounce period ended, processing save for Line Item: {name}")
             self._save_unsaved_line_item(data_row, name)
 
     def _save_unsaved_line_item(self, data_row, name):
@@ -2662,7 +2627,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                                     new_name = item_data.get("code", "").strip()
                                     if new_name:  # Only process if name is not empty
                                         # Debounce: wait 500ms after last keystroke before saving
-                                        logger.info(f"Unsaved Line Item name changed to: {new_name} (debouncing...)")
                                         self._pending_unsaved_save = (data_row, new_name)
                                         self._unsaved_save_timer.start(500)  # 500ms delay
 
@@ -2691,7 +2655,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
                         # Update the widget with the new entities
                         widget.set_entities(entities)
-                        logger.info(f"Refreshed sg_bid_assets widget for row {row} after data change")
 
     def _on_model_reset(self):
         """Handle model reset (e.g., after sorting or filtering).
@@ -2701,4 +2664,3 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Use QTimer to defer widget creation until after the view has processed the model reset
         # This ensures the view's internal state is fully updated before we create widgets
         QtCore.QTimer.singleShot(0, self._setup_bid_assets_widgets)
-        logger.info("Scheduled bid assets widgets recreation after model reset")

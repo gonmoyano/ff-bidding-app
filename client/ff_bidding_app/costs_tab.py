@@ -187,7 +187,13 @@ class CostsTab(QtWidgets.QMainWindow):
             bid_data: Dictionary containing Bid (CustomEntity06) data, or None
             project_id: ID of the project
         """
-        logger.info(f"set_bid() called with bid_data={bid_data}, project_id={project_id}")
+        logger.info("="*80)
+        logger.info(f"COSTS TAB - set_bid() called")
+        logger.info(f"  Bid: {bid_data.get('code') if bid_data else 'None'} (ID: {bid_data.get('id') if bid_data else 'None'})")
+        logger.info(f"  Project ID: {project_id}")
+        if bid_data:
+            logger.info(f"  sg_vfx_breakdown in bid_data: {bid_data.get('sg_vfx_breakdown')}")
+        logger.info("="*80)
 
         self.current_bid_data = bid_data
         self.current_bid_id = bid_data.get('id') if bid_data else None
@@ -211,14 +217,13 @@ class CostsTab(QtWidgets.QMainWindow):
         Args:
             bid_data: Dictionary containing Bid data
         """
-        logger.info(f"Loading VFX Breakdown for bid: {bid_data.get('code')} (ID: {bid_data.get('id')})")
+        logger.info(f"COSTS TAB - Loading VFX Breakdown...")
 
         # Get the linked VFX Breakdown from the bid
         vfx_breakdown = bid_data.get("sg_vfx_breakdown")
-        logger.info(f"VFX Breakdown from bid: {vfx_breakdown}")
 
         if not vfx_breakdown:
-            logger.warning("No VFX Breakdown linked to this bid")
+            logger.warning("  ❌ No VFX Breakdown linked to this bid")
             self.shots_cost_widget.load_bidding_scenes([])
             return
 
@@ -229,35 +234,31 @@ class CostsTab(QtWidgets.QMainWindow):
         elif isinstance(vfx_breakdown, list) and vfx_breakdown:
             breakdown_id = vfx_breakdown[0].get('id')
 
-        logger.info(f"Extracted breakdown_id: {breakdown_id}")
-
         if not breakdown_id:
-            logger.warning("Invalid VFX Breakdown data")
+            logger.warning("  ❌ Invalid VFX Breakdown data")
             self.shots_cost_widget.load_bidding_scenes([])
             return
 
+        logger.info(f"  ✓ Found VFX Breakdown ID: {breakdown_id}")
+
         try:
             # Fetch the VFX Breakdown entity with linked bidding scenes
-            logger.info(f"Fetching VFX Breakdown entity with ID: {breakdown_id}")
             vfx_breakdown_data = self.sg_session.sg.find_one(
                 "CustomEntity01",  # VFX Breakdown entity type
                 [["id", "is", breakdown_id]],
                 ["code", "sg_bidding_scenes"]
             )
 
-            logger.info(f"VFX Breakdown data fetched: {vfx_breakdown_data}")
-
             if not vfx_breakdown_data:
-                logger.warning(f"VFX Breakdown {breakdown_id} not found")
+                logger.warning(f"  ❌ VFX Breakdown {breakdown_id} not found in ShotGrid")
                 self.shots_cost_widget.load_bidding_scenes([])
                 return
 
             # Get the linked bidding scenes
             bidding_scenes = vfx_breakdown_data.get("sg_bidding_scenes", [])
-            logger.info(f"Bidding scenes from breakdown: {bidding_scenes}")
 
             if not bidding_scenes:
-                logger.info("No bidding scenes linked to this VFX Breakdown")
+                logger.info("  ℹ No bidding scenes linked to this VFX Breakdown")
                 self.shots_cost_widget.load_bidding_scenes([])
                 return
 
@@ -268,19 +269,15 @@ class CostsTab(QtWidgets.QMainWindow):
             elif isinstance(bidding_scenes, dict) and bidding_scenes.get("id"):
                 scene_ids = [bidding_scenes.get("id")]
 
-            logger.info(f"Extracted scene IDs: {scene_ids}")
-
             if not scene_ids:
-                logger.warning("No valid scene IDs found")
+                logger.warning("  ❌ No valid scene IDs found")
                 self.shots_cost_widget.load_bidding_scenes([])
                 return
 
-            # Fetch full bidding scene data
-            logger.info(f"Fetching {len(scene_ids)} bidding scenes")
+            logger.info(f"  ✓ Found {len(scene_ids)} bidding scenes")
 
             # Get field schema for CustomEntity02 (Bidding Scenes)
             raw_schema = self.sg_session.sg.schema_field_read("CustomEntity02")
-            logger.info(f"Fetched schema with {len(raw_schema)} fields")
 
             # Build field_schema dict and display_names dict (like VFXBreakdownTab does)
             field_schema = {}
@@ -316,8 +313,6 @@ class CostsTab(QtWidgets.QMainWindow):
             if "id" in display_names:
                 display_names["id"] = "SG ID"
 
-            logger.info(f"Built display names for {len(display_names)} fields")
-
             # Fetch all bidding scenes
             fields_to_fetch = list(raw_schema.keys())
             bidding_scenes_data = self.sg_session.sg.find(
@@ -326,15 +321,20 @@ class CostsTab(QtWidgets.QMainWindow):
                 fields_to_fetch
             )
 
-            logger.info(f"Loaded {len(bidding_scenes_data)} bidding scenes into Shots Cost widget")
+            logger.info(f"  ✓ Fetched {len(bidding_scenes_data)} bidding scenes from ShotGrid")
 
             # Set the display names on the model BEFORE loading data
             if hasattr(self.shots_cost_widget, 'model'):
                 self.shots_cost_widget.model.set_column_headers(display_names)
-                logger.info("Set column headers with display names")
+                logger.info(f"  ✓ Set {len(display_names)} column headers with display names")
+                # Log a few examples
+                examples = list(display_names.items())[:5]
+                logger.info(f"     Examples: {examples}")
 
             # Load into the VFXBreakdownWidget
             self.shots_cost_widget.load_bidding_scenes(bidding_scenes_data, field_schema=field_schema)
+            logger.info(f"  ✓ Loaded bidding scenes into Shots Cost table")
+            logger.info("="*80)
 
         except Exception as e:
             logger.error(f"Failed to load VFX Breakdown scenes: {e}", exc_info=True)
