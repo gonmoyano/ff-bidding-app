@@ -1448,29 +1448,54 @@ class PackageManagerApp(QtWidgets.QMainWindow):
     def _apply_app_font_scaling(self, scale_factor):
         """Apply font scaling to the entire application."""
         try:
-            # Get the application instance
-            app = QtWidgets.QApplication.instance()
-            if not app:
-                return
+            # Store original fonts for all widgets on first call
+            if not hasattr(self, '_original_widget_fonts'):
+                self._original_widget_fonts = {}
+                self._store_original_fonts(self)
 
-            # Store original font if not already stored
-            if not hasattr(self, '_original_app_font'):
-                self._original_app_font = app.font()
+            # Apply scaled fonts to all widgets in the main window
+            self._apply_scaled_fonts(self, scale_factor)
 
-            # Scale the application-wide font
-            new_font = QtGui.QFont(self._original_app_font)
-            original_size = self._original_app_font.pointSize()
-            new_size = max(6, int(original_size * scale_factor))
-            new_font.setPointSize(new_size)
-            app.setFont(new_font)
-
-            # Force update of all widgets
-            for widget in app.allWidgets():
-                widget.updateGeometry()
-
-            logger.info(f"Applied font scaling: {scale_factor}x (font size: {new_size}pt)")
+            logger.info(f"Applied font scaling: {scale_factor}x")
         except Exception as e:
             logger.error(f"Failed to apply app font scaling: {e}", exc_info=True)
+
+    def _store_original_fonts(self, widget):
+        """Recursively store original font sizes for all widgets."""
+        if widget not in self._original_widget_fonts:
+            self._original_widget_fonts[widget] = widget.font().pointSize()
+
+        for child in widget.findChildren(QtWidgets.QWidget):
+            if child not in self._original_widget_fonts:
+                self._original_widget_fonts[child] = child.font().pointSize()
+
+    def _apply_scaled_fonts(self, widget, scale_factor):
+        """Recursively apply scaled fonts to widget and all children."""
+        # Get original font size and scale it
+        original_size = self._original_widget_fonts.get(widget, 10)
+        new_size = max(6, int(original_size * scale_factor))
+
+        # Create and apply scaled font
+        font = widget.font()
+        font.setPointSize(new_size)
+        widget.setFont(font)
+
+        # Recursively apply to all children
+        for child in widget.findChildren(QtWidgets.QWidget):
+            # Skip the settings dialog itself
+            if isinstance(child, SettingsDialog):
+                continue
+
+            original_size = self._original_widget_fonts.get(child, 10)
+            new_size = max(6, int(original_size * scale_factor))
+            font = child.font()
+            font.setPointSize(new_size)
+            child.setFont(font)
+
+        # Force layout update
+        widget.updateGeometry()
+        if hasattr(widget, 'layout') and widget.layout():
+            widget.layout().update()
 
     def showEvent(self, event):
         """Called when window is shown."""
