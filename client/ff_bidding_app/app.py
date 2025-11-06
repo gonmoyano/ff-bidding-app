@@ -458,6 +458,11 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             logger.info(f"Shotgrid Session: {self.sg_session}")
             self.output_directory = output_directory or str(Path.home() / "shotgrid_packages")
 
+            # Initialize app settings
+            from .settings import AppSettings
+            self.app_settings = AppSettings()
+            logger.info("AppSettings initialized")
+
             self.setWindowTitle("Fireframe Prodigy")
             self.setMinimumSize(1400, 700)
 
