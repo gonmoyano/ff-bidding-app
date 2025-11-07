@@ -466,6 +466,9 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self.app_settings = AppSettings()
             logger.info("AppSettings initialized")
 
+            # Track the current DPI scale to detect changes
+            self._current_dpi_scale = self.app_settings.get_dpi_scale()
+
             self.setWindowTitle("Fireframe Prodigy")
             self.setMinimumSize(1400, 700)
 
@@ -1472,18 +1475,43 @@ class PackageManagerApp(QtWidgets.QMainWindow):
     def _update_table_column_widths(self):
         """Update column widths in all tables after DPI scale change."""
         try:
+            # Get the new DPI scale
+            new_dpi_scale = self.app_settings.get_dpi_scale()
+
+            # Calculate the scale ratio
+            if hasattr(self, '_current_dpi_scale') and self._current_dpi_scale > 0:
+                scale_ratio = new_dpi_scale / self._current_dpi_scale
+            else:
+                scale_ratio = 1.0
+
+            logger.info(f"DPI scale changed from {getattr(self, '_current_dpi_scale', 1.0)} to {new_dpi_scale}, ratio: {scale_ratio}")
+
             # Update package tree widget column widths
             if hasattr(self, 'packages_tab') and hasattr(self.packages_tab, 'package_tree'):
-                self.packages_tab.package_tree.update_column_widths_for_dpi()
+                tree_widget = self.packages_tab.package_tree.tree_widget
+                for col in range(tree_widget.columnCount()):
+                    current_width = tree_widget.columnWidth(col)
+                    new_width = int(current_width * scale_ratio)
+                    tree_widget.setColumnWidth(col, new_width)
                 # Force repaint to update checkbox sizes
-                self.packages_tab.package_tree.tree_widget.viewport().update()
+                tree_widget.viewport().update()
+                logger.info(f"Updated package tree column widths with ratio {scale_ratio}")
 
             # Update VFX breakdown widget column widths
             if hasattr(self, 'bidding_tab') and hasattr(self.bidding_tab, 'breakdown_widget'):
-                self.bidding_tab.breakdown_widget.update_column_widths_for_dpi()
-                # Force repaint to update checkbox sizes
-                if hasattr(self.bidding_tab.breakdown_widget, 'table_view'):
-                    self.bidding_tab.breakdown_widget.table_view.viewport().update()
+                breakdown_widget = self.bidding_tab.breakdown_widget
+                if hasattr(breakdown_widget, 'table_view') and breakdown_widget.table_view:
+                    table_view = breakdown_widget.table_view
+                    for col in range(table_view.model().columnCount() if table_view.model() else 0):
+                        current_width = table_view.columnWidth(col)
+                        new_width = int(current_width * scale_ratio)
+                        table_view.setColumnWidth(col, new_width)
+                    # Force repaint to update checkbox sizes
+                    table_view.viewport().update()
+                    logger.info(f"Updated breakdown table column widths with ratio {scale_ratio}")
+
+            # Update the tracked DPI scale
+            self._current_dpi_scale = new_dpi_scale
 
             logger.info("Updated all table column widths for DPI change")
         except Exception as e:
