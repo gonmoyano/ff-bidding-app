@@ -14,11 +14,6 @@ class TreeCheckBoxDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self, parent=None):
         """Initialize the delegate."""
         super().__init__(parent)
-        try:
-            from .settings import AppSettings
-        except ImportError:
-            from settings import AppSettings
-        self.app_settings = AppSettings()
 
     def paint(self, painter, option, index):
         """Paint the checkbox with custom styling and DPI scaling."""
@@ -28,8 +23,13 @@ class TreeCheckBoxDelegate(QtWidgets.QStyledItemDelegate):
             if flags & QtCore.Qt.ItemIsUserCheckable:
                 painter.save()
 
-                # Get DPI scale
-                dpi_scale = self.app_settings.get_dpi_scale()
+                # Get DPI scale fresh on each paint to reflect real-time changes
+                try:
+                    from .settings import AppSettings
+                except ImportError:
+                    from settings import AppSettings
+                app_settings = AppSettings()
+                dpi_scale = app_settings.get_dpi_scale()
                 checkbox_size = int(18 * dpi_scale)
 
                 # Calculate checkbox rect (centered in the cell)
@@ -425,6 +425,22 @@ class PackageTreeView(QtWidgets.QWidget):
         """Refresh the tree with current RFQ data."""
         logger.info("refresh() called")
         self.load_tree_data()
+
+    def update_column_widths_for_dpi(self):
+        """Update column widths based on current DPI scale."""
+        try:
+            from .settings import AppSettings
+        except ImportError:
+            from settings import AppSettings
+        app_settings = AppSettings()
+        dpi_scale = app_settings.get_dpi_scale()
+
+        # Scale column widths with DPI
+        self.tree_widget.setColumnWidth(0, int(60 * dpi_scale))  # Active checkbox column
+        self.tree_widget.setColumnWidth(1, int(250 * dpi_scale))  # Name
+        self.tree_widget.setColumnWidth(2, int(80 * dpi_scale))  # Type
+        self.tree_widget.setColumnWidth(3, int(80 * dpi_scale))  # Status
+        logger.info(f"Updated tree column widths with DPI scale: {dpi_scale}")
 
     def load_tree_data(self):
         """Load version tree with data from selected RFQ."""

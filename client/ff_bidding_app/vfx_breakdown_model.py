@@ -22,7 +22,6 @@ class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self, parent=None):
         """Initialize the delegate."""
         super().__init__(parent)
-        self.app_settings = AppSettings()
 
     def paint(self, painter, option, index):
         """Paint the checkbox with custom styling."""
@@ -34,7 +33,9 @@ class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
             painter.save()
 
             # Calculate checkbox rect (centered in the cell) with DPI scaling
-            dpi_scale = self.app_settings.get_dpi_scale()
+            # Get fresh DPI scale on each paint to reflect real-time changes
+            app_settings = AppSettings()
+            dpi_scale = app_settings.get_dpi_scale()
             checkbox_size = int(20 * dpi_scale)
             checkbox_rect = QtCore.QRect(
                 option.rect.center().x() - checkbox_size // 2,

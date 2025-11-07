@@ -1462,9 +1462,32 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             # Apply scaled fonts to all widgets in the main window
             self._apply_scaled_fonts(self, scale_factor)
 
+            # Update column widths in all tables to match new DPI scale
+            self._update_table_column_widths()
+
             logger.info(f"Applied font scaling: {scale_factor}x")
         except Exception as e:
             logger.error(f"Failed to apply app font scaling: {e}", exc_info=True)
+
+    def _update_table_column_widths(self):
+        """Update column widths in all tables after DPI scale change."""
+        try:
+            # Update package tree widget column widths
+            if hasattr(self, 'packages_tab') and hasattr(self.packages_tab, 'package_tree'):
+                self.packages_tab.package_tree.update_column_widths_for_dpi()
+                # Force repaint to update checkbox sizes
+                self.packages_tab.package_tree.tree_widget.viewport().update()
+
+            # Update VFX breakdown widget column widths
+            if hasattr(self, 'bidding_tab') and hasattr(self.bidding_tab, 'breakdown_widget'):
+                self.bidding_tab.breakdown_widget.update_column_widths_for_dpi()
+                # Force repaint to update checkbox sizes
+                if hasattr(self.bidding_tab.breakdown_widget, 'table_view'):
+                    self.bidding_tab.breakdown_widget.table_view.viewport().update()
+
+            logger.info("Updated all table column widths for DPI change")
+        except Exception as e:
+            logger.error(f"Failed to update table column widths: {e}", exc_info=True)
 
     def _store_original_fonts(self, widget):
         """Recursively store original font sizes for all widgets."""
