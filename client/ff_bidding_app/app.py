@@ -1486,17 +1486,6 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         font.setPointSize(new_size)
         widget.setFont(font)
 
-        # Special handling for checkboxes - scale the indicator size
-        if isinstance(widget, QtWidgets.QCheckBox):
-            # Scale the indicator (checkbox icon) size
-            indicator_size = int(20 * scale_factor)  # Base size: 20px
-            widget.setStyleSheet(f"""
-                QCheckBox::indicator {{
-                    width: {indicator_size}px;
-                    height: {indicator_size}px;
-                }}
-            """)
-
         # Special handling for buttons - add minimum height
         if isinstance(widget, QtWidgets.QPushButton):
             min_height = int(24 * scale_factor)  # Base min height: 24px
@@ -1518,16 +1507,6 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             font = child.font()
             font.setPointSize(new_size)
             child.setFont(font)
-
-            # Special handling for child checkboxes
-            if isinstance(child, QtWidgets.QCheckBox):
-                indicator_size = int(20 * scale_factor)
-                child.setStyleSheet(f"""
-                    QCheckBox::indicator {{
-                        width: {indicator_size}px;
-                        height: {indicator_size}px;
-                    }}
-                """)
 
             # Special handling for child buttons
             if isinstance(child, QtWidgets.QPushButton):

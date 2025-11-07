@@ -449,27 +449,42 @@ class SelectBidDialog(QtWidgets.QDialog):
 
         entity_layout.addSpacing(5)
 
+        # Get DPI scale factor from parent's app_settings if available
+        dpi_scale = 1.0
+        if self.parent() and hasattr(self.parent(), 'app_settings'):
+            try:
+                dpi_scale = self.parent().app_settings.get_dpi_scale()
+            except:
+                dpi_scale = 1.0
+
+        # Scale checkbox dimensions
+        indicator_size = int(20 * dpi_scale)
+        border_radius = max(2, int(3 * dpi_scale))
+        border_width = max(1, int(2 * dpi_scale))
+        spacing = int(8 * dpi_scale)
+        checkmark_size = max(10, int(16 * dpi_scale))
+
         # Checkbox stylesheet to match VFX Breakdown table style
-        checkbox_style = """
-            QCheckBox {
-                spacing: 8px;
-            }
-            QCheckBox::indicator {
-                width: 20px;
-                height: 20px;
-                border-radius: 3px;
+        checkbox_style = f"""
+            QCheckBox {{
+                spacing: {spacing}px;
+            }}
+            QCheckBox::indicator {{
+                width: {indicator_size}px;
+                height: {indicator_size}px;
+                border-radius: {border_radius}px;
                 background-color: #2b2b2b;
-                border: 2px solid #555555;
-            }
-            QCheckBox::indicator:checked {
-                border: 2px solid #0078d4;
+                border: {border_width}px solid #555555;
+            }}
+            QCheckBox::indicator:checked {{
+                border: {border_width}px solid #0078d4;
                 background-color: #2b2b2b;
                 image: none;
-            }
-            QCheckBox::indicator:disabled {
+            }}
+            QCheckBox::indicator:disabled {{
                 background-color: #1a1a1a;
                 border-color: #333333;
-            }
+            }}
         """
 
         # Create a custom paint function for checkmarks
@@ -487,13 +502,13 @@ class SelectBidDialog(QtWidgets.QDialog):
                     painter = QtGui.QPainter(checkbox)
                     painter.setRenderHint(QtGui.QPainter.Antialiasing)
 
-                    # Get indicator rect (20x20, positioned at left side)
-                    indicator_rect = QtCore.QRect(0, (checkbox.height() - 20) // 2, 20, 20)
+                    # Get indicator rect (scaled size, positioned at left side)
+                    indicator_rect = QtCore.QRect(0, (checkbox.height() - indicator_size) // 2, indicator_size, indicator_size)
 
                     # Draw checkmark
-                    painter.setPen(QtGui.QPen(QtGui.QColor("#0078d4"), 2))
+                    painter.setPen(QtGui.QPen(QtGui.QColor("#0078d4"), border_width))
                     font = painter.font()
-                    font.setPixelSize(16)
+                    font.setPixelSize(checkmark_size)
                     font.setBold(True)
                     painter.setFont(font)
                     painter.drawText(indicator_rect, QtCore.Qt.AlignCenter, "✓")

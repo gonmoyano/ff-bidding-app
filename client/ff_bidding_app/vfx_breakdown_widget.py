@@ -337,9 +337,13 @@ class ConfigColumnsDialog(QtWidgets.QDialog):
         Returns:
             tuple: (indicator_label, checkbox)
         """
+        # Get DPI scale factor from settings
+        dpi_scale = self.app_settings.get_dpi_scale() if hasattr(self, 'app_settings') else 1.0
+        indicator_size = int(20 * dpi_scale)
+
         # Custom checkbox indicator
         indicator_label = QtWidgets.QLabel()
-        indicator_label.setFixedSize(20, 20)
+        indicator_label.setFixedSize(indicator_size, indicator_size)
         indicator_label.setAlignment(QtCore.Qt.AlignCenter)
 
         # Checkbox (hidden default indicator)
@@ -358,28 +362,33 @@ class ConfigColumnsDialog(QtWidgets.QDialog):
         """)
 
         # Function to update indicator appearance
+        # Scale all visual elements
+        border_width = max(1, int(2 * dpi_scale))
+        border_radius = max(2, int(3 * dpi_scale))
+        font_size = max(10, int(16 * dpi_scale))
+
         def update_indicator(is_checked):
             if is_checked:
                 # Checked state: show tick icon
-                indicator_label.setStyleSheet("""
-                    QLabel {
-                        border: 2px solid #0078d4;
-                        border-radius: 3px;
+                indicator_label.setStyleSheet(f"""
+                    QLabel {{
+                        border: {border_width}px solid #0078d4;
+                        border-radius: {border_radius}px;
                         background-color: #2b2b2b;
                         color: #0078d4;
-                        font-size: 16px;
+                        font-size: {font_size}px;
                         font-weight: bold;
-                    }
+                    }}
                 """)
                 indicator_label.setText("✓")
             else:
                 # Unchecked state: empty box
-                indicator_label.setStyleSheet("""
-                    QLabel {
-                        border: 2px solid #555;
-                        border-radius: 3px;
+                indicator_label.setStyleSheet(f"""
+                    QLabel {{
+                        border: {border_width}px solid #555;
+                        border-radius: {border_radius}px;
                         background-color: #2b2b2b;
-                    }
+                    }}
                 """)
                 indicator_label.setText("")
 
