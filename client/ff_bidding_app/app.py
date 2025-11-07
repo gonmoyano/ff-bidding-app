@@ -14,6 +14,8 @@ try:
     from .packages_tab import PackagesTab
     from .bidding_tab import BiddingTab
     from .bid_selector_widget import CollapsibleGroupBox
+    from .settings import AppSettings
+    from .settings_dialog import SettingsDialog
     from .logger import logger
 except ImportError:
     # Standalone mode - add to path and import
@@ -28,6 +30,8 @@ except ImportError:
     from packages_tab import PackagesTab
     from bidding_tab import BiddingTab
     from bid_selector_widget import CollapsibleGroupBox
+    from settings import AppSettings
+    from settings_dialog import SettingsDialog
 
     # Setup basic logger for standalone mode
     try:
@@ -458,10 +462,20 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             logger.info(f"Shotgrid Session: {self.sg_session}")
             self.output_directory = output_directory or str(Path.home() / "shotgrid_packages")
 
+            # Initialize app settings
+            self.app_settings = AppSettings()
+            logger.info("AppSettings initialized")
+
             self.setWindowTitle("Fireframe Prodigy")
             self.setMinimumSize(1400, 700)
 
             self._build_ui()
+
+            # Apply saved DPI scaling to the UI
+            saved_dpi_scale = self.app_settings.get_dpi_scale()
+            if saved_dpi_scale != 1.0:
+                logger.info(f"Applying saved DPI scale: {saved_dpi_scale}")
+                self._apply_app_font_scaling(saved_dpi_scale)
 
             # Auto-load the latest project on startup
             logger.info("Auto-loading latest project...")
@@ -476,6 +490,40 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             logger.error(f"CRITICAL ERROR in __init__: {e}", exc_info=True)
             logger.error("=" * 60)
             raise
+
+    @staticmethod
+    def apply_dpi_scaling():
+        """Apply DPI scaling from settings if configured.
+
+        Note: This must be called before QApplication is created for full effect.
+        If QApplication already exists, it will apply what it can.
+        """
+        try:
+            settings = AppSettings()
+            dpi_scale = settings.get_dpi_scale()
+
+            if dpi_scale != 1.0:
+                logger.info(f"Applying DPI scaling: {dpi_scale}")
+
+                # Try to set Qt attributes (only works if QApplication not yet created)
+                try:
+                    QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
+                    QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
+                except RuntimeError:
+                    logger.info("QApplication already exists, cannot set Qt attributes")
+
+                # Set environment variable (works if set before Qt init)
+                import os
+                os.environ["QT_SCALE_FACTOR"] = str(dpi_scale)
+
+                logger.info(f"DPI scaling configured: {dpi_scale}x")
+            else:
+                logger.info("DPI scaling set to default (1.0x)")
+
+            return dpi_scale
+        except Exception as e:
+            logger.error(f"Failed to apply DPI scaling: {e}")
+            return 1.0
 
     @staticmethod
     def apply_dark_theme(app):
@@ -850,6 +898,31 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             title_label.setFont(title_font)
             header_layout.addWidget(title_label)
             header_layout.addStretch()
+
+            # Settings button (cog icon, no text)
+            self.settings_button = QtWidgets.QPushButton("⚙")  # Gear/cog Unicode character
+            self.settings_button.setToolTip("Application Settings")
+            settings_font = self.settings_button.font()
+            settings_font.setPointSize(14)
+            self.settings_button.setFont(settings_font)
+            self.settings_button.setFixedSize(32, 32)
+            self.settings_button.setStyleSheet("""
+                QPushButton {
+                    border: 1px solid #555555;
+                    border-radius: 4px;
+                    background-color: #2b2b2b;
+                }
+                QPushButton:hover {
+                    background-color: #3b3b3b;
+                    border-color: #0078d4;
+                }
+                QPushButton:pressed {
+                    background-color: #1b1b1b;
+                }
+            """)
+            self.settings_button.clicked.connect(self._show_settings_dialog)
+            header_layout.addWidget(self.settings_button)
+
             main_layout.addLayout(header_layout)
 
             # Compact top bar with dropdowns and Current Bid (always visible)
@@ -859,7 +932,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             # Tabbed section
             self.tab_widget = QtWidgets.QTabWidget()
 
-            # Create Bidding tab (contains VFX Breakdown as nested tab)
+            # Create Bidding tab (contains VFX Breakdown, Assets, Rates, and Reports as nested tabs)
             bidding_tab = self._create_bidding_tab()
             self.tab_widget.addTab(bidding_tab, "Bidding")
 
@@ -1337,7 +1410,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             if hasattr(self, "packages_tab"):
                 self.packages_tab.set_rfq(rfq)
 
-            # Update the bidding tab with RFQ data
+            # Update the bidding tab with RFQ data (includes Reports nested tab)
             if hasattr(self, "bidding_tab"):
                 self.bidding_tab.set_rfq(rfq)
         else:
@@ -1345,6 +1418,110 @@ class PackageManagerApp(QtWidgets.QMainWindow):
                 self.rfq_bid_label.setText("-")
             if hasattr(self, "packages_tab"):
                 self.packages_tab.clear()
+
+    def _show_settings_dialog(self):
+        """Show the application settings dialog."""
+        # Store current DPI scale
+        old_dpi_scale = self.app_settings.get_dpi_scale()
+
+        dialog = SettingsDialog(self.app_settings, parent=self)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            # Get the new settings
+            dpi_scale = dialog.get_dpi_scale()
+            currency = dialog.get_currency()
+
+            # Save to settings
+            self.app_settings.set_dpi_scale(dpi_scale)
+            self.app_settings.set_currency(currency)
+
+            # Check if DPI scale changed
+            if abs(dpi_scale - old_dpi_scale) > 0.01:
+                # Scaling is already applied via real-time preview, just ensure it's set
+                self._apply_app_font_scaling(dpi_scale)
+
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Settings Saved",
+                    f"Settings saved successfully!\n\nDPI scaling: {int(dpi_scale * 100)}%\n\nRestart the application for full effect."
+                )
+            else:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Settings Saved",
+                    "Settings have been saved."
+                )
+
+    def _apply_app_font_scaling(self, scale_factor):
+        """Apply font scaling to the entire application."""
+        try:
+            # Store original fonts for all widgets on first call
+            if not hasattr(self, '_original_widget_fonts'):
+                self._original_widget_fonts = {}
+                self._store_original_fonts(self)
+
+            # Apply scaled fonts to all widgets in the main window
+            self._apply_scaled_fonts(self, scale_factor)
+
+            logger.info(f"Applied font scaling: {scale_factor}x")
+        except Exception as e:
+            logger.error(f"Failed to apply app font scaling: {e}", exc_info=True)
+
+    def _store_original_fonts(self, widget):
+        """Recursively store original font sizes for all widgets."""
+        if widget not in self._original_widget_fonts:
+            self._original_widget_fonts[widget] = widget.font().pointSize()
+
+        for child in widget.findChildren(QtWidgets.QWidget):
+            if child not in self._original_widget_fonts:
+                self._original_widget_fonts[child] = child.font().pointSize()
+
+    def _apply_scaled_fonts(self, widget, scale_factor):
+        """Recursively apply scaled fonts to widget and all children."""
+        # Get original font size and scale it
+        original_size = self._original_widget_fonts.get(widget, 10)
+        new_size = max(6, int(original_size * scale_factor))
+
+        # Create and apply scaled font
+        font = widget.font()
+        font.setPointSize(new_size)
+        widget.setFont(font)
+
+        # Special handling for buttons - add minimum height
+        if isinstance(widget, QtWidgets.QPushButton):
+            min_height = int(24 * scale_factor)  # Base min height: 24px
+            widget.setMinimumHeight(min_height)
+
+        # Special handling for combo boxes
+        if isinstance(widget, QtWidgets.QComboBox):
+            min_height = int(24 * scale_factor)
+            widget.setMinimumHeight(min_height)
+
+        # Recursively apply to all children
+        for child in widget.findChildren(QtWidgets.QWidget):
+            # Skip the settings dialog itself
+            if isinstance(child, SettingsDialog):
+                continue
+
+            original_size = self._original_widget_fonts.get(child, 10)
+            new_size = max(6, int(original_size * scale_factor))
+            font = child.font()
+            font.setPointSize(new_size)
+            child.setFont(font)
+
+            # Special handling for child buttons
+            if isinstance(child, QtWidgets.QPushButton):
+                min_height = int(24 * scale_factor)
+                child.setMinimumHeight(min_height)
+
+            # Special handling for child combo boxes
+            if isinstance(child, QtWidgets.QComboBox):
+                min_height = int(24 * scale_factor)
+                child.setMinimumHeight(min_height)
+
+        # Force layout update
+        widget.updateGeometry()
+        if hasattr(widget, 'layout') and widget.layout():
+            widget.layout().update()
 
     def showEvent(self, event):
         """Called when window is shown."""

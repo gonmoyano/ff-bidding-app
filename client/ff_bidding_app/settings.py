@@ -286,3 +286,37 @@ class AppSettings:
 
         # Fallback to hardcoded default
         return "=('Rate Card'!model.1*model) + ('Rate Card'!tex.1*tex) + ('Rate Card'!rig.1*rig) + ('Rate Card'!mm.1*mm) + ('Rate Card'!prep.1*prep) + ('Rate Card'!gen.1*gen) + ('Rate Card'!anim.1*anim) + ('Rate Card'!lookdev.1*lookdev) + ('Rate Card'!lgt.1*lgt) + ('Rate Card'!fx.1*fx) + ('Rate Card'!cmp.1*cmp)"
+
+    def get_dpi_scale(self):
+        """Get DPI scale factor for the application.
+
+        Returns:
+            float: DPI scale factor (default: 1.0)
+        """
+        return self.get("dpi_scale", 1.0)
+
+    def set_dpi_scale(self, scale):
+        """Set DPI scale factor for the application.
+
+        Args:
+            scale: DPI scale factor (e.g., 1.0, 1.25, 1.5, 2.0)
+        """
+        self.set("dpi_scale", scale)
+        logger.info(f"DPI scale set to {scale}")
+
+    def get_currency(self):
+        """Get currency symbol used by the application.
+
+        Returns:
+            str: Currency symbol (default: "$")
+        """
+        return self.get("currency", "$")
+
+    def set_currency(self, currency):
+        """Set currency symbol used by the application.
+
+        Args:
+            currency: Currency symbol (e.g., "$", "€", "£", "¥")
+        """
+        self.set("currency", currency)
+        logger.info(f"Currency set to {currency}")
