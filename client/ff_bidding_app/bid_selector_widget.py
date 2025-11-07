@@ -1666,8 +1666,10 @@ class ImportBidDialog(QtWidgets.QDialog):
 
         # Resize columns to content
         table.resizeColumnsToContents()
-        # Make checkbox column narrower
-        table.setColumnWidth(0, 60)
+        # Make checkbox column narrower (with DPI scaling)
+        app_settings = AppSettings()
+        dpi_scale = app_settings.get_dpi_scale()
+        table.setColumnWidth(0, int(60 * dpi_scale))
 
         # Unblock signals
         table.blockSignals(False)

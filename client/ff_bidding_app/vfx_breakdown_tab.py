@@ -2510,6 +2510,13 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         fm = table.fontMetrics()
         header = table.horizontalHeader()
 
+        # Scale parameters with DPI
+        app_settings = AppSettings()
+        dpi_scale = app_settings.get_dpi_scale()
+        min_px = int(min_px * dpi_scale)
+        max_px = int(max_px * dpi_scale)
+        extra_padding = int(extra_padding * dpi_scale)
+
         # Loop columns
         for c in range(table.columnCount()):
             # Start with header text width

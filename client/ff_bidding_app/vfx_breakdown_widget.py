@@ -2551,6 +2551,12 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         if not self.table_view or self.model.rowCount() == 0:
             return
 
+        # Scale parameters with DPI
+        dpi_scale = self.app_settings.get_dpi_scale()
+        min_px = int(min_px * dpi_scale)
+        max_px = int(max_px * dpi_scale)
+        extra_padding = int(extra_padding * dpi_scale)
+
         # First, use Qt's built-in resize to content
         self.table_view.resizeColumnsToContents()
 

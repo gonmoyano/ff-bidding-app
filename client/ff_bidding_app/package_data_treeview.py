@@ -304,10 +304,20 @@ class PackageTreeView(QtWidgets.QWidget):
         # Tree widget - Added "Active" column at the beginning
         self.tree_widget = QtWidgets.QTreeWidget()
         self.tree_widget.setHeaderLabels(["Active", "Name", "Type", "Status", "Version"])
-        self.tree_widget.setColumnWidth(0, 60)  # Active checkbox column
-        self.tree_widget.setColumnWidth(1, 250)  # Name
-        self.tree_widget.setColumnWidth(2, 80)  # Type
-        self.tree_widget.setColumnWidth(3, 80)  # Status
+
+        # Get DPI scale for column widths
+        try:
+            from .settings import AppSettings
+        except ImportError:
+            from settings import AppSettings
+        app_settings = AppSettings()
+        dpi_scale = app_settings.get_dpi_scale()
+
+        # Scale column widths with DPI
+        self.tree_widget.setColumnWidth(0, int(60 * dpi_scale))  # Active checkbox column
+        self.tree_widget.setColumnWidth(1, int(250 * dpi_scale))  # Name
+        self.tree_widget.setColumnWidth(2, int(80 * dpi_scale))  # Type
+        self.tree_widget.setColumnWidth(3, int(80 * dpi_scale))  # Status
         self.tree_widget.setAlternatingRowColors(True)
         self.tree_widget.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
 
