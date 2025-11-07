@@ -1496,10 +1496,19 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             min_height = int(24 * scale_factor)
             widget.setMinimumHeight(min_height)
 
+        # Helper function to check if a widget is inside a SettingsDialog
+        def is_inside_settings_dialog(w):
+            parent = w.parent()
+            while parent is not None:
+                if isinstance(parent, SettingsDialog):
+                    return True
+                parent = parent.parent()
+            return False
+
         # Recursively apply to all children
         for child in widget.findChildren(QtWidgets.QWidget):
-            # Skip the settings dialog itself
-            if isinstance(child, SettingsDialog):
+            # Skip the settings dialog itself and all widgets inside it
+            if isinstance(child, SettingsDialog) or is_inside_settings_dialog(child):
                 continue
 
             original_size = self._original_widget_fonts.get(child, 10)

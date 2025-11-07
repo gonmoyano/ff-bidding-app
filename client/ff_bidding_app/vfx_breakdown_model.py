@@ -19,6 +19,11 @@ except ImportError:
 class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
     """Custom delegate for rendering checkboxes with custom styling."""
 
+    def __init__(self, parent=None):
+        """Initialize the delegate."""
+        super().__init__(parent)
+        self.app_settings = AppSettings()
+
     def paint(self, painter, option, index):
         """Paint the checkbox with custom styling."""
         # Get the check state from the model
@@ -28,8 +33,9 @@ class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
         if check_state is not None:
             painter.save()
 
-            # Calculate checkbox rect (centered in the cell)
-            checkbox_size = 20
+            # Calculate checkbox rect (centered in the cell) with DPI scaling
+            dpi_scale = self.app_settings.get_dpi_scale()
+            checkbox_size = int(20 * dpi_scale)
             checkbox_rect = QtCore.QRect(
                 option.rect.center().x() - checkbox_size // 2,
                 option.rect.center().y() - checkbox_size // 2,
@@ -44,27 +50,31 @@ class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
             # Determine if checked
             is_checked = (check_state == QtCore.Qt.Checked)
 
+            # Scale pen width and corner radius with DPI
+            pen_width = max(1, int(2 * dpi_scale))
+            corner_radius = max(2, int(3 * dpi_scale))
+
             # Set up pen and brush for border
             if is_checked:
                 # Checked: blue border
-                pen = QtGui.QPen(QtGui.QColor("#0078d4"), 2)
+                pen = QtGui.QPen(QtGui.QColor("#0078d4"), pen_width)
                 painter.setPen(pen)
                 painter.setBrush(QtGui.QColor("#2b2b2b"))
             else:
                 # Unchecked: gray border
-                pen = QtGui.QPen(QtGui.QColor("#555555"), 2)
+                pen = QtGui.QPen(QtGui.QColor("#555555"), pen_width)
                 painter.setPen(pen)
                 painter.setBrush(QtGui.QColor("#2b2b2b"))
 
             # Draw rounded rectangle
             painter.setRenderHint(QtGui.QPainter.Antialiasing)
-            painter.drawRoundedRect(checkbox_rect, 3, 3)
+            painter.drawRoundedRect(checkbox_rect, corner_radius, corner_radius)
 
             # Draw tick if checked
             if is_checked:
-                painter.setPen(QtGui.QPen(QtGui.QColor("#0078d4"), 2))
+                painter.setPen(QtGui.QPen(QtGui.QColor("#0078d4"), pen_width))
                 font = painter.font()
-                font.setPixelSize(16)
+                font.setPixelSize(int(16 * dpi_scale))
                 font.setBold(True)
                 painter.setFont(font)
                 painter.drawText(checkbox_rect, QtCore.Qt.AlignCenter, "✓")
