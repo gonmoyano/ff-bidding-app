@@ -142,22 +142,23 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
         logger.debug(f"ValidatedComboBoxDelegate updated with {len(self.valid_values)} valid values: {self.valid_values}")
 
     def paint(self, painter, option, index):
-        """Paint the cell with validation coloring."""
+        """Paint the cell with validation coloring matching Asset pill colors."""
         painter.save()
 
         # Get the cell value
         value = index.data(QtCore.Qt.DisplayRole)
 
         # Determine background color based on validation
+        # Colors match the Asset pills in VFX Breakdown table
         if value and str(value).strip():
             # Normalize the value for comparison (strip whitespace)
             normalized_value = str(value).strip()
             if normalized_value in self.normalized_valid_values:
-                # Valid value - blue background
-                bg_color = QtGui.QColor("#0078d4").lighter(180)  # Light blue
+                # Valid value - blue background matching Asset pill
+                bg_color = QtGui.QColor("#4a90e2")  # Same as valid Asset pill
             else:
-                # Invalid value - red background
-                bg_color = QtGui.QColor("#d42800").lighter(160)  # Light red
+                # Invalid value - red background matching invalid Asset pill
+                bg_color = QtGui.QColor("#e74c3c")  # Same as invalid Asset pill
         else:
             # Empty value - default background
             bg_color = option.palette.base().color()
@@ -169,19 +170,23 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
         if option.state & QtWidgets.QStyle.State_Selected:
             painter.fillRect(option.rect, option.palette.highlight())
 
-        # Draw the text
-        painter.setPen(option.palette.text().color())
+        # Draw the text - use white text for colored backgrounds
+        if value and str(value).strip():
+            painter.setPen(QtGui.QColor("#ffffff"))  # White text on colored background
+        else:
+            painter.setPen(option.palette.text().color())  # Default text color for empty cells
+
         text_rect = option.rect.adjusted(4, 0, -4, 0)  # Add padding
         painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, str(value) if value else "")
 
         painter.restore()
 
     def createEditor(self, parent, option, index):
-        """Create a combobox editor with valid values."""
+        """Create a combobox editor matching VFX Breakdown dropdown style."""
         editor = QtWidgets.QComboBox(parent)
-        editor.setEditable(True)  # Allow typing custom values
-        editor.addItems([""] + self.valid_values)  # Add empty option first
-        editor.setInsertPolicy(QtWidgets.QComboBox.NoInsert)  # Don't add new items to list
+        editor.addItem("")  # Empty option first
+        for value in self.valid_values:
+            editor.addItem(value)
         editor.setFrame(False)  # Match VFX Breakdown dropdown style
         return editor
 
@@ -193,9 +198,6 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
             idx = editor.findText(str(value))
             if idx >= 0:
                 editor.setCurrentIndex(idx)
-            else:
-                # Value not in list, set it as current text
-                editor.setEditText(str(value))
 
     def setModelData(self, editor, model, index):
         """Save the selected value to the model."""
