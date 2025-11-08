@@ -111,6 +111,94 @@ class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
         return super().editorEvent(event, model, option, index)
 
 
+class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
+    """Custom delegate for dropdown with validation coloring.
+
+    Shows a combobox editor with a list of valid values.
+    Paints cell background blue if value exists in valid list, red if not.
+    """
+
+    def __init__(self, valid_values, parent=None):
+        """Initialize the delegate.
+
+        Args:
+            valid_values: List of valid string values for validation
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.valid_values = valid_values if valid_values else []
+
+    def update_valid_values(self, valid_values):
+        """Update the list of valid values and trigger repaint.
+
+        Args:
+            valid_values: New list of valid string values
+        """
+        self.valid_values = valid_values if valid_values else []
+
+    def paint(self, painter, option, index):
+        """Paint the cell with validation coloring."""
+        painter.save()
+
+        # Get the cell value
+        value = index.data(QtCore.Qt.DisplayRole)
+
+        # Determine background color based on validation
+        if value and str(value).strip():
+            if str(value) in self.valid_values:
+                # Valid value - blue background
+                bg_color = QtGui.QColor("#0078d4").lighter(180)  # Light blue
+            else:
+                # Invalid value - red background
+                bg_color = QtGui.QColor("#d42800").lighter(160)  # Light red
+        else:
+            # Empty value - default background
+            bg_color = option.palette.base().color()
+
+        # Draw background
+        painter.fillRect(option.rect, bg_color)
+
+        # Draw selection highlight if selected
+        if option.state & QtWidgets.QStyle.State_Selected:
+            painter.fillRect(option.rect, option.palette.highlight())
+
+        # Draw the text
+        painter.setPen(option.palette.text().color())
+        text_rect = option.rect.adjusted(4, 0, -4, 0)  # Add padding
+        painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, str(value) if value else "")
+
+        painter.restore()
+
+    def createEditor(self, parent, option, index):
+        """Create a combobox editor with valid values."""
+        editor = QtWidgets.QComboBox(parent)
+        editor.setEditable(True)  # Allow typing custom values
+        editor.addItems([""] + self.valid_values)  # Add empty option first
+        editor.setInsertPolicy(QtWidgets.QComboBox.NoInsert)  # Don't add new items to list
+        return editor
+
+    def setEditorData(self, editor, index):
+        """Set the current value in the editor."""
+        value = index.data(QtCore.Qt.EditRole)
+        if value:
+            # Try to find and select the value
+            idx = editor.findText(str(value))
+            if idx >= 0:
+                editor.setCurrentIndex(idx)
+            else:
+                # Value not in list, set it as current text
+                editor.setEditText(str(value))
+
+    def setModelData(self, editor, model, index):
+        """Save the selected value to the model."""
+        value = editor.currentText()
+        model.setData(index, value, QtCore.Qt.EditRole)
+
+    def updateEditorGeometry(self, editor, option, index):
+        """Update editor geometry to match the cell."""
+        editor.setGeometry(option.rect)
+
+
 class ReverseString:
     """Wrapper for strings to enable reverse sorting in tuples."""
 

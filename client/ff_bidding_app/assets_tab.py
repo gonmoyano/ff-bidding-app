@@ -8,14 +8,14 @@ from PySide6 import QtWidgets, QtCore
 try:
     from .logger import logger
     from .settings import AppSettings
-    from .vfx_breakdown_model import VFXBreakdownModel
+    from .vfx_breakdown_model import VFXBreakdownModel, ValidatedComboBoxDelegate
     from .vfx_breakdown_widget import VFXBreakdownWidget
     from .bid_selector_widget import CollapsibleGroupBox
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
-    from vfx_breakdown_model import VFXBreakdownModel
+    from vfx_breakdown_model import VFXBreakdownModel, ValidatedComboBoxDelegate
     from vfx_breakdown_widget import VFXBreakdownWidget
     from bid_selector_widget import CollapsibleGroupBox
 
@@ -63,6 +63,10 @@ class AssetsTab(QtWidgets.QWidget):
 
         # Reusable assets widget (uses VFXBreakdownWidget for table display)
         self.assets_widget = None
+
+        # Line Items validation
+        self.line_item_names = []  # List of Line Item names from current Price List
+        self.asset_type_delegate = None  # Delegate for sg_bid_asset_type column
 
         self._build_ui()
 
@@ -292,6 +296,49 @@ class AssetsTab(QtWidgets.QWidget):
         # Load asset items for this Bid Assets
         self._load_asset_items(bid_assets_id)
 
+    def _load_line_item_names(self):
+        """Query Line Items from the current Bid's Price List for validation.
+
+        Returns:
+            List of Line Item code names
+        """
+        if not self.current_bid_id:
+            return []
+
+        try:
+            # Query the Bid to get its Price List (sg_price_list)
+            bid_data = self.sg_session.sg.find_one(
+                "CustomEntity06",
+                [["id", "is", self.current_bid_id]],
+                ["sg_price_list"]
+            )
+
+            if not bid_data or not bid_data.get("sg_price_list"):
+                logger.info("No Price List linked to current Bid")
+                return []
+
+            price_list_id = bid_data["sg_price_list"]["id"]
+
+            # Query Line Items (CustomEntity03) linked to this Price List
+            filters = [
+                ["sg_price_list", "is", {"type": "CustomEntity10", "id": price_list_id}]
+            ]
+
+            line_items = self.sg_session.sg.find(
+                "CustomEntity03",
+                filters,
+                ["code"]
+            )
+
+            # Extract code names
+            line_item_names = [item.get("code", "") for item in line_items if item.get("code")]
+            logger.info(f"Found {len(line_item_names)} Line Items in Price List {price_list_id}")
+            return line_item_names
+
+        except Exception as e:
+            logger.error(f"Failed to query Line Items: {e}", exc_info=True)
+            return []
+
     def _load_asset_items(self, bid_assets_id):
         """Load asset items (CustomEntity07) for the selected Bid Assets.
 
@@ -299,6 +346,9 @@ class AssetsTab(QtWidgets.QWidget):
             bid_assets_id: ID of the Bid Assets (CustomEntity08)
         """
         try:
+            # Query Line Items for validation
+            self.line_item_names = self._load_line_item_names()
+
             # Query CustomEntity07 (Asset items) linked to this Bid Assets
             filters = [
                 ["sg_bid_assets", "is", {"type": "CustomEntity08", "id": bid_assets_id}]
@@ -316,6 +366,9 @@ class AssetsTab(QtWidgets.QWidget):
             # Use the assets widget to display the items
             self.assets_widget.load_bidding_scenes(asset_items, field_schema=self.field_schema)
 
+            # Apply validated combobox delegate to sg_bid_asset_type column
+            self._apply_asset_type_delegate()
+
             display_name = self.bid_assets_combo.currentText()
             if asset_items:
                 self._set_bid_assets_status(f"Loaded {len(asset_items)} Asset item(s) for '{display_name}'.")
@@ -325,6 +378,36 @@ class AssetsTab(QtWidgets.QWidget):
         except Exception as e:
             logger.error(f"Failed to load asset items: {e}", exc_info=True)
             self._set_bid_assets_status("Failed to load asset items.", is_error=True)
+
+    def _apply_asset_type_delegate(self):
+        """Apply ValidatedComboBoxDelegate to the sg_bid_asset_type column."""
+        if not self.assets_widget or not hasattr(self.assets_widget, 'table_view'):
+            return
+
+        try:
+            # Find the column index for sg_bid_asset_type
+            if hasattr(self.assets_widget, 'model') and self.assets_widget.model:
+                try:
+                    col_idx = self.assets_widget.model.column_fields.index("sg_bid_asset_type")
+                except ValueError:
+                    # Column not present
+                    logger.warning("sg_bid_asset_type column not found in model")
+                    return
+
+                # Create or update the delegate
+                if self.asset_type_delegate is None:
+                    self.asset_type_delegate = ValidatedComboBoxDelegate(self.line_item_names, self.assets_widget.table_view)
+                    self.assets_widget.table_view.setItemDelegateForColumn(col_idx, self.asset_type_delegate)
+                    logger.info(f"Applied ValidatedComboBoxDelegate to sg_bid_asset_type column (index {col_idx}) with {len(self.line_item_names)} Line Items")
+                else:
+                    # Update existing delegate with new Line Item names
+                    self.asset_type_delegate.update_valid_values(self.line_item_names)
+                    # Trigger repaint
+                    self.assets_widget.table_view.viewport().update()
+                    logger.info(f"Updated ValidatedComboBoxDelegate with {len(self.line_item_names)} Line Items")
+
+        except Exception as e:
+            logger.error(f"Failed to apply asset type delegate: {e}", exc_info=True)
 
     def _on_set_current_bid_assets(self):
         """Set the selected Bid Assets as current for the Bid."""
