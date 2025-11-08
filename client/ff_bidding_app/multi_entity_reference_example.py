@@ -15,6 +15,12 @@ import sys
 from PySide6 import QtWidgets, QtCore, QtGui
 from multi_entity_reference_widget import MultiEntityReferenceWidget
 
+# Try relative import first, fall back to absolute
+try:
+    from .settings import AppSettings
+except ImportError:
+    from settings import AppSettings
+
 
 class VFXBreakdownTable(QtWidgets.QWidget):
     """
@@ -110,11 +116,13 @@ class VFXBreakdownTable(QtWidgets.QWidget):
             }
         """)
 
-        # Column widths
-        self.table.setColumnWidth(0, 120)
-        self.table.setColumnWidth(1, 250)
-        self.table.setColumnWidth(2, 300)
-        self.table.setColumnWidth(3, 100)
+        # Column widths (with DPI scaling)
+        app_settings = AppSettings()
+        dpi_scale = app_settings.get_dpi_scale()
+        self.table.setColumnWidth(0, int(120 * dpi_scale))
+        self.table.setColumnWidth(1, int(250 * dpi_scale))
+        self.table.setColumnWidth(2, int(300 * dpi_scale))
+        self.table.setColumnWidth(3, int(100 * dpi_scale))
 
         # Table properties
         self.table.verticalHeader().setDefaultSectionSize(80)

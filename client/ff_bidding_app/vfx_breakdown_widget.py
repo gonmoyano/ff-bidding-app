@@ -1325,6 +1325,13 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         if self.row_count_label:
             self.row_count_label.setText("Showing 0 of 0 rows")
 
+    def update_column_widths_for_dpi(self):
+        """Update column widths based on current DPI scale."""
+        if self.model.rowCount() > 0:
+            # Recalculate column widths with new DPI scale
+            self._autosize_columns()
+            logger.info("Updated table column widths for DPI scale change")
+
     def _on_search_changed(self, text):
         """Handle search text change."""
         self.model.set_global_search(text)
@@ -2550,6 +2557,12 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         """
         if not self.table_view or self.model.rowCount() == 0:
             return
+
+        # Scale parameters with DPI
+        dpi_scale = self.app_settings.get_dpi_scale()
+        min_px = int(min_px * dpi_scale)
+        max_px = int(max_px * dpi_scale)
+        extra_padding = int(extra_padding * dpi_scale)
 
         # First, use Qt's built-in resize to content
         self.table_view.resizeColumnsToContents()

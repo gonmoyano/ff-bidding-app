@@ -8,6 +8,109 @@ except (ImportError, ValueError, SystemError):
     logger = logging.getLogger("FFPackageManager")
 
 
+class TreeCheckBoxDelegate(QtWidgets.QStyledItemDelegate):
+    """Custom delegate for rendering checkboxes in tree widget with DPI scaling."""
+
+    def __init__(self, parent=None):
+        """Initialize the delegate."""
+        super().__init__(parent)
+
+    def paint(self, painter, option, index):
+        """Paint the checkbox with custom styling and DPI scaling."""
+        # Only handle checkbox column (column 0) with checkable items
+        if index.column() == 0:
+            flags = index.flags()
+            if flags & QtCore.Qt.ItemIsUserCheckable:
+                painter.save()
+
+                # Get DPI scale fresh on each paint to reflect real-time changes
+                # Try to get from active app (for live preview), fall back to settings
+                try:
+                    from .app import PackageManagerApp
+                    dpi_scale = getattr(PackageManagerApp, '_active_dpi_scale', None)
+                except ImportError:
+                    dpi_scale = None
+
+                if dpi_scale is None:
+                    try:
+                        from .settings import AppSettings
+                    except ImportError:
+                        from settings import AppSettings
+                    app_settings = AppSettings()
+                    dpi_scale = app_settings.get_dpi_scale()
+
+                checkbox_size = int(18 * dpi_scale)
+
+                # Calculate checkbox rect (centered in the cell)
+                checkbox_rect = QtCore.QRect(
+                    option.rect.center().x() - checkbox_size // 2,
+                    option.rect.center().y() - checkbox_size // 2,
+                    checkbox_size,
+                    checkbox_size
+                )
+
+                # Get check state
+                check_state = index.data(QtCore.Qt.CheckStateRole)
+                is_checked = (check_state == QtCore.Qt.Checked)
+
+                # Scale pen width and corner radius with DPI
+                pen_width = max(1, int(1 * dpi_scale))
+                corner_radius = max(2, int(3 * dpi_scale))
+
+                # Set up pen and brush for border
+                if is_checked:
+                    # Checked: blue border and background
+                    pen = QtGui.QPen(QtGui.QColor("#4a9eff"), pen_width)
+                    painter.setPen(pen)
+                    painter.setBrush(QtGui.QColor("#4a9eff"))
+                else:
+                    # Unchecked: gray border
+                    pen = QtGui.QPen(QtGui.QColor("#555555"), pen_width)
+                    painter.setPen(pen)
+                    painter.setBrush(QtGui.QColor("#404040"))
+
+                # Draw rounded rectangle
+                painter.setRenderHint(QtGui.QPainter.Antialiasing)
+                painter.drawRoundedRect(checkbox_rect, corner_radius, corner_radius)
+
+                # Draw tick if checked
+                if is_checked:
+                    painter.setPen(QtGui.QPen(QtGui.QColor("#ffffff"), max(2, int(2 * dpi_scale))))
+                    # Draw checkmark path
+                    check_path = QtGui.QPainterPath()
+                    # Scale the checkmark coordinates
+                    offset = checkbox_size * 0.2
+                    mid_x = checkbox_rect.left() + checkbox_size * 0.4
+                    mid_y = checkbox_rect.center().y() + checkbox_size * 0.1
+                    check_path.moveTo(checkbox_rect.left() + offset, checkbox_rect.center().y())
+                    check_path.lineTo(mid_x, checkbox_rect.bottom() - offset)
+                    check_path.lineTo(checkbox_rect.right() - offset, checkbox_rect.top() + offset)
+                    painter.drawPath(check_path)
+
+                painter.restore()
+                return
+
+        # Default painting for other columns
+        super().paint(painter, option, index)
+
+    def editorEvent(self, event, model, option, index):
+        """Handle mouse events for toggling checkboxes."""
+        if index.column() == 0:
+            flags = index.flags()
+            if flags & QtCore.Qt.ItemIsUserCheckable:
+                if event.type() == QtCore.QEvent.MouseButtonRelease:
+                    if event.button() == QtCore.Qt.LeftButton:
+                        # Toggle the check state
+                        check_state = index.data(QtCore.Qt.CheckStateRole)
+                        new_state = QtCore.Qt.Unchecked if check_state == QtCore.Qt.Checked else QtCore.Qt.Checked
+                        model.setData(index, new_state, QtCore.Qt.CheckStateRole)
+                        return True
+                return True
+
+        # Default behavior for other columns
+        return super().editorEvent(event, model, option, index)
+
+
 class CustomCheckBox(QtWidgets.QCheckBox):
     """Custom checkbox with visible checkmark for dark theme."""
 
@@ -210,12 +313,26 @@ class PackageTreeView(QtWidgets.QWidget):
         # Tree widget - Added "Active" column at the beginning
         self.tree_widget = QtWidgets.QTreeWidget()
         self.tree_widget.setHeaderLabels(["Active", "Name", "Type", "Status", "Version"])
-        self.tree_widget.setColumnWidth(0, 60)  # Active checkbox column
-        self.tree_widget.setColumnWidth(1, 250)  # Name
-        self.tree_widget.setColumnWidth(2, 80)  # Type
-        self.tree_widget.setColumnWidth(3, 80)  # Status
+
+        # Get DPI scale for column widths
+        try:
+            from .settings import AppSettings
+        except ImportError:
+            from settings import AppSettings
+        app_settings = AppSettings()
+        dpi_scale = app_settings.get_dpi_scale()
+
+        # Scale column widths with DPI
+        self.tree_widget.setColumnWidth(0, int(60 * dpi_scale))  # Active checkbox column
+        self.tree_widget.setColumnWidth(1, int(250 * dpi_scale))  # Name
+        self.tree_widget.setColumnWidth(2, int(80 * dpi_scale))  # Type
+        self.tree_widget.setColumnWidth(3, int(80 * dpi_scale))  # Status
         self.tree_widget.setAlternatingRowColors(True)
         self.tree_widget.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+
+        # Set custom delegate for checkbox column to support DPI scaling
+        checkbox_delegate = TreeCheckBoxDelegate(self.tree_widget)
+        self.tree_widget.setItemDelegateForColumn(0, checkbox_delegate)
 
         # Enable tree item animations and proper branch indicators
         self.tree_widget.setAnimated(True)
@@ -317,6 +434,22 @@ class PackageTreeView(QtWidgets.QWidget):
         """Refresh the tree with current RFQ data."""
         logger.info("refresh() called")
         self.load_tree_data()
+
+    def update_column_widths_for_dpi(self):
+        """Update column widths based on current DPI scale."""
+        try:
+            from .settings import AppSettings
+        except ImportError:
+            from settings import AppSettings
+        app_settings = AppSettings()
+        dpi_scale = app_settings.get_dpi_scale()
+
+        # Scale column widths with DPI
+        self.tree_widget.setColumnWidth(0, int(60 * dpi_scale))  # Active checkbox column
+        self.tree_widget.setColumnWidth(1, int(250 * dpi_scale))  # Name
+        self.tree_widget.setColumnWidth(2, int(80 * dpi_scale))  # Type
+        self.tree_widget.setColumnWidth(3, int(80 * dpi_scale))  # Status
+        logger.info(f"Updated tree column widths with DPI scale: {dpi_scale}")
 
     def load_tree_data(self):
         """Load version tree with data from selected RFQ."""

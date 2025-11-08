@@ -466,6 +466,14 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self.app_settings = AppSettings()
             logger.info("AppSettings initialized")
 
+            # Track the current DPI scale to detect changes
+            # This is also used by delegates during preview to get the live scale
+            self._current_dpi_scale = self.app_settings.get_dpi_scale()
+
+            # Make the current DPI scale accessible globally for delegates
+            # Store it as a class variable so delegates can access it
+            PackageManagerApp._active_dpi_scale = self._current_dpi_scale
+
             self.setWindowTitle("Fireframe Prodigy")
             self.setMinimumSize(1400, 700)
 
@@ -1462,9 +1470,68 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             # Apply scaled fonts to all widgets in the main window
             self._apply_scaled_fonts(self, scale_factor)
 
+            # Update column widths in all tables to match new DPI scale
+            self._update_table_column_widths(scale_factor)
+
             logger.info(f"Applied font scaling: {scale_factor}x")
         except Exception as e:
             logger.error(f"Failed to apply app font scaling: {e}", exc_info=True)
+
+    def _update_table_column_widths(self, new_dpi_scale):
+        """Update column widths in all tables after DPI scale change.
+
+        Args:
+            new_dpi_scale: The new DPI scale factor (e.g., 1.5 for 150%)
+        """
+        try:
+            # Calculate the scale ratio
+            if hasattr(self, '_current_dpi_scale') and self._current_dpi_scale > 0:
+                scale_ratio = new_dpi_scale / self._current_dpi_scale
+            else:
+                scale_ratio = 1.0
+
+            logger.info(f"DPI scale changed from {getattr(self, '_current_dpi_scale', 1.0)} to {new_dpi_scale}, ratio: {scale_ratio}")
+
+            # Update the global scale for delegates to use (before updating columns)
+            PackageManagerApp._active_dpi_scale = new_dpi_scale
+
+            # Update package tree widget column widths
+            if hasattr(self, 'packages_tab') and hasattr(self.packages_tab, 'package_tree'):
+                tree_widget = self.packages_tab.package_tree.tree_widget
+                # Block signals to prevent saving scaled widths
+                tree_widget.header().blockSignals(True)
+                for col in range(tree_widget.columnCount()):
+                    current_width = tree_widget.columnWidth(col)
+                    new_width = int(current_width * scale_ratio)
+                    tree_widget.setColumnWidth(col, new_width)
+                tree_widget.header().blockSignals(False)
+                # Force repaint to update checkbox sizes
+                tree_widget.viewport().update()
+                logger.info(f"Updated package tree column widths with ratio {scale_ratio}")
+
+            # Update VFX breakdown widget column widths
+            if hasattr(self, 'bidding_tab') and hasattr(self.bidding_tab, 'breakdown_widget'):
+                breakdown_widget = self.bidding_tab.breakdown_widget
+                if hasattr(breakdown_widget, 'table_view') and breakdown_widget.table_view:
+                    table_view = breakdown_widget.table_view
+                    header = table_view.horizontalHeader()
+                    # Block signals to prevent saving scaled widths
+                    header.blockSignals(True)
+                    for col in range(table_view.model().columnCount() if table_view.model() else 0):
+                        current_width = table_view.columnWidth(col)
+                        new_width = int(current_width * scale_ratio)
+                        table_view.setColumnWidth(col, new_width)
+                    header.blockSignals(False)
+                    # Force repaint to update checkbox sizes
+                    table_view.viewport().update()
+                    logger.info(f"Updated breakdown table column widths with ratio {scale_ratio}")
+
+            # Update the tracked DPI scale
+            self._current_dpi_scale = new_dpi_scale
+
+            logger.info("Updated all table column widths for DPI change")
+        except Exception as e:
+            logger.error(f"Failed to update table column widths: {e}", exc_info=True)
 
     def _store_original_fonts(self, widget):
         """Recursively store original font sizes for all widgets."""
@@ -1496,10 +1563,19 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             min_height = int(24 * scale_factor)
             widget.setMinimumHeight(min_height)
 
+        # Helper function to check if a widget is inside a SettingsDialog
+        def is_inside_settings_dialog(w):
+            parent = w.parent()
+            while parent is not None:
+                if isinstance(parent, SettingsDialog):
+                    return True
+                parent = parent.parent()
+            return False
+
         # Recursively apply to all children
         for child in widget.findChildren(QtWidgets.QWidget):
-            # Skip the settings dialog itself
-            if isinstance(child, SettingsDialog):
+            # Skip the settings dialog itself and all widgets inside it
+            if isinstance(child, SettingsDialog) or is_inside_settings_dialog(child):
                 continue
 
             original_size = self._original_widget_fonts.get(child, 10)
