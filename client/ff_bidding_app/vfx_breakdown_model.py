@@ -182,12 +182,34 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
         painter.restore()
 
     def createEditor(self, parent, option, index):
-        """Create a combobox editor matching VFX Breakdown dropdown style."""
+        """Create a combobox editor matching VFX Breakdown dropdown style.
+
+        Opens the dropdown automatically on double-click and adjusts width to content.
+        """
         editor = QtWidgets.QComboBox(parent)
         editor.addItem("")  # Empty option first
         for value in self.valid_values:
             editor.addItem(value)
         editor.setFrame(False)  # Match VFX Breakdown dropdown style
+
+        # Adjust dropdown width to fit content
+        editor.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
+
+        # Calculate minimum width needed for the longest item
+        max_width = 0
+        font_metrics = editor.fontMetrics()
+        for i in range(editor.count()):
+            item_text = editor.itemText(i)
+            text_width = font_metrics.horizontalAdvance(item_text)
+            max_width = max(max_width, text_width)
+
+        # Add padding for dropdown arrow and margins (approximately 40 pixels)
+        min_width = max_width + 40
+        editor.setMinimumWidth(min_width)
+
+        # Automatically open the dropdown when editor is created
+        QtCore.QTimer.singleShot(0, editor.showPopup)
+
         return editor
 
     def setEditorData(self, editor, index):
@@ -205,8 +227,12 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
         model.setData(index, value, QtCore.Qt.EditRole)
 
     def updateEditorGeometry(self, editor, option, index):
-        """Update editor geometry to match the cell."""
-        editor.setGeometry(option.rect)
+        """Update editor geometry to match the cell, respecting minimum width."""
+        rect = option.rect
+        # Ensure the editor is at least as wide as its minimum width
+        if editor.minimumWidth() > rect.width():
+            rect.setWidth(editor.minimumWidth())
+        editor.setGeometry(rect)
 
 
 class ReverseString:
