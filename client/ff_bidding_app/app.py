@@ -467,7 +467,12 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             logger.info("AppSettings initialized")
 
             # Track the current DPI scale to detect changes
+            # This is also used by delegates during preview to get the live scale
             self._current_dpi_scale = self.app_settings.get_dpi_scale()
+
+            # Make the current DPI scale accessible globally for delegates
+            # Store it as a class variable so delegates can access it
+            PackageManagerApp._active_dpi_scale = self._current_dpi_scale
 
             self.setWindowTitle("Fireframe Prodigy")
             self.setMinimumSize(1400, 700)
@@ -1512,6 +1517,8 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
             # Update the tracked DPI scale
             self._current_dpi_scale = new_dpi_scale
+            # Update the global scale for delegates to use
+            PackageManagerApp._active_dpi_scale = new_dpi_scale
 
             logger.info("Updated all table column widths for DPI change")
         except Exception as e:

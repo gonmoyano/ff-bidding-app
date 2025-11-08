@@ -33,9 +33,17 @@ class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
             painter.save()
 
             # Calculate checkbox rect (centered in the cell) with DPI scaling
-            # Get fresh DPI scale on each paint to reflect real-time changes
-            app_settings = AppSettings()
-            dpi_scale = app_settings.get_dpi_scale()
+            # Try to get DPI scale from active app (for live preview), fall back to settings
+            try:
+                from .app import PackageManagerApp
+                dpi_scale = getattr(PackageManagerApp, '_active_dpi_scale', None)
+            except ImportError:
+                dpi_scale = None
+
+            if dpi_scale is None:
+                app_settings = AppSettings()
+                dpi_scale = app_settings.get_dpi_scale()
+
             checkbox_size = int(20 * dpi_scale)
             checkbox_rect = QtCore.QRect(
                 option.rect.center().x() - checkbox_size // 2,

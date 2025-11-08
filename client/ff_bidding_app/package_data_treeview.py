@@ -24,12 +24,21 @@ class TreeCheckBoxDelegate(QtWidgets.QStyledItemDelegate):
                 painter.save()
 
                 # Get DPI scale fresh on each paint to reflect real-time changes
+                # Try to get from active app (for live preview), fall back to settings
                 try:
-                    from .settings import AppSettings
+                    from .app import PackageManagerApp
+                    dpi_scale = getattr(PackageManagerApp, '_active_dpi_scale', None)
                 except ImportError:
-                    from settings import AppSettings
-                app_settings = AppSettings()
-                dpi_scale = app_settings.get_dpi_scale()
+                    dpi_scale = None
+
+                if dpi_scale is None:
+                    try:
+                        from .settings import AppSettings
+                    except ImportError:
+                        from settings import AppSettings
+                    app_settings = AppSettings()
+                    dpi_scale = app_settings.get_dpi_scale()
+
                 checkbox_size = int(18 * dpi_scale)
 
                 # Calculate checkbox rect (centered in the cell)
