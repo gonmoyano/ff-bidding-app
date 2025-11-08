@@ -686,11 +686,17 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         "description": "text",
     }
 
-    # ShotGrid field definitions for Rates (placeholder - customize as needed)
+    # ShotGrid field definitions for Line Items (CustomEntity03)
+    # Note: Actual import auto-discovers all fields ending with "_mandays"
+    # These are common fields shown in the column mapping dialog
     RATE_REQUIRED_FIELDS = {
         "code": "text",
-        "sg_rate": "float",
-        "sg_unit": "text",
+        # Common mandays fields (actual fields auto-discovered from schema)
+        "sg_supervisor_mandays": "float",
+        "sg_vfx_mandays": "float",
+        "sg_previs_mandays": "float",
+        "sg_postvis_mandays": "float",
+        "sg_techvis_mandays": "float",
     }
 
     # Entity type mapping
@@ -715,7 +721,7 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         },
         "rates": {
             "name": "Rates",
-            "entity_type": "CustomEntity09",
+            "entity_type": "CustomEntity03",  # Line Items
             "fields": RATE_REQUIRED_FIELDS,
             "mapping_key": "rates"
         }
@@ -2665,6 +2671,10 @@ class BidSelectorWidget(QtWidgets.QWidget):
         if results["breakdown"]["entity_id"] and self._refresh_vfx_breakdown_dropdown():
             logger.info(f"Refreshed VFX Breakdown dropdown")
 
+        # Refresh Price Lists dropdown if rates were imported
+        if results["rates"]["entity_id"] and self._refresh_price_lists_dropdown():
+            logger.info(f"Refreshed Price Lists dropdown")
+
         logger.info("Completed post-import refresh")
 
     def _deduplicate_entity_refs(self, entity_refs):
@@ -3289,12 +3299,10 @@ class BidSelectorWidget(QtWidgets.QWidget):
         return 0, None
 
     def _import_rates(self, df, column_mapping, bid_id, bid_name):
-        """Import Rates data to ShotGrid.
+        """Import Rates data (Line Items) to ShotGrid.
 
-        TODO: Needs clarification:
-        - Parent container entity type and naming convention (e.g., "Bid Rates-v###")
-        - Field name on Bid for linking
-        - Complete field mappings (currently: code, sg_rate, sg_unit)
+        Creates a Price List (CustomEntity10) container and populates it with Line Items (CustomEntity03)
+        from the Excel Rate tab. Auto-discovers all fields ending with '_mandays' from the schema.
 
         Args:
             df: DataFrame containing Rates data
@@ -3303,10 +3311,249 @@ class BidSelectorWidget(QtWidgets.QWidget):
             bid_name: Name of the Bid for versioning
 
         Returns:
-            tuple: (Number of records created, Parent entity ID)
+            tuple: (Number of Line Items created, Price List ID)
         """
-        logger.warning("Rates import not yet fully implemented - needs entity type and linking details")
-        return 0, None
+        import pandas as pd
+
+        if df is None or len(df) == 0:
+            return 0, None
+
+        logger.info(f"Starting Rates import with {len(df)} rows for Bid: {bid_name} ({bid_id})")
+        logger.info(f"Column mapping: {column_mapping}")
+
+        # Step 1: Fetch schema for CustomEntity03 (Line Items) to auto-discover fields
+        try:
+            schema = self.sg_session.sg.schema_field_read("CustomEntity03")
+            logger.info(f"Fetched schema for CustomEntity03 (Line Items)")
+
+            # Build field allowlist: find all fields ending with "_mandays"
+            line_items_fields = ["id", "code"]
+            mandays_fields = []
+            for field_name in schema.keys():
+                if field_name.endswith("_mandays"):
+                    mandays_fields.append(field_name)
+
+            # Sort mandays fields alphabetically for consistent display
+            mandays_fields.sort()
+            line_items_fields.extend(mandays_fields)
+
+            # Build field schema dictionary for type conversion
+            field_schema = {}
+            for field_name in line_items_fields:
+                if field_name not in schema:
+                    continue
+                field_info = schema[field_name]
+                field_schema[field_name] = {
+                    "data_type": field_info.get("data_type", {}).get("value"),
+                    "properties": field_info.get("properties", {}),
+                }
+
+            logger.info(f"Auto-discovered {len(mandays_fields)} mandays fields: {mandays_fields}")
+
+        except Exception as e:
+            logger.error(f"Failed to fetch schema for CustomEntity03: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to fetch Line Items schema:\n{str(e)}"
+            )
+            return 0, None
+
+        # Step 2: Determine version number for Price List
+        # Query existing Price Lists with pattern: {bid_name}-Rates-v*
+        try:
+            filters = [
+                ["project", "is", {"type": "Project", "id": self.current_project_id}],
+                ["code", "starts_with", f"{bid_name}-Rates-v"]
+            ]
+            existing_price_lists = self.sg_session.sg.find(
+                "CustomEntity10",
+                filters,
+                ["code"]
+            )
+
+            # Find the highest version number
+            max_version = 0
+            for price_list in existing_price_lists:
+                code = price_list.get("code", "")
+                # Extract version number from code (e.g., "MyBid-Rates-v003" -> 3)
+                if code.startswith(f"{bid_name}-Rates-v"):
+                    version_str = code.split("-v")[-1]
+                    try:
+                        version = int(version_str)
+                        max_version = max(max_version, version)
+                    except ValueError:
+                        continue
+
+            # Increment to get next version
+            next_version = max_version + 1
+            price_list_name = f"{bid_name}-Rates-v{next_version:03d}"
+
+            logger.info(f"Generated Price List name: {price_list_name} (version {next_version})")
+
+        except Exception as e:
+            logger.error(f"Failed to query existing Price Lists: {e}", exc_info=True)
+            # Default to v001 if query fails
+            price_list_name = f"{bid_name}-Rates-v001"
+            logger.warning(f"Defaulting to version 001: {price_list_name}")
+
+        # Create progress dialog for import
+        total_steps = len(df) + 2  # +2 for Price List creation and Bid linking
+        progress = QtWidgets.QProgressDialog("Importing data to ShotGrid...", None, 0, total_steps, self)
+        progress.setWindowModality(QtCore.Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        QtWidgets.QApplication.processEvents()
+
+        # Step 3: Create Price List in ShotGrid
+        progress.setLabelText(f"Creating Price List: {price_list_name}...")
+        QtWidgets.QApplication.processEvents()
+
+        try:
+            price_list_data = {
+                "code": price_list_name,
+                "project": {"type": "Project", "id": self.current_project_id}
+            }
+            price_list = self.sg_session.sg.create("CustomEntity10", price_list_data)
+            price_list_id = price_list["id"]
+            logger.info(f"Created Price List (CustomEntity10): {price_list_id} - {price_list_name}")
+        except Exception as e:
+            logger.error(f"Failed to create Price List: {e}", exc_info=True)
+            progress.close()
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to create Price List:\n{str(e)}"
+            )
+            return 0, None
+
+        progress.setValue(1)
+        QtWidgets.QApplication.processEvents()
+
+        # Step 4: Link Price List to Bid
+        progress.setLabelText(f"Linking Price List to Bid...")
+        QtWidgets.QApplication.processEvents()
+
+        try:
+            self.sg_session.sg.update(
+                "CustomEntity06",
+                bid_id,
+                {"sg_price_list": {"type": "CustomEntity10", "id": price_list_id}}
+            )
+            logger.info(f"Linked Price List {price_list_id} to Bid {bid_id}")
+        except Exception as e:
+            logger.error(f"Failed to link Price List to Bid: {e}", exc_info=True)
+            # Non-fatal, continue with import
+
+        progress.setValue(2)
+        QtWidgets.QApplication.processEvents()
+
+        # Step 5: Create Line Items (CustomEntity03) linked to Price List
+        created_count = 0
+        failed_count = 0
+        created_line_item_ids = []
+
+        for index, row in df.iterrows():
+            # Update progress
+            progress.setLabelText(f"Creating Line Item {created_count + 1} of {len(df)}...")
+            progress.setValue(2 + index + 1)
+            QtWidgets.QApplication.processEvents()
+
+            try:
+                # Build SG data from mapping
+                sg_data = {
+                    "project": {"type": "Project", "id": self.current_project_id},
+                }
+
+                for sg_field, excel_col in column_mapping.items():
+                    if excel_col is None:
+                        continue
+
+                    # Skip fields that should not be imported
+                    # SG ID is auto-generated, Total Mandays and Price are calculated fields
+                    if sg_field in ["id", "_calc_price"]:
+                        continue
+
+                    # Get value from DataFrame
+                    value = row[excel_col]
+
+                    # Skip empty values
+                    if pd.isna(value) or value == "":
+                        continue
+
+                    # Get field type from schema
+                    field_type = None
+                    if sg_field in field_schema:
+                        field_type = field_schema[sg_field]["data_type"]
+
+                    # Convert value based on field type
+                    if field_type == "number":
+                        try:
+                            sg_data[sg_field] = int(value)
+                        except (ValueError, TypeError):
+                            logger.warning(f"Could not convert '{value}' to number for field '{sg_field}'")
+                            continue
+                    elif field_type == "float":
+                        try:
+                            sg_data[sg_field] = float(value)
+                        except (ValueError, TypeError):
+                            logger.warning(f"Could not convert '{value}' to float for field '{sg_field}'")
+                            continue
+                    elif field_type == "checkbox":
+                        # Convert to boolean
+                        if isinstance(value, bool):
+                            sg_data[sg_field] = value
+                        elif isinstance(value, str):
+                            sg_data[sg_field] = value.lower() in ["true", "yes", "1", "x"]
+                        else:
+                            sg_data[sg_field] = bool(value)
+                    else:
+                        # Text and other fields - import as-is
+                        if isinstance(value, str):
+                            sg_data[sg_field] = value
+                        else:
+                            sg_data[sg_field] = str(value)
+
+                # Create the Line Item record
+                result = self.sg_session.sg.create("CustomEntity03", sg_data)
+                created_line_item_ids.append(result["id"])
+                created_count += 1
+                logger.info(f"Created Line Item (CustomEntity03): {result['id']} with code '{sg_data.get('code', 'N/A')}'")
+
+            except Exception as e:
+                failed_count += 1
+                logger.error(f"Failed to create Line Item for row {index}: {e}", exc_info=True)
+
+        # Step 6: Link all created Line Items to the Price List via sg_line_items field
+        if created_line_item_ids:
+            progress.setLabelText(f"Linking {len(created_line_item_ids)} Line Items to Price List...")
+            QtWidgets.QApplication.processEvents()
+
+            try:
+                # Build entity references for all created Line Items
+                line_item_refs = [{"type": "CustomEntity03", "id": item_id} for item_id in created_line_item_ids]
+
+                self.sg_session.sg.update(
+                    "CustomEntity10",
+                    price_list_id,
+                    {"sg_line_items": line_item_refs}
+                )
+                logger.info(f"Linked {len(created_line_item_ids)} Line Items to Price List {price_list_id}")
+            except Exception as e:
+                logger.error(f"Failed to link Line Items to Price List: {e}", exc_info=True)
+                # Non-fatal, Line Items were still created
+
+        # Close progress dialog
+        progress.setValue(total_steps)
+        progress.close()
+
+        # Log summary
+        if failed_count > 0:
+            logger.warning(f"Created Price List '{price_list_name}' with {created_count} Line Items ({failed_count} failed)")
+        else:
+            logger.info(f"Successfully created Price List '{price_list_name}' with {created_count} Line Items")
+
+        return created_count, price_list_id
 
     def _refresh_vfx_breakdown_dropdown(self):
         """Refresh the VFX Breakdown dropdown in the VFX Breakdown tab.
@@ -3332,6 +3579,31 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 logger.warning("Parent app does not have vfx_breakdown_tab attribute")
         except Exception as e:
             logger.error(f"Failed to refresh VFX Breakdown dropdown: {e}", exc_info=True)
+
+        return False
+
+    def _refresh_price_lists_dropdown(self):
+        """Refresh the Price Lists dropdown in the Rates tab.
+
+        Returns:
+            bool: True if refresh was successful, False otherwise
+        """
+        try:
+            # Navigate to Rates tab via parent
+            if hasattr(self.parent_app, 'rates_tab'):
+                rates_tab = self.parent_app.rates_tab
+
+                # Call _refresh_price_lists to refresh
+                if hasattr(rates_tab, '_refresh_price_lists'):
+                    rates_tab._refresh_price_lists()
+                    logger.info("Price Lists dropdown refreshed successfully")
+                    return True
+                else:
+                    logger.warning("Rates tab does not have _refresh_price_lists method")
+            else:
+                logger.warning("Parent app does not have rates_tab attribute")
+        except Exception as e:
+            logger.error(f"Failed to refresh Price Lists dropdown: {e}", exc_info=True)
 
         return False
 
