@@ -126,7 +126,10 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
             parent: Parent widget
         """
         super().__init__(parent)
+        # Store both original and normalized versions for validation
         self.valid_values = valid_values if valid_values else []
+        self.normalized_valid_values = {str(v).strip(): v for v in self.valid_values if v}
+        logger.debug(f"ValidatedComboBoxDelegate initialized with {len(self.valid_values)} valid values: {self.valid_values}")
 
     def update_valid_values(self, valid_values):
         """Update the list of valid values and trigger repaint.
@@ -135,6 +138,8 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
             valid_values: New list of valid string values
         """
         self.valid_values = valid_values if valid_values else []
+        self.normalized_valid_values = {str(v).strip(): v for v in self.valid_values if v}
+        logger.debug(f"ValidatedComboBoxDelegate updated with {len(self.valid_values)} valid values: {self.valid_values}")
 
     def paint(self, painter, option, index):
         """Paint the cell with validation coloring."""
@@ -145,7 +150,9 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
 
         # Determine background color based on validation
         if value and str(value).strip():
-            if str(value) in self.valid_values:
+            # Normalize the value for comparison (strip whitespace)
+            normalized_value = str(value).strip()
+            if normalized_value in self.normalized_valid_values:
                 # Valid value - blue background
                 bg_color = QtGui.QColor("#0078d4").lighter(180)  # Light blue
             else:
@@ -175,6 +182,7 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
         editor.setEditable(True)  # Allow typing custom values
         editor.addItems([""] + self.valid_values)  # Add empty option first
         editor.setInsertPolicy(QtWidgets.QComboBox.NoInsert)  # Don't add new items to list
+        editor.setFrame(False)  # Match VFX Breakdown dropdown style
         return editor
 
     def setEditorData(self, editor, index):
