@@ -1471,18 +1471,19 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self._apply_scaled_fonts(self, scale_factor)
 
             # Update column widths in all tables to match new DPI scale
-            self._update_table_column_widths()
+            self._update_table_column_widths(scale_factor)
 
             logger.info(f"Applied font scaling: {scale_factor}x")
         except Exception as e:
             logger.error(f"Failed to apply app font scaling: {e}", exc_info=True)
 
-    def _update_table_column_widths(self):
-        """Update column widths in all tables after DPI scale change."""
-        try:
-            # Get the new DPI scale
-            new_dpi_scale = self.app_settings.get_dpi_scale()
+    def _update_table_column_widths(self, new_dpi_scale):
+        """Update column widths in all tables after DPI scale change.
 
+        Args:
+            new_dpi_scale: The new DPI scale factor (e.g., 1.5 for 150%)
+        """
+        try:
             # Calculate the scale ratio
             if hasattr(self, '_current_dpi_scale') and self._current_dpi_scale > 0:
                 scale_ratio = new_dpi_scale / self._current_dpi_scale
@@ -1491,13 +1492,19 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
             logger.info(f"DPI scale changed from {getattr(self, '_current_dpi_scale', 1.0)} to {new_dpi_scale}, ratio: {scale_ratio}")
 
+            # Update the global scale for delegates to use (before updating columns)
+            PackageManagerApp._active_dpi_scale = new_dpi_scale
+
             # Update package tree widget column widths
             if hasattr(self, 'packages_tab') and hasattr(self.packages_tab, 'package_tree'):
                 tree_widget = self.packages_tab.package_tree.tree_widget
+                # Block signals to prevent saving scaled widths
+                tree_widget.header().blockSignals(True)
                 for col in range(tree_widget.columnCount()):
                     current_width = tree_widget.columnWidth(col)
                     new_width = int(current_width * scale_ratio)
                     tree_widget.setColumnWidth(col, new_width)
+                tree_widget.header().blockSignals(False)
                 # Force repaint to update checkbox sizes
                 tree_widget.viewport().update()
                 logger.info(f"Updated package tree column widths with ratio {scale_ratio}")
@@ -1507,18 +1514,20 @@ class PackageManagerApp(QtWidgets.QMainWindow):
                 breakdown_widget = self.bidding_tab.breakdown_widget
                 if hasattr(breakdown_widget, 'table_view') and breakdown_widget.table_view:
                     table_view = breakdown_widget.table_view
+                    header = table_view.horizontalHeader()
+                    # Block signals to prevent saving scaled widths
+                    header.blockSignals(True)
                     for col in range(table_view.model().columnCount() if table_view.model() else 0):
                         current_width = table_view.columnWidth(col)
                         new_width = int(current_width * scale_ratio)
                         table_view.setColumnWidth(col, new_width)
+                    header.blockSignals(False)
                     # Force repaint to update checkbox sizes
                     table_view.viewport().update()
                     logger.info(f"Updated breakdown table column widths with ratio {scale_ratio}")
 
             # Update the tracked DPI scale
             self._current_dpi_scale = new_dpi_scale
-            # Update the global scale for delegates to use
-            PackageManagerApp._active_dpi_scale = new_dpi_scale
 
             logger.info("Updated all table column widths for DPI change")
         except Exception as e:
