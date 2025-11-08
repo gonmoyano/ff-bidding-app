@@ -112,24 +112,24 @@ class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
 
 
 class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
-    """Custom delegate for dropdown with validation coloring.
+    """Custom delegate for combo box cells with List field values and validation coloring.
 
-    Shows a combobox editor with a list of valid values.
-    Paints cell background blue if value exists in valid list, red if not.
+    Based on ComboBoxDelegate from vfx_breakdown_tab.py, with added paint() method
+    for validation coloring (blue for valid, red for invalid values).
     """
 
-    def __init__(self, valid_values, parent=None):
+    def __init__(self, list_values, parent=None):
         """Initialize the delegate.
 
         Args:
-            valid_values: List of valid string values for validation
+            list_values: List of valid string values for the dropdown
             parent: Parent widget
         """
         super().__init__(parent)
-        # Store both original and normalized versions for validation
-        self.valid_values = valid_values if valid_values else []
-        self.normalized_valid_values = {str(v).strip(): v for v in self.valid_values if v}
-        logger.debug(f"ValidatedComboBoxDelegate initialized with {len(self.valid_values)} valid values: {self.valid_values}")
+        self.list_values = list_values or []
+        # Store normalized versions for validation
+        self.normalized_valid_values = {str(v).strip(): v for v in self.list_values if v}
+        logger.debug(f"ValidatedComboBoxDelegate initialized with {len(self.list_values)} valid values: {self.list_values}")
 
     def update_valid_values(self, valid_values):
         """Update the list of valid values and trigger repaint.
@@ -137,9 +137,9 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
         Args:
             valid_values: New list of valid string values
         """
-        self.valid_values = valid_values if valid_values else []
-        self.normalized_valid_values = {str(v).strip(): v for v in self.valid_values if v}
-        logger.debug(f"ValidatedComboBoxDelegate updated with {len(self.valid_values)} valid values: {self.valid_values}")
+        self.list_values = valid_values if valid_values else []
+        self.normalized_valid_values = {str(v).strip(): v for v in self.list_values if v}
+        logger.debug(f"ValidatedComboBoxDelegate updated with {len(self.list_values)} valid values: {self.list_values}")
 
     def paint(self, painter, option, index):
         """Paint the cell with validation coloring matching Asset pill colors."""
@@ -185,7 +185,7 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
         """Create a combo box editor."""
         combo = QtWidgets.QComboBox(parent)
         combo.addItem("")  # Empty option
-        for value in self.valid_values:
+        for value in self.list_values:
             combo.addItem(value)
         combo.setFrame(False)
         return combo
