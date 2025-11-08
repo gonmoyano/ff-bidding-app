@@ -2587,7 +2587,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             "breakdown": {"created": 0, "entity_id": None},
             "assets": {"created": 0, "entity_id": None},
             "scenes": {"created": 0, "entity_id": None},
-            "rates": {"created": 0, "entity_id": None}
+            "rates": {"created": 0, "entity_id": None, "failed": 0}
         }
 
         try:
@@ -2625,9 +2625,10 @@ class BidSelectorWidget(QtWidgets.QWidget):
             # Import Rates
             if selected_entity_types.get("rates") and "Rates" in data:
                 rates_mapping = all_mappings.get("rates", {})
-                created, entity_id = self._import_rates(data["Rates"], rates_mapping, bid_id, bid_name)
+                created, entity_id, failed = self._import_rates(data["Rates"], rates_mapping, bid_id, bid_name)
                 results["rates"]["created"] = created
                 results["rates"]["entity_id"] = entity_id
+                results["rates"]["failed"] = failed
 
             # Show success message
             self._show_import_success(results, data)
@@ -2646,6 +2647,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
     def _show_import_success(self, results, data):
         """Show success message after import."""
         summary_lines = ["Successfully imported Excel data:\n"]
+        has_failures = False
 
         if results["breakdown"]["created"] > 0:
             summary_lines.append(f"✓ Created {results['breakdown']['created']} VFX Breakdown items")
@@ -2654,11 +2656,20 @@ class BidSelectorWidget(QtWidgets.QWidget):
         if results["scenes"]["created"] > 0:
             summary_lines.append(f"✓ Created {results['scenes']['created']} Scene items")
         if results["rates"]["created"] > 0:
-            summary_lines.append(f"✓ Created {results['rates']['created']} Rate items")
+            failed_count = results["rates"].get("failed", 0)
+            if failed_count > 0:
+                summary_lines.append(f"✓ Created {results['rates']['created']} Rate items ({failed_count} failed)")
+                has_failures = True
+            else:
+                summary_lines.append(f"✓ Created {results['rates']['created']} Rate items")
+
+        # Add warning if there were failures
+        if has_failures:
+            summary_lines.append("\n⚠ Some items failed to import. Check the logs for details.")
 
         QtWidgets.QMessageBox.information(
             self,
-            "Import Successful",
+            "Import Successful" if not has_failures else "Import Completed with Errors",
             "\n".join(summary_lines)
         )
 
@@ -3263,12 +3274,12 @@ class BidSelectorWidget(QtWidgets.QWidget):
             bid_name: Name of the Bid for versioning
 
         Returns:
-            tuple: (Number of Line Items created, Price List ID)
+            tuple: (Number of Line Items created, Price List ID, Number of Line Items failed)
         """
         import pandas as pd
 
         if df is None or len(df) == 0:
-            return 0, None
+            return 0, None, 0
 
         logger.info(f"Starting Rates import with {len(df)} rows for Bid: {bid_name} ({bid_id})")
         logger.info(f"Column mapping: {column_mapping}")
@@ -3309,7 +3320,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 "Error",
                 f"Failed to fetch Line Items schema:\n{str(e)}"
             )
-            return 0, None
+            return 0, None, 0
 
         # Step 2: Determine version number for Price List
         # Query existing Price Lists with pattern: {bid_name}-Rates-v*
@@ -3377,7 +3388,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 "Error",
                 f"Failed to create Price List:\n{str(e)}"
             )
-            return 0, None
+            return 0, None, 0
 
         progress.setValue(1)
         QtWidgets.QApplication.processEvents()
@@ -3505,7 +3516,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         else:
             logger.info(f"Successfully created Price List '{price_list_name}' with {created_count} Line Items")
 
-        return created_count, price_list_id
+        return created_count, price_list_id, failed_count
 
     def _refresh_vfx_breakdown_dropdown(self):
         """Refresh the VFX Breakdown dropdown in the VFX Breakdown tab.
