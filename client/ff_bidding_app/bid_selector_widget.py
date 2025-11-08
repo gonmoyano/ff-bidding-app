@@ -691,12 +691,20 @@ class ColumnMappingDialog(QtWidgets.QDialog):
     # These are common fields shown in the column mapping dialog
     RATE_REQUIRED_FIELDS = {
         "code": "text",
-        # Common mandays fields (actual fields auto-discovered from schema)
-        "sg_supervisor_mandays": "float",
-        "sg_vfx_mandays": "float",
-        "sg_previs_mandays": "float",
-        "sg_postvis_mandays": "float",
-        "sg_techvis_mandays": "float",
+        "sg_entity": "entity",
+        "sg_type": "text",
+        "sg_complexity_price": "float",
+        "sg_model_mandays": "float",
+        "sg_tex_mandays": "float",
+        "sg_lookdev_mandays": "float",
+        "sg_rig_mandays": "float",
+        "sg_mm_mandays": "float",
+        "sg_prep_mandays": "float",
+        "sg_gen_mandays": "float",
+        "sg_anim_mandays": "float",
+        "sg_lgt_mandays": "float",
+        "sg_fx_mandays": "float",
+        "sg_cmp_mandays": "float",
     }
 
     # Entity type mapping
