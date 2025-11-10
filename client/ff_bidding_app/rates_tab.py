@@ -52,9 +52,6 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_info_label = None  # Info label for Rate Card
         self.price_lists_group_box = None  # CollapsibleGroupBox for Price Lists
 
-        # Nested tabs
-        self.nested_tab_widget = None
-
         # Rate Card widgets and data
         self.rate_card_combo = None
         self.rate_card_set_btn = None
@@ -128,14 +125,9 @@ class RatesTab(QtWidgets.QWidget):
 
         layout.addWidget(selector_group)
 
-        # Create nested tab widget for Line Items
-        self.nested_tab_widget = QtWidgets.QTabWidget()
-
-        # Create and add Line Items tab
-        line_items_tab = self._create_line_items_tab()
-        self.nested_tab_widget.addTab(line_items_tab, "Line Items")
-
-        layout.addWidget(self.nested_tab_widget)
+        # Create and add Line Items widget directly (no nested tabs)
+        line_items_content = self._create_line_items_tab()
+        layout.addWidget(line_items_content)
 
     def _create_line_items_tab(self):
         """Create the Line Items nested tab content with auto-loading from Price List."""
