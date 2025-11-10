@@ -793,12 +793,21 @@ class RatesTab(QtWidgets.QWidget):
     def _load_rate_card_details(self, rate_card_id):
         """Load details for the selected Rate Card."""
         try:
+            logger.info("=" * 60)
+            logger.info(f"Loading Rate Card ID: {rate_card_id}")
+
             # Fetch schema BEFORE querying data to ensure field allowlist is populated
             if not self.rate_card_field_schema:
+                logger.info("Fetching Rate Card schema...")
                 self._fetch_rate_card_schema()
+
+            logger.info(f"Rate Card field allowlist ({len(self.rate_card_field_allowlist)} fields): {self.rate_card_field_allowlist}")
 
             filters = [["id", "is", rate_card_id]]
             fields = self.rate_card_field_allowlist.copy()
+
+            logger.info(f"Querying CustomEntity09 with filters: {filters}")
+            logger.info(f"Requesting fields: {fields}")
 
             rate_card_data = self.sg_session.sg.find_one(
                 "CustomEntity09",
@@ -806,13 +815,22 @@ class RatesTab(QtWidgets.QWidget):
                 fields
             )
 
+            logger.info(f"Query returned data: {rate_card_data}")
+
             if rate_card_data:
+                logger.info(f"Rate Card data keys: {list(rate_card_data.keys())}")
+                logger.info(f"Loading into widget with field_schema keys: {list(self.rate_card_field_schema.keys())}")
+
                 self.rate_card_widget.load_bidding_scenes([rate_card_data], field_schema=self.rate_card_field_schema)
                 display_name = self.rate_card_combo.currentText()
                 self._set_rate_card_status(f"Loaded Rate Card '{display_name}'.")
+                logger.info(f"✓ Successfully loaded Rate Card '{display_name}'")
             else:
+                logger.warning("Rate Card not found in query result")
                 self._set_rate_card_status("Rate Card not found.")
                 self.rate_card_widget.clear_data()
+
+            logger.info("=" * 60)
 
         except Exception as e:
             logger.error(f"Failed to load rate card details: {e}", exc_info=True)
