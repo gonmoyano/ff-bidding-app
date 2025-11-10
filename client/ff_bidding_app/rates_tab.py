@@ -49,6 +49,7 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_set_btn = None
         self.price_lists_refresh_btn = None
         self.price_lists_status_label = None
+        self.price_lists_info_label = None  # Info label for Rate Card
         self.price_lists_group_box = None  # CollapsibleGroupBox for Price Lists
 
         # Nested tabs
@@ -92,6 +93,10 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_set_btn.clicked.connect(self._on_set_current_price_list)
         selector_row.addWidget(self.price_lists_set_btn)
 
+        self.price_lists_rate_cards_btn = QtWidgets.QPushButton("Rate Cards")
+        self.price_lists_rate_cards_btn.clicked.connect(self._on_open_rate_cards_dialog)
+        selector_row.addWidget(self.price_lists_rate_cards_btn)
+
         self.price_lists_add_btn = QtWidgets.QPushButton("Add")
         self.price_lists_add_btn.clicked.connect(self._on_add_price_list)
         selector_row.addWidget(self.price_lists_add_btn)
@@ -115,89 +120,22 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
         selector_group.addWidget(self.price_lists_status_label)
 
+        # Add info label for Rate Card
+        self.price_lists_info_label = QtWidgets.QLabel("")
+        self.price_lists_info_label.setObjectName("priceListsInfoLabel")
+        self.price_lists_info_label.setStyleSheet("color: #6b9bd1; font-weight: bold; padding: 2px 0;")
+        selector_group.addWidget(self.price_lists_info_label)
+
         layout.addWidget(selector_group)
 
-        # Create nested tab widget for Rate Card, Line Items, and Prices
+        # Create nested tab widget for Line Items
         self.nested_tab_widget = QtWidgets.QTabWidget()
 
-        # Create and add nested tabs
-        rate_card_tab = self._create_rate_card_tab()
-        self.nested_tab_widget.addTab(rate_card_tab, "Rate Card")
-
+        # Create and add Line Items tab
         line_items_tab = self._create_line_items_tab()
         self.nested_tab_widget.addTab(line_items_tab, "Line Items")
 
-        prices_tab = self._create_prices_tab()
-        self.nested_tab_widget.addTab(prices_tab, "Prices")
-
         layout.addWidget(self.nested_tab_widget)
-
-    def _create_rate_card_tab(self):
-        """Create the Rate Card nested tab content with full functionality."""
-        widget = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(widget)
-        layout.setContentsMargins(6, 6, 6, 6)
-
-        # Selector group (collapsible)
-        selector_group = CollapsibleGroupBox("Rate Card")
-
-        selector_row = QtWidgets.QHBoxLayout()
-        selector_label = QtWidgets.QLabel("Rate Card:")
-        selector_row.addWidget(selector_label)
-
-        self.rate_card_combo = QtWidgets.QComboBox()
-        self.rate_card_combo.setMinimumWidth(250)
-        self.rate_card_combo.currentIndexChanged.connect(self._on_rate_card_changed)
-        selector_row.addWidget(self.rate_card_combo, stretch=1)
-
-        self.rate_card_set_btn = QtWidgets.QPushButton("Set as Current")
-        self.rate_card_set_btn.setEnabled(False)
-        self.rate_card_set_btn.clicked.connect(self._on_set_current_rate_card)
-        selector_row.addWidget(self.rate_card_set_btn)
-
-        self.rate_card_add_btn = QtWidgets.QPushButton("Add")
-        self.rate_card_add_btn.clicked.connect(self._on_add_rate_card)
-        selector_row.addWidget(self.rate_card_add_btn)
-
-        self.rate_card_remove_btn = QtWidgets.QPushButton("Remove")
-        self.rate_card_remove_btn.clicked.connect(self._on_remove_rate_card)
-        selector_row.addWidget(self.rate_card_remove_btn)
-
-        self.rate_card_rename_btn = QtWidgets.QPushButton("Rename")
-        self.rate_card_rename_btn.clicked.connect(self._on_rename_rate_card)
-        selector_row.addWidget(self.rate_card_rename_btn)
-
-        self.rate_card_refresh_btn = QtWidgets.QPushButton("Refresh")
-        self.rate_card_refresh_btn.clicked.connect(self._refresh_rate_cards)
-        selector_row.addWidget(self.rate_card_refresh_btn)
-
-        selector_group.addLayout(selector_row)
-
-        self.rate_card_status_label = QtWidgets.QLabel("Select a Price List to view Rate Cards.")
-        self.rate_card_status_label.setObjectName("rateCardStatusLabel")
-        self.rate_card_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        selector_group.addWidget(self.rate_card_status_label)
-
-        layout.addWidget(selector_group)
-
-        # Create reusable Rate Card widget (reusing VFXBreakdownWidget)
-        self.rate_card_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, settings_key="rate_card", parent=self)
-
-        # Set context provider so the widget can access current_price_list_id, current_project_id, etc.
-        self.rate_card_widget.context_provider = self
-
-        # Configure the model to use Rate Card-specific columns
-        if hasattr(self.rate_card_widget, 'model') and self.rate_card_widget.model:
-            self.rate_card_widget.model.column_fields = self.rate_card_field_allowlist.copy()
-            self.rate_card_widget.model.entity_type = "CustomEntity09"
-            logger.info(f"Configured Rate Card widget model with fields: {self.rate_card_field_allowlist}")
-
-        # Connect widget signals
-        self.rate_card_widget.statusMessageChanged.connect(lambda msg, err: self._set_rate_card_status(msg, err))
-
-        layout.addWidget(self.rate_card_widget)
-
-        return widget
 
     def _create_line_items_tab(self):
         """Create the Line Items nested tab content with auto-loading from Price List."""
@@ -234,26 +172,6 @@ class RatesTab(QtWidgets.QWidget):
         self.line_items_widget.statusMessageChanged.connect(lambda msg, err: logger.info(f"Line Items status: {msg}"))
 
         layout.addWidget(self.line_items_widget)
-
-        return widget
-
-    def _create_prices_tab(self):
-        """Create the Prices nested tab content."""
-        widget = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(widget)
-
-        # Title
-        title_label = QtWidgets.QLabel("Prices")
-        title_label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 20px;")
-        layout.addWidget(title_label)
-
-        # Placeholder content
-        info_label = QtWidgets.QLabel("Prices content will be displayed here.\nThis section will contain pricing information for the selected Price List.")
-        info_label.setStyleSheet("padding: 20px;")
-        info_label.setWordWrap(True)
-        layout.addWidget(info_label)
-
-        layout.addStretch()
 
         return widget
 
@@ -409,16 +327,14 @@ class RatesTab(QtWidgets.QWidget):
         """Handle Price Lists selection change.
 
         CASCADE LOGIC:
-        - If Price List == placeholder → ALWAYS clear Rate Card & Line Items
-        - If Price List is valid → ALWAYS refresh Rate Card & Line Items
+        - If Price List == placeholder → ALWAYS clear Line Items
+        - If Price List is valid → ALWAYS refresh Line Items
         """
         if index < 0:
             self.current_price_list_id = None
             self.current_price_list_data = None
             self._update_price_list_info_label(None)
             # Ensure cascade happens even for invalid index
-            if hasattr(self, 'rate_card_combo'):
-                self._clear_rate_card_tab()
             if hasattr(self, 'line_items_widget'):
                 self._clear_line_items_tab()
             return
@@ -430,12 +346,10 @@ class RatesTab(QtWidgets.QWidget):
             self.current_price_list_data = None
             self._set_price_lists_status("Select a Price List to view details.")
             self._update_price_list_info_label(None)
-            # ALWAYS Clear Rate Card and Line Items tabs when placeholder selected
-            if hasattr(self, 'rate_card_combo'):
-                self._clear_rate_card_tab()
+            # ALWAYS Clear Line Items tab when placeholder selected
             if hasattr(self, 'line_items_widget'):
                 self._clear_line_items_tab()
-            logger.info("Price List set to placeholder - cascaded to clear Rate Card and Line Items")
+            logger.info("Price List set to placeholder - cascaded to clear Line Items")
             return
 
         # Store the selected price list ID
@@ -447,9 +361,7 @@ class RatesTab(QtWidgets.QWidget):
         # Fetch full price list data with linked entities
         self._fetch_price_list_data(price_list_id)
 
-        # ALWAYS Refresh Rate Card and Line Items tabs when valid Price List selected
-        if hasattr(self, 'rate_card_combo'):
-            self._refresh_rate_cards()
+        # ALWAYS Refresh Line Items tab when valid Price List selected
         if hasattr(self, 'line_items_widget'):
             self._load_line_items()
 
@@ -477,12 +389,11 @@ class RatesTab(QtWidgets.QWidget):
             price_list_data: Price List data dict or None
         """
         if not price_list_data:
-            # Clear label and group box title if no price list selected
+            # Clear labels and group box title if no price list selected
             self.price_lists_status_label.setText("Select a Bid to view Price Lists.")
+            self.price_lists_info_label.setText("")
             self.price_lists_group_box.setAdditionalInfo("")
             return
-
-        info_parts = []
 
         # Get price list name for title bar
         price_list_name = price_list_data.get("code") or f"Price List {price_list_data.get('id', 'N/A')}"
@@ -499,14 +410,15 @@ class RatesTab(QtWidgets.QWidget):
                 rate_card_name = rate_card[0].get("name") or rate_card[0].get("code") or f"ID {rate_card[0].get('id', 'N/A')}"
             else:
                 rate_card_name = str(rate_card)
-            info_parts.append(f"Rate Card: {rate_card_name}")
             title_text += f" | Rate Card: {rate_card_name}"
-
-        # Update the label with the info (for display under dropdown)
-        if info_parts:
-            self.price_lists_status_label.setText("  ".join(info_parts))
+            # Update the dedicated info label with Rate Card
+            self.price_lists_info_label.setText(f"Rate Card: {rate_card_name}")
         else:
-            self.price_lists_status_label.setText(f"Selected Price List: '{price_list_name}'.")
+            # No Rate Card assigned
+            self.price_lists_info_label.setText("No Rate Card assigned")
+
+        # Update the status label to just show the price list name
+        self.price_lists_status_label.setText(f"Selected Price List: '{price_list_name}'.")
 
         # Update the group box title with price list name and info (for collapsed state)
         self.price_lists_group_box.setAdditionalInfo(title_text)
@@ -673,350 +585,18 @@ class RatesTab(QtWidgets.QWidget):
                 f"Failed to rename Price List:\n{str(e)}"
             )
 
-    # ===========================
-    # Rate Card Methods
-    # ===========================
-
-    def _set_rate_card_status(self, message, is_error=False):
-        """Set the status message for rate card."""
-        if is_error:
-            self.rate_card_status_label.setStyleSheet("color: #ff6b6b; padding: 2px 0;")
-        else:
-            self.rate_card_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        self.rate_card_status_label.setText(message)
-
-    def _clear_rate_card_tab(self):
-        """Clear the Rate Card tab and trigger cascade.
-
-        CASCADE LOGIC:
-        - ALWAYS resets Rate Card dropdown to placeholder
-        - ALWAYS triggers _on_rate_card_changed(0) to clear Rate Card table
-        """
-        self.rate_card_combo.blockSignals(True)
-        self.rate_card_combo.clear()
-        self.rate_card_combo.addItem("-- Select Rate Card --", None)
-        self.rate_card_combo.setCurrentIndex(0)
-        self.rate_card_combo.blockSignals(False)
-        self.rate_card_set_btn.setEnabled(False)
-        self._set_rate_card_status("Select a Price List to view Rate Cards.")
-        # ALWAYS trigger cascade to clear Rate Card table
-        self._on_rate_card_changed(0)
-        logger.info("Rate Card tab cleared - triggered cascade to clear Rate Card table")
-
-    def _refresh_rate_cards(self):
-        """Refresh the list of Rate Cards for the current price list."""
-        if not self.current_project_id or not self.current_price_list_id:
-            self._clear_rate_card_tab()
-            return
-
-        try:
-            # Query CustomEntity09 (Rate Cards) filtered by project
-            filters = [
-                ["project", "is", {"type": "Project", "id": self.current_project_id}]
-            ]
-
-            rate_cards_list = self.sg_session.sg.find(
-                "CustomEntity09",
-                filters,
-                ["code", "id", "description"]
-            )
-
-            # Update combo box
-            self.rate_card_combo.blockSignals(True)
-            self.rate_card_combo.clear()
-            self.rate_card_combo.addItem("-- Select Rate Card --", None)
-
-            for rate_card in sorted(rate_cards_list, key=lambda x: x.get("code", "")):
-                self.rate_card_combo.addItem(rate_card.get("code", "Unnamed"), rate_card["id"])
-
-            self.rate_card_combo.blockSignals(False)
-
-            if rate_cards_list:
-                self._set_rate_card_status(f"Found {len(rate_cards_list)} Rate Card(s)")
-                self.rate_card_set_btn.setEnabled(True)
-
-                # Auto-select the Rate Card linked to this Price List (if any)
-                linked_rate_card_id = None
-                if self.current_price_list_data:
-                    linked_rate_card = self.current_price_list_data.get("sg_rate_card")
-                    if linked_rate_card and isinstance(linked_rate_card, dict):
-                        linked_rate_card_id = linked_rate_card.get("id")
-
-                # Try to find and select the linked Rate Card
-                if linked_rate_card_id:
-                    for i in range(self.rate_card_combo.count()):
-                        if self.rate_card_combo.itemData(i) == linked_rate_card_id:
-                            self.rate_card_combo.setCurrentIndex(i)
-                            logger.info(f"Auto-selected Rate Card {linked_rate_card_id} linked to current Price List")
-                            # Explicitly load rate card details to ensure table is updated
-                            self._load_rate_card_details(linked_rate_card_id)
-                            break
-                    else:
-                        # Linked Rate Card not found - trigger cascade
-                        logger.warning(f"Linked Rate Card {linked_rate_card_id} not found in project")
-                        self._on_rate_card_changed(0)
-                else:
-                    # No linked Rate Card - trigger cascade
-                    self._on_rate_card_changed(0)
-            else:
-                self._set_rate_card_status("No Rate Cards found for this project.")
-                self.rate_card_set_btn.setEnabled(False)
-                # Trigger cascade to clear table
-                self._on_rate_card_changed(0)
-
-        except Exception as e:
-            logger.error(f"Failed to refresh Rate Cards: {e}", exc_info=True)
-            self._set_rate_card_status("Failed to load Rate Cards.", is_error=True)
-
-    def _on_rate_card_changed(self, index):
-        """Handle Rate Card selection change.
-
-        CASCADE LOGIC:
-        - If Rate Card == placeholder → ALWAYS clear Rate Card table
-        - If Rate Card is valid → ALWAYS load Rate Card details
-        """
-        if index < 0:
-            self.rate_card_widget.clear_data()
-            logger.info("Rate Card index invalid - cleared Rate Card table")
-            return
-
-        rate_card_id = self.rate_card_combo.currentData()
-        if not rate_card_id:
-            # Placeholder selected - ALWAYS clear Rate Card table
-            self.rate_card_widget.clear_data()
-            logger.info("Rate Card set to placeholder - cleared Rate Card table")
-            return
-
-        # Load the selected rate card details
-        self._load_rate_card_details(rate_card_id)
-
-    def _load_rate_card_details(self, rate_card_id):
-        """Load details for the selected Rate Card."""
-        try:
-            filters = [["id", "is", rate_card_id]]
-            fields = self.rate_card_field_allowlist.copy()
-
-            rate_card_data = self.sg_session.sg.find_one(
-                "CustomEntity09",
-                filters,
-                fields
-            )
-
-            if rate_card_data:
-                # Fetch schema if not already loaded
-                if not self.rate_card_field_schema:
-                    self._fetch_rate_card_schema()
-
-                self.rate_card_widget.load_bidding_scenes([rate_card_data], field_schema=self.rate_card_field_schema)
-                display_name = self.rate_card_combo.currentText()
-                self._set_rate_card_status(f"Loaded Rate Card '{display_name}'.")
-            else:
-                self._set_rate_card_status("Rate Card not found.")
-                self.rate_card_widget.clear_data()
-
-        except Exception as e:
-            logger.error(f"Failed to load rate card details: {e}", exc_info=True)
-            self._set_rate_card_status("Failed to load rate card details.", is_error=True)
-
-    def _fetch_rate_card_schema(self):
-        """Fetch the schema for CustomEntity09 (Rate Cards) and build field allowlist."""
-        try:
-            schema = self.sg_session.sg.schema_field_read("CustomEntity09")
-
-            # Build field allowlist: start with basic fields, then add all fields ending with "_rate"
-            self.rate_card_field_allowlist = ["id", "code"]
-
-            # Find all fields ending with "_rate"
-            rate_fields = []
-            for field_name in schema.keys():
-                if field_name.endswith("_rate"):
-                    rate_fields.append(field_name)
-
-            # Sort rate fields alphabetically for consistent display
-            rate_fields.sort()
-            self.rate_card_field_allowlist.extend(rate_fields)
-
-            logger.info(f"Built Rate Card field allowlist with {len(self.rate_card_field_allowlist)} fields: {self.rate_card_field_allowlist}")
-
-            # Build field schema dictionary for allowlisted fields
-            for field_name in self.rate_card_field_allowlist:
-                if field_name not in schema:
-                    logger.warning(f"Field {field_name} not found in CustomEntity09 schema")
-                    continue
-
-                field_info = schema[field_name]
-                self.rate_card_field_schema[field_name] = {
-                    "data_type": field_info.get("data_type", {}).get("value"),
-                    "properties": field_info.get("properties", {}),
-                    "editable": field_info.get("editable", {}).get("value", True),
-                    "display_name": field_info.get("name", {}).get("value", field_name)
-                }
-
-            logger.info(f"Fetched schema for CustomEntity09 with {len(self.rate_card_field_schema)} fields")
-
-            # Update model's column fields and headers
-            if hasattr(self.rate_card_widget, 'model') and self.rate_card_widget.model:
-                self.rate_card_widget.model.column_fields = self.rate_card_field_allowlist.copy()
-
-                display_names = {field: self.rate_card_field_schema[field]["display_name"]
-                                for field in self.rate_card_field_allowlist
-                                if field in self.rate_card_field_schema}
-                if "id" in display_names:
-                    display_names["id"] = "SG ID"
-                self.rate_card_widget.model.set_column_headers(display_names)
-
-        except Exception as e:
-            logger.error(f"Failed to fetch schema for CustomEntity09: {e}", exc_info=True)
-
-    def _on_set_current_rate_card(self):
-        """Set the selected Rate Card as current for the Price List."""
+    def _on_open_rate_cards_dialog(self):
+        """Open the Rate Cards dialog."""
         if not self.current_price_list_id:
             QtWidgets.QMessageBox.warning(self, "No Price List Selected", "Please select a Price List first.")
             return
 
-        rate_card_id = self.rate_card_combo.currentData()
-        if not rate_card_id:
-            QtWidgets.QMessageBox.warning(self, "No Rate Card Selected", "Please select a Rate Card.")
-            return
+        dialog = RateCardDialog(self.sg_session, self.current_price_list_id, self.current_project_id, self)
+        dialog.exec()
 
-        try:
-            self.sg_session.sg.update(
-                "CustomEntity10",
-                self.current_price_list_id,
-                {"sg_rate_card": {"type": "CustomEntity09", "id": rate_card_id}}
-            )
-
-            rate_card_name = self.rate_card_combo.currentText()
-            self._set_rate_card_status(f"Set '{rate_card_name}' as current Rate Card.")
-            QtWidgets.QMessageBox.information(
-                self,
-                "Success",
-                f"'{rate_card_name}' is now the current Rate Card for this Price List."
-            )
-
-            logger.info(f"Set Rate Card {rate_card_id} as current for Price List {self.current_price_list_id}")
-
-        except Exception as e:
-            logger.error(f"Failed to set current Rate Card: {e}", exc_info=True)
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to set current Rate Card:\n{str(e)}"
-            )
-
-    def _on_add_rate_card(self):
-        """Add a new Rate Card."""
-        if not self.current_project_id:
-            QtWidgets.QMessageBox.warning(self, "No Project Selected", "Please select a project first.")
-            return
-
-        name, ok = QtWidgets.QInputDialog.getText(
-            self,
-            "Add Rate Card",
-            "Enter name for new Rate Card:"
-        )
-
-        if not ok or not name:
-            return
-
-        try:
-            rate_card_data = {
-                "code": name,
-                "project": {"type": "Project", "id": self.current_project_id}
-            }
-
-            new_rate_card = self.sg_session.sg.create("CustomEntity09", rate_card_data)
-
-            logger.info(f"Created Rate Card: {name} (ID: {new_rate_card['id']})")
-            self._set_rate_card_status(f"Created Rate Card '{name}'.")
-
-            self._refresh_rate_cards()
-
-            for i in range(self.rate_card_combo.count()):
-                if self.rate_card_combo.itemData(i) == new_rate_card['id']:
-                    self.rate_card_combo.setCurrentIndex(i)
-                    break
-
-        except Exception as e:
-            logger.error(f"Failed to create Rate Card: {e}", exc_info=True)
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to create Rate Card:\n{str(e)}"
-            )
-
-    def _on_remove_rate_card(self):
-        """Remove the selected Rate Card."""
-        rate_card_id = self.rate_card_combo.currentData()
-        if not rate_card_id:
-            QtWidgets.QMessageBox.warning(self, "No Rate Card Selected", "Please select a Rate Card to remove.")
-            return
-
-        rate_card_name = self.rate_card_combo.currentText()
-
-        reply = QtWidgets.QMessageBox.question(
-            self,
-            "Confirm Deletion",
-            f"Are you sure you want to delete Rate Card '{rate_card_name}'?",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
-        )
-
-        if reply != QtWidgets.QMessageBox.Yes:
-            return
-
-        try:
-            self.sg_session.sg.delete("CustomEntity09", rate_card_id)
-
-            logger.info(f"Deleted Rate Card: {rate_card_name} (ID: {rate_card_id})")
-            self._set_rate_card_status(f"Deleted Rate Card '{rate_card_name}'.")
-
-            self._refresh_rate_cards()
-
-        except Exception as e:
-            logger.error(f"Failed to delete Rate Card: {e}", exc_info=True)
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to delete Rate Card:\n{str(e)}"
-            )
-
-    def _on_rename_rate_card(self):
-        """Rename the selected Rate Card."""
-        rate_card_id = self.rate_card_combo.currentData()
-        if not rate_card_id:
-            QtWidgets.QMessageBox.warning(self, "No Rate Card Selected", "Please select a Rate Card to rename.")
-            return
-
-        current_name = self.rate_card_combo.currentText()
-
-        new_name, ok = QtWidgets.QInputDialog.getText(
-            self,
-            "Rename Rate Card",
-            "Enter new name:",
-            text=current_name
-        )
-
-        if not ok or not new_name or new_name == current_name:
-            return
-
-        try:
-            self.sg_session.sg.update("CustomEntity09", rate_card_id, {"code": new_name})
-
-            logger.info(f"Renamed Rate Card from '{current_name}' to '{new_name}' (ID: {rate_card_id})")
-            self._set_rate_card_status(f"Renamed to '{new_name}'.")
-
-            current_index = self.rate_card_combo.currentIndex()
-            self._refresh_rate_cards()
-            if current_index < self.rate_card_combo.count():
-                self.rate_card_combo.setCurrentIndex(current_index)
-
-        except Exception as e:
-            logger.error(f"Failed to rename Rate Card: {e}", exc_info=True)
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to rename Rate Card:\n{str(e)}"
-            )
+        # Refresh Price List data to update the info label with any changes from the dialog
+        if self.current_price_list_id:
+            self._fetch_price_list_data(self.current_price_list_id)
 
     # ===========================
     # Line Items Methods
@@ -1211,3 +791,428 @@ class RatesTab(QtWidgets.QWidget):
 
         except Exception as e:
             logger.error(f"Failed to fetch schema for CustomEntity03: {e}", exc_info=True)
+
+
+class RateCardDialog(QtWidgets.QDialog):
+    """Dialog for managing Rate Cards."""
+
+    def __init__(self, sg_session, price_list_id, project_id, parent=None):
+        """Initialize the Rate Card dialog.
+
+        Args:
+            sg_session: ShotgridClient instance
+            price_list_id: ID of the current Price List
+            project_id: ID of the project
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.sg_session = sg_session
+        self.current_price_list_id = price_list_id
+        self.current_project_id = project_id
+        self.current_price_list_data = None
+
+        # Rate Card widgets and data
+        self.rate_card_combo = None
+        self.rate_card_set_btn = None
+        self.rate_card_status_label = None
+        self.rate_card_widget = None
+        self.rate_card_field_schema = {}
+        self.rate_card_field_allowlist = []
+
+        self.setWindowTitle("Rate Cards")
+        self.resize(1000, 600)
+
+        self._build_ui()
+        self._fetch_price_list_data()
+        self._refresh_rate_cards()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        # Selector group
+        selector_group = CollapsibleGroupBox("Rate Card")
+
+        selector_row = QtWidgets.QHBoxLayout()
+        selector_label = QtWidgets.QLabel("Rate Card:")
+        selector_row.addWidget(selector_label)
+
+        self.rate_card_combo = QtWidgets.QComboBox()
+        self.rate_card_combo.setMinimumWidth(250)
+        self.rate_card_combo.currentIndexChanged.connect(self._on_rate_card_changed)
+        selector_row.addWidget(self.rate_card_combo, stretch=1)
+
+        self.rate_card_set_btn = QtWidgets.QPushButton("Set as Current")
+        self.rate_card_set_btn.setEnabled(False)
+        self.rate_card_set_btn.clicked.connect(self._on_set_current_rate_card)
+        selector_row.addWidget(self.rate_card_set_btn)
+
+        self.rate_card_add_btn = QtWidgets.QPushButton("Add")
+        self.rate_card_add_btn.clicked.connect(self._on_add_rate_card)
+        selector_row.addWidget(self.rate_card_add_btn)
+
+        self.rate_card_remove_btn = QtWidgets.QPushButton("Remove")
+        self.rate_card_remove_btn.clicked.connect(self._on_remove_rate_card)
+        selector_row.addWidget(self.rate_card_remove_btn)
+
+        self.rate_card_rename_btn = QtWidgets.QPushButton("Rename")
+        self.rate_card_rename_btn.clicked.connect(self._on_rename_rate_card)
+        selector_row.addWidget(self.rate_card_rename_btn)
+
+        self.rate_card_refresh_btn = QtWidgets.QPushButton("Refresh")
+        self.rate_card_refresh_btn.clicked.connect(self._refresh_rate_cards)
+        selector_row.addWidget(self.rate_card_refresh_btn)
+
+        selector_group.addLayout(selector_row)
+
+        self.rate_card_status_label = QtWidgets.QLabel("Loading Rate Cards...")
+        self.rate_card_status_label.setObjectName("rateCardStatusLabel")
+        self.rate_card_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
+        selector_group.addWidget(self.rate_card_status_label)
+
+        layout.addWidget(selector_group)
+
+        # Create Rate Card widget
+        self.rate_card_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, settings_key="rate_card_dialog", parent=self)
+
+        # Set context provider
+        self.rate_card_widget.context_provider = self
+
+        # Configure the model to use Rate Card-specific columns
+        if hasattr(self.rate_card_widget, 'model') and self.rate_card_widget.model:
+            self.rate_card_widget.model.column_fields = self.rate_card_field_allowlist.copy()
+            self.rate_card_widget.model.entity_type = "CustomNonProjectEntity01"
+            logger.info(f"Configured Rate Card dialog widget model with fields: {self.rate_card_field_allowlist}")
+
+        # Connect widget signals
+        self.rate_card_widget.statusMessageChanged.connect(lambda msg, err: self._set_rate_card_status(msg, err))
+
+        layout.addWidget(self.rate_card_widget)
+
+        # Add Close button at the bottom
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        button_layout.addWidget(close_btn)
+        layout.addLayout(button_layout)
+
+    def _fetch_price_list_data(self):
+        """Fetch full price list data including linked entities."""
+        try:
+            price_list_data = self.sg_session.sg.find_one(
+                "CustomEntity10",
+                [["id", "is", self.current_price_list_id]],
+                ["code", "sg_rate_card"]
+            )
+            self.current_price_list_data = price_list_data
+            logger.info(f"Fetched Price List data: {price_list_data}")
+        except Exception as e:
+            logger.error(f"Failed to fetch Price List data: {e}", exc_info=True)
+            self.current_price_list_data = None
+
+    def _set_rate_card_status(self, message, is_error=False):
+        """Set the status message for rate card."""
+        if is_error:
+            self.rate_card_status_label.setStyleSheet("color: #ff6b6b; padding: 2px 0;")
+        else:
+            self.rate_card_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
+        self.rate_card_status_label.setText(message)
+
+    def _refresh_rate_cards(self):
+        """Refresh the list of Rate Cards."""
+        try:
+            # Query CustomNonProjectEntity01 (Rate Cards)
+            filters = []
+
+            rate_cards_list = self.sg_session.sg.find(
+                "CustomNonProjectEntity01",
+                filters,
+                ["code", "id", "description"]
+            )
+
+            # Update combo box
+            self.rate_card_combo.blockSignals(True)
+            self.rate_card_combo.clear()
+            self.rate_card_combo.addItem("-- Select Rate Card --", None)
+
+            for rate_card in sorted(rate_cards_list, key=lambda x: x.get("code", "")):
+                self.rate_card_combo.addItem(rate_card.get("code", "Unnamed"), rate_card["id"])
+
+            self.rate_card_combo.blockSignals(False)
+
+            if rate_cards_list:
+                self._set_rate_card_status(f"Found {len(rate_cards_list)} Rate Card(s)")
+                self.rate_card_set_btn.setEnabled(True)
+
+                # Auto-select the Rate Card linked to this Price List (if any)
+                linked_rate_card_id = None
+                if self.current_price_list_data:
+                    linked_rate_card = self.current_price_list_data.get("sg_rate_card")
+                    if linked_rate_card and isinstance(linked_rate_card, dict):
+                        linked_rate_card_id = linked_rate_card.get("id")
+
+                # Try to find and select the linked Rate Card
+                if linked_rate_card_id:
+                    for i in range(self.rate_card_combo.count()):
+                        if self.rate_card_combo.itemData(i) == linked_rate_card_id:
+                            self.rate_card_combo.setCurrentIndex(i)
+                            logger.info(f"Auto-selected Rate Card {linked_rate_card_id} linked to current Price List")
+                            self._load_rate_card_details(linked_rate_card_id)
+                            break
+                    else:
+                        logger.warning(f"Linked Rate Card {linked_rate_card_id} not found")
+                        self._on_rate_card_changed(0)
+                else:
+                    self._on_rate_card_changed(0)
+            else:
+                self._set_rate_card_status("No Rate Cards found.")
+                self.rate_card_set_btn.setEnabled(False)
+                self._on_rate_card_changed(0)
+
+        except Exception as e:
+            logger.error(f"Failed to refresh Rate Cards: {e}", exc_info=True)
+            self._set_rate_card_status("Failed to load Rate Cards.", is_error=True)
+
+    def _on_rate_card_changed(self, index):
+        """Handle Rate Card selection change."""
+        if index < 0:
+            self.rate_card_widget.clear_data()
+            logger.info("Rate Card index invalid - cleared Rate Card table")
+            return
+
+        rate_card_id = self.rate_card_combo.currentData()
+        if not rate_card_id:
+            self.rate_card_widget.clear_data()
+            logger.info("Rate Card set to placeholder - cleared Rate Card table")
+            return
+
+        # Load the selected rate card details
+        self._load_rate_card_details(rate_card_id)
+
+    def _load_rate_card_details(self, rate_card_id):
+        """Load details for the selected Rate Card."""
+        try:
+            # Fetch schema if not already loaded - MUST be done before querying
+            if not self.rate_card_field_schema:
+                self._fetch_rate_card_schema()
+
+            filters = [["id", "is", rate_card_id]]
+            fields = self.rate_card_field_allowlist.copy()
+
+            rate_card_data = self.sg_session.sg.find_one(
+                "CustomNonProjectEntity01",
+                filters,
+                fields
+            )
+
+            if rate_card_data:
+                self.rate_card_widget.load_bidding_scenes([rate_card_data], field_schema=self.rate_card_field_schema)
+                display_name = self.rate_card_combo.currentText()
+                self._set_rate_card_status(f"Loaded Rate Card '{display_name}'.")
+            else:
+                self._set_rate_card_status("Rate Card not found.")
+                self.rate_card_widget.clear_data()
+
+        except Exception as e:
+            logger.error(f"Failed to load rate card details: {e}", exc_info=True)
+            self._set_rate_card_status("Failed to load rate card details.", is_error=True)
+
+    def _fetch_rate_card_schema(self):
+        """Fetch the schema for CustomNonProjectEntity01 (Rate Cards) and build field allowlist."""
+        try:
+            schema = self.sg_session.sg.schema_field_read("CustomNonProjectEntity01")
+
+            # Build field allowlist: start with basic fields, then add all fields ending with "_rate"
+            self.rate_card_field_allowlist = ["id", "code"]
+
+            # Find all fields ending with "_rate"
+            rate_fields = []
+            for field_name in schema.keys():
+                if field_name.endswith("_rate"):
+                    rate_fields.append(field_name)
+
+            # Sort rate fields alphabetically for consistent display
+            rate_fields.sort()
+            self.rate_card_field_allowlist.extend(rate_fields)
+
+            logger.info(f"Built Rate Card field allowlist with {len(self.rate_card_field_allowlist)} fields: {self.rate_card_field_allowlist}")
+
+            # Build field schema dictionary for allowlisted fields
+            for field_name in self.rate_card_field_allowlist:
+                if field_name not in schema:
+                    logger.warning(f"Field {field_name} not found in CustomNonProjectEntity01 schema")
+                    continue
+
+                field_info = schema[field_name]
+                self.rate_card_field_schema[field_name] = {
+                    "data_type": field_info.get("data_type", {}).get("value"),
+                    "properties": field_info.get("properties", {}),
+                    "editable": field_info.get("editable", {}).get("value", True),
+                    "display_name": field_info.get("name", {}).get("value", field_name)
+                }
+
+            logger.info(f"Fetched schema for CustomNonProjectEntity01 with {len(self.rate_card_field_schema)} fields")
+
+            # Update model's column fields and headers
+            if hasattr(self.rate_card_widget, 'model') and self.rate_card_widget.model:
+                self.rate_card_widget.model.column_fields = self.rate_card_field_allowlist.copy()
+
+                display_names = {field: self.rate_card_field_schema[field]["display_name"]
+                                for field in self.rate_card_field_allowlist
+                                if field in self.rate_card_field_schema}
+                if "id" in display_names:
+                    display_names["id"] = "SG ID"
+                self.rate_card_widget.model.set_column_headers(display_names)
+
+        except Exception as e:
+            logger.error(f"Failed to fetch schema for CustomNonProjectEntity01: {e}", exc_info=True)
+
+    def _on_set_current_rate_card(self):
+        """Set the selected Rate Card as current for the Price List."""
+        if not self.current_price_list_id:
+            QtWidgets.QMessageBox.warning(self, "No Price List Selected", "Please select a Price List first.")
+            return
+
+        rate_card_id = self.rate_card_combo.currentData()
+        if not rate_card_id:
+            QtWidgets.QMessageBox.warning(self, "No Rate Card Selected", "Please select a Rate Card.")
+            return
+
+        try:
+            self.sg_session.sg.update(
+                "CustomEntity10",
+                self.current_price_list_id,
+                {"sg_rate_card": {"type": "CustomNonProjectEntity01", "id": rate_card_id}}
+            )
+
+            rate_card_name = self.rate_card_combo.currentText()
+            self._set_rate_card_status(f"Set '{rate_card_name}' as current Rate Card.")
+            QtWidgets.QMessageBox.information(
+                self,
+                "Success",
+                f"'{rate_card_name}' is now the current Rate Card for this Price List."
+            )
+
+            logger.info(f"Set Rate Card {rate_card_id} as current for Price List {self.current_price_list_id}")
+
+            # Refresh price list data to reflect the change
+            self._fetch_price_list_data()
+
+        except Exception as e:
+            logger.error(f"Failed to set current Rate Card: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to set current Rate Card:\n{str(e)}"
+            )
+
+    def _on_add_rate_card(self):
+        """Add a new Rate Card."""
+        name, ok = QtWidgets.QInputDialog.getText(
+            self,
+            "Add Rate Card",
+            "Enter name for new Rate Card:"
+        )
+
+        if not ok or not name:
+            return
+
+        try:
+            rate_card_data = {
+                "code": name
+            }
+
+            new_rate_card = self.sg_session.sg.create("CustomNonProjectEntity01", rate_card_data)
+
+            logger.info(f"Created Rate Card: {name} (ID: {new_rate_card['id']})")
+            self._set_rate_card_status(f"Created Rate Card '{name}'.")
+
+            self._refresh_rate_cards()
+
+            for i in range(self.rate_card_combo.count()):
+                if self.rate_card_combo.itemData(i) == new_rate_card['id']:
+                    self.rate_card_combo.setCurrentIndex(i)
+                    break
+
+        except Exception as e:
+            logger.error(f"Failed to create Rate Card: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to create Rate Card:\n{str(e)}"
+            )
+
+    def _on_remove_rate_card(self):
+        """Remove the selected Rate Card."""
+        rate_card_id = self.rate_card_combo.currentData()
+        if not rate_card_id:
+            QtWidgets.QMessageBox.warning(self, "No Rate Card Selected", "Please select a Rate Card to remove.")
+            return
+
+        rate_card_name = self.rate_card_combo.currentText()
+
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete Rate Card '{rate_card_name}'?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        try:
+            self.sg_session.sg.delete("CustomNonProjectEntity01", rate_card_id)
+
+            logger.info(f"Deleted Rate Card: {rate_card_name} (ID: {rate_card_id})")
+            self._set_rate_card_status(f"Deleted Rate Card '{rate_card_name}'.")
+
+            self._refresh_rate_cards()
+
+        except Exception as e:
+            logger.error(f"Failed to delete Rate Card: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to delete Rate Card:\n{str(e)}"
+            )
+
+    def _on_rename_rate_card(self):
+        """Rename the selected Rate Card."""
+        rate_card_id = self.rate_card_combo.currentData()
+        if not rate_card_id:
+            QtWidgets.QMessageBox.warning(self, "No Rate Card Selected", "Please select a Rate Card to rename.")
+            return
+
+        current_name = self.rate_card_combo.currentText()
+
+        new_name, ok = QtWidgets.QInputDialog.getText(
+            self,
+            "Rename Rate Card",
+            "Enter new name:",
+            text=current_name
+        )
+
+        if not ok or not new_name or new_name == current_name:
+            return
+
+        try:
+            self.sg_session.sg.update("CustomNonProjectEntity01", rate_card_id, {"code": new_name})
+
+            logger.info(f"Renamed Rate Card from '{current_name}' to '{new_name}' (ID: {rate_card_id})")
+            self._set_rate_card_status(f"Renamed to '{new_name}'.")
+
+            current_index = self.rate_card_combo.currentIndex()
+            self._refresh_rate_cards()
+            if current_index < self.rate_card_combo.count():
+                self.rate_card_combo.setCurrentIndex(current_index)
+
+        except Exception as e:
+            logger.error(f"Failed to rename Rate Card: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to rename Rate Card:\n{str(e)}"
+            )
