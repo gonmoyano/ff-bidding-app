@@ -874,6 +874,9 @@ class RatesTab(QtWidgets.QWidget):
 
             # Update model's column fields and headers
             if hasattr(self.rate_card_widget, 'model') and self.rate_card_widget.model:
+                # Begin model reset to notify view of structure change
+                self.rate_card_widget.model.beginResetModel()
+
                 self.rate_card_widget.model.column_fields = self.rate_card_field_allowlist.copy()
 
                 display_names = {field: self.rate_card_field_schema[field]["display_name"]
@@ -882,6 +885,10 @@ class RatesTab(QtWidgets.QWidget):
                 if "id" in display_names:
                     display_names["id"] = "SG ID"
                 self.rate_card_widget.model.set_column_headers(display_names)
+
+                # End model reset to complete the structure change
+                self.rate_card_widget.model.endResetModel()
+                logger.info(f"✓ Updated Rate Card model with {len(self.rate_card_field_allowlist)} columns")
 
         except Exception as e:
             logger.error(f"Failed to fetch schema for CustomEntity09: {e}", exc_info=True)
