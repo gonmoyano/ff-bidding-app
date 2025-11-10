@@ -377,6 +377,8 @@ class RatesTab(QtWidgets.QWidget):
             logger.info(f"Fetched Price List data: {price_list_data}")
             # Update the info label with Rate Card and Line Item details
             self._update_price_list_info_label(price_list_data)
+            # Load Rate Card data for formula evaluator
+            self._load_rate_card_for_formula_evaluator()
         except Exception as e:
             logger.error(f"Failed to fetch Price List data: {e}", exc_info=True)
             self.current_price_list_data = None
@@ -422,6 +424,131 @@ class RatesTab(QtWidgets.QWidget):
 
         # Update the group box title with price list name and info (for collapsed state)
         self.price_lists_group_box.setAdditionalInfo(title_text)
+
+    def _load_rate_card_for_formula_evaluator(self):
+        """Load the Rate Card data for the current Price List into the formula evaluator.
+
+        This method creates/updates a Rate Card widget to provide data for cross-sheet
+        references in Line Items formulas (e.g., 'Rate Card'!model.1).
+        """
+        # Clear existing Rate Card widget if any
+        if self.rate_card_widget:
+            self.rate_card_widget.clear_data()
+            self.rate_card_widget = None
+
+        # Clear the sheet_models for the formula evaluator
+        if hasattr(self, 'line_items_formula_evaluator'):
+            self.line_items_formula_evaluator.sheet_models.clear()
+            logger.info("Cleared Rate Card from formula evaluator")
+
+        # Check if we have a valid Price List with a Rate Card
+        if not self.current_price_list_data:
+            logger.info("No Price List data - cannot load Rate Card for formula evaluator")
+            return
+
+        rate_card = self.current_price_list_data.get("sg_rate_card")
+        if not rate_card:
+            logger.info("No Rate Card assigned to current Price List")
+            return
+
+        # Extract Rate Card ID
+        rate_card_id = None
+        if isinstance(rate_card, dict):
+            rate_card_id = rate_card.get("id")
+        elif isinstance(rate_card, list) and rate_card:
+            rate_card_id = rate_card[0].get("id") if rate_card[0] else None
+
+        if not rate_card_id:
+            logger.warning(f"Could not extract Rate Card ID from: {rate_card}")
+            return
+
+        try:
+            # Fetch Rate Card schema if not already loaded
+            if not self.rate_card_field_schema:
+                self._fetch_rate_card_schema()
+
+            # Query the Rate Card data
+            fields = self.rate_card_field_allowlist.copy()
+            rate_card_data = self.sg_session.sg.find_one(
+                "CustomNonProjectEntity01",
+                [["id", "is", rate_card_id]],
+                fields
+            )
+
+            if not rate_card_data:
+                logger.warning(f"Rate Card {rate_card_id} not found")
+                return
+
+            # Create a hidden Rate Card widget to hold the data
+            self.rate_card_widget = VFXBreakdownWidget(
+                self.sg_session,
+                show_toolbar=False,
+                entity_name="Rate Card",
+                settings_key="rate_card_hidden",
+                parent=self
+            )
+            self.rate_card_widget.hide()  # Hide it since it's only for data
+
+            # Configure the model
+            if hasattr(self.rate_card_widget, 'model') and self.rate_card_widget.model:
+                self.rate_card_widget.model.entity_type = "CustomNonProjectEntity01"
+                self.rate_card_widget.model.column_fields = self.rate_card_field_allowlist.copy()
+
+                # Load the Rate Card data
+                self.rate_card_widget.load_bidding_scenes([rate_card_data], field_schema=self.rate_card_field_schema)
+
+                # Add to formula evaluator's sheet_models
+                if hasattr(self, 'line_items_formula_evaluator'):
+                    self.line_items_formula_evaluator.sheet_models['Rate Card'] = self.rate_card_widget.model
+                    logger.info(f"Loaded Rate Card {rate_card_id} into formula evaluator")
+
+                    # Trigger refresh of all cells in Line Items to recalculate formulas
+                    if hasattr(self.line_items_widget, 'model') and self.line_items_widget.model:
+                        # Emit layoutChanged to trigger view refresh
+                        self.line_items_widget.model.layoutChanged.emit()
+                        logger.info("Triggered view refresh to recalculate formulas in Line Items")
+
+        except Exception as e:
+            logger.error(f"Failed to load Rate Card for formula evaluator: {e}", exc_info=True)
+
+    def _fetch_rate_card_schema(self):
+        """Fetch the schema for CustomNonProjectEntity01 (Rate Cards) and build field allowlist."""
+        try:
+            schema = self.sg_session.sg.schema_field_read("CustomNonProjectEntity01")
+
+            # Build field allowlist: start with basic fields, then add all fields ending with "_rate"
+            self.rate_card_field_allowlist = ["id", "code"]
+
+            # Find all fields ending with "_rate"
+            rate_fields = []
+            for field_name in schema.keys():
+                if field_name.endswith("_rate"):
+                    rate_fields.append(field_name)
+
+            # Sort rate fields alphabetically for consistent display
+            rate_fields.sort()
+            self.rate_card_field_allowlist.extend(rate_fields)
+
+            logger.info(f"Built Rate Card field allowlist with {len(self.rate_card_field_allowlist)} fields: {self.rate_card_field_allowlist}")
+
+            # Build field schema dictionary for allowlisted fields
+            for field_name in self.rate_card_field_allowlist:
+                if field_name not in schema:
+                    logger.warning(f"Field {field_name} not found in CustomNonProjectEntity01 schema")
+                    continue
+
+                field_info = schema[field_name]
+                self.rate_card_field_schema[field_name] = {
+                    "data_type": field_info.get("data_type", {}).get("value"),
+                    "properties": field_info.get("properties", {}),
+                    "editable": field_info.get("editable", {}).get("value", True),
+                    "display_name": field_info.get("name", {}).get("value", field_name)
+                }
+
+            logger.info(f"Fetched schema for CustomNonProjectEntity01 with {len(self.rate_card_field_schema)} fields")
+
+        except Exception as e:
+            logger.error(f"Failed to fetch schema for CustomNonProjectEntity01: {e}", exc_info=True)
 
     def _on_set_current_price_list(self):
         """Set the selected Price List as current for the Bid."""
@@ -1097,8 +1224,14 @@ class RateCardDialog(QtWidgets.QDialog):
 
             logger.info(f"Set Rate Card {rate_card_id} as current for Price List {self.current_price_list_id}")
 
-            # Refresh price list data to reflect the change
+            # Refresh price list data to reflect the change (for dialog's internal state)
             self._fetch_price_list_data()
+
+            # Update parent's Price List data and info label immediately
+            parent = self.parent()
+            if parent and isinstance(parent, RatesTab):
+                logger.info("Updating parent RatesTab info label immediately")
+                parent._fetch_price_list_data(self.current_price_list_id)
 
         except Exception as e:
             logger.error(f"Failed to set current Rate Card: {e}", exc_info=True)
