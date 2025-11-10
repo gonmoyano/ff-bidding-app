@@ -793,6 +793,10 @@ class RatesTab(QtWidgets.QWidget):
     def _load_rate_card_details(self, rate_card_id):
         """Load details for the selected Rate Card."""
         try:
+            # Fetch schema BEFORE querying data to ensure field allowlist is populated
+            if not self.rate_card_field_schema:
+                self._fetch_rate_card_schema()
+
             filters = [["id", "is", rate_card_id]]
             fields = self.rate_card_field_allowlist.copy()
 
@@ -803,10 +807,6 @@ class RatesTab(QtWidgets.QWidget):
             )
 
             if rate_card_data:
-                # Fetch schema if not already loaded
-                if not self.rate_card_field_schema:
-                    self._fetch_rate_card_schema()
-
                 self.rate_card_widget.load_bidding_scenes([rate_card_data], field_schema=self.rate_card_field_schema)
                 display_name = self.rate_card_combo.currentText()
                 self._set_rate_card_status(f"Loaded Rate Card '{display_name}'.")
