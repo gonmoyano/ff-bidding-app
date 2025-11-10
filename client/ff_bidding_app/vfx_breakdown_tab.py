@@ -981,6 +981,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             "sg_vfx_questions",
             "sg_vfx_supervisor_notes",
             "sg_vfx_type",
+            "sg_shot_work",
         ]
 
         # Human-friendly labels will be fetched from ShotGrid schema
