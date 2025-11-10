@@ -189,7 +189,7 @@ class RatesTab(QtWidgets.QWidget):
         # Configure the model to use Rate Card-specific columns
         if hasattr(self.rate_card_widget, 'model') and self.rate_card_widget.model:
             self.rate_card_widget.model.column_fields = self.rate_card_field_allowlist.copy()
-            self.rate_card_widget.model.entity_type = "CustomEntity09"
+            self.rate_card_widget.model.entity_type = "CustomNonProjectEntity01"
             logger.info(f"Configured Rate Card widget model with fields: {self.rate_card_field_allowlist}")
 
         # Connect widget signals
@@ -710,13 +710,11 @@ class RatesTab(QtWidgets.QWidget):
             return
 
         try:
-            # Query CustomEntity09 (Rate Cards) filtered by project
-            filters = [
-                ["project", "is", {"type": "Project", "id": self.current_project_id}]
-            ]
+            # Query CustomNonProjectEntity01 (Rate Cards)
+            filters = []
 
             rate_cards_list = self.sg_session.sg.find(
-                "CustomEntity09",
+                "CustomNonProjectEntity01",
                 filters,
                 ["code", "id", "description"]
             )
@@ -797,7 +795,7 @@ class RatesTab(QtWidgets.QWidget):
             fields = self.rate_card_field_allowlist.copy()
 
             rate_card_data = self.sg_session.sg.find_one(
-                "CustomEntity09",
+                "CustomNonProjectEntity01",
                 filters,
                 fields
             )
@@ -819,9 +817,9 @@ class RatesTab(QtWidgets.QWidget):
             self._set_rate_card_status("Failed to load rate card details.", is_error=True)
 
     def _fetch_rate_card_schema(self):
-        """Fetch the schema for CustomEntity09 (Rate Cards) and build field allowlist."""
+        """Fetch the schema for CustomNonProjectEntity01 (Rate Cards) and build field allowlist."""
         try:
-            schema = self.sg_session.sg.schema_field_read("CustomEntity09")
+            schema = self.sg_session.sg.schema_field_read("CustomNonProjectEntity01")
 
             # Build field allowlist: start with basic fields, then add all fields ending with "_rate"
             self.rate_card_field_allowlist = ["id", "code"]
@@ -841,7 +839,7 @@ class RatesTab(QtWidgets.QWidget):
             # Build field schema dictionary for allowlisted fields
             for field_name in self.rate_card_field_allowlist:
                 if field_name not in schema:
-                    logger.warning(f"Field {field_name} not found in CustomEntity09 schema")
+                    logger.warning(f"Field {field_name} not found in CustomNonProjectEntity01 schema")
                     continue
 
                 field_info = schema[field_name]
@@ -852,7 +850,7 @@ class RatesTab(QtWidgets.QWidget):
                     "display_name": field_info.get("name", {}).get("value", field_name)
                 }
 
-            logger.info(f"Fetched schema for CustomEntity09 with {len(self.rate_card_field_schema)} fields")
+            logger.info(f"Fetched schema for CustomNonProjectEntity01 with {len(self.rate_card_field_schema)} fields")
 
             # Update model's column fields and headers
             if hasattr(self.rate_card_widget, 'model') and self.rate_card_widget.model:
@@ -866,7 +864,7 @@ class RatesTab(QtWidgets.QWidget):
                 self.rate_card_widget.model.set_column_headers(display_names)
 
         except Exception as e:
-            logger.error(f"Failed to fetch schema for CustomEntity09: {e}", exc_info=True)
+            logger.error(f"Failed to fetch schema for CustomNonProjectEntity01: {e}", exc_info=True)
 
     def _on_set_current_rate_card(self):
         """Set the selected Rate Card as current for the Price List."""
@@ -883,7 +881,7 @@ class RatesTab(QtWidgets.QWidget):
             self.sg_session.sg.update(
                 "CustomEntity10",
                 self.current_price_list_id,
-                {"sg_rate_card": {"type": "CustomEntity09", "id": rate_card_id}}
+                {"sg_rate_card": {"type": "CustomNonProjectEntity01", "id": rate_card_id}}
             )
 
             rate_card_name = self.rate_card_combo.currentText()
@@ -921,11 +919,10 @@ class RatesTab(QtWidgets.QWidget):
 
         try:
             rate_card_data = {
-                "code": name,
-                "project": {"type": "Project", "id": self.current_project_id}
+                "code": name
             }
 
-            new_rate_card = self.sg_session.sg.create("CustomEntity09", rate_card_data)
+            new_rate_card = self.sg_session.sg.create("CustomNonProjectEntity01", rate_card_data)
 
             logger.info(f"Created Rate Card: {name} (ID: {new_rate_card['id']})")
             self._set_rate_card_status(f"Created Rate Card '{name}'.")
@@ -965,7 +962,7 @@ class RatesTab(QtWidgets.QWidget):
             return
 
         try:
-            self.sg_session.sg.delete("CustomEntity09", rate_card_id)
+            self.sg_session.sg.delete("CustomNonProjectEntity01", rate_card_id)
 
             logger.info(f"Deleted Rate Card: {rate_card_name} (ID: {rate_card_id})")
             self._set_rate_card_status(f"Deleted Rate Card '{rate_card_name}'.")
@@ -1000,7 +997,7 @@ class RatesTab(QtWidgets.QWidget):
             return
 
         try:
-            self.sg_session.sg.update("CustomEntity09", rate_card_id, {"code": new_name})
+            self.sg_session.sg.update("CustomNonProjectEntity01", rate_card_id, {"code": new_name})
 
             logger.info(f"Renamed Rate Card from '{current_name}' to '{new_name}' (ID: {rate_card_id})")
             self._set_rate_card_status(f"Renamed to '{new_name}'.")
