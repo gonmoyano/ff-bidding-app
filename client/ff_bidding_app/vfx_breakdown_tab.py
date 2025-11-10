@@ -2889,14 +2889,21 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
     def _apply_vfx_shot_work_delegate(self):
         """Apply ValidatedComboBoxDelegate to the sg_vfx_shot_work column."""
+        logger.info("=== _apply_vfx_shot_work_delegate called ===")
+        logger.info(f"Line Item names count: {len(self.line_item_names)}")
+        logger.info(f"Line Item names: {self.line_item_names}")
+
         if not self.breakdown_widget or not hasattr(self.breakdown_widget, 'table_view'):
+            logger.warning("breakdown_widget or table_view not available")
             return
 
         try:
             # Find the column index for sg_vfx_shot_work
             if hasattr(self.breakdown_widget, 'model') and self.breakdown_widget.model:
+                logger.info(f"Model columns: {self.breakdown_widget.model.column_fields}")
                 try:
                     col_idx = self.breakdown_widget.model.column_fields.index("sg_vfx_shot_work")
+                    logger.info(f"Found sg_vfx_shot_work at column index: {col_idx}")
                 except ValueError:
                     # Column not present
                     logger.warning("sg_vfx_shot_work column not found in model")
@@ -2904,15 +2911,21 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
                 # Create or update the delegate
                 if self.vfx_shot_work_delegate is None:
+                    logger.info(f"Creating new ValidatedComboBoxDelegate with {len(self.line_item_names)} Line Items")
                     self.vfx_shot_work_delegate = ValidatedComboBoxDelegate(self.line_item_names, self.breakdown_widget.table_view)
                     self.breakdown_widget.table_view.setItemDelegateForColumn(col_idx, self.vfx_shot_work_delegate)
-                    logger.info(f"Applied ValidatedComboBoxDelegate to sg_vfx_shot_work column (index {col_idx}) with {len(self.line_item_names)} Line Items")
+                    logger.info(f"✓ Applied ValidatedComboBoxDelegate to sg_vfx_shot_work column (index {col_idx})")
+
+                    # Verify it was applied
+                    current_delegate = self.breakdown_widget.table_view.itemDelegateForColumn(col_idx)
+                    logger.info(f"Verification - Current delegate for column {col_idx}: {type(current_delegate).__name__}")
                 else:
                     # Update existing delegate with new Line Item names
+                    logger.info(f"Updating existing delegate with {len(self.line_item_names)} Line Items")
                     self.vfx_shot_work_delegate.update_valid_values(self.line_item_names)
                     # Trigger repaint
                     self.breakdown_widget.table_view.viewport().update()
-                    logger.info(f"Updated ValidatedComboBoxDelegate with {len(self.line_item_names)} Line Items")
+                    logger.info(f"✓ Updated ValidatedComboBoxDelegate")
 
         except Exception as e:
             logger.error(f"Failed to apply VFX Shot Work delegate: {e}", exc_info=True)
