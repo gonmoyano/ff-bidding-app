@@ -8,13 +8,13 @@ from datetime import datetime, date
 try:
     from .logger import logger
     from .settings import AppSettings
-    from .vfx_breakdown_model import VFXBreakdownModel, ValidatedComboBoxDelegate
+    from .vfx_breakdown_model import VFXBreakdownModel
     from .vfx_breakdown_widget import VFXBreakdownWidget
     from .bid_selector_widget import CollapsibleGroupBox
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
-    from vfx_breakdown_model import VFXBreakdownModel, ValidatedComboBoxDelegate
+    from vfx_breakdown_model import VFXBreakdownModel
     from vfx_breakdown_widget import VFXBreakdownWidget
     from bid_selector_widget import CollapsibleGroupBox
 
@@ -1478,21 +1478,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         # Read-only columns
         readonly_columns = ["id", "updated_at", "updated_by"]
 
-        # Set up item delegates for List fields (once per column, not per row)
-        for c, field in enumerate(self.vfx_beat_columns):
-            # Special handling for VFX Shot Work - use validated dropdown
-            if field == "sg_vfx_shot_work":
-                if self.line_item_names:
-                    delegate = ValidatedComboBoxDelegate(self.line_item_names, self.vfx_breakdown_table)
-                    self.vfx_breakdown_table.setItemDelegateForColumn(c, delegate)
-                    logger.info(f"Applied ValidatedComboBoxDelegate to sg_vfx_shot_work column (index {c}) with {len(self.line_item_names)} Line Items")
-            elif field in self.field_schema:
-                field_info = self.field_schema[field]
-                if field_info.get("data_type") == "list":
-                    list_values = field_info.get("list_values", [])
-                    if list_values:
-                        delegate = ComboBoxDelegate(field, list_values, self.vfx_breakdown_table)
-                        self.vfx_breakdown_table.setItemDelegateForColumn(c, delegate)
+        # Note: Delegates are now set up in VFXBreakdownWidget.load_bidding_scenes()
+        # including the ValidatedComboBoxDelegate for sg_vfx_shot_work column
 
         for display_row, data_idx in enumerate(self.filtered_row_indices):
             # Store mapping
@@ -1918,19 +1905,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
             self.vfx_breakdown_table.setItem(row, c, it)
 
-            # Set item delegate for List fields
-            # Special handling for VFX Shot Work - use validated dropdown
-            if field == "sg_vfx_shot_work":
-                if self.line_item_names:
-                    delegate = ValidatedComboBoxDelegate(self.line_item_names, self.vfx_breakdown_table)
-                    self.vfx_breakdown_table.setItemDelegateForColumn(c, delegate)
-            elif field in self.field_schema:
-                field_info = self.field_schema[field]
-                if field_info.get("data_type") == "list":
-                    list_values = field_info.get("list_values", [])
-                    if list_values:
-                        delegate = ComboBoxDelegate(field, list_values, self.vfx_breakdown_table)
-                        self.vfx_breakdown_table.setItemDelegateForColumn(c, delegate)
+            # Note: Delegates are set up in VFXBreakdownWidget.load_bidding_scenes()
 
         self.vfx_breakdown_table.blockSignals(False)
 
