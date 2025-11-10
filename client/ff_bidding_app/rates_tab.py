@@ -52,9 +52,6 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_info_label = None  # Info label for Rate Card
         self.price_lists_group_box = None  # CollapsibleGroupBox for Price Lists
 
-        # Nested tabs
-        self.nested_tab_widget = None
-
         # Rate Card widgets and data
         self.rate_card_combo = None
         self.rate_card_set_btn = None
@@ -128,30 +125,21 @@ class RatesTab(QtWidgets.QWidget):
 
         layout.addWidget(selector_group)
 
-        # Create nested tab widget for Line Items
-        self.nested_tab_widget = QtWidgets.QTabWidget()
+        # Create and add Line Items widget directly (no tab wrapper needed)
+        self.line_items_widget = self._create_line_items_widget()
+        layout.addWidget(self.line_items_widget)
 
-        # Create and add Line Items tab
-        line_items_tab = self._create_line_items_tab()
-        self.nested_tab_widget.addTab(line_items_tab, "Line Items")
-
-        layout.addWidget(self.nested_tab_widget)
-
-    def _create_line_items_tab(self):
-        """Create the Line Items nested tab content with auto-loading from Price List."""
-        widget = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(widget)
-        layout.setContentsMargins(6, 6, 6, 6)
-
+    def _create_line_items_widget(self):
+        """Create the Line Items widget with auto-loading from Price List."""
         # Create Line Items widget (reusing VFXBreakdownWidget) with toolbar for search/sort
-        self.line_items_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, entity_name="Line Item", settings_key="line_items", parent=self)
+        line_items_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, entity_name="Line Item", settings_key="line_items", parent=self)
 
         # Set context provider so the widget can access current_price_list_id, current_project_id, etc.
-        self.line_items_widget.context_provider = self
+        line_items_widget.context_provider = self
 
         # Set entity type - columns will be configured when schema is fetched
-        if hasattr(self.line_items_widget, 'model') and self.line_items_widget.model:
-            self.line_items_widget.model.entity_type = "CustomEntity03"
+        if hasattr(line_items_widget, 'model') and line_items_widget.model:
+            line_items_widget.model.entity_type = "CustomEntity03"
             logger.info(f"Configured Line Items widget model for CustomEntity03")
 
             # Create formula evaluator for this table with cross-sheet references
@@ -162,18 +150,16 @@ class RatesTab(QtWidgets.QWidget):
                 logger.info("Added 'Rate Card' sheet to Line Items formula evaluator")
 
             self.line_items_formula_evaluator = FormulaEvaluator(
-                self.line_items_widget.model,
+                line_items_widget.model,
                 sheet_models=sheet_models
             )
             # Set the formula evaluator on the model for dependency tracking
-            self.line_items_widget.model.set_formula_evaluator(self.line_items_formula_evaluator)
+            line_items_widget.model.set_formula_evaluator(self.line_items_formula_evaluator)
 
         # Connect widget signals
-        self.line_items_widget.statusMessageChanged.connect(lambda msg, err: logger.info(f"Line Items status: {msg}"))
+        line_items_widget.statusMessageChanged.connect(lambda msg, err: logger.info(f"Line Items status: {msg}"))
 
-        layout.addWidget(self.line_items_widget)
-
-        return widget
+        return line_items_widget
 
     def _set_price_lists_status(self, message, is_error=False):
         """Set the status message for price lists.
