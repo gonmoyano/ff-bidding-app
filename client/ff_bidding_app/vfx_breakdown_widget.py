@@ -95,6 +95,9 @@ class FormulaDelegate(NoElideDelegate):
                 if isinstance(result, float):
                     currency_symbol = self._get_currency_symbol()
                     display_text = f"{currency_symbol}{result:,.2f}"
+                elif isinstance(result, int):
+                    currency_symbol = self._get_currency_symbol()
+                    display_text = f"{currency_symbol}{result:,.2f}"
                 else:
                     display_text = str(result)
 
@@ -112,8 +115,11 @@ class FormulaDelegate(NoElideDelegate):
                     QtWidgets.QStyle.CE_ItemViewItem, new_option, painter
                 )
                 return
-            except:
-                pass
+            except Exception as e:
+                # Log the error but continue with default painting
+                import traceback
+                print(f"Error in FormulaDelegate.paint: {e}")
+                traceback.print_exc()
 
         # Default painting
         super().paint(painter, option, index)
@@ -128,11 +134,12 @@ class FormulaDelegate(NoElideDelegate):
             try:
                 result = self.formula_evaluator.evaluate(value)
                 # Format the result nicely
-                if isinstance(result, float):
+                if isinstance(result, (float, int)):
                     currency_symbol = self._get_currency_symbol()
                     return f"{currency_symbol}{result:,.2f}"
                 return str(result)
-            except:
+            except Exception as e:
+                print(f"Error in FormulaDelegate.displayText: {e}")
                 return "#ERROR"
 
         return str(value)
