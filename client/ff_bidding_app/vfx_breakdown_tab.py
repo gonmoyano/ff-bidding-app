@@ -8,13 +8,13 @@ from datetime import datetime, date
 try:
     from .logger import logger
     from .settings import AppSettings
-    from .vfx_breakdown_model import VFXBreakdownModel
+    from .vfx_breakdown_model import VFXBreakdownModel, ValidatedComboBoxDelegate
     from .vfx_breakdown_widget import VFXBreakdownWidget
     from .bid_selector_widget import CollapsibleGroupBox
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
-    from vfx_breakdown_model import VFXBreakdownModel
+    from vfx_breakdown_model import VFXBreakdownModel, ValidatedComboBoxDelegate
     from vfx_breakdown_widget import VFXBreakdownWidget
     from bid_selector_widget import CollapsibleGroupBox
 
@@ -999,6 +999,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         # Line Items validation for VFX Shot Work column
         self.line_item_names = []  # List of Line Item names from current Bid's Price List
+        self.vfx_shot_work_delegate = None  # Delegate for sg_vfx_shot_work column
 
         self._build_ui()
 
@@ -2875,13 +2876,46 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 scene["sg_bid_assets"] = self._deduplicate_entity_refs(scene["sg_bid_assets"])
 
         # Use the breakdown widget to load bidding scenes
-        self.breakdown_widget.load_bidding_scenes(bidding_scenes, field_schema=self.field_schema, line_item_names=self.line_item_names)
+        self.breakdown_widget.load_bidding_scenes(bidding_scenes, field_schema=self.field_schema)
+
+        # Apply validated combobox delegate to sg_vfx_shot_work column
+        self._apply_vfx_shot_work_delegate()
 
         display_name = self.vfx_breakdown_combo.currentText()
         if bidding_scenes:
             self._set_vfx_breakdown_status(f"Loaded {len(bidding_scenes)} Bidding Scene(s) for '{display_name}'.")
         else:
             self._set_vfx_breakdown_status("No Bidding Scenes linked to this VFX Breakdown.")
+
+    def _apply_vfx_shot_work_delegate(self):
+        """Apply ValidatedComboBoxDelegate to the sg_vfx_shot_work column."""
+        if not self.breakdown_widget or not hasattr(self.breakdown_widget, 'table_view'):
+            return
+
+        try:
+            # Find the column index for sg_vfx_shot_work
+            if hasattr(self.breakdown_widget, 'model') and self.breakdown_widget.model:
+                try:
+                    col_idx = self.breakdown_widget.model.column_fields.index("sg_vfx_shot_work")
+                except ValueError:
+                    # Column not present
+                    logger.warning("sg_vfx_shot_work column not found in model")
+                    return
+
+                # Create or update the delegate
+                if self.vfx_shot_work_delegate is None:
+                    self.vfx_shot_work_delegate = ValidatedComboBoxDelegate(self.line_item_names, self.breakdown_widget.table_view)
+                    self.breakdown_widget.table_view.setItemDelegateForColumn(col_idx, self.vfx_shot_work_delegate)
+                    logger.info(f"Applied ValidatedComboBoxDelegate to sg_vfx_shot_work column (index {col_idx}) with {len(self.line_item_names)} Line Items")
+                else:
+                    # Update existing delegate with new Line Item names
+                    self.vfx_shot_work_delegate.update_valid_values(self.line_item_names)
+                    # Trigger repaint
+                    self.breakdown_widget.table_view.viewport().update()
+                    logger.info(f"Updated ValidatedComboBoxDelegate with {len(self.line_item_names)} Line Items")
+
+        except Exception as e:
+            logger.error(f"Failed to apply VFX Shot Work delegate: {e}", exc_info=True)
 
     def _deduplicate_entity_refs(self, entity_refs):
         """
