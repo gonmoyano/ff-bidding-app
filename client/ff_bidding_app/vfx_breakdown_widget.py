@@ -731,6 +731,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Apply dropdown delegates to columns marked for dropdowns
         self._apply_column_dropdowns()
 
+        # Note: VFX Shot Work delegate is applied by VFXBreakdownTab after this method
+
         # Set up MultiEntityReferenceWidget for sg_bid_assets column
         self._setup_bid_assets_widgets()
 

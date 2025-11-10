@@ -691,12 +691,20 @@ class ColumnMappingDialog(QtWidgets.QDialog):
     # These are common fields shown in the column mapping dialog
     RATE_REQUIRED_FIELDS = {
         "code": "text",
-        # Common mandays fields (actual fields auto-discovered from schema)
-        "sg_supervisor_mandays": "float",
-        "sg_vfx_mandays": "float",
-        "sg_previs_mandays": "float",
-        "sg_postvis_mandays": "float",
-        "sg_techvis_mandays": "float",
+        "sg_entity": "entity",
+        "sg_type": "text",
+        "sg_complexity_price": "float",
+        "sg_model_mandays": "float",
+        "sg_tex_mandays": "float",
+        "sg_lookdev_mandays": "float",
+        "sg_rig_mandays": "float",
+        "sg_mm_mandays": "float",
+        "sg_prep_mandays": "float",
+        "sg_gen_mandays": "float",
+        "sg_anim_mandays": "float",
+        "sg_lgt_mandays": "float",
+        "sg_fx_mandays": "float",
+        "sg_cmp_mandays": "float",
     }
 
     # Entity type mapping
@@ -2579,7 +2587,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             "breakdown": {"created": 0, "entity_id": None},
             "assets": {"created": 0, "entity_id": None},
             "scenes": {"created": 0, "entity_id": None},
-            "rates": {"created": 0, "entity_id": None}
+            "rates": {"created": 0, "entity_id": None, "failed": 0}
         }
 
         try:
@@ -2617,9 +2625,10 @@ class BidSelectorWidget(QtWidgets.QWidget):
             # Import Rates
             if selected_entity_types.get("rates") and "Rates" in data:
                 rates_mapping = all_mappings.get("rates", {})
-                created, entity_id = self._import_rates(data["Rates"], rates_mapping, bid_id, bid_name)
+                created, entity_id, failed = self._import_rates(data["Rates"], rates_mapping, bid_id, bid_name)
                 results["rates"]["created"] = created
                 results["rates"]["entity_id"] = entity_id
+                results["rates"]["failed"] = failed
 
             # Show success message
             self._show_import_success(results, data)
@@ -2638,6 +2647,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
     def _show_import_success(self, results, data):
         """Show success message after import."""
         summary_lines = ["Successfully imported Excel data:\n"]
+        has_failures = False
 
         if results["breakdown"]["created"] > 0:
             summary_lines.append(f"✓ Created {results['breakdown']['created']} VFX Breakdown items")
@@ -2646,11 +2656,20 @@ class BidSelectorWidget(QtWidgets.QWidget):
         if results["scenes"]["created"] > 0:
             summary_lines.append(f"✓ Created {results['scenes']['created']} Scene items")
         if results["rates"]["created"] > 0:
-            summary_lines.append(f"✓ Created {results['rates']['created']} Rate items")
+            failed_count = results["rates"].get("failed", 0)
+            if failed_count > 0:
+                summary_lines.append(f"✓ Created {results['rates']['created']} Rate items ({failed_count} failed)")
+                has_failures = True
+            else:
+                summary_lines.append(f"✓ Created {results['rates']['created']} Rate items")
+
+        # Add warning if there were failures
+        if has_failures:
+            summary_lines.append("\n⚠ Some items failed to import. Check the logs for details.")
 
         QtWidgets.QMessageBox.information(
             self,
-            "Import Successful",
+            "Import Successful" if not has_failures else "Import Completed with Errors",
             "\n".join(summary_lines)
         )
 
@@ -3131,15 +3150,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         # Step 7: Create Asset items (CustomEntity07) linked to Bid Assets
         created_count = 0
-        reused_count = 0
         failed_count = 0
-
-        # Cache for existing assets by code (to avoid repeated queries)
-        existing_assets_cache = {}
 
         for index, row in df.iterrows():
             # Update progress
-            progress.setLabelText(f"Processing Asset item {created_count + reused_count + 1} of {len(df)}...")
+            progress.setLabelText(f"Processing Asset item {created_count + 1} of {len(df)}...")
             progress.setValue(1 + index + 1)
             QtWidgets.QApplication.processEvents()
 
@@ -3193,71 +3208,20 @@ class BidSelectorWidget(QtWidgets.QWidget):
                             # Only convert non-string values
                             sg_data[sg_field] = str(value)
 
-                # Check if asset with this code already exists
+                # Validate that asset has a code
                 asset_code = sg_data.get("code")
                 if not asset_code:
                     logger.warning(f"Row {index}: No code specified, skipping")
                     failed_count += 1
                     continue
 
-                # Check cache first
-                if asset_code in existing_assets_cache:
-                    existing_asset = existing_assets_cache[asset_code]
-                    logger.info(f"Row {index}: Reusing existing asset '{asset_code}' (ID: {existing_asset['id']}) from cache")
-
-                    # Update the existing asset to link it to this Bid Assets
-                    try:
-                        self.sg_session.sg.update(
-                            "CustomEntity07",
-                            existing_asset['id'],
-                            {"sg_bid_assets": {"type": "CustomEntity08", "id": bid_assets_id}}
-                        )
-                        reused_count += 1
-                        logger.info(f"Linked existing asset '{asset_code}' to Bid Assets {bid_assets_id}")
-                    except Exception as e:
-                        logger.error(f"Failed to link existing asset: {e}", exc_info=True)
-                        failed_count += 1
-                    continue
-
-                # Query ShotGrid to check if asset exists
+                # Always create new asset - each import creates fresh Asset items
                 try:
-                    filters = [
-                        ["project", "is", {"type": "Project", "id": self.current_project_id}],
-                        ["code", "is", asset_code]
-                    ]
-                    existing_assets = self.sg_session.sg.find(
-                        "CustomEntity07",
-                        filters,
-                        ["id", "code"]
-                    )
-
-                    if existing_assets:
-                        # Asset exists - reuse it
-                        existing_asset = existing_assets[0]
-                        existing_assets_cache[asset_code] = existing_asset
-                        logger.info(f"Row {index}: Found existing asset '{asset_code}' (ID: {existing_asset['id']})")
-
-                        # Update the existing asset to link it to this Bid Assets
-                        try:
-                            self.sg_session.sg.update(
-                                "CustomEntity07",
-                                existing_asset['id'],
-                                {"sg_bid_assets": {"type": "CustomEntity08", "id": bid_assets_id}}
-                            )
-                            reused_count += 1
-                            logger.info(f"Linked existing asset '{asset_code}' to Bid Assets {bid_assets_id}")
-                        except Exception as e:
-                            logger.error(f"Failed to link existing asset: {e}", exc_info=True)
-                            failed_count += 1
-                    else:
-                        # Asset doesn't exist - create new one
-                        result = self.sg_session.sg.create("CustomEntity07", sg_data)
-                        existing_assets_cache[asset_code] = result
-                        created_count += 1
-                        logger.info(f"Created new CustomEntity07 (Asset): {result['id']} with code '{asset_code}' linked to Bid Assets {bid_assets_id}")
-
+                    result = self.sg_session.sg.create("CustomEntity07", sg_data)
+                    created_count += 1
+                    logger.info(f"Created new CustomEntity07 (Asset): {result['id']} with code '{asset_code}' linked to Bid Assets {bid_assets_id}")
                 except Exception as e:
-                    logger.error(f"Failed to check/create asset for row {index}: {e}", exc_info=True)
+                    logger.error(f"Failed to create asset for row {index}: {e}", exc_info=True)
                     failed_count += 1
 
             except Exception as e:
@@ -3269,13 +3233,12 @@ class BidSelectorWidget(QtWidgets.QWidget):
         progress.close()
 
         # Log summary (detailed message shown at end of all imports)
-        total_processed = created_count + reused_count
         if failed_count > 0:
-            logger.warning(f"Created Bid Assets '{bid_assets_name}' with {total_processed} Asset items ({created_count} new, {reused_count} reused, {failed_count} failed)")
+            logger.warning(f"Created Bid Assets '{bid_assets_name}' with {created_count} Asset items ({failed_count} failed)")
         else:
-            logger.info(f"Successfully created Bid Assets '{bid_assets_name}' with {total_processed} Asset items ({created_count} new, {reused_count} reused)")
+            logger.info(f"Successfully created Bid Assets '{bid_assets_name}' with {created_count} Asset items")
 
-        return total_processed, bid_assets_id
+        return created_count, bid_assets_id
 
     def _import_scenes(self, df, column_mapping, bid_id, bid_name):
         """Import Scenes data to ShotGrid.
@@ -3311,12 +3274,12 @@ class BidSelectorWidget(QtWidgets.QWidget):
             bid_name: Name of the Bid for versioning
 
         Returns:
-            tuple: (Number of Line Items created, Price List ID)
+            tuple: (Number of Line Items created, Price List ID, Number of Line Items failed)
         """
         import pandas as pd
 
         if df is None or len(df) == 0:
-            return 0, None
+            return 0, None, 0
 
         logger.info(f"Starting Rates import with {len(df)} rows for Bid: {bid_name} ({bid_id})")
         logger.info(f"Column mapping: {column_mapping}")
@@ -3357,7 +3320,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 "Error",
                 f"Failed to fetch Line Items schema:\n{str(e)}"
             )
-            return 0, None
+            return 0, None, 0
 
         # Step 2: Determine version number for Price List
         # Query existing Price Lists with pattern: {bid_name}-Rates-v*
@@ -3425,7 +3388,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 "Error",
                 f"Failed to create Price List:\n{str(e)}"
             )
-            return 0, None
+            return 0, None, 0
 
         progress.setValue(1)
         QtWidgets.QApplication.processEvents()
@@ -3553,7 +3516,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         else:
             logger.info(f"Successfully created Price List '{price_list_name}' with {created_count} Line Items")
 
-        return created_count, price_list_id
+        return created_count, price_list_id, failed_count
 
     def _refresh_vfx_breakdown_dropdown(self):
         """Refresh the VFX Breakdown dropdown in the VFX Breakdown tab.

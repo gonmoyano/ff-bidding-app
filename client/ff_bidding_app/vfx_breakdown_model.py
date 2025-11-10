@@ -111,6 +111,99 @@ class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
         return super().editorEvent(event, model, option, index)
 
 
+class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
+    """Custom delegate for combo box cells with List field values and validation coloring.
+
+    Based on ComboBoxDelegate from vfx_breakdown_tab.py, with added paint() method
+    for validation coloring (blue for valid, red for invalid values).
+    """
+
+    def __init__(self, list_values, parent=None):
+        """Initialize the delegate.
+
+        Args:
+            list_values: List of valid string values for the dropdown
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.list_values = list_values or []
+        # Store normalized versions for validation
+        self.normalized_valid_values = {str(v).strip(): v for v in self.list_values if v}
+        logger.debug(f"ValidatedComboBoxDelegate initialized with {len(self.list_values)} valid values: {self.list_values}")
+
+    def update_valid_values(self, valid_values):
+        """Update the list of valid values and trigger repaint.
+
+        Args:
+            valid_values: New list of valid string values
+        """
+        self.list_values = valid_values if valid_values else []
+        self.normalized_valid_values = {str(v).strip(): v for v in self.list_values if v}
+        logger.debug(f"ValidatedComboBoxDelegate updated with {len(self.list_values)} valid values: {self.list_values}")
+
+    def paint(self, painter, option, index):
+        """Paint the cell with validation coloring matching Asset pill colors."""
+        painter.save()
+
+        # Get the cell value
+        value = index.data(QtCore.Qt.DisplayRole)
+
+        # Determine background color based on validation
+        # Colors match the Asset pills in VFX Breakdown table
+        if value and str(value).strip():
+            # Normalize the value for comparison (strip whitespace)
+            normalized_value = str(value).strip()
+            if normalized_value in self.normalized_valid_values:
+                # Valid value - blue background matching Asset pill
+                bg_color = QtGui.QColor("#4a90e2")  # Same as valid Asset pill
+            else:
+                # Invalid value - red background matching invalid Asset pill
+                bg_color = QtGui.QColor("#e74c3c")  # Same as invalid Asset pill
+        else:
+            # Empty value - default background
+            bg_color = option.palette.base().color()
+
+        # Draw background
+        painter.fillRect(option.rect, bg_color)
+
+        # Draw selection highlight if selected
+        if option.state & QtWidgets.QStyle.State_Selected:
+            painter.fillRect(option.rect, option.palette.highlight())
+
+        # Draw the text - use white text for colored backgrounds
+        if value and str(value).strip():
+            painter.setPen(QtGui.QColor("#ffffff"))  # White text on colored background
+        else:
+            painter.setPen(option.palette.text().color())  # Default text color for empty cells
+
+        text_rect = option.rect.adjusted(4, 0, -4, 0)  # Add padding
+        painter.drawText(text_rect, QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter, str(value) if value else "")
+
+        painter.restore()
+
+    def createEditor(self, parent, option, index):
+        """Create a combo box editor."""
+        combo = QtWidgets.QComboBox(parent)
+        combo.addItem("")  # Empty option
+        for value in self.list_values:
+            combo.addItem(value)
+        combo.setFrame(False)
+        return combo
+
+    def setEditorData(self, editor, index):
+        """Set the current value in the combo box."""
+        value = index.model().data(index, QtCore.Qt.EditRole)
+        if value:
+            index_pos = editor.findText(value)
+            if index_pos >= 0:
+                editor.setCurrentIndex(index_pos)
+
+    def setModelData(self, editor, model, index):
+        """Save the selected value back to the model."""
+        value = editor.currentText()
+        model.setData(index, value, QtCore.Qt.EditRole)
+
+
 class ReverseString:
     """Wrapper for strings to enable reverse sorting in tuples."""
 

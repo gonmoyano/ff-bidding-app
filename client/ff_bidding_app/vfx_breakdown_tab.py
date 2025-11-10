@@ -8,13 +8,13 @@ from datetime import datetime, date
 try:
     from .logger import logger
     from .settings import AppSettings
-    from .vfx_breakdown_model import VFXBreakdownModel
+    from .vfx_breakdown_model import VFXBreakdownModel, ValidatedComboBoxDelegate
     from .vfx_breakdown_widget import VFXBreakdownWidget
     from .bid_selector_widget import CollapsibleGroupBox
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
-    from vfx_breakdown_model import VFXBreakdownModel
+    from vfx_breakdown_model import VFXBreakdownModel, ValidatedComboBoxDelegate
     from vfx_breakdown_widget import VFXBreakdownWidget
     from bid_selector_widget import CollapsibleGroupBox
 
@@ -981,6 +981,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             "sg_vfx_questions",
             "sg_vfx_supervisor_notes",
             "sg_vfx_type",
+            "sg_vfx_shot_work",
         ]
 
         # Human-friendly labels will be fetched from ShotGrid schema
@@ -995,6 +996,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         # Reusable breakdown widget (replaces direct table management)
         self.breakdown_widget = None
+
+        # Line Items validation for VFX Shot Work column
+        self.line_item_names = []  # List of Line Item names from current Bid's Price List
+        self.vfx_shot_work_delegate = None  # Delegate for sg_vfx_shot_work column
 
         self._build_ui()
 
@@ -1474,15 +1479,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         # Read-only columns
         readonly_columns = ["id", "updated_at", "updated_by"]
 
-        # Set up item delegates for List fields (once per column, not per row)
-        for c, field in enumerate(self.vfx_beat_columns):
-            if field in self.field_schema:
-                field_info = self.field_schema[field]
-                if field_info.get("data_type") == "list":
-                    list_values = field_info.get("list_values", [])
-                    if list_values:
-                        delegate = ComboBoxDelegate(field, list_values, self.vfx_breakdown_table)
-                        self.vfx_breakdown_table.setItemDelegateForColumn(c, delegate)
+        # Note: Delegates are now set up in VFXBreakdownWidget.load_bidding_scenes()
+        # including the ValidatedComboBoxDelegate for sg_vfx_shot_work column
 
         for display_row, data_idx in enumerate(self.filtered_row_indices):
             # Store mapping
@@ -1908,14 +1906,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
             self.vfx_breakdown_table.setItem(row, c, it)
 
-            # Set item delegate for List fields
-            if field in self.field_schema:
-                field_info = self.field_schema[field]
-                if field_info.get("data_type") == "list":
-                    list_values = field_info.get("list_values", [])
-                    if list_values:
-                        delegate = ComboBoxDelegate(field, list_values, self.vfx_breakdown_table)
-                        self.vfx_breakdown_table.setItemDelegateForColumn(c, delegate)
+            # Note: Delegates are set up in VFXBreakdownWidget.load_bidding_scenes()
 
         self.vfx_breakdown_table.blockSignals(False)
 
@@ -2756,6 +2747,77 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         return self.vfx_breakdown_entity_type
 
+    def _load_line_item_names(self):
+        """Query Line Items from the current Bid's Price List for validation.
+
+        Returns:
+            List of Line Item code names
+        """
+        # Get current bid from bidding tab
+        if not hasattr(self.parent_app, 'bidding_tab') or not hasattr(self.parent_app.bidding_tab, 'current_bid'):
+            logger.debug("No current bid available for Line Items query")
+            return []
+
+        current_bid = self.parent_app.bidding_tab.current_bid
+        if not current_bid or not current_bid.get('id'):
+            logger.debug("No valid current bid for Line Items query")
+            return []
+
+        try:
+            bid_id = current_bid['id']
+            # Query the Bid to get its Price List (sg_price_list)
+            bid_data = self.sg_session.sg.find_one(
+                "CustomEntity06",
+                [["id", "is", bid_id]],
+                ["sg_price_list"]
+            )
+
+            if not bid_data or not bid_data.get("sg_price_list"):
+                logger.info("No Price List linked to current Bid")
+                return []
+
+            price_list_id = bid_data["sg_price_list"]["id"]
+
+            # Query the Price List to get its linked Line Items
+            # Line Items are linked via the Price List's sg_line_items field (multi-entity)
+            price_list_data = self.sg_session.sg.find_one(
+                "CustomEntity10",
+                [["id", "is", price_list_id]],
+                ["sg_line_items"]
+            )
+
+            if not price_list_data or not price_list_data.get("sg_line_items"):
+                logger.info(f"No Line Items linked to Price List {price_list_id}")
+                return []
+
+            # Extract Line Item IDs from sg_line_items field
+            line_item_refs = price_list_data["sg_line_items"]
+            if not isinstance(line_item_refs, list):
+                logger.warning(f"sg_line_items is not a list: {type(line_item_refs)}")
+                return []
+
+            line_item_ids = [item.get("id") for item in line_item_refs if isinstance(item, dict) and item.get("id")]
+
+            if not line_item_ids:
+                logger.info(f"No valid Line Item IDs found in Price List {price_list_id}")
+                return []
+
+            # Query Line Items by IDs to get their code names
+            line_items = self.sg_session.sg.find(
+                "CustomEntity03",
+                [["id", "in", line_item_ids]],
+                ["code"]
+            )
+
+            # Extract code names
+            line_item_names = [item.get("code", "") for item in line_items if item.get("code")]
+            logger.info(f"Found {len(line_item_names)} Line Items in Price List {price_list_id} for VFX Shot Work: {line_item_names}")
+            return line_item_names
+
+        except Exception as e:
+            logger.error(f"Failed to query Line Items for VFX Shot Work: {e}", exc_info=True)
+            return []
+
     def _load_vfx_breakdown_details(self, breakdown):
         """Load VFX Breakdown details (bidding scenes)."""
         if not breakdown or "id" not in breakdown:
@@ -2766,6 +2828,9 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         # Fetch schema for Bidding Scene entity
         if not self.field_schema:
             self._fetch_beats_schema()
+
+        # Load Line Items for VFX Shot Work validation
+        self.line_item_names = self._load_line_item_names()
 
         breakdown_id = int(breakdown["id"])
 
@@ -2813,11 +2878,57 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         # Use the breakdown widget to load bidding scenes
         self.breakdown_widget.load_bidding_scenes(bidding_scenes, field_schema=self.field_schema)
 
+        # Apply validated combobox delegate to sg_vfx_shot_work column
+        self._apply_vfx_shot_work_delegate()
+
         display_name = self.vfx_breakdown_combo.currentText()
         if bidding_scenes:
             self._set_vfx_breakdown_status(f"Loaded {len(bidding_scenes)} Bidding Scene(s) for '{display_name}'.")
         else:
             self._set_vfx_breakdown_status("No Bidding Scenes linked to this VFX Breakdown.")
+
+    def _apply_vfx_shot_work_delegate(self):
+        """Apply ValidatedComboBoxDelegate to the sg_vfx_shot_work column."""
+        logger.info("=== _apply_vfx_shot_work_delegate called ===")
+        logger.info(f"Line Item names count: {len(self.line_item_names)}")
+        logger.info(f"Line Item names: {self.line_item_names}")
+
+        if not self.breakdown_widget or not hasattr(self.breakdown_widget, 'table_view'):
+            logger.warning("breakdown_widget or table_view not available")
+            return
+
+        try:
+            # Find the column index for sg_vfx_shot_work
+            if hasattr(self.breakdown_widget, 'model') and self.breakdown_widget.model:
+                logger.info(f"Model columns: {self.breakdown_widget.model.column_fields}")
+                try:
+                    col_idx = self.breakdown_widget.model.column_fields.index("sg_vfx_shot_work")
+                    logger.info(f"Found sg_vfx_shot_work at column index: {col_idx}")
+                except ValueError:
+                    # Column not present
+                    logger.info("sg_vfx_shot_work column not found in model")
+                    return
+
+                # Create or update the delegate
+                if self.vfx_shot_work_delegate is None:
+                    logger.info(f"Creating new ValidatedComboBoxDelegate with {len(self.line_item_names)} Line Items")
+                    self.vfx_shot_work_delegate = ValidatedComboBoxDelegate(self.line_item_names, self.breakdown_widget.table_view)
+                    self.breakdown_widget.table_view.setItemDelegateForColumn(col_idx, self.vfx_shot_work_delegate)
+                    logger.info(f"✓ Applied ValidatedComboBoxDelegate to sg_vfx_shot_work column (index {col_idx})")
+
+                    # Verify it was applied
+                    current_delegate = self.breakdown_widget.table_view.itemDelegateForColumn(col_idx)
+                    logger.info(f"Verification - Current delegate for column {col_idx}: {type(current_delegate).__name__}")
+                else:
+                    # Update existing delegate with new Line Item names
+                    logger.info(f"Updating existing delegate with {len(self.line_item_names)} Line Items")
+                    self.vfx_shot_work_delegate.update_valid_values(self.line_item_names)
+                    # Trigger repaint
+                    self.breakdown_widget.table_view.viewport().update()
+                    logger.info(f"✓ Updated ValidatedComboBoxDelegate")
+
+        except Exception as e:
+            logger.error(f"Failed to apply VFX Shot Work delegate: {e}", exc_info=True)
 
     def _deduplicate_entity_refs(self, entity_refs):
         """
