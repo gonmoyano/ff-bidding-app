@@ -64,9 +64,10 @@ class DropdownMenuDelegate(NoElideDelegate):
 class FormulaDelegate(NoElideDelegate):
     """Delegate for editing formula cells - displays calculated value, edits formula."""
 
-    def __init__(self, formula_evaluator, parent=None):
+    def __init__(self, formula_evaluator, currency_symbol="", parent=None):
         super().__init__(parent)
         self.formula_evaluator = formula_evaluator
+        self.currency_symbol = currency_symbol
 
     def paint(self, painter, option, index):
         """Paint the cell with background color from model."""
@@ -89,7 +90,7 @@ class FormulaDelegate(NoElideDelegate):
                 result = self.formula_evaluator.evaluate(value)
                 # Format the result nicely
                 if isinstance(result, float):
-                    return f"{result:.2f}"
+                    return f"{self.currency_symbol}{result:,.2f}"
                 return str(result)
             except:
                 return "#ERROR"
@@ -138,7 +139,7 @@ class FormulaDelegate(NoElideDelegate):
                 result = self.formula_evaluator.evaluate(value, index.row(), index.column())
                 # Format the result
                 if isinstance(result, float):
-                    display_text = f"{result:.2f}"
+                    display_text = f"{self.currency_symbol}{result:,.2f}"
                 else:
                     display_text = str(result)
 

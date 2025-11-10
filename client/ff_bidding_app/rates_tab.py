@@ -912,9 +912,10 @@ class RatesTab(QtWidgets.QWidget):
                 if hasattr(self, 'line_items_formula_evaluator'):
                     price_col_index = self.line_items_field_allowlist.index("_calc_price") if "_calc_price" in self.line_items_field_allowlist else -1
                     if price_col_index >= 0:
-                        formula_delegate = FormulaDelegate(self.line_items_formula_evaluator)
+                        currency_symbol = self.app_settings.get_currency()
+                        formula_delegate = FormulaDelegate(self.line_items_formula_evaluator, currency_symbol=currency_symbol)
                         self.line_items_widget.table_view.setItemDelegateForColumn(price_col_index, formula_delegate)
-                        logger.info(f"Set formula delegate for Price column (index {price_col_index})")
+                        logger.info(f"Set formula delegate for Price column (index {price_col_index}) with currency symbol '{currency_symbol}'")
 
         except Exception as e:
             logger.error(f"Failed to fetch schema for CustomEntity03: {e}", exc_info=True)
