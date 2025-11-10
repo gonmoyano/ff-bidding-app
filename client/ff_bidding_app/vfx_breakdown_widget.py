@@ -504,6 +504,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.column_dropdowns = {}  # field_name -> bool
         self.dropdown_values = {}  # field_name -> list of unique values (shared reference)
         self._dropdown_delegates = {}  # field_name -> DropdownMenuDelegate
+        self._special_delegates = {}  # field_name -> special delegate (e.g., FormulaDelegate) that should not be removed
         self._active_dropdown_index = None  # Track which cell should show the editing border
 
         # Build UI
@@ -1642,6 +1643,10 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                         logger.info(
                             f"Applied dropdown menu styling to '{field_name}' with {len(shared_list)} unique values"
                         )
+            elif field_name in self._special_delegates:
+                # Field doesn't have dropdown but has a special delegate - ensure it's applied
+                self.table_view.setItemDelegateForColumn(col_idx, self._special_delegates[field_name])
+                logger.debug(f"Reapplied special delegate to '{field_name}' (column index {col_idx})")
 
         # Remove delegates from fields that are no longer marked as dropdowns
         for field_name in list(self._dropdown_delegates.keys()):
@@ -1650,8 +1655,34 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 # Reset the column delegate to default if the field is still present
                 if field_name in self.model.column_fields:
                     col_idx = self.model.column_fields.index(field_name)
-                    self.table_view.setItemDelegateForColumn(col_idx, None)
+                    # Check if there's a special delegate that should be preserved
+                    if field_name in self._special_delegates:
+                        # Restore the special delegate instead of setting to None
+                        self.table_view.setItemDelegateForColumn(col_idx, self._special_delegates[field_name])
+                    else:
+                        self.table_view.setItemDelegateForColumn(col_idx, None)
                 del delegate
+
+    def set_column_delegate(self, field_name, delegate):
+        """Register a special delegate for a specific field column.
+
+        This delegate will be preserved even when column dropdowns are reconfigured.
+
+        Args:
+            field_name: The field name to set the delegate for
+            delegate: The delegate instance to use for this column
+        """
+        if field_name not in self.model.column_fields:
+            logger.warning(f"Cannot set delegate for '{field_name}' - field not found in column_fields")
+            return
+
+        # Store the delegate
+        self._special_delegates[field_name] = delegate
+
+        # Apply it immediately to the correct column
+        col_idx = self.model.column_fields.index(field_name)
+        self.table_view.setItemDelegateForColumn(col_idx, delegate)
+        logger.info(f"Registered and applied special delegate for field '{field_name}' at column index {col_idx}")
 
     def _set_active_dropdown_index(self, index):
         """Record the index whose dropdown menu is currently shown."""
