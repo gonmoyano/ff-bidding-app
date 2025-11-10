@@ -49,6 +49,7 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_set_btn = None
         self.price_lists_refresh_btn = None
         self.price_lists_status_label = None
+        self.price_lists_info_label = None  # Info label for Rate Card
         self.price_lists_group_box = None  # CollapsibleGroupBox for Price Lists
 
         # Nested tabs
@@ -118,6 +119,12 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_status_label.setObjectName("priceListsStatusLabel")
         self.price_lists_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
         selector_group.addWidget(self.price_lists_status_label)
+
+        # Add info label for Rate Card
+        self.price_lists_info_label = QtWidgets.QLabel("")
+        self.price_lists_info_label.setObjectName("priceListsInfoLabel")
+        self.price_lists_info_label.setStyleSheet("color: #6b9bd1; font-weight: bold; padding: 2px 0;")
+        selector_group.addWidget(self.price_lists_info_label)
 
         layout.addWidget(selector_group)
 
@@ -382,12 +389,11 @@ class RatesTab(QtWidgets.QWidget):
             price_list_data: Price List data dict or None
         """
         if not price_list_data:
-            # Clear label and group box title if no price list selected
+            # Clear labels and group box title if no price list selected
             self.price_lists_status_label.setText("Select a Bid to view Price Lists.")
+            self.price_lists_info_label.setText("")
             self.price_lists_group_box.setAdditionalInfo("")
             return
-
-        info_parts = []
 
         # Get price list name for title bar
         price_list_name = price_list_data.get("code") or f"Price List {price_list_data.get('id', 'N/A')}"
@@ -404,14 +410,15 @@ class RatesTab(QtWidgets.QWidget):
                 rate_card_name = rate_card[0].get("name") or rate_card[0].get("code") or f"ID {rate_card[0].get('id', 'N/A')}"
             else:
                 rate_card_name = str(rate_card)
-            info_parts.append(f"Rate Card: {rate_card_name}")
             title_text += f" | Rate Card: {rate_card_name}"
-
-        # Update the label with the info (for display under dropdown)
-        if info_parts:
-            self.price_lists_status_label.setText("  ".join(info_parts))
+            # Update the dedicated info label with Rate Card
+            self.price_lists_info_label.setText(f"Rate Card: {rate_card_name}")
         else:
-            self.price_lists_status_label.setText(f"Selected Price List: '{price_list_name}'.")
+            # No Rate Card assigned
+            self.price_lists_info_label.setText("No Rate Card assigned")
+
+        # Update the status label to just show the price list name
+        self.price_lists_status_label.setText(f"Selected Price List: '{price_list_name}'.")
 
         # Update the group box title with price list name and info (for collapsed state)
         self.price_lists_group_box.setAdditionalInfo(title_text)
@@ -586,6 +593,10 @@ class RatesTab(QtWidgets.QWidget):
 
         dialog = RateCardDialog(self.sg_session, self.current_price_list_id, self.current_project_id, self)
         dialog.exec()
+
+        # Refresh Price List data to update the info label with any changes from the dialog
+        if self.current_price_list_id:
+            self._fetch_price_list_data(self.current_price_list_id)
 
     # ===========================
     # Line Items Methods
