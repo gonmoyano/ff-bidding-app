@@ -496,6 +496,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.dropdown_values = {}  # field_name -> list of unique values (shared reference)
         self._dropdown_delegates = {}  # field_name -> DropdownMenuDelegate
         self._active_dropdown_index = None  # Track which cell should show the editing border
+        self._line_item_names = None  # Line Item names for VFX Shot Work validation
 
         # Build UI
         self._build_ui()
@@ -696,14 +697,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                         list_values = field_info.get("list_values", [])
                         logger.info(f"List field: {field_name}, values count: {len(list_values)}, values: {list_values[:5] if list_values else 'NONE'}")
 
-            # Set up delegates for checkbox fields and special columns (list fields now use QMenu on double-click)
+            # Set up delegates for checkbox fields (list fields now use QMenu on double-click)
             for col_idx, field_name in enumerate(self.model.column_fields):
-                # Special handling for VFX Shot Work - use validated dropdown with Line Items
-                if field_name == "sg_vfx_shot_work" and line_item_names:
-                    delegate = ValidatedComboBoxDelegate(line_item_names, self.table_view)
-                    self.table_view.setItemDelegateForColumn(col_idx, delegate)
-                    logger.info(f"Applied ValidatedComboBoxDelegate to sg_vfx_shot_work column (index {col_idx}) with {len(line_item_names)} Line Items")
-                elif field_name in field_schema:
+                if field_name in field_schema:
                     field_info = field_schema[field_name]
                     # List fields now handled by _show_list_selection_menu on double-click
                     # if field_info.get("data_type") == "list":
@@ -717,6 +713,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                         self.table_view.setItemDelegateForColumn(col_idx, delegate)
 
         self.model.load_bidding_scenes(bidding_scenes)
+
+        # Store line_item_names for later use
+        self._line_item_names = line_item_names
 
         # Ensure table is updated before sizing
         QtWidgets.QApplication.processEvents()
@@ -736,6 +735,16 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # Apply dropdown delegates to columns marked for dropdowns
         self._apply_column_dropdowns()
+
+        # Apply special handling for VFX Shot Work - use validated dropdown with Line Items
+        # This must be done AFTER _apply_column_dropdowns() to avoid being cleared
+        if self._line_item_names:
+            for col_idx, field_name in enumerate(self.model.column_fields):
+                if field_name == "sg_vfx_shot_work":
+                    delegate = ValidatedComboBoxDelegate(self._line_item_names, self.table_view)
+                    self.table_view.setItemDelegateForColumn(col_idx, delegate)
+                    logger.info(f"Applied ValidatedComboBoxDelegate to sg_vfx_shot_work column (index {col_idx}) with {len(self._line_item_names)} Line Items")
+                    break
 
         # Set up MultiEntityReferenceWidget for sg_bid_assets column
         self._setup_bid_assets_widgets()
