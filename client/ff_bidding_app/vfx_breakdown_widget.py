@@ -64,10 +64,16 @@ class DropdownMenuDelegate(NoElideDelegate):
 class FormulaDelegate(NoElideDelegate):
     """Delegate for editing formula cells - displays calculated value, edits formula."""
 
-    def __init__(self, formula_evaluator, currency_symbol="", parent=None):
+    def __init__(self, formula_evaluator, app_settings=None, parent=None):
         super().__init__(parent)
         self.formula_evaluator = formula_evaluator
-        self.currency_symbol = currency_symbol
+        self.app_settings = app_settings
+
+    def _get_currency_symbol(self):
+        """Get the current currency symbol from app settings."""
+        if self.app_settings:
+            return self.app_settings.get_currency()
+        return ""
 
     def paint(self, painter, option, index):
         """Paint the cell with background color from model."""
@@ -90,7 +96,8 @@ class FormulaDelegate(NoElideDelegate):
                 result = self.formula_evaluator.evaluate(value)
                 # Format the result nicely
                 if isinstance(result, float):
-                    return f"{self.currency_symbol}{result:,.2f}"
+                    currency_symbol = self._get_currency_symbol()
+                    return f"{currency_symbol}{result:,.2f}"
                 return str(result)
             except:
                 return "#ERROR"
@@ -139,7 +146,8 @@ class FormulaDelegate(NoElideDelegate):
                 result = self.formula_evaluator.evaluate(value, index.row(), index.column())
                 # Format the result
                 if isinstance(result, float):
-                    display_text = f"{self.currency_symbol}{result:,.2f}"
+                    currency_symbol = self._get_currency_symbol()
+                    display_text = f"{currency_symbol}{result:,.2f}"
                 else:
                     display_text = str(result)
 
