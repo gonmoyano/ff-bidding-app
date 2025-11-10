@@ -8,13 +8,13 @@ from datetime import datetime, date
 try:
     from .logger import logger
     from .settings import AppSettings
-    from .vfx_breakdown_model import VFXBreakdownModel
+    from .vfx_breakdown_model import VFXBreakdownModel, ValidatedComboBoxDelegate
     from .vfx_breakdown_widget import VFXBreakdownWidget
     from .bid_selector_widget import CollapsibleGroupBox
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
-    from vfx_breakdown_model import VFXBreakdownModel
+    from vfx_breakdown_model import VFXBreakdownModel, ValidatedComboBoxDelegate
     from vfx_breakdown_widget import VFXBreakdownWidget
     from bid_selector_widget import CollapsibleGroupBox
 
@@ -981,6 +981,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             "sg_vfx_questions",
             "sg_vfx_supervisor_notes",
             "sg_vfx_type",
+            "sg_vfx_shot_work",
         ]
 
         # Human-friendly labels will be fetched from ShotGrid schema
@@ -995,6 +996,9 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         # Reusable breakdown widget (replaces direct table management)
         self.breakdown_widget = None
+
+        # Line Items validation for VFX Shot Work column
+        self.line_item_names = []  # List of Line Item names from current Bid's Price List
 
         self._build_ui()
 
@@ -1476,7 +1480,13 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         # Set up item delegates for List fields (once per column, not per row)
         for c, field in enumerate(self.vfx_beat_columns):
-            if field in self.field_schema:
+            # Special handling for VFX Shot Work - use validated dropdown
+            if field == "sg_vfx_shot_work":
+                if self.line_item_names:
+                    delegate = ValidatedComboBoxDelegate(self.line_item_names, self.vfx_breakdown_table)
+                    self.vfx_breakdown_table.setItemDelegateForColumn(c, delegate)
+                    logger.info(f"Applied ValidatedComboBoxDelegate to sg_vfx_shot_work column (index {c}) with {len(self.line_item_names)} Line Items")
+            elif field in self.field_schema:
                 field_info = self.field_schema[field]
                 if field_info.get("data_type") == "list":
                     list_values = field_info.get("list_values", [])
@@ -1909,7 +1919,12 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             self.vfx_breakdown_table.setItem(row, c, it)
 
             # Set item delegate for List fields
-            if field in self.field_schema:
+            # Special handling for VFX Shot Work - use validated dropdown
+            if field == "sg_vfx_shot_work":
+                if self.line_item_names:
+                    delegate = ValidatedComboBoxDelegate(self.line_item_names, self.vfx_breakdown_table)
+                    self.vfx_breakdown_table.setItemDelegateForColumn(c, delegate)
+            elif field in self.field_schema:
                 field_info = self.field_schema[field]
                 if field_info.get("data_type") == "list":
                     list_values = field_info.get("list_values", [])
@@ -2756,6 +2771,77 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         return self.vfx_breakdown_entity_type
 
+    def _load_line_item_names(self):
+        """Query Line Items from the current Bid's Price List for validation.
+
+        Returns:
+            List of Line Item code names
+        """
+        # Get current bid from bidding tab
+        if not hasattr(self.parent_app, 'bidding_tab') or not hasattr(self.parent_app.bidding_tab, 'current_bid'):
+            logger.debug("No current bid available for Line Items query")
+            return []
+
+        current_bid = self.parent_app.bidding_tab.current_bid
+        if not current_bid or not current_bid.get('id'):
+            logger.debug("No valid current bid for Line Items query")
+            return []
+
+        try:
+            bid_id = current_bid['id']
+            # Query the Bid to get its Price List (sg_price_list)
+            bid_data = self.sg_session.sg.find_one(
+                "CustomEntity06",
+                [["id", "is", bid_id]],
+                ["sg_price_list"]
+            )
+
+            if not bid_data or not bid_data.get("sg_price_list"):
+                logger.info("No Price List linked to current Bid")
+                return []
+
+            price_list_id = bid_data["sg_price_list"]["id"]
+
+            # Query the Price List to get its linked Line Items
+            # Line Items are linked via the Price List's sg_line_items field (multi-entity)
+            price_list_data = self.sg_session.sg.find_one(
+                "CustomEntity10",
+                [["id", "is", price_list_id]],
+                ["sg_line_items"]
+            )
+
+            if not price_list_data or not price_list_data.get("sg_line_items"):
+                logger.info(f"No Line Items linked to Price List {price_list_id}")
+                return []
+
+            # Extract Line Item IDs from sg_line_items field
+            line_item_refs = price_list_data["sg_line_items"]
+            if not isinstance(line_item_refs, list):
+                logger.warning(f"sg_line_items is not a list: {type(line_item_refs)}")
+                return []
+
+            line_item_ids = [item.get("id") for item in line_item_refs if isinstance(item, dict) and item.get("id")]
+
+            if not line_item_ids:
+                logger.info(f"No valid Line Item IDs found in Price List {price_list_id}")
+                return []
+
+            # Query Line Items by IDs to get their code names
+            line_items = self.sg_session.sg.find(
+                "CustomEntity03",
+                [["id", "in", line_item_ids]],
+                ["code"]
+            )
+
+            # Extract code names
+            line_item_names = [item.get("code", "") for item in line_items if item.get("code")]
+            logger.info(f"Found {len(line_item_names)} Line Items in Price List {price_list_id} for VFX Shot Work: {line_item_names}")
+            return line_item_names
+
+        except Exception as e:
+            logger.error(f"Failed to query Line Items for VFX Shot Work: {e}", exc_info=True)
+            return []
+
     def _load_vfx_breakdown_details(self, breakdown):
         """Load VFX Breakdown details (bidding scenes)."""
         if not breakdown or "id" not in breakdown:
@@ -2766,6 +2852,9 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         # Fetch schema for Bidding Scene entity
         if not self.field_schema:
             self._fetch_beats_schema()
+
+        # Load Line Items for VFX Shot Work validation
+        self.line_item_names = self._load_line_item_names()
 
         breakdown_id = int(breakdown["id"])
 
