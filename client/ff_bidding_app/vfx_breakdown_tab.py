@@ -2900,7 +2900,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 scene["sg_bid_assets"] = self._deduplicate_entity_refs(scene["sg_bid_assets"])
 
         # Use the breakdown widget to load bidding scenes
-        self.breakdown_widget.load_bidding_scenes(bidding_scenes, field_schema=self.field_schema)
+        self.breakdown_widget.load_bidding_scenes(bidding_scenes, field_schema=self.field_schema, line_item_names=self.line_item_names)
 
         display_name = self.vfx_breakdown_combo.currentText()
         if bidding_scenes:

@@ -10,13 +10,13 @@ import re
 
 try:
     from .logger import logger
-    from .vfx_breakdown_model import VFXBreakdownModel, PasteCommand, CheckBoxDelegate
+    from .vfx_breakdown_model import VFXBreakdownModel, PasteCommand, CheckBoxDelegate, ValidatedComboBoxDelegate
     from .settings import AppSettings
     from .multi_entity_reference_widget import MultiEntityReferenceWidget
     from .formula_evaluator import FormulaEvaluator
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
-    from vfx_breakdown_model import VFXBreakdownModel, PasteCommand, CheckBoxDelegate
+    from vfx_breakdown_model import VFXBreakdownModel, PasteCommand, CheckBoxDelegate, ValidatedComboBoxDelegate
     from settings import AppSettings
     from multi_entity_reference_widget import MultiEntityReferenceWidget
     from formula_evaluator import FormulaEvaluator
@@ -675,12 +675,13 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         return super().eventFilter(obj, event)
 
-    def load_bidding_scenes(self, bidding_scenes, field_schema=None):
+    def load_bidding_scenes(self, bidding_scenes, field_schema=None, line_item_names=None):
         """Load bidding scenes data into the widget.
 
         Args:
             bidding_scenes: List of bidding scene dictionaries from ShotGrid
             field_schema: Optional field schema for type conversions
+            line_item_names: Optional list of Line Item names for VFX Shot Work validation
         """
         if field_schema:
             self.model.set_field_schema(field_schema)
@@ -695,9 +696,14 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                         list_values = field_info.get("list_values", [])
                         logger.info(f"List field: {field_name}, values count: {len(list_values)}, values: {list_values[:5] if list_values else 'NONE'}")
 
-            # Set up delegates for checkbox fields (list fields now use QMenu on double-click)
+            # Set up delegates for checkbox fields and special columns (list fields now use QMenu on double-click)
             for col_idx, field_name in enumerate(self.model.column_fields):
-                if field_name in field_schema:
+                # Special handling for VFX Shot Work - use validated dropdown with Line Items
+                if field_name == "sg_vfx_shot_work" and line_item_names:
+                    delegate = ValidatedComboBoxDelegate(line_item_names, self.table_view)
+                    self.table_view.setItemDelegateForColumn(col_idx, delegate)
+                    logger.info(f"Applied ValidatedComboBoxDelegate to sg_vfx_shot_work column (index {col_idx}) with {len(line_item_names)} Line Items")
+                elif field_name in field_schema:
                     field_info = field_schema[field_name]
                     # List fields now handled by _show_list_selection_menu on double-click
                     # if field_info.get("data_type") == "list":
