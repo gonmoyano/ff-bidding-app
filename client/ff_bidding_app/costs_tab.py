@@ -9,11 +9,13 @@ try:
     from .logger import logger
     from .settings import AppSettings
     from .vfx_breakdown_widget import VFXBreakdownWidget
+    from .vfx_breakdown_model import ValidatedComboBoxDelegate
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
     from vfx_breakdown_widget import VFXBreakdownWidget
+    from vfx_breakdown_model import ValidatedComboBoxDelegate
 
 
 class CollapsibleDockTitleBar(QtWidgets.QWidget):
@@ -198,6 +200,10 @@ class CostsTab(QtWidgets.QMainWindow):
         self.current_project_id = None
         self.current_bid_id = None
         self.current_bid_data = None
+
+        # Line Items for VFX Shot Work validation
+        self.line_item_names = []
+        self.vfx_shot_work_delegate = None
 
         # No central widget - docks can take full space
         self.setCentralWidget(None)
@@ -470,9 +476,124 @@ class CostsTab(QtWidgets.QMainWindow):
 
             logger.info("="*80)
 
+            # Load Line Items and apply VFX Shot Work delegate
+            self._load_line_item_names()
+            self._apply_vfx_shot_work_delegate()
+
         except Exception as e:
             logger.error(f"Failed to load VFX Breakdown scenes: {e}", exc_info=True)
             self.shots_cost_widget.load_bidding_scenes([])
+
+    def _load_line_item_names(self):
+        """Load Line Item names from the current Bid's Price List for VFX Shot Work validation."""
+        if not self.current_bid_data or not self.current_bid_data.get('id'):
+            logger.debug("No current bid for Line Items query")
+            self.line_item_names = []
+            return
+
+        try:
+            bid_id = self.current_bid_data['id']
+
+            # Query the Bid to get its Price List (sg_price_list)
+            bid_data = self.sg_session.sg.find_one(
+                "CustomEntity06",
+                [["id", "is", bid_id]],
+                ["sg_price_list"]
+            )
+
+            if not bid_data or not bid_data.get("sg_price_list"):
+                logger.info("No Price List linked to current Bid")
+                self.line_item_names = []
+                return
+
+            price_list_id = bid_data["sg_price_list"]["id"]
+
+            # Query the Price List to get its linked Line Items
+            price_list_data = self.sg_session.sg.find_one(
+                "CustomEntity10",
+                [["id", "is", price_list_id]],
+                ["sg_line_items"]
+            )
+
+            if not price_list_data or not price_list_data.get("sg_line_items"):
+                logger.info(f"No Line Items linked to Price List {price_list_id}")
+                self.line_item_names = []
+                return
+
+            # Extract Line Item IDs from sg_line_items field
+            line_item_refs = price_list_data["sg_line_items"]
+            if not isinstance(line_item_refs, list):
+                logger.warning(f"sg_line_items is not a list: {type(line_item_refs)}")
+                self.line_item_names = []
+                return
+
+            line_item_ids = [item.get("id") for item in line_item_refs if isinstance(item, dict) and item.get("id")]
+
+            if not line_item_ids:
+                logger.info(f"No valid Line Item IDs found in Price List {price_list_id}")
+                self.line_item_names = []
+                return
+
+            # Query Line Items by IDs to get their code names
+            line_items = self.sg_session.sg.find(
+                "CustomEntity03",
+                [["id", "in", line_item_ids]],
+                ["code"]
+            )
+
+            # Extract code names
+            self.line_item_names = [item.get("code", "") for item in line_items if item.get("code")]
+            logger.info(f"Found {len(self.line_item_names)} Line Items for VFX Shot Work: {self.line_item_names}")
+
+        except Exception as e:
+            logger.error(f"Failed to load Line Items for VFX Shot Work: {e}", exc_info=True)
+            self.line_item_names = []
+
+    def _apply_vfx_shot_work_delegate(self):
+        """Apply ValidatedComboBoxDelegate to the sg_vfx_shot_work column."""
+        logger.info("=== _apply_vfx_shot_work_delegate called ===")
+        logger.info(f"Line Item names count: {len(self.line_item_names)}")
+        logger.info(f"Line Item names: {self.line_item_names}")
+
+        if not self.shots_cost_widget or not hasattr(self.shots_cost_widget, 'table_view'):
+            logger.warning("shots_cost_widget or table_view not available")
+            return
+
+        try:
+            # Find the column index for sg_vfx_shot_work
+            if hasattr(self.shots_cost_widget, 'model') and self.shots_cost_widget.model:
+                logger.info(f"Model columns: {self.shots_cost_widget.model.column_fields}")
+                try:
+                    col_idx = self.shots_cost_widget.model.column_fields.index("sg_vfx_shot_work")
+                    logger.info(f"Found sg_vfx_shot_work at column index: {col_idx}")
+                except ValueError:
+                    # Column not present
+                    logger.info("sg_vfx_shot_work column not found in model")
+                    return
+
+                # Create or update the delegate
+                if self.vfx_shot_work_delegate is None:
+                    logger.info(f"Creating new ValidatedComboBoxDelegate with {len(self.line_item_names)} Line Items")
+                    self.vfx_shot_work_delegate = ValidatedComboBoxDelegate(
+                        self.line_item_names,
+                        self.shots_cost_widget.table_view
+                    )
+                    self.shots_cost_widget.table_view.setItemDelegateForColumn(col_idx, self.vfx_shot_work_delegate)
+                    logger.info(f"✓ Applied ValidatedComboBoxDelegate to sg_vfx_shot_work column (index {col_idx})")
+
+                    # Verify it was applied
+                    current_delegate = self.shots_cost_widget.table_view.itemDelegateForColumn(col_idx)
+                    logger.info(f"Verification - Current delegate for column {col_idx}: {type(current_delegate).__name__}")
+                else:
+                    # Update existing delegate with new Line Item names
+                    logger.info(f"Updating existing delegate with {len(self.line_item_names)} Line Items")
+                    self.vfx_shot_work_delegate.update_valid_values(self.line_item_names)
+                    # Trigger repaint
+                    self.shots_cost_widget.table_view.viewport().update()
+                    logger.info(f"✓ Updated ValidatedComboBoxDelegate")
+
+        except Exception as e:
+            logger.error(f"Failed to apply VFX Shot Work delegate: {e}", exc_info=True)
 
     def _refresh_asset_cost(self):
         """Refresh the asset cost view."""
