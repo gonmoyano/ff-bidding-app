@@ -9,15 +9,13 @@ try:
     from .logger import logger
     from .settings import AppSettings
     from .vfx_breakdown_widget import VFXBreakdownWidget
-    from .vfx_breakdown_model import ValidatedComboBoxDelegate, VFXBreakdownModel
-    from .formula_evaluator import FormulaEvaluator
+    from .vfx_breakdown_model import ValidatedComboBoxDelegate
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
     from vfx_breakdown_widget import VFXBreakdownWidget
-    from vfx_breakdown_model import ValidatedComboBoxDelegate, VFXBreakdownModel
-    from formula_evaluator import FormulaEvaluator
+    from vfx_breakdown_model import ValidatedComboBoxDelegate
 
 
 class CollapsibleDockTitleBar(QtWidgets.QWidget):
@@ -203,9 +201,8 @@ class CostsTab(QtWidgets.QMainWindow):
         self.current_bid_id = None
         self.current_bid_data = None
 
-        # Line Items for VFX Shot Work validation and pricing
+        # Line Items for VFX Shot Work validation
         self.line_item_names = []
-        self.line_item_prices = {}  # Mapping of line_item_code -> price
         self.vfx_shot_work_delegate = None
 
         # No central widget - docks can take full space
@@ -436,14 +433,7 @@ class CostsTab(QtWidgets.QMainWindow):
             if "id" in display_names:
                 display_names["id"] = "SG ID"
 
-            # Add Price calculated column to schema and display names
-            field_schema["_calc_price"] = {
-                "data_type": "float",
-                "properties": {}
-            }
-            display_names["_calc_price"] = "Price"
-
-            # Define fields to fetch (matches VFXBreakdownModel.column_fields + _calc_price)
+            # Define fields to fetch (matches VFXBreakdownModel.column_fields)
             fields_to_fetch = [
                 "id", "code", "sg_bid_assets", "sg_sequence_code", "sg_vfx_breakdown_scene",
                 "sg_interior_exterior", "sg_number_of_shots", "sg_on_set_vfx_needs",
@@ -467,39 +457,8 @@ class CostsTab(QtWidgets.QMainWindow):
                 self.shots_cost_widget.load_bidding_scenes([])
                 return
 
-            # Load Line Items first to get prices for calculation
+            # Load Line Items for VFX Shot Work validation
             self._load_line_item_names()
-
-            # Add calculated Price column to each bidding scene
-            # Price = Est. Cuts (sg_number_of_shots) * Line Item Price (from sg_vfx_shot_work)
-            for scene in bidding_scenes_data:
-                est_cuts = scene.get("sg_number_of_shots", 0)
-                vfx_shot_work = scene.get("sg_vfx_shot_work", "")
-
-                # Get price from Line Item
-                line_item_price = self.line_item_prices.get(vfx_shot_work, 0.0)
-
-                # Calculate total price
-                try:
-                    est_cuts_float = float(est_cuts) if est_cuts else 0.0
-                    total_price = est_cuts_float * line_item_price
-                except (ValueError, TypeError):
-                    logger.warning(f"Could not calculate price for scene {scene.get('code')}: est_cuts={est_cuts}, line_item_price={line_item_price}")
-                    total_price = 0.0
-
-                scene["_calc_price"] = total_price
-                logger.debug(f"Scene {scene.get('code')}: {est_cuts_float} cuts × ${line_item_price} = ${total_price}")
-
-            # Add _calc_price to column_fields BEFORE loading data to avoid column index mismatch
-            if hasattr(self.shots_cost_widget, 'model'):
-                if "_calc_price" not in self.shots_cost_widget.model.column_fields:
-                    self.shots_cost_widget.model.column_fields.append("_calc_price")
-                    logger.info("  ✓ Added _calc_price to column_fields before loading data")
-
-                # Make the Price column read-only
-                if "_calc_price" not in self.shots_cost_widget.model.readonly_columns:
-                    self.shots_cost_widget.model.readonly_columns.append("_calc_price")
-                    logger.info("  ✓ Set _calc_price column as read-only")
 
             # Ensure sg_vfx_shot_work is not in column_dropdowns to prevent delegate conflicts
             if hasattr(self.shots_cost_widget, 'column_dropdowns'):
@@ -534,11 +493,10 @@ class CostsTab(QtWidgets.QMainWindow):
             self.shots_cost_widget.load_bidding_scenes([])
 
     def _load_line_item_names(self):
-        """Load Line Item names and prices from the current Bid's Price List."""
+        """Load Line Item names from the current Bid's Price List for VFX Shot Work validation."""
         if not self.current_bid_data or not self.current_bid_data.get('id'):
             logger.debug("No current bid for Line Items query")
             self.line_item_names = []
-            self.line_item_prices = {}
             return
 
         try:
@@ -554,7 +512,6 @@ class CostsTab(QtWidgets.QMainWindow):
             if not bid_data or not bid_data.get("sg_price_list"):
                 logger.info("No Price List linked to current Bid")
                 self.line_item_names = []
-                self.line_item_prices = {}
                 return
 
             price_list_id = bid_data["sg_price_list"]["id"]
@@ -569,7 +526,6 @@ class CostsTab(QtWidgets.QMainWindow):
             if not price_list_data or not price_list_data.get("sg_line_items"):
                 logger.info(f"No Line Items linked to Price List {price_list_id}")
                 self.line_item_names = []
-                self.line_item_prices = {}
                 return
 
             # Extract Line Item IDs from sg_line_items field
@@ -577,7 +533,6 @@ class CostsTab(QtWidgets.QMainWindow):
             if not isinstance(line_item_refs, list):
                 logger.warning(f"sg_line_items is not a list: {type(line_item_refs)}")
                 self.line_item_names = []
-                self.line_item_prices = {}
                 return
 
             line_item_ids = [item.get("id") for item in line_item_refs if isinstance(item, dict) and item.get("id")]
@@ -585,120 +540,22 @@ class CostsTab(QtWidgets.QMainWindow):
             if not line_item_ids:
                 logger.info(f"No valid Line Item IDs found in Price List {price_list_id}")
                 self.line_item_names = []
-                self.line_item_prices = {}
                 return
 
-            # Fetch Line Items schema to get all fields for formula evaluation
-            schema = self.sg_session.sg.schema_field_read("CustomEntity03")
-
-            # Build field allowlist: id, code, all mandays fields, and formula fields
-            fields_to_query = ["id", "code"]
-
-            # Add all mandays fields for formula evaluation
-            mandays_fields = [field_name for field_name in schema.keys() if field_name.endswith("_mandays")]
-            mandays_fields.sort()
-            fields_to_query.extend(mandays_fields)
-
-            # Add price-related fields
-            if "sg_price" in schema:
-                fields_to_query.append("sg_price")
-            if "sg_price_formula" in schema:
-                fields_to_query.append("sg_price_formula")
-
-            logger.info(f"Querying Line Items with {len(fields_to_query)} fields: {fields_to_query}")
-
-            # Query Line Items with all fields needed for formula evaluation
+            # Query Line Items by IDs to get their code names
             line_items = self.sg_session.sg.find(
                 "CustomEntity03",
                 [["id", "in", line_item_ids]],
-                fields_to_query
+                ["code"]
             )
 
-            if not line_items:
-                logger.info("No Line Items found")
-                self.line_item_names = []
-                self.line_item_prices = {}
-                return
-
-            logger.info(f"Fetched {len(line_items)} Line Items from ShotGrid")
-
-            # Create a temporary VFXBreakdownModel for formula evaluation
-            temp_model = VFXBreakdownModel(self.sg_session)
-            temp_model.column_fields = fields_to_query
-            temp_model.entity_type = "CustomEntity03"
-
-            # Build field schema for the model
-            field_schema = {}
-            for field_name in fields_to_query:
-                if field_name in schema:
-                    field_info = schema[field_name]
-                    field_schema[field_name] = {
-                        "data_type": field_info.get("data_type", {}).get("value"),
-                        "properties": field_info.get("properties", {})
-                    }
-
-            temp_model.set_field_schema(field_schema)
-            temp_model.load_data(line_items)
-
-            logger.info(f"Created temporary model with {len(line_items)} Line Items for formula evaluation")
-
-            # Create FormulaEvaluator with the temporary model
-            formula_evaluator = FormulaEvaluator(temp_model)
-
-            # Extract code names and evaluate prices
-            self.line_item_names = []
-            self.line_item_prices = {}
-
-            for row_idx, item in enumerate(line_items):
-                code = item.get("code", "")
-                if not code:
-                    continue
-
-                self.line_item_names.append(code)
-
-                # Try to get price from sg_price field first
-                price = item.get("sg_price")
-                if price is not None and price != "":
-                    try:
-                        price = float(price)
-                        self.line_item_prices[code] = price
-                        logger.debug(f"Line Item '{code}': using sg_price = ${price}")
-                        continue
-                    except (ValueError, TypeError):
-                        logger.warning(f"Could not convert sg_price to float for Line Item '{code}': {price}")
-
-                # Fall back to evaluating sg_price_formula
-                price_formula = item.get("sg_price_formula", "")
-                if price_formula:
-                    try:
-                        # Find the column index for sg_price_formula
-                        col_idx = fields_to_query.index("sg_price_formula")
-
-                        # Evaluate the formula
-                        result = formula_evaluator.evaluate_formula(price_formula, row_idx, col_idx)
-
-                        if isinstance(result, (int, float)):
-                            price = float(result)
-                            self.line_item_prices[code] = price
-                            logger.debug(f"Line Item '{code}': evaluated formula '{price_formula}' = ${price}")
-                        else:
-                            logger.warning(f"Formula evaluation for Line Item '{code}' returned non-numeric result: {result}")
-                            self.line_item_prices[code] = 0.0
-                    except Exception as e:
-                        logger.warning(f"Failed to evaluate formula for Line Item '{code}': {price_formula} - {e}")
-                        self.line_item_prices[code] = 0.0
-                else:
-                    # No price or formula, default to 0
-                    self.line_item_prices[code] = 0.0
-                    logger.debug(f"Line Item '{code}': no price or formula, defaulting to $0.0")
-
+            # Extract code names
+            self.line_item_names = [item.get("code", "") for item in line_items if item.get("code")]
             logger.info(f"Found {len(self.line_item_names)} Line Items for VFX Shot Work: {self.line_item_names}")
-            logger.info(f"Line Item prices: {self.line_item_prices}")
 
         except Exception as e:
             logger.error(f"Failed to load Line Items for VFX Shot Work: {e}", exc_info=True)
             self.line_item_names = []
-            self.line_item_prices = {}
 
     def _apply_vfx_shot_work_delegate(self):
         """Apply ValidatedComboBoxDelegate to the sg_vfx_shot_work column."""
