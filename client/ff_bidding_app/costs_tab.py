@@ -716,6 +716,12 @@ class CostsTab(QtWidgets.QMainWindow):
                     logger.info("sg_vfx_shot_work column not found in model")
                     return
 
+                # Ensure the column is visible
+                is_hidden = self.shots_cost_widget.table_view.isColumnHidden(col_idx)
+                logger.info(f"Column sg_vfx_shot_work (index {col_idx}) hidden: {is_hidden}")
+                if is_hidden:
+                    logger.warning(f"Column sg_vfx_shot_work is hidden - it may not be visible to user")
+
                 # Create or update the delegate
                 if self.vfx_shot_work_delegate is None:
                     logger.info(f"Creating new ValidatedComboBoxDelegate with {len(self.line_item_names)} Line Items")
@@ -729,13 +735,19 @@ class CostsTab(QtWidgets.QMainWindow):
                     # Verify it was applied
                     current_delegate = self.shots_cost_widget.table_view.itemDelegateForColumn(col_idx)
                     logger.info(f"Verification - Current delegate for column {col_idx}: {type(current_delegate).__name__}")
+
+                    # Force a complete repaint of the table
+                    self.shots_cost_widget.table_view.viewport().update()
+                    self.shots_cost_widget.table_view.update()
+                    logger.info(f"✓ Triggered viewport repaint")
                 else:
                     # Update existing delegate with new Line Item names
                     logger.info(f"Updating existing delegate with {len(self.line_item_names)} Line Items")
                     self.vfx_shot_work_delegate.update_valid_values(self.line_item_names)
-                    # Trigger repaint
+                    # Force a complete repaint of the table
                     self.shots_cost_widget.table_view.viewport().update()
-                    logger.info(f"✓ Updated ValidatedComboBoxDelegate")
+                    self.shots_cost_widget.table_view.update()
+                    logger.info(f"✓ Updated ValidatedComboBoxDelegate and triggered repaint")
 
         except Exception as e:
             logger.error(f"Failed to apply VFX Shot Work delegate: {e}", exc_info=True)
