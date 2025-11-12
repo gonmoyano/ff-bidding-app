@@ -501,6 +501,12 @@ class CostsTab(QtWidgets.QMainWindow):
                     self.shots_cost_widget.model.readonly_columns.append("_calc_price")
                     logger.info("  ✓ Set _calc_price column as read-only")
 
+            # Ensure sg_vfx_shot_work is not in column_dropdowns to prevent delegate conflicts
+            if hasattr(self.shots_cost_widget, 'column_dropdowns'):
+                if 'sg_vfx_shot_work' in self.shots_cost_widget.column_dropdowns:
+                    self.shots_cost_widget.column_dropdowns['sg_vfx_shot_work'] = False
+                    logger.info("  ✓ Disabled dropdown for sg_vfx_shot_work to prevent delegate conflicts")
+
             # Load into the VFXBreakdownWidget
             self.shots_cost_widget.load_bidding_scenes(bidding_scenes_data, field_schema=field_schema)
             logger.info(f"  ✓ Loaded bidding scenes into Shots Cost table")
@@ -736,6 +742,12 @@ class CostsTab(QtWidgets.QMainWindow):
                     current_delegate = self.shots_cost_widget.table_view.itemDelegateForColumn(col_idx)
                     logger.info(f"Verification - Current delegate for column {col_idx}: {type(current_delegate).__name__}")
 
+                    # Protect delegate from being removed by _apply_column_dropdowns
+                    # Store it in the widget's _dropdown_delegates dict
+                    if hasattr(self.shots_cost_widget, '_dropdown_delegates'):
+                        self.shots_cost_widget._dropdown_delegates['sg_vfx_shot_work'] = self.vfx_shot_work_delegate
+                        logger.info(f"✓ Protected sg_vfx_shot_work delegate from removal")
+
                     # Force a complete repaint of the table
                     self.shots_cost_widget.table_view.viewport().update()
                     self.shots_cost_widget.table_view.update()
@@ -744,6 +756,11 @@ class CostsTab(QtWidgets.QMainWindow):
                     # Update existing delegate with new Line Item names
                     logger.info(f"Updating existing delegate with {len(self.line_item_names)} Line Items")
                     self.vfx_shot_work_delegate.update_valid_values(self.line_item_names)
+
+                    # Ensure delegate is still protected
+                    if hasattr(self.shots_cost_widget, '_dropdown_delegates'):
+                        self.shots_cost_widget._dropdown_delegates['sg_vfx_shot_work'] = self.vfx_shot_work_delegate
+
                     # Force a complete repaint of the table
                     self.shots_cost_widget.table_view.viewport().update()
                     self.shots_cost_widget.table_view.update()
