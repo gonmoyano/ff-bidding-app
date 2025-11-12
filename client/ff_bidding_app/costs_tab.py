@@ -237,12 +237,6 @@ class CostsTab(QtWidgets.QMainWindow):
         # Create cost docks
         self._create_cost_docks()
 
-        # Set up corner ownership for dock areas
-        self.setCorner(QtCore.Qt.TopLeftCorner, QtCore.Qt.LeftDockWidgetArea)
-        self.setCorner(QtCore.Qt.BottomLeftCorner, QtCore.Qt.LeftDockWidgetArea)
-        self.setCorner(QtCore.Qt.TopRightCorner, QtCore.Qt.RightDockWidgetArea)
-        self.setCorner(QtCore.Qt.BottomRightCorner, QtCore.Qt.RightDockWidgetArea)
-
         # Load saved layout
         QtCore.QTimer.singleShot(0, self.load_layout)
 
@@ -271,10 +265,14 @@ class CostsTab(QtWidgets.QMainWindow):
             self
         )
 
-        # Add docks to areas
+        # Add docks vertically stacked - Order: Shots Cost -> Assets Cost -> Total Cost
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.shots_cost_dock)
-        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.asset_cost_dock)
-        self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.total_cost_dock)
+        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.asset_cost_dock)
+        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.total_cost_dock)
+
+        # Force vertical stacking
+        self.splitDockWidget(self.shots_cost_dock, self.asset_cost_dock, QtCore.Qt.Vertical)
+        self.splitDockWidget(self.asset_cost_dock, self.total_cost_dock, QtCore.Qt.Vertical)
 
     def _create_shots_cost_widget(self):
         """Create the Shots Cost widget using VFXBreakdownWidget."""
@@ -548,10 +546,14 @@ class CostsTab(QtWidgets.QMainWindow):
         for dock in (self.shots_cost_dock, self.asset_cost_dock, self.total_cost_dock):
             self.removeDockWidget(dock)
 
-        # Re-add in default positions
+        # Re-add in default positions (vertical stacking)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.shots_cost_dock)
-        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.asset_cost_dock)
-        self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.total_cost_dock)
+        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.asset_cost_dock)
+        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.total_cost_dock)
+
+        # Force vertical stacking
+        self.splitDockWidget(self.shots_cost_dock, self.asset_cost_dock, QtCore.Qt.Vertical)
+        self.splitDockWidget(self.asset_cost_dock, self.total_cost_dock, QtCore.Qt.Vertical)
 
         # Reset collapsed states to expanded
         self.shots_cost_dock.set_collapsed(False)
