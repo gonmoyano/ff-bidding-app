@@ -185,7 +185,8 @@ class FormulaDelegate(NoElideDelegate):
 class ConfigColumnsDialog(QtWidgets.QDialog):
     """Dialog for configuring column visibility and dropdown lists in VFX Breakdown table."""
 
-    def __init__(self, column_fields, column_headers, current_visibility, current_dropdowns, parent=None):
+    def __init__(self, column_fields, column_headers, current_visibility, current_dropdowns,
+                 on_visibility_changed=None, on_dropdown_changed=None, parent=None):
         """Initialize the dialog.
 
         Args:
@@ -193,6 +194,8 @@ class ConfigColumnsDialog(QtWidgets.QDialog):
             column_headers: List of display names for the fields
             current_visibility: Dictionary mapping field names to visibility (bool)
             current_dropdowns: Dictionary mapping field names to dropdown enabled (bool)
+            on_visibility_changed: Callback function(field, is_visible) called when visibility changes
+            on_dropdown_changed: Callback function(field, has_dropdown) called when dropdown setting changes
             parent: Parent widget
         """
         super().__init__(parent)
@@ -203,6 +206,8 @@ class ConfigColumnsDialog(QtWidgets.QDialog):
         self.column_headers = column_headers
         self.visibility_checkboxes = {}
         self.dropdown_checkboxes = {}
+        self.on_visibility_changed = on_visibility_changed
+        self.on_dropdown_changed = on_dropdown_changed
 
         self._build_ui(current_visibility, current_dropdowns)
 
@@ -308,6 +313,17 @@ class ConfigColumnsDialog(QtWidgets.QDialog):
 
             self.visibility_checkboxes[field] = visible_checkbox
             self.dropdown_checkboxes[field] = dropdown_checkbox
+
+            # Connect to callbacks for immediate application
+            if self.on_visibility_changed:
+                visible_checkbox.toggled.connect(
+                    lambda checked, f=field: self.on_visibility_changed(f, checked)
+                )
+            if self.on_dropdown_changed:
+                dropdown_checkbox.toggled.connect(
+                    lambda checked, f=field: self.on_dropdown_changed(f, checked)
+                )
+
             scroll_layout.addWidget(row_widget)
 
         scroll_layout.addStretch()
@@ -332,18 +348,14 @@ class ConfigColumnsDialog(QtWidgets.QDialog):
         button_row.addStretch()
         layout.addLayout(button_row)
 
-        # OK/Cancel buttons
+        # Close button (changes are applied immediately)
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addStretch()
 
-        self.ok_button = QtWidgets.QPushButton("OK")
-        self.ok_button.clicked.connect(self.accept)
-        self.ok_button.setDefault(True)
-        button_layout.addWidget(self.ok_button)
-
-        self.cancel_button = QtWidgets.QPushButton("Cancel")
-        self.cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(self.cancel_button)
+        self.close_button = QtWidgets.QPushButton("Close")
+        self.close_button.clicked.connect(self.accept)
+        self.close_button.setDefault(True)
+        button_layout.addWidget(self.close_button)
 
         layout.addLayout(button_layout)
 
@@ -1479,36 +1491,39 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         for field in ordered_fields:
             ordered_headers.append(field_to_header.get(field, field))
 
-        # Open dialog with columns in visual order
+        # Define callback functions for immediate application
+        def on_visibility_changed(field, is_visible):
+            """Called when a visibility checkbox is toggled."""
+            self.column_visibility[field] = is_visible
+            # Apply the change immediately
+            col_index = self.model.column_fields.index(field)
+            self.table_view.setColumnHidden(col_index, not is_visible)
+            # Save to settings
+            self.app_settings.set_column_visibility(self.settings_key, self.column_visibility)
+            logger.info(f"Column '{field}' visibility changed to: {is_visible}")
+
+        def on_dropdown_changed(field, has_dropdown):
+            """Called when a dropdown checkbox is toggled."""
+            self.column_dropdowns[field] = has_dropdown
+            # Apply the change immediately
+            self._apply_column_dropdowns()
+            # Save to settings
+            self.app_settings.set_column_dropdowns(self.settings_key, self.column_dropdowns)
+            logger.info(f"Column '{field}' dropdown changed to: {has_dropdown}")
+
+        # Open dialog with columns in visual order and callbacks
         dialog = ConfigColumnsDialog(
             column_fields=ordered_fields,
             column_headers=ordered_headers,
             current_visibility=current_visibility,
             current_dropdowns=current_dropdowns,
+            on_visibility_changed=on_visibility_changed,
+            on_dropdown_changed=on_dropdown_changed,
             parent=self
         )
 
-        if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            # Get the new settings
-            new_visibility = dialog.get_column_visibility()
-            new_dropdowns = dialog.get_column_dropdowns()
-
-            # Save to settings
-            self.app_settings.set_column_visibility(self.settings_key, new_visibility)
-            self.app_settings.set_column_dropdowns(self.settings_key, new_dropdowns)
-
-            # Update local state
-            self.column_visibility = new_visibility
-            self.column_dropdowns = new_dropdowns
-
-            # Apply visibility to table
-            self._apply_column_visibility()
-
-            # Apply dropdown delegates
-            self._apply_column_dropdowns()
-
-            logger.info(f"Column visibility updated: {sum(new_visibility.values())} of {len(new_visibility)} visible")
-            logger.info(f"Column dropdowns updated: {sum(new_dropdowns.values())} of {len(new_dropdowns)} with dropdowns")
+        # Just execute the dialog - changes are already applied via callbacks
+        dialog.exec_()
 
     def _load_column_visibility(self):
         """Load column visibility settings from AppSettings."""

@@ -49,22 +49,6 @@ class CollapsibleDockTitleBar(QtWidgets.QWidget):
 
         layout.addStretch()
 
-        # Float button
-        float_btn = QtWidgets.QToolButton()
-        float_btn.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_TitleBarNormalButton))
-        float_btn.setAutoRaise(True)
-        float_btn.setToolTip("Float")
-        float_btn.clicked.connect(lambda: dock_widget.setFloating(not dock_widget.isFloating()))
-        layout.addWidget(float_btn)
-
-        # Close button
-        close_btn = QtWidgets.QToolButton()
-        close_btn.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_TitleBarCloseButton))
-        close_btn.setAutoRaise(True)
-        close_btn.setToolTip("Close")
-        close_btn.clicked.connect(dock_widget.close)
-        layout.addWidget(close_btn)
-
         # Style
         self.setStyleSheet("""
             CollapsibleDockTitleBar {
@@ -108,11 +92,8 @@ class CostDock(QtWidgets.QDockWidget):
         super().__init__(title, parent)
         self.setObjectName(title)
         self.setWidget(widget)
-        self.setFeatures(
-            QtWidgets.QDockWidget.DockWidgetClosable |
-            QtWidgets.QDockWidget.DockWidgetMovable |
-            QtWidgets.QDockWidget.DockWidgetFloatable
-        )
+        # No features - docks cannot be closed, moved, or floated
+        self.setFeatures(QtWidgets.QDockWidget.NoDockWidgetFeatures)
 
         # Create custom title bar
         self.title_bar = CollapsibleDockTitleBar(self)
@@ -566,13 +547,10 @@ class CostsTab(QtWidgets.QMainWindow):
         """Get toggle view actions for all docks.
 
         Returns:
-            List of QActions for toggling dock visibility
+            Empty list (docks cannot be closed/hidden)
         """
-        return [
-            self.shots_cost_dock.toggleViewAction(),
-            self.asset_cost_dock.toggleViewAction(),
-            self.total_cost_dock.toggleViewAction(),
-        ]
+        # Docks cannot be closed or hidden, so no menu actions needed
+        return []
 
     def closeEvent(self, event: QtGui.QCloseEvent):
         """Handle close event - save layout."""
