@@ -9,11 +9,13 @@ try:
     from .logger import logger
     from .settings import AppSettings
     from .vfx_breakdown_widget import VFXBreakdownWidget
+    from .vfx_breakdown_model import ValidatedComboBoxDelegate
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
     from vfx_breakdown_widget import VFXBreakdownWidget
+    from vfx_breakdown_model import ValidatedComboBoxDelegate
 
 
 class CollapsibleDockTitleBar(QtWidgets.QWidget):
@@ -48,22 +50,6 @@ class CollapsibleDockTitleBar(QtWidgets.QWidget):
         layout.addWidget(self.title_label)
 
         layout.addStretch()
-
-        # Float button
-        float_btn = QtWidgets.QToolButton()
-        float_btn.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_TitleBarNormalButton))
-        float_btn.setAutoRaise(True)
-        float_btn.setToolTip("Float")
-        float_btn.clicked.connect(lambda: dock_widget.setFloating(not dock_widget.isFloating()))
-        layout.addWidget(float_btn)
-
-        # Close button
-        close_btn = QtWidgets.QToolButton()
-        close_btn.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_TitleBarCloseButton))
-        close_btn.setAutoRaise(True)
-        close_btn.setToolTip("Close")
-        close_btn.clicked.connect(dock_widget.close)
-        layout.addWidget(close_btn)
 
         # Style
         self.setStyleSheet("""
@@ -108,11 +94,8 @@ class CostDock(QtWidgets.QDockWidget):
         super().__init__(title, parent)
         self.setObjectName(title)
         self.setWidget(widget)
-        self.setFeatures(
-            QtWidgets.QDockWidget.DockWidgetClosable |
-            QtWidgets.QDockWidget.DockWidgetMovable |
-            QtWidgets.QDockWidget.DockWidgetFloatable
-        )
+        # No features - docks cannot be closed, moved, or floated
+        self.setFeatures(QtWidgets.QDockWidget.NoDockWidgetFeatures)
 
         # Create custom title bar
         self.title_bar = CollapsibleDockTitleBar(self)
@@ -218,6 +201,10 @@ class CostsTab(QtWidgets.QMainWindow):
         self.current_bid_id = None
         self.current_bid_data = None
 
+        # Line Items for VFX Shot Work validation
+        self.line_item_names = []
+        self.vfx_shot_work_delegate = None
+
         # No central widget - docks can take full space
         self.setCentralWidget(None)
 
@@ -236,12 +223,6 @@ class CostsTab(QtWidgets.QMainWindow):
 
         # Create cost docks
         self._create_cost_docks()
-
-        # Set up corner ownership for dock areas
-        self.setCorner(QtCore.Qt.TopLeftCorner, QtCore.Qt.LeftDockWidgetArea)
-        self.setCorner(QtCore.Qt.BottomLeftCorner, QtCore.Qt.LeftDockWidgetArea)
-        self.setCorner(QtCore.Qt.TopRightCorner, QtCore.Qt.RightDockWidgetArea)
-        self.setCorner(QtCore.Qt.BottomRightCorner, QtCore.Qt.RightDockWidgetArea)
 
         # Load saved layout
         QtCore.QTimer.singleShot(0, self.load_layout)
@@ -271,10 +252,14 @@ class CostsTab(QtWidgets.QMainWindow):
             self
         )
 
-        # Add docks to areas
+        # Add docks vertically stacked - Order: Shots Cost -> Assets Cost -> Total Cost
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.shots_cost_dock)
-        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.asset_cost_dock)
-        self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.total_cost_dock)
+        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.asset_cost_dock)
+        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.total_cost_dock)
+
+        # Force vertical stacking
+        self.splitDockWidget(self.shots_cost_dock, self.asset_cost_dock, QtCore.Qt.Vertical)
+        self.splitDockWidget(self.asset_cost_dock, self.total_cost_dock, QtCore.Qt.Vertical)
 
     def _create_shots_cost_widget(self):
         """Create the Shots Cost widget using VFXBreakdownWidget."""
@@ -472,7 +457,16 @@ class CostsTab(QtWidgets.QMainWindow):
                 self.shots_cost_widget.load_bidding_scenes([])
                 return
 
-            # Load into the VFXBreakdownWidget FIRST
+            # Load Line Items for VFX Shot Work validation
+            self._load_line_item_names()
+
+            # Ensure sg_vfx_shot_work is not in column_dropdowns to prevent delegate conflicts
+            if hasattr(self.shots_cost_widget, 'column_dropdowns'):
+                if 'sg_vfx_shot_work' in self.shots_cost_widget.column_dropdowns:
+                    self.shots_cost_widget.column_dropdowns['sg_vfx_shot_work'] = False
+                    logger.info("  ✓ Disabled dropdown for sg_vfx_shot_work to prevent delegate conflicts")
+
+            # Load into the VFXBreakdownWidget
             self.shots_cost_widget.load_bidding_scenes(bidding_scenes_data, field_schema=field_schema)
             logger.info(f"  ✓ Loaded bidding scenes into Shots Cost table")
 
@@ -491,9 +485,146 @@ class CostsTab(QtWidgets.QMainWindow):
 
             logger.info("="*80)
 
+            # Apply VFX Shot Work delegate
+            self._apply_vfx_shot_work_delegate()
+
         except Exception as e:
             logger.error(f"Failed to load VFX Breakdown scenes: {e}", exc_info=True)
             self.shots_cost_widget.load_bidding_scenes([])
+
+    def _load_line_item_names(self):
+        """Load Line Item names from the current Bid's Price List for VFX Shot Work validation."""
+        if not self.current_bid_data or not self.current_bid_data.get('id'):
+            logger.debug("No current bid for Line Items query")
+            self.line_item_names = []
+            return
+
+        try:
+            bid_id = self.current_bid_data['id']
+
+            # Query the Bid to get its Price List (sg_price_list)
+            bid_data = self.sg_session.sg.find_one(
+                "CustomEntity06",
+                [["id", "is", bid_id]],
+                ["sg_price_list"]
+            )
+
+            if not bid_data or not bid_data.get("sg_price_list"):
+                logger.info("No Price List linked to current Bid")
+                self.line_item_names = []
+                return
+
+            price_list_id = bid_data["sg_price_list"]["id"]
+
+            # Query the Price List to get its linked Line Items
+            price_list_data = self.sg_session.sg.find_one(
+                "CustomEntity10",
+                [["id", "is", price_list_id]],
+                ["sg_line_items"]
+            )
+
+            if not price_list_data or not price_list_data.get("sg_line_items"):
+                logger.info(f"No Line Items linked to Price List {price_list_id}")
+                self.line_item_names = []
+                return
+
+            # Extract Line Item IDs from sg_line_items field
+            line_item_refs = price_list_data["sg_line_items"]
+            if not isinstance(line_item_refs, list):
+                logger.warning(f"sg_line_items is not a list: {type(line_item_refs)}")
+                self.line_item_names = []
+                return
+
+            line_item_ids = [item.get("id") for item in line_item_refs if isinstance(item, dict) and item.get("id")]
+
+            if not line_item_ids:
+                logger.info(f"No valid Line Item IDs found in Price List {price_list_id}")
+                self.line_item_names = []
+                return
+
+            # Query Line Items by IDs to get their code names
+            line_items = self.sg_session.sg.find(
+                "CustomEntity03",
+                [["id", "in", line_item_ids]],
+                ["code"]
+            )
+
+            # Extract code names
+            self.line_item_names = [item.get("code", "") for item in line_items if item.get("code")]
+            logger.info(f"Found {len(self.line_item_names)} Line Items for VFX Shot Work: {self.line_item_names}")
+
+        except Exception as e:
+            logger.error(f"Failed to load Line Items for VFX Shot Work: {e}", exc_info=True)
+            self.line_item_names = []
+
+    def _apply_vfx_shot_work_delegate(self):
+        """Apply ValidatedComboBoxDelegate to the sg_vfx_shot_work column."""
+        logger.info("=== _apply_vfx_shot_work_delegate called ===")
+        logger.info(f"Line Item names count: {len(self.line_item_names)}")
+        logger.info(f"Line Item names: {self.line_item_names}")
+
+        if not self.shots_cost_widget or not hasattr(self.shots_cost_widget, 'table_view'):
+            logger.warning("shots_cost_widget or table_view not available")
+            return
+
+        try:
+            # Find the column index for sg_vfx_shot_work
+            if hasattr(self.shots_cost_widget, 'model') and self.shots_cost_widget.model:
+                logger.info(f"Model columns: {self.shots_cost_widget.model.column_fields}")
+                try:
+                    col_idx = self.shots_cost_widget.model.column_fields.index("sg_vfx_shot_work")
+                    logger.info(f"Found sg_vfx_shot_work at column index: {col_idx}")
+                except ValueError:
+                    # Column not present
+                    logger.info("sg_vfx_shot_work column not found in model")
+                    return
+
+                # Ensure the column is visible
+                is_hidden = self.shots_cost_widget.table_view.isColumnHidden(col_idx)
+                logger.info(f"Column sg_vfx_shot_work (index {col_idx}) hidden: {is_hidden}")
+                if is_hidden:
+                    logger.warning(f"Column sg_vfx_shot_work is hidden - it may not be visible to user")
+
+                # Create or update the delegate
+                if self.vfx_shot_work_delegate is None:
+                    logger.info(f"Creating new ValidatedComboBoxDelegate with {len(self.line_item_names)} Line Items")
+                    self.vfx_shot_work_delegate = ValidatedComboBoxDelegate(
+                        self.line_item_names,
+                        self.shots_cost_widget.table_view
+                    )
+                    self.shots_cost_widget.table_view.setItemDelegateForColumn(col_idx, self.vfx_shot_work_delegate)
+                    logger.info(f"✓ Applied ValidatedComboBoxDelegate to sg_vfx_shot_work column (index {col_idx})")
+
+                    # Verify it was applied
+                    current_delegate = self.shots_cost_widget.table_view.itemDelegateForColumn(col_idx)
+                    logger.info(f"Verification - Current delegate for column {col_idx}: {type(current_delegate).__name__}")
+
+                    # Protect delegate from being removed by _apply_column_dropdowns
+                    # Store it in the widget's _dropdown_delegates dict
+                    if hasattr(self.shots_cost_widget, '_dropdown_delegates'):
+                        self.shots_cost_widget._dropdown_delegates['sg_vfx_shot_work'] = self.vfx_shot_work_delegate
+                        logger.info(f"✓ Protected sg_vfx_shot_work delegate from removal")
+
+                    # Force a complete repaint of the table
+                    self.shots_cost_widget.table_view.viewport().update()
+                    self.shots_cost_widget.table_view.update()
+                    logger.info(f"✓ Triggered viewport repaint")
+                else:
+                    # Update existing delegate with new Line Item names
+                    logger.info(f"Updating existing delegate with {len(self.line_item_names)} Line Items")
+                    self.vfx_shot_work_delegate.update_valid_values(self.line_item_names)
+
+                    # Ensure delegate is still protected
+                    if hasattr(self.shots_cost_widget, '_dropdown_delegates'):
+                        self.shots_cost_widget._dropdown_delegates['sg_vfx_shot_work'] = self.vfx_shot_work_delegate
+
+                    # Force a complete repaint of the table
+                    self.shots_cost_widget.table_view.viewport().update()
+                    self.shots_cost_widget.table_view.update()
+                    logger.info(f"✓ Updated ValidatedComboBoxDelegate and triggered repaint")
+
+        except Exception as e:
+            logger.error(f"Failed to apply VFX Shot Work delegate: {e}", exc_info=True)
 
     def _refresh_asset_cost(self):
         """Refresh the asset cost view."""
@@ -548,10 +679,14 @@ class CostsTab(QtWidgets.QMainWindow):
         for dock in (self.shots_cost_dock, self.asset_cost_dock, self.total_cost_dock):
             self.removeDockWidget(dock)
 
-        # Re-add in default positions
+        # Re-add in default positions (vertical stacking)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.shots_cost_dock)
-        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.asset_cost_dock)
-        self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.total_cost_dock)
+        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.asset_cost_dock)
+        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.total_cost_dock)
+
+        # Force vertical stacking
+        self.splitDockWidget(self.shots_cost_dock, self.asset_cost_dock, QtCore.Qt.Vertical)
+        self.splitDockWidget(self.asset_cost_dock, self.total_cost_dock, QtCore.Qt.Vertical)
 
         # Reset collapsed states to expanded
         self.shots_cost_dock.set_collapsed(False)
@@ -564,13 +699,10 @@ class CostsTab(QtWidgets.QMainWindow):
         """Get toggle view actions for all docks.
 
         Returns:
-            List of QActions for toggling dock visibility
+            Empty list (docks cannot be closed/hidden)
         """
-        return [
-            self.shots_cost_dock.toggleViewAction(),
-            self.asset_cost_dock.toggleViewAction(),
-            self.total_cost_dock.toggleViewAction(),
-        ]
+        # Docks cannot be closed or hidden, so no menu actions needed
+        return []
 
     def closeEvent(self, event: QtGui.QCloseEvent):
         """Handle close event - save layout."""
