@@ -8,18 +8,16 @@ from PySide6 import QtCore, QtGui, QtWidgets
 try:
     from .logger import logger
     from .settings import AppSettings
-    from .vfx_breakdown_widget import VFXBreakdownWidget
+    from .vfx_breakdown_widget import VFXBreakdownWidget, FormulaDelegate
     from .vfx_breakdown_model import ValidatedComboBoxDelegate
     from .formula_evaluator import FormulaEvaluator
-    from .formula_delegate import FormulaDelegate
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
-    from vfx_breakdown_widget import VFXBreakdownWidget
+    from vfx_breakdown_widget import VFXBreakdownWidget, FormulaDelegate
     from vfx_breakdown_model import ValidatedComboBoxDelegate
     from formula_evaluator import FormulaEvaluator
-    from formula_delegate import FormulaDelegate
 
 
 class CollapsibleDockTitleBar(QtWidgets.QWidget):
