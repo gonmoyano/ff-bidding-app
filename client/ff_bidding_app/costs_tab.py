@@ -16,8 +16,86 @@ except ImportError:
     from vfx_breakdown_widget import VFXBreakdownWidget
 
 
+class CollapsibleDockTitleBar(QtWidgets.QWidget):
+    """Custom title bar for collapsible dock widgets."""
+
+    def __init__(self, dock_widget, parent=None):
+        """Initialize the title bar.
+
+        Args:
+            dock_widget: The dock widget this title bar belongs to
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.dock_widget = dock_widget
+
+        # Create layout
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(5, 2, 5, 2)
+        layout.setSpacing(5)
+
+        # Collapse/expand button
+        self.collapse_btn = QtWidgets.QToolButton()
+        self.collapse_btn.setArrowType(QtCore.Qt.DownArrow)
+        self.collapse_btn.setAutoRaise(True)
+        self.collapse_btn.clicked.connect(self._on_collapse_clicked)
+        self.collapse_btn.setToolTip("Collapse/Expand")
+        layout.addWidget(self.collapse_btn)
+
+        # Title label
+        self.title_label = QtWidgets.QLabel(dock_widget.windowTitle())
+        self.title_label.setStyleSheet("font-weight: bold;")
+        layout.addWidget(self.title_label)
+
+        layout.addStretch()
+
+        # Float button
+        float_btn = QtWidgets.QToolButton()
+        float_btn.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_TitleBarNormalButton))
+        float_btn.setAutoRaise(True)
+        float_btn.setToolTip("Float")
+        float_btn.clicked.connect(lambda: dock_widget.setFloating(not dock_widget.isFloating()))
+        layout.addWidget(float_btn)
+
+        # Close button
+        close_btn = QtWidgets.QToolButton()
+        close_btn.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_TitleBarCloseButton))
+        close_btn.setAutoRaise(True)
+        close_btn.setToolTip("Close")
+        close_btn.clicked.connect(dock_widget.close)
+        layout.addWidget(close_btn)
+
+        # Style
+        self.setStyleSheet("""
+            CollapsibleDockTitleBar {
+                background-color: palette(window);
+                border: 1px solid palette(mid);
+                border-bottom: 1px solid palette(dark);
+            }
+            QToolButton:hover {
+                background-color: palette(light);
+            }
+        """)
+
+    def _on_collapse_clicked(self):
+        """Handle collapse button click."""
+        if hasattr(self.dock_widget, 'toggle_collapse'):
+            self.dock_widget.toggle_collapse()
+
+    def set_collapsed(self, collapsed):
+        """Update the button arrow based on collapsed state.
+
+        Args:
+            collapsed: Whether the dock is collapsed
+        """
+        if collapsed:
+            self.collapse_btn.setArrowType(QtCore.Qt.RightArrow)
+        else:
+            self.collapse_btn.setArrowType(QtCore.Qt.DownArrow)
+
+
 class CostDock(QtWidgets.QDockWidget):
-    """A dockable cost widget."""
+    """A collapsible dockable cost widget."""
 
     def __init__(self, title, widget, parent=None):
         """Initialize the cost dock.
@@ -35,6 +113,85 @@ class CostDock(QtWidgets.QDockWidget):
             QtWidgets.QDockWidget.DockWidgetMovable |
             QtWidgets.QDockWidget.DockWidgetFloatable
         )
+
+        # Create custom title bar
+        self.title_bar = CollapsibleDockTitleBar(self)
+        self.setTitleBarWidget(self.title_bar)
+
+        # Track collapsed state
+        self._is_collapsed = False
+        self._content_widget = widget
+        self._expanded_size = None
+
+    def toggle_collapse(self):
+        """Toggle the collapsed state of the dock."""
+        if self._is_collapsed:
+            self.expand()
+        else:
+            self.collapse()
+
+    def collapse(self):
+        """Collapse the dock to show only the title bar."""
+        if self._is_collapsed:
+            return
+
+        # Save current size
+        self._expanded_size = self.size()
+
+        # Hide content widget
+        if self._content_widget:
+            self._content_widget.hide()
+
+        # Set minimum and maximum height to title bar height
+        title_height = self.title_bar.sizeHint().height()
+        self.setMinimumHeight(title_height)
+        self.setMaximumHeight(title_height)
+
+        self._is_collapsed = True
+        self.title_bar.set_collapsed(True)
+
+        logger.debug(f"Collapsed dock: {self.windowTitle()}")
+
+    def expand(self):
+        """Expand the dock to show the content widget."""
+        if not self._is_collapsed:
+            return
+
+        # Show content widget
+        if self._content_widget:
+            self._content_widget.show()
+
+        # Reset size constraints
+        self.setMinimumHeight(0)
+        self.setMaximumHeight(16777215)  # Qt's QWIDGETSIZE_MAX
+
+        # Restore size if we saved it
+        if self._expanded_size:
+            self.resize(self._expanded_size)
+
+        self._is_collapsed = False
+        self.title_bar.set_collapsed(False)
+
+        logger.debug(f"Expanded dock: {self.windowTitle()}")
+
+    def is_collapsed(self):
+        """Get the collapsed state.
+
+        Returns:
+            bool: True if collapsed, False otherwise
+        """
+        return self._is_collapsed
+
+    def set_collapsed(self, collapsed):
+        """Set the collapsed state.
+
+        Args:
+            collapsed: True to collapse, False to expand
+        """
+        if collapsed:
+            self.collapse()
+        else:
+            self.expand()
 
 
 class CostsTab(QtWidgets.QMainWindow):
@@ -354,7 +511,13 @@ class CostsTab(QtWidgets.QMainWindow):
         """Save the current dock layout to settings."""
         settings = QtCore.QSettings()
         settings.setValue(self.SETTINGS_KEY, self.saveState())
-        logger.info("Saved costs dock layout")
+
+        # Save collapsed state for each dock
+        settings.setValue(f"{self.SETTINGS_KEY}/shots_cost_collapsed", self.shots_cost_dock.is_collapsed())
+        settings.setValue(f"{self.SETTINGS_KEY}/asset_cost_collapsed", self.asset_cost_dock.is_collapsed())
+        settings.setValue(f"{self.SETTINGS_KEY}/total_cost_collapsed", self.total_cost_dock.is_collapsed())
+
+        logger.info("Saved costs dock layout and collapsed states")
 
     def load_layout(self):
         """Load the saved dock layout from settings."""
@@ -362,7 +525,17 @@ class CostsTab(QtWidgets.QMainWindow):
         state = settings.value(self.SETTINGS_KEY)
         if state is not None:
             self.restoreState(state)
-            logger.info("Loaded costs dock layout")
+
+            # Restore collapsed state for each dock
+            shots_collapsed = settings.value(f"{self.SETTINGS_KEY}/shots_cost_collapsed", False, type=bool)
+            asset_collapsed = settings.value(f"{self.SETTINGS_KEY}/asset_cost_collapsed", False, type=bool)
+            total_collapsed = settings.value(f"{self.SETTINGS_KEY}/total_cost_collapsed", False, type=bool)
+
+            self.shots_cost_dock.set_collapsed(shots_collapsed)
+            self.asset_cost_dock.set_collapsed(asset_collapsed)
+            self.total_cost_dock.set_collapsed(total_collapsed)
+
+            logger.info("Loaded costs dock layout and collapsed states")
         else:
             logger.info("No saved layout found, using default")
 
@@ -379,6 +552,11 @@ class CostsTab(QtWidgets.QMainWindow):
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.shots_cost_dock)
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.asset_cost_dock)
         self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.total_cost_dock)
+
+        # Reset collapsed states to expanded
+        self.shots_cost_dock.set_collapsed(False)
+        self.asset_cost_dock.set_collapsed(False)
+        self.total_cost_dock.set_collapsed(False)
 
         logger.info("Reset costs dock layout to default")
 
