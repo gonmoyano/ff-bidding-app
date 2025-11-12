@@ -673,13 +673,16 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
                 return QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter
 
         elif role == QtCore.Qt.ForegroundRole:
+            # White text for Price column (on blue background)
+            if field_name == "_calc_price":
+                return QtGui.QColor("#ffffff")
             if field_name in self.readonly_columns:
                 return QtGui.QColor("#888888")
 
         elif role == QtCore.Qt.BackgroundRole:
-            # Light gray background for calculated Price field
+            # Blue background for calculated Price field (matching tab blue)
             if field_name == "_calc_price":
-                return QtGui.QColor("#E8E8E8")
+                return QtGui.QColor("#0078d4")
 
         elif role == QtCore.Qt.ToolTipRole:
             # Show cell reference (e.g., A1, B2, C3)

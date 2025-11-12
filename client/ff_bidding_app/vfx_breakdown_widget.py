@@ -72,17 +72,63 @@ class FormulaDelegate(NoElideDelegate):
     def _get_currency_symbol(self):
         """Get the current currency symbol from app settings."""
         if self.app_settings:
-            return self.app_settings.get_currency()
+            symbol = self.app_settings.get_currency()
+            print(f"[FormulaDelegate] app_settings exists, currency symbol: '{symbol}'")
+            return symbol if symbol else ""
+        else:
+            print(f"[FormulaDelegate] app_settings is None!")
         return ""
 
     def paint(self, painter, option, index):
-        """Paint the cell with background color from model."""
-        # Get background color from model
+        """Paint the cell with calculated value."""
+        # Get the value
+        value = index.model().data(index, QtCore.Qt.DisplayRole)
+
+        # Get background color from model and apply it
         bg_color = index.data(QtCore.Qt.BackgroundRole)
         if bg_color:
             painter.fillRect(option.rect, bg_color)
 
-        # Call parent paint to draw the text
+        # If it's a formula, show the calculated result
+        if isinstance(value, str) and value.startswith('='):
+            try:
+                # Pass row and col for circular reference detection
+                result = self.formula_evaluator.evaluate(value, index.row(), index.column())
+                print(f"[FormulaDelegate.paint] Formula: {value[:50]}, Result type: {type(result)}, Result: {result}")
+                # Format the result
+                if isinstance(result, float):
+                    currency_symbol = self._get_currency_symbol()
+                    display_text = f"{currency_symbol}{result:,.2f}"
+                    print(f"[FormulaDelegate.paint] Float result - Currency: '{currency_symbol}', Display: '{display_text}'")
+                elif isinstance(result, int):
+                    currency_symbol = self._get_currency_symbol()
+                    display_text = f"{currency_symbol}{result:,.2f}"
+                    print(f"[FormulaDelegate.paint] Int result - Currency: '{currency_symbol}', Display: '{display_text}'")
+                else:
+                    display_text = str(result)
+                    print(f"[FormulaDelegate.paint] Other result - Display: '{display_text}'")
+
+                # Set text color based on result type
+                if isinstance(result, str) and (result.startswith('#ERROR') or result.startswith('#CIRCULAR') or result.startswith('#PARSE') or result.startswith('#NOT_SUPPORTED')):
+                    option.palette.setColor(QtGui.QPalette.Text, QtGui.QColor("#ff6b6b"))
+                else:
+                    # Right-align numbers
+                    option.displayAlignment = QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+
+                # Create a new option with the calculated value
+                new_option = QtWidgets.QStyleOptionViewItem(option)
+                new_option.text = display_text
+                QtWidgets.QApplication.style().drawControl(
+                    QtWidgets.QStyle.CE_ItemViewItem, new_option, painter
+                )
+                return
+            except Exception as e:
+                # Log the error but continue with default painting
+                import traceback
+                print(f"Error in FormulaDelegate.paint: {e}")
+                traceback.print_exc()
+
+        # Default painting
         super().paint(painter, option, index)
 
     def displayText(self, value, locale):
@@ -95,11 +141,12 @@ class FormulaDelegate(NoElideDelegate):
             try:
                 result = self.formula_evaluator.evaluate(value)
                 # Format the result nicely
-                if isinstance(result, float):
+                if isinstance(result, (float, int)):
                     currency_symbol = self._get_currency_symbol()
                     return f"{currency_symbol}{result:,.2f}"
                 return str(result)
-            except:
+            except Exception as e:
+                print(f"Error in FormulaDelegate.displayText: {e}")
                 return "#ERROR"
 
         return str(value)
@@ -133,43 +180,6 @@ class FormulaDelegate(NoElideDelegate):
     def updateEditorGeometry(self, editor, option, index):
         """Update the editor geometry."""
         editor.setGeometry(option.rect)
-
-    def paint(self, painter, option, index):
-        """Paint the cell with calculated value."""
-        # Get the value
-        value = index.model().data(index, QtCore.Qt.DisplayRole)
-
-        # If it's a formula, show the calculated result
-        if isinstance(value, str) and value.startswith('='):
-            try:
-                # Pass row and col for circular reference detection
-                result = self.formula_evaluator.evaluate(value, index.row(), index.column())
-                # Format the result
-                if isinstance(result, float):
-                    currency_symbol = self._get_currency_symbol()
-                    display_text = f"{currency_symbol}{result:,.2f}"
-                else:
-                    display_text = str(result)
-
-                # Set text color based on result type
-                if isinstance(result, str) and (result.startswith('#ERROR') or result.startswith('#CIRCULAR') or result.startswith('#PARSE') or result.startswith('#NOT_SUPPORTED')):
-                    option.palette.setColor(QtGui.QPalette.Text, QtGui.QColor("#ff6b6b"))
-                else:
-                    # Right-align numbers
-                    option.displayAlignment = QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
-
-                # Create a new option with the calculated value
-                new_option = QtWidgets.QStyleOptionViewItem(option)
-                new_option.text = display_text
-                QtWidgets.QApplication.style().drawControl(
-                    QtWidgets.QStyle.CE_ItemViewItem, new_option, painter
-                )
-                return
-            except:
-                pass
-
-        # Default painting
-        super().paint(painter, option, index)
 
 
 class ConfigColumnsDialog(QtWidgets.QDialog):
