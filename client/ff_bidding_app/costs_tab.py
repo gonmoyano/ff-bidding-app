@@ -490,22 +490,23 @@ class CostsTab(QtWidgets.QMainWindow):
                 scene["_calc_price"] = total_price
                 logger.debug(f"Scene {scene.get('code')}: {est_cuts_float} cuts × ${line_item_price} = ${total_price}")
 
-            # Load into the VFXBreakdownWidget
-            self.shots_cost_widget.load_bidding_scenes(bidding_scenes_data, field_schema=field_schema)
-            logger.info(f"  ✓ Loaded bidding scenes into Shots Cost table")
-
-            # Set the display names on the model AFTER loading data
+            # Add _calc_price to column_fields BEFORE loading data to avoid column index mismatch
             if hasattr(self.shots_cost_widget, 'model'):
-                # Add _calc_price to column_fields if not already present
                 if "_calc_price" not in self.shots_cost_widget.model.column_fields:
                     self.shots_cost_widget.model.column_fields.append("_calc_price")
-                    logger.info("  ✓ Added _calc_price to column_fields")
+                    logger.info("  ✓ Added _calc_price to column_fields before loading data")
 
                 # Make the Price column read-only
                 if "_calc_price" not in self.shots_cost_widget.model.readonly_columns:
                     self.shots_cost_widget.model.readonly_columns.append("_calc_price")
                     logger.info("  ✓ Set _calc_price column as read-only")
 
+            # Load into the VFXBreakdownWidget
+            self.shots_cost_widget.load_bidding_scenes(bidding_scenes_data, field_schema=field_schema)
+            logger.info(f"  ✓ Loaded bidding scenes into Shots Cost table")
+
+            # Set the display names on the model AFTER loading data
+            if hasattr(self.shots_cost_widget, 'model'):
                 self.shots_cost_widget.model.set_column_headers(display_names)
                 logger.info(f"  ✓ Set {len(display_names)} column headers with display names")
                 # Log a few examples
