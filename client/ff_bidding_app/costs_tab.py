@@ -9,13 +9,15 @@ try:
     from .logger import logger
     from .settings import AppSettings
     from .vfx_breakdown_widget import VFXBreakdownWidget
-    from .vfx_breakdown_model import ValidatedComboBoxDelegate
+    from .vfx_breakdown_model import ValidatedComboBoxDelegate, VFXBreakdownModel
+    from .formula_evaluator import FormulaEvaluator
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
     from vfx_breakdown_widget import VFXBreakdownWidget
-    from vfx_breakdown_model import ValidatedComboBoxDelegate
+    from vfx_breakdown_model import ValidatedComboBoxDelegate, VFXBreakdownModel
+    from formula_evaluator import FormulaEvaluator
 
 
 class CollapsibleDockTitleBar(QtWidgets.QWidget):
@@ -579,51 +581,109 @@ class CostsTab(QtWidgets.QMainWindow):
                 self.line_item_prices = {}
                 return
 
-            # Query Line Items by IDs to get their codes and prices
-            # Include sg_price if it exists, otherwise use sg_price_formula
+            # Fetch Line Items schema to get all fields for formula evaluation
+            schema = self.sg_session.sg.schema_field_read("CustomEntity03")
+
+            # Build field allowlist: id, code, all mandays fields, and formula fields
+            fields_to_query = ["id", "code"]
+
+            # Add all mandays fields for formula evaluation
+            mandays_fields = [field_name for field_name in schema.keys() if field_name.endswith("_mandays")]
+            mandays_fields.sort()
+            fields_to_query.extend(mandays_fields)
+
+            # Add price-related fields
+            if "sg_price" in schema:
+                fields_to_query.append("sg_price")
+            if "sg_price_formula" in schema:
+                fields_to_query.append("sg_price_formula")
+
+            logger.info(f"Querying Line Items with {len(fields_to_query)} fields: {fields_to_query}")
+
+            # Query Line Items with all fields needed for formula evaluation
             line_items = self.sg_session.sg.find(
                 "CustomEntity03",
                 [["id", "in", line_item_ids]],
-                ["code", "sg_price", "sg_price_formula"]
+                fields_to_query
             )
 
-            # Extract code names and prices
+            if not line_items:
+                logger.info("No Line Items found")
+                self.line_item_names = []
+                self.line_item_prices = {}
+                return
+
+            logger.info(f"Fetched {len(line_items)} Line Items from ShotGrid")
+
+            # Create a temporary VFXBreakdownModel for formula evaluation
+            temp_model = VFXBreakdownModel(self.sg_session)
+            temp_model.column_fields = fields_to_query
+            temp_model.entity_type = "CustomEntity03"
+
+            # Build field schema for the model
+            field_schema = {}
+            for field_name in fields_to_query:
+                if field_name in schema:
+                    field_info = schema[field_name]
+                    field_schema[field_name] = {
+                        "data_type": field_info.get("data_type", {}).get("value"),
+                        "properties": field_info.get("properties", {})
+                    }
+
+            temp_model.set_field_schema(field_schema)
+            temp_model.load_data(line_items)
+
+            logger.info(f"Created temporary model with {len(line_items)} Line Items for formula evaluation")
+
+            # Create FormulaEvaluator with the temporary model
+            formula_evaluator = FormulaEvaluator(temp_model)
+
+            # Extract code names and evaluate prices
             self.line_item_names = []
             self.line_item_prices = {}
 
-            for item in line_items:
+            for row_idx, item in enumerate(line_items):
                 code = item.get("code", "")
-                if code:
-                    self.line_item_names.append(code)
+                if not code:
+                    continue
 
-                    # Try to get price from sg_price field first, then sg_price_formula
-                    price = item.get("sg_price")
-                    if price is None or price == "":
-                        # Try to parse sg_price_formula if it's a simple number or formula
-                        price_formula = item.get("sg_price_formula", "")
-                        if price_formula:
-                            # Try to extract numeric value from formula
-                            try:
-                                # Remove leading '=' if present
-                                price_str = str(price_formula).strip()
-                                if price_str.startswith("="):
-                                    price_str = price_str[1:].strip()
-                                # Try to convert to float
-                                price = float(price_str)
-                            except (ValueError, TypeError):
-                                logger.warning(f"Could not parse price formula for Line Item '{code}': {price_formula}")
-                                price = 0.0
+                self.line_item_names.append(code)
+
+                # Try to get price from sg_price field first
+                price = item.get("sg_price")
+                if price is not None and price != "":
+                    try:
+                        price = float(price)
+                        self.line_item_prices[code] = price
+                        logger.debug(f"Line Item '{code}': using sg_price = ${price}")
+                        continue
+                    except (ValueError, TypeError):
+                        logger.warning(f"Could not convert sg_price to float for Line Item '{code}': {price}")
+
+                # Fall back to evaluating sg_price_formula
+                price_formula = item.get("sg_price_formula", "")
+                if price_formula:
+                    try:
+                        # Find the column index for sg_price_formula
+                        col_idx = fields_to_query.index("sg_price_formula")
+
+                        # Evaluate the formula
+                        result = formula_evaluator.evaluate_formula(price_formula, row_idx, col_idx)
+
+                        if isinstance(result, (int, float)):
+                            price = float(result)
+                            self.line_item_prices[code] = price
+                            logger.debug(f"Line Item '{code}': evaluated formula '{price_formula}' = ${price}")
                         else:
-                            price = 0.0
-                    else:
-                        # Convert to float if it's not already
-                        try:
-                            price = float(price)
-                        except (ValueError, TypeError):
-                            logger.warning(f"Could not convert price to float for Line Item '{code}': {price}")
-                            price = 0.0
-
-                    self.line_item_prices[code] = price
+                            logger.warning(f"Formula evaluation for Line Item '{code}' returned non-numeric result: {result}")
+                            self.line_item_prices[code] = 0.0
+                    except Exception as e:
+                        logger.warning(f"Failed to evaluate formula for Line Item '{code}': {price_formula} - {e}")
+                        self.line_item_prices[code] = 0.0
+                else:
+                    # No price or formula, default to 0
+                    self.line_item_prices[code] = 0.0
+                    logger.debug(f"Line Item '{code}': no price or formula, defaulting to $0.0")
 
             logger.info(f"Found {len(self.line_item_names)} Line Items for VFX Shot Work: {self.line_item_names}")
             logger.info(f"Line Item prices: {self.line_item_prices}")
