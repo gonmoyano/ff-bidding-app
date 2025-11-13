@@ -37,9 +37,9 @@ class FormulaEvaluator:
 
         # Log available sheets for debugging
         if self.sheet_models:
-            logger.info(f"FormulaEvaluator initialized with {len(self.sheet_models)} sheet(s): {list(self.sheet_models.keys())}")
+            pass
         else:
-            logger.info("FormulaEvaluator initialized with no cross-sheet references")
+            pass
 
     @staticmethod
     def col_index_to_letter(col):
@@ -350,14 +350,11 @@ class FormulaEvaluator:
                 return result
 
             except NotImplementedError:
-                logger.debug(f"Formula contains unsupported function: '{formula}'")
                 return "#NOT_SUPPORTED!"
             except Exception as e:
-                logger.debug(f"Error executing formula '{formula}': {e}")
                 return "#ERROR!"
 
         except Exception as e:
-            logger.debug(f"Error parsing formula '{formula}': {e}")
             return "#PARSE_ERROR!"
         finally:
             # Remove from calculating set
@@ -391,7 +388,6 @@ class FormulaEvaluator:
                 return "#REF!"
 
             target_model = self.sheet_models[sheet_name]
-            logger.debug(f"Using model for sheet: {sheet_name}")
 
             # Resolve the cell reference (with or without explicit row)
             standard_ref = self.resolve_header_reference(cell_ref, current_row=row, model=target_model)
@@ -433,7 +429,6 @@ class FormulaEvaluator:
                 return "#REF!"
 
             target_model = self.sheet_models[sheet_name]
-            logger.debug(f"Using model for sheet: {sheet_name}")
 
             # Resolve the cell reference (with or without explicit row)
             standard_ref = self.resolve_header_reference(cell_ref, current_row=row, model=target_model)
@@ -563,7 +558,6 @@ class FormulaEvaluator:
                 # Return the evaluated cell reference
                 return evaluated_ref
             except Exception as e:
-                logger.debug(f"Error resolving INDIRECT: {e}")
                 return "A1"  # Fallback to A1
 
         # Replace INDIRECT(...) with the resolved reference
@@ -613,6 +607,44 @@ class FormulaEvaluator:
         # Return as-is
         return arg
 
+    def _extract_short_field_names(self, field_name: str) -> list:
+        """Extract potential short field names from a full field name.
+
+        For example:
+            sg_prep_mandays -> ['prep', 'prep_mandays', 'sg_prep_mandays']
+            sg_model_mandays -> ['model', 'model_mandays', 'sg_model_mandays']
+            _calc_price -> ['calc_price', 'price', '_calc_price']
+
+        Args:
+            field_name: Full field name
+
+        Returns:
+            List of potential short names including the original
+        """
+        short_names = [field_name]  # Always include the original
+
+        # Remove sg_ prefix if present
+        if field_name.startswith('sg_'):
+            without_prefix = field_name[3:]  # Remove 'sg_'
+            short_names.append(without_prefix)
+
+            # Remove common suffixes: _mandays, _rate, _hours, etc.
+            for suffix in ['_mandays', '_rate', '_hours', '_days', '_weeks']:
+                if without_prefix.endswith(suffix):
+                    short_names.append(without_prefix[:without_prefix.rfind(suffix)])
+                    break
+
+        # Handle underscore-prefixed fields like _calc_price
+        if field_name.startswith('_'):
+            without_prefix = field_name[1:]  # Remove '_'
+            short_names.append(without_prefix)
+
+            # Also try removing calc_ or similar prefixes
+            if without_prefix.startswith('calc_'):
+                short_names.append(without_prefix[5:])  # Remove 'calc_'
+
+        return list(set(short_names))  # Remove duplicates
+
     def find_dependent_cells(self, changed_row: int, changed_col: int) -> Set[Tuple[int, int]]:
         """Find all cells that depend on the changed cell.
 
@@ -634,13 +666,18 @@ class FormulaEvaluator:
         if hasattr(self.table_model, 'column_fields') and changed_col < len(self.table_model.column_fields):
             field_name = self.table_model.column_fields[changed_col]
 
+        # Get all potential short names for this field
+        short_names = self._extract_short_field_names(field_name) if field_name else []
+
         # Create patterns to match:
         # 1. Standard cell ref: A1, B2, etc.
-        # 2. Explicit row header ref: field.1, field.2, etc.
+        # 2. Explicit row header ref: field.1, field.2, etc. (including short names like prep.1)
         # 3. Same-row header ref: field (without row number)
         # 4. Sheet references: 'Sheet'!field.1, Sheet!field, etc.
 
         changed_header_ref = f"{field_name}.{changed_row + 1}" if field_name else None
+        # Also create header refs for all short names
+        changed_header_refs = [f"{name}.{changed_row + 1}" for name in short_names]
 
         # Scan all cells to find those with formulas referencing the changed cell
         for row in range(self.table_model.rowCount()):
@@ -657,17 +694,23 @@ class FormulaEvaluator:
                         formula_depends_on_changed = True
 
                     # Check explicit row header reference (field.1, field.2, etc.)
-                    elif changed_header_ref and re.search(r'\b' + re.escape(changed_header_ref) + r'\b', value, re.IGNORECASE):
-                        formula_depends_on_changed = True
+                    # Check all possible header refs including short names
+                    if not formula_depends_on_changed and changed_header_refs:
+                        for header_ref in changed_header_refs:
+                            if re.search(r'\b' + re.escape(header_ref) + r'\b', value, re.IGNORECASE):
+                                formula_depends_on_changed = True
+                                break
 
                     # Check same-row header reference (field without row number)
                     # This is only relevant if the formula is in the same row as the changed cell
-                    elif field_name and row == changed_row:
-                        # Look for the field name used without explicit row number
+                    if not formula_depends_on_changed and field_name and row == changed_row:
+                        # Look for the field name (or any of its short versions) used without explicit row number
                         # Pattern: field name not followed by a dot and number
-                        pattern = r'\b' + re.escape(field_name) + r'\b(?!\s*\.)'
-                        if re.search(pattern, value, re.IGNORECASE):
-                            formula_depends_on_changed = True
+                        for name in short_names:
+                            pattern = r'\b' + re.escape(name) + r'\b(?!\s*\.)'
+                            if re.search(pattern, value, re.IGNORECASE):
+                                formula_depends_on_changed = True
+                                break
 
                     # Check sheet references (e.g., 'Sheet'!field.1, Sheet!field)
                     # This is a simple check - just see if the field name appears in a sheet reference

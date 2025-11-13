@@ -1012,56 +1012,33 @@ class RatesTab(QtWidgets.QWidget):
             bottom_right: Bottom_right index of changed region
             roles: List of changed roles
         """
-        print(f"\n{'='*80}")
-        print(f"[Price Static] HANDLER CALLED!")
-        print(f"{'='*80}\n")
-
         try:
-            logger.info(f"[Price Static] dataChanged signal received: rows {top_left.row()}-{bottom_right.row()}, cols {top_left.column()}-{bottom_right.column()}, roles={roles}")
-
             # Check if we have the necessary components
             if not hasattr(self, 'line_items_widget') or not self.line_items_widget:
-                logger.debug("[Price Static] No line_items_widget")
                 return
             if not hasattr(self.line_items_widget, 'model') or not self.line_items_widget.model:
-                logger.debug("[Price Static] No model")
                 return
             if not hasattr(self, 'line_items_formula_evaluator') or not self.line_items_formula_evaluator:
-                logger.debug("[Price Static] No formula evaluator")
                 return
 
             model = self.line_items_widget.model
 
             # Get column indices
             if "_calc_price" not in model.column_fields or "sg_price_static" not in model.column_fields:
-                logger.debug("[Price Static] Missing columns")
                 return
 
             price_col_idx = model.column_fields.index("_calc_price")
             price_static_col_idx = model.column_fields.index("sg_price_static")
 
-            logger.debug(f"[Price Static] price_col_idx={price_col_idx}, price_static_col_idx={price_static_col_idx}")
-
             # Process each changed row
             for row in range(top_left.row(), bottom_right.row() + 1):
-                # Get changed column name for logging
-                changed_col_name = model.column_fields[top_left.column()] if top_left.column() < len(model.column_fields) else "unknown"
-                logger.debug(f"[Price Static] Row {row}: changed column '{changed_col_name}' (idx {top_left.column()})")
-
-                # Check if this change could affect the price or if price column itself changed
-                # We want to update whenever ANY field changes that could affect the price calculation
-                # or when the price column itself is recalculated
-
                 # Get the _calc_price formula
                 price_index = model.index(row, price_col_idx)
                 formula = model.data(price_index, QtCore.Qt.EditRole)
 
-                logger.debug(f"[Price Static] Row {row}: formula='{formula[:50] if formula else None}'")
-
                 if isinstance(formula, str) and formula.startswith('='):
                     # Evaluate the formula to get the calculated price
                     calculated_price = self.line_items_formula_evaluator.evaluate(formula, row, price_col_idx)
-                    logger.debug(f"[Price Static] Row {row}: calculated_price={calculated_price} (type={type(calculated_price).__name__})")
 
                     # Convert to numeric value
                     if isinstance(calculated_price, (int, float)):
@@ -1078,18 +1055,10 @@ class RatesTab(QtWidgets.QWidget):
                             except ValueError:
                                 current_static_price = 0
 
-                        logger.debug(f"[Price Static] Row {row}: current_static_price={current_static_price}")
-
                         # Check if the value changed (with small tolerance for floating point comparison)
                         if abs(calculated_price - current_static_price) > 0.01:
-                            logger.info(f"[Price Static] Line Item row {row}: Price changed from ${current_static_price:,.2f} to ${calculated_price:,.2f}, updating sg_price_static")
-
                             # Defer the update using a timer to avoid re-entrancy issues
-                            # (model might be in _updating state when this signal is emitted)
                             QtCore.QTimer.singleShot(0, lambda idx=price_static_index, val=calculated_price: self._update_price_static_deferred(idx, val))
-                            logger.info(f"[Price Static] Row {row}: Scheduled deferred update")
-                        else:
-                            logger.debug(f"[Price Static] Row {row}: Price unchanged (diff={abs(calculated_price - current_static_price):.4f})")
 
         except Exception as e:
             logger.error(f"Error in _on_line_items_data_changed: {e}", exc_info=True)
@@ -1108,11 +1077,17 @@ class RatesTab(QtWidgets.QWidget):
                 return
 
             model = self.line_items_widget.model
-            logger.info(f"[Price Static] Executing deferred update: row={index.row()}, value=${value:,.2f}")
-            success = model.setData(index, value, QtCore.Qt.EditRole)
-            logger.info(f"[Price Static] Deferred setData returned {success}")
+
+            # Set flag to prevent creating undo command for automatic Price Static updates
+            model._skip_undo_command = True
+            model.setData(index, value, QtCore.Qt.EditRole)
+            model._skip_undo_command = False
 
         except Exception as e:
+            # Ensure flag is reset even if error occurs
+            if hasattr(self, 'line_items_widget') and hasattr(self.line_items_widget, 'model'):
+                if hasattr(self.line_items_widget.model, '_skip_undo_command'):
+                    self.line_items_widget.model._skip_undo_command = False
             logger.error(f"Error in _update_price_static_deferred: {e}", exc_info=True)
 
 

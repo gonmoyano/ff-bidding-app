@@ -32,12 +32,10 @@ class AppSettings:
             try:
                 with open(self.settings_file, 'r', encoding='utf-8') as f:
                     self.settings = json.load(f)
-                logger.info(f"Settings loaded from {self.settings_file}")
             except Exception as e:
                 logger.error(f"Failed to load settings: {e}")
                 self.settings = {}
         else:
-            logger.info("No settings file found, using defaults")
             self.settings = {}
 
     def _save(self):
@@ -45,7 +43,6 @@ class AppSettings:
         try:
             with open(self.settings_file, 'w', encoding='utf-8') as f:
                 json.dump(self.settings, f, indent=2)
-            logger.info(f"Settings saved to {self.settings_file}")
         except Exception as e:
             logger.error(f"Failed to save settings: {e}")
 
@@ -78,7 +75,6 @@ class AppSettings:
 
         self.settings["sort_templates"][name] = config
         self._save()
-        logger.info(f"Sort template '{name}' saved")
 
     def delete_sort_template(self, name):
         """Delete a sort template.
@@ -89,7 +85,6 @@ class AppSettings:
         if "sort_templates" in self.settings and name in self.settings["sort_templates"]:
             del self.settings["sort_templates"][name]
             self._save()
-            logger.info(f"Sort template '{name}' deleted")
 
     def get_column_mappings(self):
         """Get saved column mappings for import dialogs.
@@ -111,7 +106,6 @@ class AppSettings:
 
         self.settings["column_mappings"][mapping_key] = mapping
         self._save()
-        logger.info(f"Column mapping '{mapping_key}' saved with {len(mapping)} mappings")
 
     def get_column_mapping(self, mapping_key):
         """Get a specific column mapping.
@@ -172,7 +166,6 @@ class AppSettings:
 
         self.settings["column_visibility"][context_key] = visibility
         self._save()
-        logger.info(f"Column visibility '{context_key}' saved with {len(visibility)} columns")
 
     def get_column_order(self, context_key):
         """Get column order settings for a specific context.
@@ -199,7 +192,6 @@ class AppSettings:
 
         self.settings["column_order"][context_key] = order
         self._save()
-        logger.info(f"Column order '{context_key}' saved with {len(order)} columns")
 
     def get_column_widths(self, context_key):
         """Get column width settings for a specific context.
@@ -226,7 +218,6 @@ class AppSettings:
 
         self.settings["column_widths"][context_key] = widths
         self._save()
-        logger.info(f"Column widths '{context_key}' saved with {len(widths)} columns")
 
     def get_column_dropdowns(self, context_key):
         """Get column dropdown settings for a specific context.
@@ -253,7 +244,6 @@ class AppSettings:
 
         self.settings["column_dropdowns"][context_key] = dropdowns
         self._save()
-        logger.info(f"Column dropdowns '{context_key}' saved with {len(dropdowns)} columns")
 
     def get_line_items_price_formula(self):
         """Get the default formula for Line Items Price column.
@@ -271,7 +261,6 @@ class AppSettings:
         """
         self.settings["line_items_price_formula"] = formula
         self._save()
-        logger.info(f"Line Items price formula saved")
 
     def get_default_line_items_price_formula(self):
         """Get the default formula for Line Items Price column, with fallback to hardcoded default.
@@ -302,7 +291,6 @@ class AppSettings:
             scale: DPI scale factor (e.g., 1.0, 1.25, 1.5, 2.0)
         """
         self.set("dpi_scale", scale)
-        logger.info(f"DPI scale set to {scale}")
 
     def get_currency(self):
         """Get currency symbol used by the application.
@@ -319,4 +307,3 @@ class AppSettings:
             currency: Currency symbol (e.g., "$", "€", "£", "¥")
         """
         self.set("currency", currency)
-        logger.info(f"Currency set to {currency}")
