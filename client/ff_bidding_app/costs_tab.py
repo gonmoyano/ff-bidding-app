@@ -219,7 +219,12 @@ class CostDock(QtWidgets.QDockWidget):
         if not self._content_widget:
             return None
 
-        # Search for VFXBreakdownWidget which contains the toolbar
+        # Check if the content widget itself is a VFXBreakdownWidget
+        if isinstance(self._content_widget, VFXBreakdownWidget):
+            if hasattr(self._content_widget, 'toolbar_widget') and self._content_widget.toolbar_widget:
+                return self._content_widget.toolbar_widget
+
+        # Search for VFXBreakdownWidget in children
         # VFXBreakdownWidget is already imported at the top of this file
         def find_in_children(widget):
             # Look for VFXBreakdownWidget
