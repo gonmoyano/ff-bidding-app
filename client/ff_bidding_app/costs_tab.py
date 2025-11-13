@@ -535,6 +535,11 @@ class CostsTab(QtWidgets.QMainWindow):
                     self.shots_cost_widget.model.column_fields.append("_calc_price")
                 logger.info(f"  ✓ Added virtual price columns to model")
 
+                # Update totals bar to reflect new column count
+                if hasattr(self, 'shots_cost_totals_wrapper'):
+                    self.shots_cost_totals_wrapper.update_column_count()
+                    logger.info(f"  ✓ Updated totals bar column count")
+
                 # Make Price column read-only
                 if "_calc_price" not in self.shots_cost_widget.model.readonly_columns:
                     self.shots_cost_widget.model.readonly_columns.append("_calc_price")

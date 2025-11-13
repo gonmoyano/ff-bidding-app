@@ -390,3 +390,42 @@ class TableWithTotalsBar(QtWidgets.QWidget):
             visible: True to show, False to hide
         """
         self.totals_bar.setVisible(visible)
+
+    def update_column_count(self):
+        """
+        Update the totals bar to match the current column count of the main table.
+
+        This should be called after adding or removing columns from the model.
+        """
+        # Get the current column count from the main table
+        if self.is_table_widget:
+            new_cols = self.table.columnCount()
+        else:
+            model = self.table.model()
+            new_cols = model.columnCount() if model else 0
+
+        if new_cols == self.cols:
+            # No change in column count
+            return
+
+        old_cols = self.cols
+        self.cols = new_cols
+
+        # Update the totals bar column count
+        self.totals_bar.setColumnCount(new_cols)
+
+        # Initialize any new cells with default styling
+        for col in range(old_cols, new_cols):
+            item = QtWidgets.QTableWidgetItem("")
+            item.setTextAlignment(Qt.AlignCenter)
+            item.setBackground(QtGui.QColor("#3a3a3a"))
+            item.setForeground(QtGui.QColor("#ffffff"))
+            font = item.font()
+            font.setBold(True)
+            item.setFont(font)
+            self.totals_bar.setItem(0, col, item)
+
+        # Re-sync all column widths to ensure alignment
+        self._sync_all_column_widths()
+
+        logger.info(f"Updated totals bar column count from {old_cols} to {new_cols}")
