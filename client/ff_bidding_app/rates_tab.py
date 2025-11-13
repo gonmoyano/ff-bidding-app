@@ -992,56 +992,78 @@ class RatesTab(QtWidgets.QWidget):
             roles: List of changed roles
         """
         try:
+            logger.debug(f"[Price Static] dataChanged signal received: rows {top_left.row()}-{bottom_right.row()}, cols {top_left.column()}-{bottom_right.column()}, roles={roles}")
+
             # Check if we have the necessary components
             if not hasattr(self, 'line_items_widget') or not self.line_items_widget:
+                logger.debug("[Price Static] No line_items_widget")
                 return
             if not hasattr(self.line_items_widget, 'model') or not self.line_items_widget.model:
+                logger.debug("[Price Static] No model")
                 return
             if not hasattr(self, 'line_items_formula_evaluator') or not self.line_items_formula_evaluator:
+                logger.debug("[Price Static] No formula evaluator")
                 return
 
             model = self.line_items_widget.model
 
             # Get column indices
             if "_calc_price" not in model.column_fields or "sg_price_static" not in model.column_fields:
+                logger.debug("[Price Static] Missing columns")
                 return
 
             price_col_idx = model.column_fields.index("_calc_price")
             price_static_col_idx = model.column_fields.index("sg_price_static")
 
+            logger.debug(f"[Price Static] price_col_idx={price_col_idx}, price_static_col_idx={price_static_col_idx}")
+
             # Process each changed row
             for row in range(top_left.row(), bottom_right.row() + 1):
-                # Check if the Price column was affected
-                if top_left.column() <= price_col_idx <= bottom_right.column():
-                    # Get the _calc_price formula
-                    price_index = model.index(row, price_col_idx)
-                    formula = model.data(price_index, QtCore.Qt.EditRole)
+                # Get changed column name for logging
+                changed_col_name = model.column_fields[top_left.column()] if top_left.column() < len(model.column_fields) else "unknown"
+                logger.debug(f"[Price Static] Row {row}: changed column '{changed_col_name}' (idx {top_left.column()})")
 
-                    if isinstance(formula, str) and formula.startswith('='):
-                        # Evaluate the formula to get the calculated price
-                        calculated_price = self.line_items_formula_evaluator.evaluate(formula, row, price_col_idx)
+                # Check if this change could affect the price or if price column itself changed
+                # We want to update whenever ANY field changes that could affect the price calculation
+                # or when the price column itself is recalculated
 
-                        # Convert to numeric value
-                        if isinstance(calculated_price, (int, float)):
-                            # Get current sg_price_static value
-                            price_static_index = model.index(row, price_static_col_idx)
-                            current_static_price = model.data(price_static_index, QtCore.Qt.EditRole)
+                # Get the _calc_price formula
+                price_index = model.index(row, price_col_idx)
+                formula = model.data(price_index, QtCore.Qt.EditRole)
 
-                            # Convert current value to numeric for comparison
-                            if current_static_price is None:
+                logger.debug(f"[Price Static] Row {row}: formula='{formula[:50] if formula else None}'")
+
+                if isinstance(formula, str) and formula.startswith('='):
+                    # Evaluate the formula to get the calculated price
+                    calculated_price = self.line_items_formula_evaluator.evaluate(formula, row, price_col_idx)
+                    logger.debug(f"[Price Static] Row {row}: calculated_price={calculated_price} (type={type(calculated_price).__name__})")
+
+                    # Convert to numeric value
+                    if isinstance(calculated_price, (int, float)):
+                        # Get current sg_price_static value
+                        price_static_index = model.index(row, price_static_col_idx)
+                        current_static_price = model.data(price_static_index, QtCore.Qt.EditRole)
+
+                        # Convert current value to numeric for comparison
+                        if current_static_price is None:
+                            current_static_price = 0
+                        elif isinstance(current_static_price, str):
+                            try:
+                                current_static_price = float(current_static_price)
+                            except ValueError:
                                 current_static_price = 0
-                            elif isinstance(current_static_price, str):
-                                try:
-                                    current_static_price = float(current_static_price)
-                                except ValueError:
-                                    current_static_price = 0
 
-                            # Check if the value changed (with small tolerance for floating point comparison)
-                            if abs(calculated_price - current_static_price) > 0.01:
-                                logger.info(f"Line Item row {row}: Price changed from ${current_static_price:,.2f} to ${calculated_price:,.2f}, updating sg_price_static")
+                        logger.debug(f"[Price Static] Row {row}: current_static_price={current_static_price}")
 
-                                # Update sg_price_static in the model (this will also update ShotGrid)
-                                model.setData(price_static_index, calculated_price, QtCore.Qt.EditRole)
+                        # Check if the value changed (with small tolerance for floating point comparison)
+                        if abs(calculated_price - current_static_price) > 0.01:
+                            logger.info(f"[Price Static] Line Item row {row}: Price changed from ${current_static_price:,.2f} to ${calculated_price:,.2f}, updating sg_price_static")
+
+                            # Update sg_price_static in the model (this will also update ShotGrid)
+                            success = model.setData(price_static_index, calculated_price, QtCore.Qt.EditRole)
+                            logger.info(f"[Price Static] Row {row}: setData returned {success}")
+                        else:
+                            logger.debug(f"[Price Static] Row {row}: Price unchanged (diff={abs(calculated_price - current_static_price):.4f})")
 
         except Exception as e:
             logger.error(f"Error in _on_line_items_data_changed: {e}", exc_info=True)
