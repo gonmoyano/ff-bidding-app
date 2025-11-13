@@ -37,7 +37,7 @@ class CollapsibleDockTitleBar(QtWidgets.QWidget):
 
         # Create layout
         layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(5, 2, 5, 2)
+        layout.setContentsMargins(5, 0, 5, 0)
         layout.setSpacing(5)
 
         # Collapse/expand button
@@ -114,6 +114,8 @@ class CostDock(QtWidgets.QDockWidget):
         self._saved_margins = None
         self._saved_layout_margins = None
         self._saved_layout_spacing = None
+        self._saved_wrapper_margins = None
+        self._saved_wrapper_spacing = None
 
     def toggle_collapse(self):
         """Toggle the collapsed state of the dock."""
@@ -151,13 +153,25 @@ class CostDock(QtWidgets.QDockWidget):
                 layout.setContentsMargins(0, 0, 0, 0)
                 layout.setSpacing(0)
 
+            # Also remove margins from the totals wrapper's layout
+            if hasattr(totals_wrapper, 'layout') and totals_wrapper.layout():
+                wrapper_layout = totals_wrapper.layout()
+                if not hasattr(self, '_saved_wrapper_margins'):
+                    self._saved_wrapper_margins = wrapper_layout.contentsMargins()
+                    self._saved_wrapper_spacing = wrapper_layout.spacing()
+                wrapper_layout.setContentsMargins(0, 0, 0, 0)
+                wrapper_layout.setSpacing(0)
+
             # Save and remove content margins from the dock widget itself
             self._saved_margins = self.contentsMargins()
             self.setContentsMargins(0, 0, 0, 0)
 
-            # Calculate height: title bar + totals bar (no padding)
-            title_height = self.title_bar.sizeHint().height()
-            totals_height = totals_wrapper.totals_bar.sizeHint().height()
+            # Calculate height: title bar + totals bar (no padding, no spacing)
+            # Use actual height instead of sizeHint for more accurate measurement
+            title_height = self.title_bar.height() if self.title_bar.height() > 0 else self.title_bar.sizeHint().height()
+            totals_height = totals_wrapper.totals_bar.height() if totals_wrapper.totals_bar.height() > 0 else totals_wrapper.totals_bar.sizeHint().height()
+
+            # Set exact height with no extra space
             collapsed_height = title_height + totals_height
             self.setMinimumHeight(collapsed_height)
             self.setMaximumHeight(collapsed_height)
@@ -200,6 +214,16 @@ class CostDock(QtWidgets.QDockWidget):
                 if self._saved_layout_spacing is not None:
                     layout.setSpacing(self._saved_layout_spacing)
                     self._saved_layout_spacing = None
+
+            # Restore totals wrapper margins and spacing
+            if hasattr(totals_wrapper, 'layout') and totals_wrapper.layout():
+                wrapper_layout = totals_wrapper.layout()
+                if self._saved_wrapper_margins is not None:
+                    wrapper_layout.setContentsMargins(self._saved_wrapper_margins)
+                    self._saved_wrapper_margins = None
+                if self._saved_wrapper_spacing is not None:
+                    wrapper_layout.setSpacing(self._saved_wrapper_spacing)
+                    self._saved_wrapper_spacing = None
 
             # Restore dock widget margins
             if self._saved_margins is not None:
