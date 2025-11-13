@@ -1032,6 +1032,11 @@ class RatesTab(QtWidgets.QWidget):
 
             model = self.line_items_widget.model
 
+            # Skip Price Static updates during undo/redo operations to avoid interfering with undo/redo history
+            if hasattr(model, '_updating') and model._updating:
+                logger.debug("[Price Static] Skipping update during model update (undo/redo/etc)")
+                return
+
             # Get column indices
             if "_calc_price" not in model.column_fields or "sg_price_static" not in model.column_fields:
                 logger.debug("[Price Static] Missing columns")
