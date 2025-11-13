@@ -485,3 +485,28 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         self._sync_all_column_widths()
 
         logger.info(f"Updated totals bar column count from {old_cols} to {new_cols}")
+
+    def collapse_table(self):
+        """
+        Collapse the view to show only the totals bar, hiding the main table.
+
+        This is useful for compact views where only totals are needed.
+        """
+        self.table.setVisible(False)
+        logger.debug("Collapsed table - showing only totals bar")
+
+    def expand_table(self):
+        """
+        Expand the view to show both the main table and totals bar.
+        """
+        self.table.setVisible(True)
+        logger.debug("Expanded table - showing table and totals bar")
+
+    def is_table_collapsed(self):
+        """
+        Check if the main table is currently collapsed.
+
+        Returns:
+            bool: True if table is hidden, False if visible
+        """
+        return not self.table.isVisible()

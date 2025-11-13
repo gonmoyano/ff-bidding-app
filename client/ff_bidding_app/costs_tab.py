@@ -118,21 +118,32 @@ class CostDock(QtWidgets.QDockWidget):
             self.collapse()
 
     def collapse(self):
-        """Collapse the dock to show only the title bar."""
+        """Collapse the dock to show only the title bar (or totals bar if available)."""
         if self._is_collapsed:
             return
 
         # Save current size
         self._expanded_size = self.size()
 
-        # Hide content widget
-        if self._content_widget:
-            self._content_widget.hide()
-
-        # Set minimum and maximum height to title bar height
-        title_height = self.title_bar.sizeHint().height()
-        self.setMinimumHeight(title_height)
-        self.setMaximumHeight(title_height)
+        # Check if content widget contains a TableWithTotalsBar that we should partially collapse
+        totals_wrapper = self._find_totals_wrapper()
+        if totals_wrapper:
+            # Collapse just the table, keep totals bar visible
+            totals_wrapper.collapse_table()
+            # Calculate height: title bar + totals bar
+            title_height = self.title_bar.sizeHint().height()
+            totals_height = totals_wrapper.totals_bar.sizeHint().height()
+            collapsed_height = title_height + totals_height + 10  # Small padding
+            self.setMinimumHeight(collapsed_height)
+            self.setMaximumHeight(collapsed_height)
+        else:
+            # Traditional collapse: hide content widget entirely
+            if self._content_widget:
+                self._content_widget.hide()
+            # Set minimum and maximum height to title bar height
+            title_height = self.title_bar.sizeHint().height()
+            self.setMinimumHeight(title_height)
+            self.setMaximumHeight(title_height)
 
         self._is_collapsed = True
         self.title_bar.set_collapsed(True)
@@ -144,9 +155,15 @@ class CostDock(QtWidgets.QDockWidget):
         if not self._is_collapsed:
             return
 
-        # Show content widget
-        if self._content_widget:
-            self._content_widget.show()
+        # Check if content widget contains a TableWithTotalsBar
+        totals_wrapper = self._find_totals_wrapper()
+        if totals_wrapper:
+            # Expand the table to show both table and totals bar
+            totals_wrapper.expand_table()
+        else:
+            # Traditional expand: show content widget
+            if self._content_widget:
+                self._content_widget.show()
 
         # Reset size constraints
         self.setMinimumHeight(0)
@@ -160,6 +177,27 @@ class CostDock(QtWidgets.QDockWidget):
         self.title_bar.set_collapsed(False)
 
         logger.debug(f"Expanded dock: {self.windowTitle()}")
+
+    def _find_totals_wrapper(self):
+        """Find TableWithTotalsBar widget within the content widget.
+
+        Returns:
+            TableWithTotalsBar instance or None if not found
+        """
+        if not self._content_widget:
+            return None
+
+        # Check if the content widget itself is a TableWithTotalsBar
+        if isinstance(self._content_widget, TableWithTotalsBar):
+            return self._content_widget
+
+        # Search through the widget's children recursively
+        def find_in_children(widget):
+            for child in widget.findChildren(TableWithTotalsBar):
+                return child
+            return None
+
+        return find_in_children(self._content_widget)
 
     def is_collapsed(self):
         """Get the collapsed state.
