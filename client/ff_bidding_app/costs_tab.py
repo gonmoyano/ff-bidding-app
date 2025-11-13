@@ -446,6 +446,17 @@ class CostsTab(QtWidgets.QMainWindow):
             parent=self
         )
 
+        # Configure the model to use Asset-specific columns and entity type
+        if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
+            # Define Asset item column fields (including virtual price columns)
+            asset_field_list = [
+                "id", "code", "sg_bid_asset_type", "sg_bidding_notes", "_line_item_price", "_calc_price"
+            ]
+            self.asset_cost_widget.model.column_fields = asset_field_list.copy()
+            # Set entity type to CustomEntity07 (Asset items) instead of default CustomEntity02
+            self.asset_cost_widget.model.entity_type = "CustomEntity07"
+            logger.info(f"Configured Assets Cost widget model with fields: {asset_field_list} and entity_type: CustomEntity07")
+
         # Now intercept the layout and replace table_view with wrapped version
         layout = self.asset_cost_widget.layout()
 
@@ -518,6 +529,8 @@ class CostsTab(QtWidgets.QMainWindow):
             # Clear all cost views
             if hasattr(self, 'shots_cost_widget'):
                 self.shots_cost_widget.load_bidding_scenes([])
+            if hasattr(self, 'asset_cost_widget'):
+                self.asset_cost_widget.load_bidding_scenes([])
 
     def _load_vfx_breakdown_for_bid(self, bid_data):
         """Load VFX Breakdown scenes linked to the bid.
@@ -1174,39 +1187,10 @@ class CostsTab(QtWidgets.QMainWindow):
 
             # Set the display names on the model AFTER loading data
             if hasattr(self.asset_cost_widget, 'model'):
-                # Add virtual columns to the model's column_fields
-                columns_added = []
-                if "_line_item_price" not in self.asset_cost_widget.model.column_fields:
-                    self.asset_cost_widget.model.column_fields.append("_line_item_price")
-                    columns_added.append("_line_item_price")
-                if "_calc_price" not in self.asset_cost_widget.model.column_fields:
-                    self.asset_cost_widget.model.column_fields.append("_calc_price")
-                    columns_added.append("_calc_price")
-                logger.info(f"  ✓ Added virtual price columns to model")
-
-                # Notify the view that the model structure changed
-                if columns_added:
-                    self.asset_cost_widget.model.layoutChanged.emit()
-                    logger.info(f"  ✓ Emitted layoutChanged signal for {len(columns_added)} new columns")
-
-                # Set default widths for the new columns before updating totals bar
-                if columns_added:
-                    for col_name in columns_added:
-                        col_idx = self.asset_cost_widget.model.column_fields.index(col_name)
-                        # Set a reasonable default width (100 pixels)
-                        self.asset_cost_widget.table_view.setColumnWidth(col_idx, 100)
-                        logger.info(f"  ✓ Set width for column {col_name} (index {col_idx})")
-
-                # Update totals bar to reflect new column count
+                # Update totals bar to reflect column count
                 if hasattr(self, 'asset_cost_totals_wrapper'):
                     self.asset_cost_totals_wrapper.update_column_count()
                     logger.info(f"  ✓ Updated totals bar column count")
-
-                # Force viewport update to ensure new columns are immediately visible
-                if columns_added:
-                    self.asset_cost_widget.table_view.viewport().update()
-                    self.asset_cost_widget.table_view.horizontalHeader().viewport().update()
-                    logger.info(f"  ✓ Forced viewport update for new columns")
 
                 # Make Price column read-only
                 if "_calc_price" not in self.asset_cost_widget.model.readonly_columns:
