@@ -534,8 +534,12 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         # Toolbar (search and filter controls)
+        self.toolbar_widget = None
         if self.show_toolbar:
-            toolbar_layout = QtWidgets.QHBoxLayout()
+            # Create a container widget for the toolbar so we can hide/show it easily
+            self.toolbar_widget = QtWidgets.QWidget()
+            toolbar_layout = QtWidgets.QHBoxLayout(self.toolbar_widget)
+            toolbar_layout.setContentsMargins(0, 0, 0, 0)
 
             # Global search box
             search_label = QtWidgets.QLabel("Search:")
@@ -591,7 +595,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             self.row_count_label.setStyleSheet("color: #606060; padding: 2px 4px;")
             toolbar_layout.addWidget(self.row_count_label)
 
-            layout.addLayout(toolbar_layout)
+            layout.addWidget(self.toolbar_widget)
 
         # Table view
         self.table_view = QtWidgets.QTableView()

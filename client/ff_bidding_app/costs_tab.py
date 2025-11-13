@@ -130,10 +130,16 @@ class CostDock(QtWidgets.QDockWidget):
         if totals_wrapper:
             # Collapse just the table, keep totals bar visible
             totals_wrapper.collapse_table()
-            # Calculate height: title bar + totals bar
+
+            # Also hide the toolbar if it exists
+            toolbar = self._find_toolbar()
+            if toolbar:
+                toolbar.setVisible(False)
+
+            # Calculate height: title bar + totals bar (no padding)
             title_height = self.title_bar.sizeHint().height()
             totals_height = totals_wrapper.totals_bar.sizeHint().height()
-            collapsed_height = title_height + totals_height + 10  # Small padding
+            collapsed_height = title_height + totals_height
             self.setMinimumHeight(collapsed_height)
             self.setMaximumHeight(collapsed_height)
         else:
@@ -160,6 +166,11 @@ class CostDock(QtWidgets.QDockWidget):
         if totals_wrapper:
             # Expand the table to show both table and totals bar
             totals_wrapper.expand_table()
+
+            # Also show the toolbar if it exists
+            toolbar = self._find_toolbar()
+            if toolbar:
+                toolbar.setVisible(True)
         else:
             # Traditional expand: show content widget
             if self._content_widget:
@@ -195,6 +206,27 @@ class CostDock(QtWidgets.QDockWidget):
         def find_in_children(widget):
             for child in widget.findChildren(TableWithTotalsBar):
                 return child
+            return None
+
+        return find_in_children(self._content_widget)
+
+    def _find_toolbar(self):
+        """Find the toolbar widget within the content widget.
+
+        Returns:
+            Toolbar widget or None if not found
+        """
+        if not self._content_widget:
+            return None
+
+        # Search for VFXBreakdownWidget which contains the toolbar
+        from .vfx_breakdown_widget import VFXBreakdownWidget
+
+        def find_in_children(widget):
+            # Look for VFXBreakdownWidget
+            for child in widget.findChildren(VFXBreakdownWidget):
+                if hasattr(child, 'toolbar_widget') and child.toolbar_widget:
+                    return child.toolbar_widget
             return None
 
         return find_in_children(self._content_widget)
