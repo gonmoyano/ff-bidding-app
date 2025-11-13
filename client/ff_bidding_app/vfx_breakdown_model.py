@@ -269,10 +269,6 @@ class EditCommand:
         index = self.model.index(self.row, self.col)
         self.model.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
 
-        # Recalculate dependent cells if formula evaluator is available
-        if self.model.formula_evaluator:
-            self.model.formula_evaluator.recalculate_dependents(self.row, self.col)
-
     def redo(self):
         """Redo the edit."""
         # Update ShotGrid
@@ -285,10 +281,6 @@ class EditCommand:
         # Emit data changed to refresh the view
         index = self.model.index(self.row, self.col)
         self.model.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
-
-        # Recalculate dependent cells if formula evaluator is available
-        if self.model.formula_evaluator:
-            self.model.formula_evaluator.recalculate_dependents(self.row, self.col)
 
     def _update_shotgrid(self, value):
         """Update ShotGrid with the value."""
@@ -1276,6 +1268,11 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         self._in_undo_redo = False
         self._updating = False
         self.redo_stack.append(command)
+
+        # Recalculate dependent cells AFTER flags are cleared
+        if self.formula_evaluator:
+            self.formula_evaluator.recalculate_dependents(command.row, command.col)
+
         logger.info(f"Undone edit at row {command.row}, col {command.col}")
         self.statusMessageChanged.emit(f"Undone change to {self.column_fields[command.col]}", False)
         return True
@@ -1293,6 +1290,11 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         self._in_undo_redo = False
         self._updating = False
         self.undo_stack.append(command)
+
+        # Recalculate dependent cells AFTER flags are cleared
+        if self.formula_evaluator:
+            self.formula_evaluator.recalculate_dependents(command.row, command.col)
+
         logger.info(f"Redone edit at row {command.row}, col {command.col}")
         self.statusMessageChanged.emit(f"Redone change to {self.column_fields[command.col]}", False)
         return True
