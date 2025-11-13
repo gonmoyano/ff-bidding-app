@@ -11,6 +11,7 @@ try:
     from .vfx_breakdown_widget import VFXBreakdownWidget, FormulaDelegate
     from .vfx_breakdown_model import ValidatedComboBoxDelegate
     from .formula_evaluator import FormulaEvaluator
+    from .table_with_totals_bar import TableWithTotalsBar
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
@@ -18,6 +19,7 @@ except ImportError:
     from vfx_breakdown_widget import VFXBreakdownWidget, FormulaDelegate
     from vfx_breakdown_model import ValidatedComboBoxDelegate
     from formula_evaluator import FormulaEvaluator
+    from table_with_totals_bar import TableWithTotalsBar
 
 
 class CollapsibleDockTitleBar(QtWidgets.QWidget):
@@ -279,6 +281,18 @@ class CostsTab(QtWidgets.QMainWindow):
             settings_key="shots_cost",  # Unique settings key for Shots Cost table
             parent=self
         )
+
+        # Now intercept the layout and replace table_view with wrapped version
+        layout = self.shots_cost_widget.layout()
+
+        # Remove table_view from layout
+        layout.removeWidget(self.shots_cost_widget.table_view)
+
+        # Create wrapper with totals bar
+        self.shots_cost_totals_wrapper = TableWithTotalsBar(self.shots_cost_widget.table_view)
+
+        # Add wrapper back to layout
+        layout.addWidget(self.shots_cost_totals_wrapper)
 
         return self.shots_cost_widget
 
@@ -545,6 +559,14 @@ class CostsTab(QtWidgets.QMainWindow):
                 formula_delegate = FormulaDelegate(self.vfx_breakdown_formula_evaluator, app_settings=self.app_settings)
                 self.shots_cost_widget.table_view.setItemDelegateForColumn(price_col_index, formula_delegate)
                 logger.info(f"  ✓ Applied FormulaDelegate to Price column (index {price_col_index})")
+
+                # Configure totals bar for Price column
+                if hasattr(self, 'shots_cost_totals_wrapper'):
+                    # Mark Price column as blue
+                    self.shots_cost_totals_wrapper.set_blue_columns([price_col_index])
+                    # Calculate totals only for Price column
+                    self.shots_cost_totals_wrapper.calculate_totals(columns=[price_col_index], skip_first_col=True)
+                    logger.info(f"  ✓ Configured totals bar for Price column (index {price_col_index})")
 
                 # Force the header view to update
                 if hasattr(self.shots_cost_widget, 'table_view'):
