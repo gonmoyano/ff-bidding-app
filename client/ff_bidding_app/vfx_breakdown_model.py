@@ -619,6 +619,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         # Flag to indicate when undo/redo is in progress
         self._in_undo_redo = False
 
+        # Flag to skip undo command creation for automatic updates (e.g., Price Static)
+        self._skip_undo_command = False
+
     def rowCount(self, parent=QtCore.QModelIndex()):
         """Return the number of rows (filtered bidding scenes)."""
         if parent.isValid():
@@ -808,47 +811,78 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
                 return False
         else:
             # Regular field - update ShotGrid
-            # Create undo command
-            command = EditCommand(
-                self,
-                row,
-                col,
-                old_value,
-                new_value,
-                bidding_scene_data,
-                field_name,
-                self.sg_session,
-                field_schema=self.field_schema,
-                entity_type=self.entity_type
-            )
-
             # Execute the command (update ShotGrid)
             try:
                 self._updating = True
-                command._update_shotgrid(new_value)
 
-                # Update the bidding_scene_data with new value
-                parsed_value = command._parse_value(new_value, field_name)
-                bidding_scene_data[field_name] = parsed_value
+                # During undo/redo or automatic updates, we want to update the field but not create new undo commands
+                # This allows cascading updates (e.g., Price Static) without interfering with undo/redo history
+                if self._in_undo_redo or self._skip_undo_command:
+                    # Direct update without creating EditCommand
+                    # Create a temporary command object just for the helper methods
+                    temp_command = EditCommand(
+                        self,
+                        row,
+                        col,
+                        old_value,
+                        new_value,
+                        bidding_scene_data,
+                        field_name,
+                        self.sg_session,
+                        field_schema=self.field_schema,
+                        entity_type=self.entity_type
+                    )
 
-                # Emit data changed
-                self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+                    temp_command._update_shotgrid(new_value)
+                    parsed_value = temp_command._parse_value(new_value, field_name)
+                    bidding_scene_data[field_name] = parsed_value
 
-                # Add to undo stack
-                self.undo_stack.append(command)
-                # Clear redo stack on new edit
-                self.redo_stack.clear()
+                    # Emit data changed
+                    self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
 
-                self._updating = False
+                    self._updating = False
+                    reason = "undo/redo" if self._in_undo_redo else "automatic update"
+                    logger.info(f"Updated {field_name} during {reason} (no new undo command)")
+                    return True
+                else:
+                    # Normal edit - create undo command
+                    command = EditCommand(
+                        self,
+                        row,
+                        col,
+                        old_value,
+                        new_value,
+                        bidding_scene_data,
+                        field_name,
+                        self.sg_session,
+                        field_schema=self.field_schema,
+                        entity_type=self.entity_type
+                    )
 
-                self.statusMessageChanged.emit(f"✓ Updated {field_name} on ShotGrid", False)
-                logger.info(f"Successfully updated Bidding Scene {bidding_scene_data.get('id')} field '{field_name}' to '{new_value}'")
+                    command._update_shotgrid(new_value)
 
-                # Recalculate dependent cells if formula evaluator is available
-                if self.formula_evaluator:
-                    self.formula_evaluator.recalculate_dependents(row, col)
+                    # Update the bidding_scene_data with new value
+                    parsed_value = command._parse_value(new_value, field_name)
+                    bidding_scene_data[field_name] = parsed_value
 
-                return True
+                    # Emit data changed
+                    self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+
+                    # Add to undo stack
+                    self.undo_stack.append(command)
+                    # Clear redo stack on new edit
+                    self.redo_stack.clear()
+
+                    self._updating = False
+
+                    self.statusMessageChanged.emit(f"✓ Updated {field_name} on ShotGrid", False)
+                    logger.info(f"Successfully updated Bidding Scene {bidding_scene_data.get('id')} field '{field_name}' to '{new_value}'")
+
+                    # Recalculate dependent cells if formula evaluator is available
+                    if self.formula_evaluator:
+                        self.formula_evaluator.recalculate_dependents(row, col)
+
+                    return True
 
             except Exception as e:
                 self._updating = False

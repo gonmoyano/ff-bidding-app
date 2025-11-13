@@ -1032,11 +1032,6 @@ class RatesTab(QtWidgets.QWidget):
 
             model = self.line_items_widget.model
 
-            # Skip Price Static updates during undo/redo operations to avoid interfering with undo/redo history
-            if hasattr(model, '_in_undo_redo') and model._in_undo_redo:
-                logger.debug("[Price Static] Skipping update during undo/redo operation")
-                return
-
             # Get column indices
             if "_calc_price" not in model.column_fields or "sg_price_static" not in model.column_fields:
                 logger.debug("[Price Static] Missing columns")
@@ -1114,10 +1109,19 @@ class RatesTab(QtWidgets.QWidget):
 
             model = self.line_items_widget.model
             logger.info(f"[Price Static] Executing deferred update: row={index.row()}, value=${value:,.2f}")
+
+            # Set flag to prevent creating undo command for automatic Price Static updates
+            model._skip_undo_command = True
             success = model.setData(index, value, QtCore.Qt.EditRole)
+            model._skip_undo_command = False
+
             logger.info(f"[Price Static] Deferred setData returned {success}")
 
         except Exception as e:
+            # Ensure flag is reset even if error occurs
+            if hasattr(self, 'line_items_widget') and hasattr(self.line_items_widget, 'model'):
+                if hasattr(self.line_items_widget.model, '_skip_undo_command'):
+                    self.line_items_widget.model._skip_undo_command = False
             logger.error(f"Error in _update_price_static_deferred: {e}", exc_info=True)
 
 
