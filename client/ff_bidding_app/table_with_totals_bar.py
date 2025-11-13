@@ -312,14 +312,14 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         self.totals_bar.blockSignals(False)
 
     def _sync_column_width(self, col_index, old_width, new_width):
-        """Sync column width when user resizes."""
-        # Use horizontalHeader().resizeSection() for immediate, reliable sync
-        totals_h_header = self.totals_bar.horizontalHeader()
-        if totals_h_header:
-            totals_h_header.resizeSection(col_index, new_width)
-        else:
-            # Fallback to setColumnWidth
-            self.totals_bar.setColumnWidth(col_index, new_width)
+        """Sync column width when user resizes.
+
+        When any column is resized, we sync ALL columns to ensure perfect alignment.
+        This prevents index offset issues that can occur when resizing affects multiple columns.
+        """
+        # Sync all column widths instead of just the changed one
+        # This ensures the totals bar perfectly mirrors the main table's column structure
+        self._sync_all_column_widths()
 
         self._update_totals_alignment()
 
