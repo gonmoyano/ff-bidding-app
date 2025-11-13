@@ -341,10 +341,14 @@ class CostsTab(QtWidgets.QMainWindow):
         self.line_item_names = []
         self.vfx_shot_work_delegate = None
 
+        # Asset Type delegate for Asset Cost
+        self.asset_type_delegate = None
+
         # Line Items data with prices for Price column calculation
         self.line_items_data = []  # Full Line Item data with calculated prices
         self.line_items_price_map = {}  # Map: Line Item code -> calculated price
         self.vfx_breakdown_formula_evaluator = None
+        self.asset_cost_formula_evaluator = None
 
         # No central widget - docks can take full space
         self.setCentralWidget(None)
@@ -379,9 +383,9 @@ class CostsTab(QtWidgets.QMainWindow):
             self
         )
 
-        # Asset Cost
+        # Assets Cost
         self.asset_cost_dock = CostDock(
-            "Asset Cost",
+            "Assets Cost",
             self._create_asset_cost_widget(),
             self
         )
@@ -432,28 +436,32 @@ class CostsTab(QtWidgets.QMainWindow):
         return self.shots_cost_widget
 
     def _create_asset_cost_widget(self):
-        """Create the Asset Cost widget."""
-        widget = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(widget)
-        layout.setContentsMargins(10, 10, 10, 10)
+        """Create the Asset Cost widget using VFXBreakdownWidget."""
+        # Use VFXBreakdownWidget with toolbar enabled for Assets
+        self.asset_cost_widget = VFXBreakdownWidget(
+            self.sg_session,
+            show_toolbar=True,  # Keep sorting and filtering bar
+            entity_name="Asset",
+            settings_key="asset_cost",  # Unique settings key for Asset Cost table
+            parent=self
+        )
 
-        # Title
-        title = QtWidgets.QLabel("Asset Cost")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; padding: 5px;")
-        layout.addWidget(title)
+        # Now intercept the layout and replace table_view with wrapped version
+        layout = self.asset_cost_widget.layout()
 
-        # Placeholder content
-        content = QtWidgets.QTextEdit()
-        content.setPlaceholderText("Asset cost breakdown will be displayed here...\n\n"
-                                   "This will show:\n"
-                                   "- Cost per asset\n"
-                                   "- Asset categories\n"
-                                   "- Total asset costs\n"
-                                   "- Cost allocation")
-        content.setReadOnly(True)
-        layout.addWidget(content)
+        # Remove table_view from layout
+        layout.removeWidget(self.asset_cost_widget.table_view)
 
-        return widget
+        # Create wrapper with totals bar, passing app_settings for currency formatting
+        self.asset_cost_totals_wrapper = TableWithTotalsBar(
+            self.asset_cost_widget.table_view,
+            app_settings=self.app_settings
+        )
+
+        # Add wrapper back to layout
+        layout.addWidget(self.asset_cost_totals_wrapper)
+
+        return self.asset_cost_widget
 
     def _create_total_cost_widget(self):
         """Create the Total Cost widget."""
@@ -492,6 +500,7 @@ class CostsTab(QtWidgets.QMainWindow):
         logger.info(f"  Project ID: {project_id}")
         if bid_data:
             logger.info(f"  sg_vfx_breakdown in bid_data: {bid_data.get('sg_vfx_breakdown')}")
+            logger.info(f"  sg_bid_assets in bid_data: {bid_data.get('sg_bid_assets')}")
         logger.info("="*80)
 
         self.current_bid_data = bid_data
@@ -1027,11 +1036,304 @@ class CostsTab(QtWidgets.QMainWindow):
         except Exception as e:
             logger.error(f"Failed to apply VFX Shot Work delegate: {e}", exc_info=True)
 
+    def _load_asset_items_for_bid(self, bid_data):
+        """Load Asset items (CustomEntity07) linked to the Bid Assets.
+
+        Args:
+            bid_data: Dictionary containing Bid data
+        """
+        logger.info(f"COSTS TAB - Loading Asset items...")
+
+        # Get the linked Bid Assets from the bid
+        bid_assets = bid_data.get("sg_bid_assets")
+        logger.info(f"  Raw sg_bid_assets value: {bid_assets}")
+        logger.info(f"  Type: {type(bid_assets)}")
+
+        if not bid_assets:
+            logger.warning("  ❌ No Bid Assets linked to this bid")
+            logger.warning("  Please link Bid Assets to this Bid in ShotGrid")
+            self.asset_cost_widget.load_bidding_scenes([])
+            return
+
+        # Extract Bid Assets ID
+        bid_assets_id = None
+        if isinstance(bid_assets, dict):
+            bid_assets_id = bid_assets.get('id')
+            logger.info(f"  Bid Assets is dict, extracted ID: {bid_assets_id}")
+        elif isinstance(bid_assets, list) and bid_assets:
+            bid_assets_id = bid_assets[0].get('id') if isinstance(bid_assets[0], dict) else None
+            logger.info(f"  Bid Assets is list, extracted ID: {bid_assets_id}")
+        else:
+            logger.warning(f"  Unexpected Bid Assets type: {type(bid_assets)}")
+
+        if not bid_assets_id:
+            logger.warning("  ❌ Invalid Bid Assets data - could not extract ID")
+            self.asset_cost_widget.load_bidding_scenes([])
+            return
+
+        logger.info(f"  ✓ Found Bid Assets ID: {bid_assets_id}")
+
+        try:
+            # Get field schema for CustomEntity07 (Asset items)
+            raw_schema = self.sg_session.sg.schema_field_read("CustomEntity07")
+
+            # Build field_schema dict and display_names dict
+            field_schema = {}
+            display_names = {}
+
+            for field_name, field_info in raw_schema.items():
+                data_type = field_info.get("data_type", {})
+                properties = field_info.get("properties", {})
+
+                field_schema[field_name] = {
+                    "data_type": data_type.get("value") if isinstance(data_type, dict) else data_type,
+                    "properties": properties
+                }
+
+                # Extract display name
+                name_info = field_info.get("name", {})
+                if isinstance(name_info, dict):
+                    display_name = name_info.get("value", field_name)
+                else:
+                    display_name = name_info or field_name
+                display_names[field_name] = display_name
+
+                # Extract list values if it's a list field
+                if field_schema[field_name]["data_type"] == "list":
+                    valid_values = properties.get("valid_values", {})
+                    if isinstance(valid_values, dict):
+                        list_values = list(valid_values.get("value", []))
+                    else:
+                        list_values = []
+                    field_schema[field_name]["list_values"] = list_values
+
+            # Override display name for 'id' field to show 'SG ID'
+            if "id" in display_names:
+                display_names["id"] = "SG ID"
+
+            # Add virtual columns for price calculation
+            field_schema["_line_item_price"] = {
+                "data_type": "number",
+                "properties": {}
+            }
+            display_names["_line_item_price"] = "Line Item Price"
+
+            field_schema["_calc_price"] = {
+                "data_type": "text",
+                "properties": {}
+            }
+            display_names["_calc_price"] = "Price"
+
+            # Define fields to fetch for Asset items
+            fields_to_fetch = [
+                "id", "code", "sg_bid_asset_type", "sg_bidding_notes"
+            ]
+
+            # Query CustomEntity07 (Asset items) linked to this Bid Assets
+            logger.info(f"  Fetching asset items where sg_bid_assets = {bid_assets_id}...")
+            asset_items_data = self.sg_session.sg.find(
+                "CustomEntity07",
+                [["sg_bid_assets", "is", {"type": "CustomEntity08", "id": bid_assets_id}]],
+                fields_to_fetch
+            )
+
+            logger.info(f"  ✓ Fetched {len(asset_items_data)} asset items from ShotGrid")
+
+            if not asset_items_data:
+                logger.info("  ℹ No asset items found for this Bid Assets")
+                self.asset_cost_widget.load_bidding_scenes([])
+                return
+
+            # Populate virtual price columns for each asset item
+            for asset in asset_items_data:
+                asset_type = asset.get("sg_bid_asset_type")
+
+                # Look up Line Item price by code
+                line_item_price = 0
+                if asset_type and asset_type in self.line_items_price_map:
+                    line_item_price = self.line_items_price_map[asset_type]
+                    logger.debug(f"Asset '{asset.get('code')}': Asset Type='{asset_type}', Price=${line_item_price:,.2f}")
+
+                # Store Line Item price in hidden column
+                asset["_line_item_price"] = line_item_price
+
+                # Create formula for Price column: =_line_item_price (for assets, it's just the line item price)
+                asset["_calc_price"] = f"=_line_item_price"
+
+            logger.info(f"  ✓ Populated price columns for {len(asset_items_data)} assets")
+
+            # Ensure sg_bid_asset_type is not in column_dropdowns to prevent delegate conflicts
+            if hasattr(self.asset_cost_widget, 'column_dropdowns'):
+                if 'sg_bid_asset_type' in self.asset_cost_widget.column_dropdowns:
+                    self.asset_cost_widget.column_dropdowns['sg_bid_asset_type'] = False
+                    logger.info("  ✓ Disabled dropdown for sg_bid_asset_type to prevent delegate conflicts")
+
+            # Load into the VFXBreakdownWidget
+            self.asset_cost_widget.load_bidding_scenes(asset_items_data, field_schema=field_schema)
+            logger.info(f"  ✓ Loaded asset items into Asset Cost table")
+
+            # Set the display names on the model AFTER loading data
+            if hasattr(self.asset_cost_widget, 'model'):
+                # Add virtual columns to the model's column_fields
+                columns_added = []
+                if "_line_item_price" not in self.asset_cost_widget.model.column_fields:
+                    self.asset_cost_widget.model.column_fields.append("_line_item_price")
+                    columns_added.append("_line_item_price")
+                if "_calc_price" not in self.asset_cost_widget.model.column_fields:
+                    self.asset_cost_widget.model.column_fields.append("_calc_price")
+                    columns_added.append("_calc_price")
+                logger.info(f"  ✓ Added virtual price columns to model")
+
+                # Notify the view that the model structure changed
+                if columns_added:
+                    self.asset_cost_widget.model.layoutChanged.emit()
+                    logger.info(f"  ✓ Emitted layoutChanged signal for {len(columns_added)} new columns")
+
+                # Set default widths for the new columns before updating totals bar
+                if columns_added:
+                    for col_name in columns_added:
+                        col_idx = self.asset_cost_widget.model.column_fields.index(col_name)
+                        # Set a reasonable default width (100 pixels)
+                        self.asset_cost_widget.table_view.setColumnWidth(col_idx, 100)
+                        logger.info(f"  ✓ Set width for column {col_name} (index {col_idx})")
+
+                # Update totals bar to reflect new column count
+                if hasattr(self, 'asset_cost_totals_wrapper'):
+                    self.asset_cost_totals_wrapper.update_column_count()
+                    logger.info(f"  ✓ Updated totals bar column count")
+
+                # Force viewport update to ensure new columns are immediately visible
+                if columns_added:
+                    self.asset_cost_widget.table_view.viewport().update()
+                    self.asset_cost_widget.table_view.horizontalHeader().viewport().update()
+                    logger.info(f"  ✓ Forced viewport update for new columns")
+
+                # Make Price column read-only
+                if "_calc_price" not in self.asset_cost_widget.model.readonly_columns:
+                    self.asset_cost_widget.model.readonly_columns.append("_calc_price")
+                    logger.info("  ✓ Set _calc_price column as read-only")
+
+                self.asset_cost_widget.model.set_column_headers(display_names)
+                logger.info(f"  ✓ Set {len(display_names)} column headers with display names")
+
+                # Create FormulaEvaluator for the Asset Cost model
+                from .formula_evaluator import FormulaEvaluator
+                self.asset_cost_formula_evaluator = FormulaEvaluator(
+                    self.asset_cost_widget.model
+                )
+                # Set the formula evaluator on the model for dependency tracking
+                self.asset_cost_widget.model.set_formula_evaluator(self.asset_cost_formula_evaluator)
+                logger.info("  ✓ Created FormulaEvaluator for Asset Cost")
+
+                # Apply FormulaDelegate to the Price column
+                price_col_index = self.asset_cost_widget.model.column_fields.index("_calc_price")
+                formula_delegate = FormulaDelegate(self.asset_cost_formula_evaluator, app_settings=self.app_settings)
+                self.asset_cost_widget.table_view.setItemDelegateForColumn(price_col_index, formula_delegate)
+                logger.info(f"  ✓ Applied FormulaDelegate to Price column (index {price_col_index})")
+
+                # Configure totals bar for Price column
+                if hasattr(self, 'asset_cost_totals_wrapper'):
+                    # Set formula evaluator on totals wrapper for formula evaluation
+                    self.asset_cost_totals_wrapper.set_formula_evaluator(self.asset_cost_formula_evaluator)
+                    logger.info(f"  ✓ Set formula evaluator on totals wrapper")
+
+                    # Mark Price column as blue
+                    self.asset_cost_totals_wrapper.set_blue_columns([price_col_index])
+
+                    # Calculate totals only for Price column (formulas will be evaluated)
+                    self.asset_cost_totals_wrapper.calculate_totals(columns=[price_col_index], skip_first_col=True)
+                    logger.info(f"  ✓ Configured totals bar for Price column (index {price_col_index})")
+
+                # Force the header view to update
+                if hasattr(self.asset_cost_widget, 'table_view'):
+                    self.asset_cost_widget.table_view.horizontalHeader().viewport().update()
+                    logger.info(f"  ✓ Forced header view update")
+
+            logger.info("="*80)
+
+            # Apply Asset Type delegate
+            self._apply_asset_type_delegate()
+
+        except Exception as e:
+            logger.error(f"Failed to load Asset items: {e}", exc_info=True)
+            self.asset_cost_widget.load_bidding_scenes([])
+
+    def _apply_asset_type_delegate(self):
+        """Apply ValidatedComboBoxDelegate to the sg_bid_asset_type column."""
+        logger.info("=== _apply_asset_type_delegate called ===")
+        logger.info(f"Line Item names count: {len(self.line_item_names)}")
+        logger.info(f"Line Item names: {self.line_item_names}")
+
+        if not self.asset_cost_widget or not hasattr(self.asset_cost_widget, 'table_view'):
+            logger.warning("asset_cost_widget or table_view not available")
+            return
+
+        try:
+            # Find the column index for sg_bid_asset_type
+            if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
+                logger.info(f"Model columns: {self.asset_cost_widget.model.column_fields}")
+                try:
+                    col_idx = self.asset_cost_widget.model.column_fields.index("sg_bid_asset_type")
+                    logger.info(f"Found sg_bid_asset_type at column index: {col_idx}")
+                except ValueError:
+                    # Column not present
+                    logger.info("sg_bid_asset_type column not found in model")
+                    return
+
+                # Ensure the column is visible
+                is_hidden = self.asset_cost_widget.table_view.isColumnHidden(col_idx)
+                logger.info(f"Column sg_bid_asset_type (index {col_idx}) hidden: {is_hidden}")
+                if is_hidden:
+                    logger.warning(f"Column sg_bid_asset_type is hidden - it may not be visible to user")
+
+                # Create or update the delegate
+                if not hasattr(self, 'asset_type_delegate') or self.asset_type_delegate is None:
+                    logger.info(f"Creating new ValidatedComboBoxDelegate with {len(self.line_item_names)} Line Items")
+                    self.asset_type_delegate = ValidatedComboBoxDelegate(
+                        self.line_item_names,
+                        self.asset_cost_widget.table_view
+                    )
+                    self.asset_cost_widget.table_view.setItemDelegateForColumn(col_idx, self.asset_type_delegate)
+                    logger.info(f"✓ Applied ValidatedComboBoxDelegate to sg_bid_asset_type column (index {col_idx})")
+
+                    # Verify it was applied
+                    current_delegate = self.asset_cost_widget.table_view.itemDelegateForColumn(col_idx)
+                    logger.info(f"Verification - Current delegate for column {col_idx}: {type(current_delegate).__name__}")
+
+                    # Protect delegate from being removed by _apply_column_dropdowns
+                    if hasattr(self.asset_cost_widget, '_dropdown_delegates'):
+                        self.asset_cost_widget._dropdown_delegates['sg_bid_asset_type'] = self.asset_type_delegate
+                        logger.info(f"✓ Protected sg_bid_asset_type delegate from removal")
+
+                    # Force a complete repaint of the table
+                    self.asset_cost_widget.table_view.viewport().update()
+                    self.asset_cost_widget.table_view.update()
+                    logger.info(f"✓ Triggered viewport repaint")
+                else:
+                    # Update existing delegate with new Line Item names
+                    logger.info(f"Updating existing delegate with {len(self.line_item_names)} Line Items")
+                    self.asset_type_delegate.update_valid_values(self.line_item_names)
+
+                    # Ensure delegate is still protected
+                    if hasattr(self.asset_cost_widget, '_dropdown_delegates'):
+                        self.asset_cost_widget._dropdown_delegates['sg_bid_asset_type'] = self.asset_type_delegate
+
+                    # Force a complete repaint of the table
+                    self.asset_cost_widget.table_view.viewport().update()
+                    self.asset_cost_widget.table_view.update()
+                    logger.info(f"✓ Updated ValidatedComboBoxDelegate and triggered repaint")
+
+        except Exception as e:
+            logger.error(f"Failed to apply Asset Type delegate: {e}", exc_info=True)
+
     def _refresh_asset_cost(self):
         """Refresh the asset cost view."""
         logger.info("Refreshing asset cost view")
-        # TODO: Implement actual asset cost calculation
-        pass
+        if self.current_bid_data and self.current_bid_id:
+            self._load_asset_items_for_bid(self.current_bid_data)
+        else:
+            if hasattr(self, 'asset_cost_widget'):
+                self.asset_cost_widget.load_bidding_scenes([])
 
     def _refresh_total_cost(self):
         """Refresh the total cost view."""
