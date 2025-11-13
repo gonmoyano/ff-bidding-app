@@ -32,13 +32,15 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         table_with_totals.calculate_totals()
     """
 
-    def __init__(self, existing_table, parent=None):
+    def __init__(self, existing_table, parent=None, formula_evaluator=None, app_settings=None):
         """
         Wrap an existing table and add totals bar.
 
         Args:
             existing_table: Your existing QTableWidget or QTableView (already configured)
             parent: Optional parent widget
+            formula_evaluator: Optional FormulaEvaluator for evaluating formula cells in totals
+            app_settings: Optional AppSettings for currency symbol
         """
         super().__init__(parent)
 
@@ -58,6 +60,12 @@ class TableWithTotalsBar(QtWidgets.QWidget):
 
         # Track which columns have blue styling
         self.blue_columns = set()
+
+        # Formula evaluator for calculating totals from formula cells
+        self.formula_evaluator = formula_evaluator
+
+        # App settings for currency formatting
+        self.app_settings = app_settings
 
         # Layout
         layout = QtWidgets.QVBoxLayout(self)
@@ -92,9 +100,9 @@ class TableWithTotalsBar(QtWidgets.QWidget):
             col: Column index
             value: Total value to display (will be converted to string)
         """
-        item = self.totals_bar.item(0, col)
         is_blue_column = col in self.blue_columns
 
+        item = self.totals_bar.item(0, col)
         if item:
             item.setText(str(value))
         else:
@@ -106,6 +114,7 @@ class TableWithTotalsBar(QtWidgets.QWidget):
             self.totals_bar.setItem(0, col, item)
 
         # Apply styling based on whether it's a blue column
+        # Always reapply styling to ensure blue columns are correctly styled
         if is_blue_column:
             item.setBackground(QtGui.QColor("#0078d4"))
             item.setForeground(QtGui.QColor("white"))
@@ -134,6 +143,36 @@ class TableWithTotalsBar(QtWidgets.QWidget):
             column_indices: List of column indices that should be blue
         """
         self.blue_columns = set(column_indices)
+
+        # Reapply styling to all existing cells to update blue columns
+        for col in range(self.cols):
+            item = self.totals_bar.item(0, col)
+            if item:
+                is_blue_column = col in self.blue_columns
+                if is_blue_column:
+                    item.setBackground(QtGui.QColor("#0078d4"))
+                    item.setForeground(QtGui.QColor("white"))
+                else:
+                    item.setBackground(QtGui.QColor("#3a3a3a"))
+                    item.setForeground(QtGui.QColor("#ffffff"))
+
+    def set_formula_evaluator(self, formula_evaluator):
+        """
+        Set the formula evaluator for calculating totals from formula cells.
+
+        Args:
+            formula_evaluator: FormulaEvaluator instance
+        """
+        self.formula_evaluator = formula_evaluator
+
+    def set_app_settings(self, app_settings):
+        """
+        Set the app settings for currency formatting.
+
+        Args:
+            app_settings: AppSettings instance
+        """
+        self.app_settings = app_settings
 
     def calculate_totals(self, columns=None, skip_first_col=True, number_format="{:,.0f}"):
         """
@@ -187,6 +226,11 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         if not model:
             return
 
+        # Get currency symbol if available
+        currency_symbol = ""
+        if self.app_settings:
+            currency_symbol = self.app_settings.get_currency() or ""
+
         for col in cols_to_process:
             total = 0
             count = 0
@@ -201,12 +245,28 @@ class TableWithTotalsBar(QtWidgets.QWidget):
                         if isinstance(data, (int, float)):
                             value = float(data)
                         elif isinstance(data, str):
-                            # Remove commas, currency symbols, and formulas
-                            text = data.replace(',', '').replace('$', '').replace('€', '').strip()
-                            # Skip formulas that start with '='
+                            text = data.strip()
+                            # Handle formulas that start with '=' using formula evaluator
                             if text.startswith('='):
-                                continue
-                            value = float(text)
+                                if self.formula_evaluator:
+                                    try:
+                                        # Evaluate the formula to get numeric result
+                                        result = self.formula_evaluator.evaluate(text, row, col)
+                                        if isinstance(result, (int, float)):
+                                            value = float(result)
+                                        else:
+                                            # Skip non-numeric formula results
+                                            continue
+                                    except Exception as e:
+                                        logger.debug(f"Error evaluating formula at ({row}, {col}): {e}")
+                                        continue
+                                else:
+                                    # No formula evaluator, skip formulas
+                                    continue
+                            else:
+                                # Remove commas and currency symbols before parsing
+                                text = text.replace(',', '').replace('$', '').replace('€', '').replace('£', '').strip()
+                                value = float(text)
                         else:
                             continue
 
@@ -216,7 +276,12 @@ class TableWithTotalsBar(QtWidgets.QWidget):
                         pass
 
             if count > 0:
-                self.set_total(col, number_format.format(total))
+                # Format with currency symbol if this is a blue column (price column)
+                if col in self.blue_columns and currency_symbol:
+                    formatted_total = f"{currency_symbol}{total:,.2f}"
+                else:
+                    formatted_total = number_format.format(total)
+                self.set_total(col, formatted_total)
 
         # Set label in first column
         if skip_first_col:
@@ -248,7 +313,8 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         main_h_header = self.table.horizontalHeader()
         if main_h_header:
             h_header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
-            h_header.setStretchLastSection(main_h_header.stretchLastSection())
+            # Always disable stretch on last section to prevent disappearing cells during resize
+            h_header.setStretchLastSection(False)
 
         # Set fixed height
         row_height = self.totals_bar.verticalHeader().defaultSectionSize()
@@ -272,6 +338,10 @@ class TableWithTotalsBar(QtWidgets.QWidget):
 
         # Disable editing
         self.totals_bar.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+
+        # Disable cell selection
+        self.totals_bar.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.totals_bar.setFocusPolicy(Qt.NoFocus)
 
         # Initialize cells with default dark gray background
         for col in range(self.cols):
@@ -376,3 +446,67 @@ class TableWithTotalsBar(QtWidgets.QWidget):
             visible: True to show, False to hide
         """
         self.totals_bar.setVisible(visible)
+
+    def update_column_count(self):
+        """
+        Update the totals bar to match the current column count of the main table.
+
+        This should be called after adding or removing columns from the model.
+        """
+        # Get the current column count from the main table
+        if self.is_table_widget:
+            new_cols = self.table.columnCount()
+        else:
+            model = self.table.model()
+            new_cols = model.columnCount() if model else 0
+
+        if new_cols == self.cols:
+            # No change in column count
+            return
+
+        old_cols = self.cols
+        self.cols = new_cols
+
+        # Update the totals bar column count
+        self.totals_bar.setColumnCount(new_cols)
+
+        # Initialize any new cells with default styling
+        for col in range(old_cols, new_cols):
+            item = QtWidgets.QTableWidgetItem("")
+            item.setTextAlignment(Qt.AlignCenter)
+            item.setBackground(QtGui.QColor("#3a3a3a"))
+            item.setForeground(QtGui.QColor("#ffffff"))
+            font = item.font()
+            font.setBold(True)
+            item.setFont(font)
+            self.totals_bar.setItem(0, col, item)
+
+        # Re-sync all column widths to ensure alignment
+        self._sync_all_column_widths()
+
+        logger.info(f"Updated totals bar column count from {old_cols} to {new_cols}")
+
+    def collapse_table(self):
+        """
+        Collapse the view to show only the totals bar, hiding the main table.
+
+        This is useful for compact views where only totals are needed.
+        """
+        self.table.setVisible(False)
+        logger.debug("Collapsed table - showing only totals bar")
+
+    def expand_table(self):
+        """
+        Expand the view to show both the main table and totals bar.
+        """
+        self.table.setVisible(True)
+        logger.debug("Expanded table - showing table and totals bar")
+
+    def is_table_collapsed(self):
+        """
+        Check if the main table is currently collapsed.
+
+        Returns:
+            bool: True if table is hidden, False if visible
+        """
+        return not self.table.isVisible()

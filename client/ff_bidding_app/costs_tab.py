@@ -37,7 +37,7 @@ class CollapsibleDockTitleBar(QtWidgets.QWidget):
 
         # Create layout
         layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(5, 2, 5, 2)
+        layout.setContentsMargins(5, 0, 5, 0)
         layout.setSpacing(5)
 
         # Collapse/expand button
@@ -110,6 +110,13 @@ class CostDock(QtWidgets.QDockWidget):
         self._content_widget = widget
         self._expanded_size = None
 
+        # Store original margins for restoration when expanding
+        self._saved_margins = None
+        self._saved_layout_margins = None
+        self._saved_layout_spacing = None
+        self._saved_wrapper_margins = None
+        self._saved_wrapper_spacing = None
+
     def toggle_collapse(self):
         """Toggle the collapsed state of the dock."""
         if self._is_collapsed:
@@ -118,21 +125,64 @@ class CostDock(QtWidgets.QDockWidget):
             self.collapse()
 
     def collapse(self):
-        """Collapse the dock to show only the title bar."""
+        """Collapse the dock to show only the title bar (or totals bar if available)."""
         if self._is_collapsed:
             return
 
         # Save current size
         self._expanded_size = self.size()
 
-        # Hide content widget
-        if self._content_widget:
-            self._content_widget.hide()
+        # Check if content widget contains a TableWithTotalsBar that we should partially collapse
+        totals_wrapper = self._find_totals_wrapper()
+        if totals_wrapper:
+            # Collapse just the table, keep totals bar visible
+            totals_wrapper.collapse_table()
 
-        # Set minimum and maximum height to title bar height
-        title_height = self.title_bar.sizeHint().height()
-        self.setMinimumHeight(title_height)
-        self.setMaximumHeight(title_height)
+            # Also hide the toolbar if it exists
+            toolbar = self._find_toolbar()
+            if toolbar:
+                toolbar.setVisible(False)
+
+            # Save and remove all content margins to eliminate spacing
+            if self._content_widget and self._content_widget.layout():
+                layout = self._content_widget.layout()
+                # Save original margins and spacing
+                self._saved_layout_margins = layout.contentsMargins()
+                self._saved_layout_spacing = layout.spacing()
+                # Set to 0 to remove spacing
+                layout.setContentsMargins(0, 0, 0, 0)
+                layout.setSpacing(0)
+
+            # Also remove margins from the totals wrapper's layout
+            if hasattr(totals_wrapper, 'layout') and totals_wrapper.layout():
+                wrapper_layout = totals_wrapper.layout()
+                if not hasattr(self, '_saved_wrapper_margins'):
+                    self._saved_wrapper_margins = wrapper_layout.contentsMargins()
+                    self._saved_wrapper_spacing = wrapper_layout.spacing()
+                wrapper_layout.setContentsMargins(0, 0, 0, 0)
+                wrapper_layout.setSpacing(0)
+
+            # Save and remove content margins from the dock widget itself
+            self._saved_margins = self.contentsMargins()
+            self.setContentsMargins(0, 0, 0, 0)
+
+            # Calculate height: title bar + totals bar (no padding, no spacing)
+            # Use actual height instead of sizeHint for more accurate measurement
+            title_height = self.title_bar.height() if self.title_bar.height() > 0 else self.title_bar.sizeHint().height()
+            totals_height = totals_wrapper.totals_bar.height() if totals_wrapper.totals_bar.height() > 0 else totals_wrapper.totals_bar.sizeHint().height()
+
+            # Set exact height with no extra space
+            collapsed_height = title_height + totals_height
+            self.setMinimumHeight(collapsed_height)
+            self.setMaximumHeight(collapsed_height)
+        else:
+            # Traditional collapse: hide content widget entirely
+            if self._content_widget:
+                self._content_widget.hide()
+            # Set minimum and maximum height to title bar height
+            title_height = self.title_bar.sizeHint().height()
+            self.setMinimumHeight(title_height)
+            self.setMaximumHeight(title_height)
 
         self._is_collapsed = True
         self.title_bar.set_collapsed(True)
@@ -144,9 +194,45 @@ class CostDock(QtWidgets.QDockWidget):
         if not self._is_collapsed:
             return
 
-        # Show content widget
-        if self._content_widget:
-            self._content_widget.show()
+        # Check if content widget contains a TableWithTotalsBar
+        totals_wrapper = self._find_totals_wrapper()
+        if totals_wrapper:
+            # Expand the table to show both table and totals bar
+            totals_wrapper.expand_table()
+
+            # Also show the toolbar if it exists
+            toolbar = self._find_toolbar()
+            if toolbar:
+                toolbar.setVisible(True)
+
+            # Restore layout margins and spacing
+            if self._content_widget and self._content_widget.layout():
+                layout = self._content_widget.layout()
+                if self._saved_layout_margins is not None:
+                    layout.setContentsMargins(self._saved_layout_margins)
+                    self._saved_layout_margins = None
+                if self._saved_layout_spacing is not None:
+                    layout.setSpacing(self._saved_layout_spacing)
+                    self._saved_layout_spacing = None
+
+            # Restore totals wrapper margins and spacing
+            if hasattr(totals_wrapper, 'layout') and totals_wrapper.layout():
+                wrapper_layout = totals_wrapper.layout()
+                if self._saved_wrapper_margins is not None:
+                    wrapper_layout.setContentsMargins(self._saved_wrapper_margins)
+                    self._saved_wrapper_margins = None
+                if self._saved_wrapper_spacing is not None:
+                    wrapper_layout.setSpacing(self._saved_wrapper_spacing)
+                    self._saved_wrapper_spacing = None
+
+            # Restore dock widget margins
+            if self._saved_margins is not None:
+                self.setContentsMargins(self._saved_margins)
+                self._saved_margins = None
+        else:
+            # Traditional expand: show content widget
+            if self._content_widget:
+                self._content_widget.show()
 
         # Reset size constraints
         self.setMinimumHeight(0)
@@ -160,6 +246,52 @@ class CostDock(QtWidgets.QDockWidget):
         self.title_bar.set_collapsed(False)
 
         logger.debug(f"Expanded dock: {self.windowTitle()}")
+
+    def _find_totals_wrapper(self):
+        """Find TableWithTotalsBar widget within the content widget.
+
+        Returns:
+            TableWithTotalsBar instance or None if not found
+        """
+        if not self._content_widget:
+            return None
+
+        # Check if the content widget itself is a TableWithTotalsBar
+        if isinstance(self._content_widget, TableWithTotalsBar):
+            return self._content_widget
+
+        # Search through the widget's children recursively
+        def find_in_children(widget):
+            for child in widget.findChildren(TableWithTotalsBar):
+                return child
+            return None
+
+        return find_in_children(self._content_widget)
+
+    def _find_toolbar(self):
+        """Find the toolbar widget within the content widget.
+
+        Returns:
+            Toolbar widget or None if not found
+        """
+        if not self._content_widget:
+            return None
+
+        # Check if the content widget itself is a VFXBreakdownWidget
+        if isinstance(self._content_widget, VFXBreakdownWidget):
+            if hasattr(self._content_widget, 'toolbar_widget') and self._content_widget.toolbar_widget:
+                return self._content_widget.toolbar_widget
+
+        # Search for VFXBreakdownWidget in children
+        # VFXBreakdownWidget is already imported at the top of this file
+        def find_in_children(widget):
+            # Look for VFXBreakdownWidget
+            for child in widget.findChildren(VFXBreakdownWidget):
+                if hasattr(child, 'toolbar_widget') and child.toolbar_widget:
+                    return child.toolbar_widget
+            return None
+
+        return find_in_children(self._content_widget)
 
     def is_collapsed(self):
         """Get the collapsed state.
@@ -288,8 +420,11 @@ class CostsTab(QtWidgets.QMainWindow):
         # Remove table_view from layout
         layout.removeWidget(self.shots_cost_widget.table_view)
 
-        # Create wrapper with totals bar
-        self.shots_cost_totals_wrapper = TableWithTotalsBar(self.shots_cost_widget.table_view)
+        # Create wrapper with totals bar, passing app_settings for currency formatting
+        self.shots_cost_totals_wrapper = TableWithTotalsBar(
+            self.shots_cost_widget.table_view,
+            app_settings=self.app_settings
+        )
 
         # Add wrapper back to layout
         layout.addWidget(self.shots_cost_totals_wrapper)
@@ -529,11 +664,38 @@ class CostsTab(QtWidgets.QMainWindow):
             # Set the display names on the model AFTER loading data
             if hasattr(self.shots_cost_widget, 'model'):
                 # Add virtual columns to the model's column_fields
+                columns_added = []
                 if "_line_item_price" not in self.shots_cost_widget.model.column_fields:
                     self.shots_cost_widget.model.column_fields.append("_line_item_price")
+                    columns_added.append("_line_item_price")
                 if "_calc_price" not in self.shots_cost_widget.model.column_fields:
                     self.shots_cost_widget.model.column_fields.append("_calc_price")
+                    columns_added.append("_calc_price")
                 logger.info(f"  ✓ Added virtual price columns to model")
+
+                # Notify the view that the model structure changed
+                if columns_added:
+                    self.shots_cost_widget.model.layoutChanged.emit()
+                    logger.info(f"  ✓ Emitted layoutChanged signal for {len(columns_added)} new columns")
+
+                # Set default widths for the new columns before updating totals bar
+                if columns_added:
+                    for col_name in columns_added:
+                        col_idx = self.shots_cost_widget.model.column_fields.index(col_name)
+                        # Set a reasonable default width (100 pixels)
+                        self.shots_cost_widget.table_view.setColumnWidth(col_idx, 100)
+                        logger.info(f"  ✓ Set width for column {col_name} (index {col_idx})")
+
+                # Update totals bar to reflect new column count
+                if hasattr(self, 'shots_cost_totals_wrapper'):
+                    self.shots_cost_totals_wrapper.update_column_count()
+                    logger.info(f"  ✓ Updated totals bar column count")
+
+                # Force viewport update to ensure new columns are immediately visible
+                if columns_added:
+                    self.shots_cost_widget.table_view.viewport().update()
+                    self.shots_cost_widget.table_view.horizontalHeader().viewport().update()
+                    logger.info(f"  ✓ Forced viewport update for new columns")
 
                 # Make Price column read-only
                 if "_calc_price" not in self.shots_cost_widget.model.readonly_columns:
@@ -562,9 +724,14 @@ class CostsTab(QtWidgets.QMainWindow):
 
                 # Configure totals bar for Price column
                 if hasattr(self, 'shots_cost_totals_wrapper'):
+                    # Set formula evaluator on totals wrapper for formula evaluation
+                    self.shots_cost_totals_wrapper.set_formula_evaluator(self.vfx_breakdown_formula_evaluator)
+                    logger.info(f"  ✓ Set formula evaluator on totals wrapper")
+
                     # Mark Price column as blue
                     self.shots_cost_totals_wrapper.set_blue_columns([price_col_index])
-                    # Calculate totals only for Price column
+
+                    # Calculate totals only for Price column (formulas will be evaluated)
                     self.shots_cost_totals_wrapper.calculate_totals(columns=[price_col_index], skip_first_col=True)
                     logger.info(f"  ✓ Configured totals bar for Price column (index {price_col_index})")
 
