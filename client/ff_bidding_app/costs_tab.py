@@ -628,6 +628,11 @@ class CostsTab(QtWidgets.QMainWindow):
     def _load_line_items_with_prices(self):
         """Load Line Items with their calculated prices for the current Bid's Price List.
 
+        Price resolution order:
+        1. sg_price_static (snapshot/static price) - preferred
+        2. sg_price (calculated price)
+        3. Calculate from mandays × rates (fallback)
+
         This populates:
         - self.line_items_data: Full Line Item records
         - self.line_items_price_map: Dict mapping Line Item code to calculated price
@@ -685,6 +690,10 @@ class CostsTab(QtWidgets.QMainWindow):
             # Query Line Items with all mandays fields
             fields_to_fetch = ["id", "code"] + mandays_fields
 
+            # Fetch sg_price_static for the static/snapshot price value
+            if "sg_price_static" in schema:
+                fields_to_fetch.append("sg_price_static")
+
             # Also fetch sg_price if it exists (for calculated prices)
             if "sg_price" in schema:
                 fields_to_fetch.append("sg_price")
@@ -720,10 +729,14 @@ class CostsTab(QtWidgets.QMainWindow):
             for item in line_items:
                 code = item.get("code", "")
 
-                # Try to get existing sg_price first
-                calculated_price = item.get("sg_price", 0)
+                # First priority: Use sg_price_static (snapshot price)
+                calculated_price = item.get("sg_price_static", 0) or 0
 
-                # If no sg_price, calculate from mandays × rates
+                # Second priority: Use sg_price if sg_price_static is not available
+                if calculated_price == 0:
+                    calculated_price = item.get("sg_price", 0) or 0
+
+                # Third priority: Calculate from mandays × rates
                 if calculated_price == 0 and rate_card_data:
                     total_price = 0
                     for mandays_field in mandays_fields:
@@ -738,6 +751,8 @@ class CostsTab(QtWidgets.QMainWindow):
 
                     calculated_price = total_price
                     logger.debug(f"Calculated price for '{code}': ${calculated_price:,.2f}")
+                else:
+                    logger.debug(f"Using static price for '{code}': ${calculated_price:,.2f}")
 
                 # Store in price map
                 if code:
