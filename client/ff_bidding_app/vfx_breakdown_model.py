@@ -269,6 +269,10 @@ class EditCommand:
         index = self.model.index(self.row, self.col)
         self.model.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
 
+        # Recalculate dependent cells if formula evaluator is available
+        if self.model.formula_evaluator:
+            self.model.formula_evaluator.recalculate_dependents(self.row, self.col)
+
     def redo(self):
         """Redo the edit."""
         # Update ShotGrid
@@ -281,6 +285,10 @@ class EditCommand:
         # Emit data changed to refresh the view
         index = self.model.index(self.row, self.col)
         self.model.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+
+        # Recalculate dependent cells if formula evaluator is available
+        if self.model.formula_evaluator:
+            self.model.formula_evaluator.recalculate_dependents(self.row, self.col)
 
     def _update_shotgrid(self, value):
         """Update ShotGrid with the value."""
