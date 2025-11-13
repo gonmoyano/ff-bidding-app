@@ -1252,10 +1252,12 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         # Recalculate dependent cells AFTER flags are cleared
         if self.formula_evaluator:
             field_name = self.column_fields[command.col] if command.col < len(self.column_fields) else "unknown"
+            logger.info(f"[UNDO] Triggering recalculate_dependents for row={command.row}, col={command.col} (field={field_name})")
             self.formula_evaluator.recalculate_dependents(command.row, command.col)
         else:
             logger.warning(f"[UNDO] No formula_evaluator available to recalculate dependents")
 
+        logger.info(f"Undone edit at row {command.row}, col {command.col}")
         self.statusMessageChanged.emit(f"Undone change to {self.column_fields[command.col]}", False)
         return True
 
@@ -1274,8 +1276,11 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
         # Recalculate dependent cells AFTER flags are cleared
         if self.formula_evaluator:
+            field_name = self.column_fields[command.col] if command.col < len(self.column_fields) else "unknown"
+            logger.info(f"[REDO] Triggering recalculate_dependents for row={command.row}, col={command.col} (field={field_name})")
             self.formula_evaluator.recalculate_dependents(command.row, command.col)
 
+        logger.info(f"Redone edit at row {command.row}, col {command.col}")
         self.statusMessageChanged.emit(f"Redone change to {self.column_fields[command.col]}", False)
         return True
 
