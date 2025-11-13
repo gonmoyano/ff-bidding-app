@@ -92,9 +92,9 @@ class TableWithTotalsBar(QtWidgets.QWidget):
             col: Column index
             value: Total value to display (will be converted to string)
         """
-        item = self.totals_bar.item(0, col)
         is_blue_column = col in self.blue_columns
 
+        item = self.totals_bar.item(0, col)
         if item:
             item.setText(str(value))
         else:
@@ -106,6 +106,7 @@ class TableWithTotalsBar(QtWidgets.QWidget):
             self.totals_bar.setItem(0, col, item)
 
         # Apply styling based on whether it's a blue column
+        # Always reapply styling to ensure blue columns are correctly styled
         if is_blue_column:
             item.setBackground(QtGui.QColor("#0078d4"))
             item.setForeground(QtGui.QColor("white"))
@@ -134,6 +135,18 @@ class TableWithTotalsBar(QtWidgets.QWidget):
             column_indices: List of column indices that should be blue
         """
         self.blue_columns = set(column_indices)
+
+        # Reapply styling to all existing cells to update blue columns
+        for col in range(self.cols):
+            item = self.totals_bar.item(0, col)
+            if item:
+                is_blue_column = col in self.blue_columns
+                if is_blue_column:
+                    item.setBackground(QtGui.QColor("#0078d4"))
+                    item.setForeground(QtGui.QColor("white"))
+                else:
+                    item.setBackground(QtGui.QColor("#3a3a3a"))
+                    item.setForeground(QtGui.QColor("#ffffff"))
 
     def calculate_totals(self, columns=None, skip_first_col=True, number_format="{:,.0f}"):
         """
@@ -248,7 +261,8 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         main_h_header = self.table.horizontalHeader()
         if main_h_header:
             h_header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
-            h_header.setStretchLastSection(main_h_header.stretchLastSection())
+            # Always disable stretch on last section to prevent disappearing cells during resize
+            h_header.setStretchLastSection(False)
 
         # Set fixed height
         row_height = self.totals_bar.verticalHeader().defaultSectionSize()
