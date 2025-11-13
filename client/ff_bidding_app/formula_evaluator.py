@@ -694,12 +694,18 @@ class FormulaEvaluator:
             changed_row: Row index of the changed cell
             changed_col: Column index of the changed cell
         """
+        logger.info(f"[RECALC] recalculate_dependents called for row={changed_row}, col={changed_col}")
         dependents = self.find_dependent_cells(changed_row, changed_col)
+        logger.info(f"[RECALC] Found {len(dependents)} dependent cells: {dependents}")
 
         for dep_row, dep_col in dependents:
             index = self.table_model.index(dep_row, dep_col)
             formula = self.table_model.data(index, QtCore.Qt.EditRole)
+            logger.info(f"[RECALC] Dependent cell ({dep_row}, {dep_col}) formula: {formula[:50] if formula else None}")
 
             if isinstance(formula, str) and formula.startswith('='):
                 # Trigger recalculation by emitting dataChanged
+                logger.info(f"[RECALC] Emitting dataChanged for dependent cell ({dep_row}, {dep_col})")
                 self.table_model.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole])
+            else:
+                logger.warning(f"[RECALC] Dependent cell ({dep_row}, {dep_col}) does not have a formula")
