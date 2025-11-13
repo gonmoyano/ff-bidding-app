@@ -220,8 +220,7 @@ class CostDock(QtWidgets.QDockWidget):
             return None
 
         # Search for VFXBreakdownWidget which contains the toolbar
-        from .vfx_breakdown_widget import VFXBreakdownWidget
-
+        # VFXBreakdownWidget is already imported at the top of this file
         def find_in_children(widget):
             # Look for VFXBreakdownWidget
             for child in widget.findChildren(VFXBreakdownWidget):
