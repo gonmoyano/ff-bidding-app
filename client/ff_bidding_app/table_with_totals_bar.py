@@ -56,6 +56,9 @@ class TableWithTotalsBar(QtWidgets.QWidget):
             model = existing_table.model()
             self.cols = model.columnCount() if model else 0
 
+        # Track which columns have blue styling
+        self.blue_columns = set()
+
         # Layout
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -90,16 +93,25 @@ class TableWithTotalsBar(QtWidgets.QWidget):
             value: Total value to display (will be converted to string)
         """
         item = self.totals_bar.item(0, col)
+        is_blue_column = col in self.blue_columns
+
         if item:
             item.setText(str(value))
         else:
             item = QtWidgets.QTableWidgetItem(str(value))
             item.setTextAlignment(Qt.AlignCenter)
-            item.setForeground(QtGui.QColor("white"))
             font = item.font()
             font.setBold(True)
             item.setFont(font)
             self.totals_bar.setItem(0, col, item)
+
+        # Apply styling based on whether it's a blue column
+        if is_blue_column:
+            item.setBackground(QtGui.QColor("#0078d4"))
+            item.setForeground(QtGui.QColor("white"))
+        else:
+            item.setBackground(QtGui.QColor("#f0f0f0"))
+            item.setForeground(QtGui.QColor("#000000"))
 
     def get_total(self, col):
         """
@@ -114,24 +126,39 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         item = self.totals_bar.item(0, col)
         return item.text() if item else ""
 
-    def calculate_totals(self, skip_first_col=True, number_format="{:,.0f}"):
+    def set_blue_columns(self, column_indices):
+        """
+        Mark specific columns to have blue background in totals bar.
+
+        Args:
+            column_indices: List of column indices that should be blue
+        """
+        self.blue_columns = set(column_indices)
+
+    def calculate_totals(self, columns=None, skip_first_col=True, number_format="{:,.0f}"):
         """
         Auto-calculate totals by summing numeric columns.
 
         Args:
+            columns: List of column indices to calculate totals for. If None, calculate for all columns.
             skip_first_col: If True, skip column 0 (usually labels/identifiers)
             number_format: Format string for displaying numbers (default: comma-separated integers)
         """
-        start_col = 1 if skip_first_col else 0
+        # Determine which columns to process
+        if columns is not None:
+            cols_to_process = columns
+        else:
+            start_col = 1 if skip_first_col else 0
+            cols_to_process = range(start_col, self.cols)
 
         if self.is_table_widget:
-            self._calculate_totals_widget(start_col, number_format, skip_first_col)
+            self._calculate_totals_widget(cols_to_process, number_format, skip_first_col)
         else:
-            self._calculate_totals_view(start_col, number_format, skip_first_col)
+            self._calculate_totals_view(cols_to_process, number_format, skip_first_col)
 
-    def _calculate_totals_widget(self, start_col, number_format, skip_first_col):
+    def _calculate_totals_widget(self, cols_to_process, number_format, skip_first_col):
         """Calculate totals for QTableWidget."""
-        for col in range(start_col, self.cols):
+        for col in cols_to_process:
             total = 0
             count = 0
 
@@ -154,13 +181,13 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         if skip_first_col:
             self.set_total(0, "TOTAL")
 
-    def _calculate_totals_view(self, start_col, number_format, skip_first_col):
+    def _calculate_totals_view(self, cols_to_process, number_format, skip_first_col):
         """Calculate totals for QTableView with model."""
         model = self.table.model()
         if not model:
             return
 
-        for col in range(start_col, self.cols):
+        for col in cols_to_process:
             total = 0
             count = 0
 
@@ -224,30 +251,24 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         self.totals_bar.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.totals_bar.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        # Styling - Blue background matching Price column (#0078d4)
+        # Styling - Default gray background, individual cells can be styled per-column
         self.totals_bar.setStyleSheet("""
             QTableWidget {
-                background-color: #0078d4;
                 border-top: 2px solid #333;
                 font-weight: bold;
-                gridline-color: #ffffff;
-                color: white;
-            }
-            QTableWidget::item {
-                background-color: #0078d4;
-                color: white;
-                padding: 4px;
+                gridline-color: #c0c0c0;
             }
         """)
 
         # Disable editing
         self.totals_bar.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
 
-        # Initialize cells with white text
+        # Initialize cells with default gray background
         for col in range(self.cols):
             item = QtWidgets.QTableWidgetItem("")
             item.setTextAlignment(Qt.AlignCenter)
-            item.setForeground(QtGui.QColor("white"))
+            item.setBackground(QtGui.QColor("#f0f0f0"))
+            item.setForeground(QtGui.QColor("#000000"))
             font = item.font()
             font.setBold(True)
             item.setFont(font)
