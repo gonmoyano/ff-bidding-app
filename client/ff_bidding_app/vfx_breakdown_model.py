@@ -843,6 +843,11 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
                     self._updating = False
                     reason = "undo/redo" if self._in_undo_redo else "automatic update"
                     logger.info(f"Updated {field_name} during {reason} (no new undo command)")
+
+                    # Recalculate dependent cells if formula evaluator is available
+                    if self.formula_evaluator:
+                        self.formula_evaluator.recalculate_dependents(row, col)
+
                     return True
                 else:
                     # Normal edit - create undo command
