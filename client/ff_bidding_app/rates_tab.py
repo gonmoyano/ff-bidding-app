@@ -1084,14 +1084,36 @@ class RatesTab(QtWidgets.QWidget):
                         if abs(calculated_price - current_static_price) > 0.01:
                             logger.info(f"[Price Static] Line Item row {row}: Price changed from ${current_static_price:,.2f} to ${calculated_price:,.2f}, updating sg_price_static")
 
-                            # Update sg_price_static in the model (this will also update ShotGrid)
-                            success = model.setData(price_static_index, calculated_price, QtCore.Qt.EditRole)
-                            logger.info(f"[Price Static] Row {row}: setData returned {success}")
+                            # Defer the update using a timer to avoid re-entrancy issues
+                            # (model might be in _updating state when this signal is emitted)
+                            QtCore.QTimer.singleShot(0, lambda idx=price_static_index, val=calculated_price: self._update_price_static_deferred(idx, val))
+                            logger.info(f"[Price Static] Row {row}: Scheduled deferred update")
                         else:
                             logger.debug(f"[Price Static] Row {row}: Price unchanged (diff={abs(calculated_price - current_static_price):.4f})")
 
         except Exception as e:
             logger.error(f"Error in _on_line_items_data_changed: {e}", exc_info=True)
+
+    def _update_price_static_deferred(self, index, value):
+        """Deferred update for Price Static field to avoid re-entrancy.
+
+        Args:
+            index: QModelIndex for sg_price_static field
+            value: New price value to set
+        """
+        try:
+            if not hasattr(self, 'line_items_widget') or not self.line_items_widget:
+                return
+            if not hasattr(self.line_items_widget, 'model') or not self.line_items_widget.model:
+                return
+
+            model = self.line_items_widget.model
+            logger.info(f"[Price Static] Executing deferred update: row={index.row()}, value=${value:,.2f}")
+            success = model.setData(index, value, QtCore.Qt.EditRole)
+            logger.info(f"[Price Static] Deferred setData returned {success}")
+
+        except Exception as e:
+            logger.error(f"Error in _update_price_static_deferred: {e}", exc_info=True)
 
 
 class RateCardDialog(QtWidgets.QDialog):
