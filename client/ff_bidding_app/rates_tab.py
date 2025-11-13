@@ -921,8 +921,16 @@ class RatesTab(QtWidgets.QWidget):
 
                 # Connect to dataChanged signal to auto-update sg_price_static when _calc_price changes
                 if "_calc_price" in self.line_items_field_allowlist and "sg_price_static" in self.line_items_field_allowlist:
+                    # Disconnect any existing connection first (in case of reload)
+                    try:
+                        self.line_items_widget.model.dataChanged.disconnect(self._on_line_items_data_changed)
+                    except:
+                        pass
+
                     self.line_items_widget.model.dataChanged.connect(self._on_line_items_data_changed)
-                    logger.info("Connected dataChanged signal for Price Static auto-update")
+                    logger.info(f"[Price Static] ✓ Connected dataChanged signal for Price Static auto-update")
+                    logger.info(f"[Price Static] Model type: {type(self.line_items_widget.model)}")
+                    logger.info(f"[Price Static] Columns: {self.line_items_widget.model.column_fields}")
 
         except Exception as e:
             logger.error(f"Failed to fetch schema for CustomEntity03: {e}", exc_info=True)
@@ -988,11 +996,15 @@ class RatesTab(QtWidgets.QWidget):
 
         Args:
             top_left: Top-left index of changed region
-            bottom_right: Bottom-right index of changed region
+            bottom_right: Bottom_right index of changed region
             roles: List of changed roles
         """
+        print(f"\n{'='*80}")
+        print(f"[Price Static] HANDLER CALLED!")
+        print(f"{'='*80}\n")
+
         try:
-            logger.debug(f"[Price Static] dataChanged signal received: rows {top_left.row()}-{bottom_right.row()}, cols {top_left.column()}-{bottom_right.column()}, roles={roles}")
+            logger.info(f"[Price Static] dataChanged signal received: rows {top_left.row()}-{bottom_right.row()}, cols {top_left.column()}-{bottom_right.column()}, roles={roles}")
 
             # Check if we have the necessary components
             if not hasattr(self, 'line_items_widget') or not self.line_items_widget:
