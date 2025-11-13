@@ -110,6 +110,11 @@ class CostDock(QtWidgets.QDockWidget):
         self._content_widget = widget
         self._expanded_size = None
 
+        # Store original margins for restoration when expanding
+        self._saved_margins = None
+        self._saved_layout_margins = None
+        self._saved_layout_spacing = None
+
     def toggle_collapse(self):
         """Toggle the collapsed state of the dock."""
         if self._is_collapsed:
@@ -135,6 +140,20 @@ class CostDock(QtWidgets.QDockWidget):
             toolbar = self._find_toolbar()
             if toolbar:
                 toolbar.setVisible(False)
+
+            # Save and remove all content margins to eliminate spacing
+            if self._content_widget and self._content_widget.layout():
+                layout = self._content_widget.layout()
+                # Save original margins and spacing
+                self._saved_layout_margins = layout.contentsMargins()
+                self._saved_layout_spacing = layout.spacing()
+                # Set to 0 to remove spacing
+                layout.setContentsMargins(0, 0, 0, 0)
+                layout.setSpacing(0)
+
+            # Save and remove content margins from the dock widget itself
+            self._saved_margins = self.contentsMargins()
+            self.setContentsMargins(0, 0, 0, 0)
 
             # Calculate height: title bar + totals bar (no padding)
             title_height = self.title_bar.sizeHint().height()
@@ -171,6 +190,21 @@ class CostDock(QtWidgets.QDockWidget):
             toolbar = self._find_toolbar()
             if toolbar:
                 toolbar.setVisible(True)
+
+            # Restore layout margins and spacing
+            if self._content_widget and self._content_widget.layout():
+                layout = self._content_widget.layout()
+                if self._saved_layout_margins is not None:
+                    layout.setContentsMargins(self._saved_layout_margins)
+                    self._saved_layout_margins = None
+                if self._saved_layout_spacing is not None:
+                    layout.setSpacing(self._saved_layout_spacing)
+                    self._saved_layout_spacing = None
+
+            # Restore dock widget margins
+            if self._saved_margins is not None:
+                self.setContentsMargins(self._saved_margins)
+                self._saved_margins = None
         else:
             # Traditional expand: show content widget
             if self._content_widget:
