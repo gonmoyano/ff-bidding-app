@@ -73,10 +73,7 @@ class FormulaDelegate(NoElideDelegate):
         """Get the current currency symbol from app settings."""
         if self.app_settings:
             symbol = self.app_settings.get_currency()
-            print(f"[FormulaDelegate] app_settings exists, currency symbol: '{symbol}'")
             return symbol if symbol else ""
-        else:
-            print(f"[FormulaDelegate] app_settings is None!")
         return ""
 
     def paint(self, painter, option, index):
@@ -94,19 +91,15 @@ class FormulaDelegate(NoElideDelegate):
             try:
                 # Pass row and col for circular reference detection
                 result = self.formula_evaluator.evaluate(value, index.row(), index.column())
-                print(f"[FormulaDelegate.paint] Formula: {value[:50]}, Result type: {type(result)}, Result: {result}")
                 # Format the result
                 if isinstance(result, float):
                     currency_symbol = self._get_currency_symbol()
                     display_text = f"{currency_symbol}{result:,.2f}"
-                    print(f"[FormulaDelegate.paint] Float result - Currency: '{currency_symbol}', Display: '{display_text}'")
                 elif isinstance(result, int):
                     currency_symbol = self._get_currency_symbol()
                     display_text = f"{currency_symbol}{result:,.2f}"
-                    print(f"[FormulaDelegate.paint] Int result - Currency: '{currency_symbol}', Display: '{display_text}'")
                 else:
                     display_text = str(result)
-                    print(f"[FormulaDelegate.paint] Other result - Display: '{display_text}'")
 
                 # Set text color based on result type
                 if isinstance(result, str) and (result.startswith('#ERROR') or result.startswith('#CIRCULAR') or result.startswith('#PARSE') or result.startswith('#NOT_SUPPORTED')):
@@ -123,10 +116,8 @@ class FormulaDelegate(NoElideDelegate):
                 )
                 return
             except Exception as e:
-                # Log the error but continue with default painting
-                import traceback
-                print(f"Error in FormulaDelegate.paint: {e}")
-                traceback.print_exc()
+                # Continue with default painting on error
+                pass
 
         # Default painting
         super().paint(painter, option, index)
@@ -146,7 +137,6 @@ class FormulaDelegate(NoElideDelegate):
                     return f"{currency_symbol}{result:,.2f}"
                 return str(result)
             except Exception as e:
-                print(f"Error in FormulaDelegate.displayText: {e}")
                 return "#ERROR"
 
         return str(value)

@@ -391,7 +391,6 @@ class FormulaEvaluator:
                 return "#REF!"
 
             target_model = self.sheet_models[sheet_name]
-            logger.debug(f"Using model for sheet: {sheet_name}")
 
             # Resolve the cell reference (with or without explicit row)
             standard_ref = self.resolve_header_reference(cell_ref, current_row=row, model=target_model)
@@ -433,7 +432,6 @@ class FormulaEvaluator:
                 return "#REF!"
 
             target_model = self.sheet_models[sheet_name]
-            logger.debug(f"Using model for sheet: {sheet_name}")
 
             # Resolve the cell reference (with or without explicit row)
             standard_ref = self.resolve_header_reference(cell_ref, current_row=row, model=target_model)
