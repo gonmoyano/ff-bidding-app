@@ -14,12 +14,14 @@ try:
     from .settings import AppSettings
     from .multi_entity_reference_widget import MultiEntityReferenceWidget
     from .formula_evaluator import FormulaEvaluator
+    from .table_with_totals_bar import TableWithTotalsBar
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
     from vfx_breakdown_model import VFXBreakdownModel, PasteCommand, CheckBoxDelegate
     from settings import AppSettings
     from multi_entity_reference_widget import MultiEntityReferenceWidget
     from formula_evaluator import FormulaEvaluator
+    from table_with_totals_bar import TableWithTotalsBar
 
 
 class NoElideDelegate(QtWidgets.QStyledItemDelegate):
@@ -501,6 +503,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # UI widgets
         self.table_view = None
+        self.table_with_totals = None  # Wrapper that adds totals bar
         self.global_search_box = None
         self.clear_filters_btn = None
         self.compound_sort_btn = None
@@ -639,7 +642,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Install event filter
         self.table_view.installEventFilter(self)
 
-        layout.addWidget(self.table_view)
+        # Wrap table with totals bar
+        self.table_with_totals = TableWithTotalsBar(self.table_view)
+        layout.addWidget(self.table_with_totals)
 
         # Update template dropdown
         self._update_template_dropdown()
@@ -752,6 +757,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # Set up MultiEntityReferenceWidget for sg_bid_assets column
         self._setup_bid_assets_widgets()
+
+        # Calculate totals after data is loaded
+        self.refresh_totals()
 
     def _deduplicate_entities(self, entities):
         """Remove duplicate entities from a list, keeping only unique IDs.
@@ -1328,6 +1336,22 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         if self.model.rowCount() > 0:
             # Recalculate column widths with new DPI scale
             self._autosize_columns()
+
+    def refresh_totals(self):
+        """Refresh the totals bar by recalculating column sums."""
+        if self.table_with_totals:
+            self.table_with_totals.calculate_totals(skip_first_col=True)
+            logger.debug("Totals bar refreshed")
+
+    def set_totals_visible(self, visible):
+        """
+        Show or hide the totals bar.
+
+        Args:
+            visible: True to show totals bar, False to hide it
+        """
+        if self.table_with_totals:
+            self.table_with_totals.set_totals_visible(visible)
 
     def _on_search_changed(self, text):
         """Handle search text change."""
@@ -2655,3 +2679,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Use QTimer to defer widget creation until after the view has processed the model reset
         # This ensures the view's internal state is fully updated before we create widgets
         QtCore.QTimer.singleShot(0, self._setup_bid_assets_widgets)
+
+        # Refresh totals after model reset (sorting/filtering changes visible data)
+        QtCore.QTimer.singleShot(0, self.refresh_totals)

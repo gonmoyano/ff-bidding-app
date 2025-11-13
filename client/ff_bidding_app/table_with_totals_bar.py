@@ -1,0 +1,314 @@
+"""
+Table with Totals Bar Component
+Wrapper that adds a frozen totals bar to an existing QTableWidget or QTableView.
+"""
+
+from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6.QtCore import Qt
+import logging
+
+try:
+    from .logger import logger
+except ImportError:
+    logger = logging.getLogger("FFPackageManager")
+
+
+class TableWithTotalsBar(QtWidgets.QWidget):
+    """
+    Wrapper that adds a frozen totals bar to an existing QTableWidget or QTableView.
+
+    Usage:
+        # Your existing table
+        existing_table = QTableView()
+        # ... configure table, add data, etc.
+
+        # Wrap it to add totals bar
+        table_with_totals = TableWithTotalsBar(existing_table)
+
+        # Add wrapped version to your layout
+        layout.addWidget(table_with_totals)
+
+        # Calculate totals
+        table_with_totals.calculate_totals()
+    """
+
+    def __init__(self, existing_table, parent=None):
+        """
+        Wrap an existing table and add totals bar.
+
+        Args:
+            existing_table: Your existing QTableWidget or QTableView (already configured)
+            parent: Optional parent widget
+        """
+        super().__init__(parent)
+
+        # Store reference to existing table
+        self.table = existing_table
+
+        # Determine if it's a QTableWidget or QTableView
+        self.is_table_widget = isinstance(existing_table, QtWidgets.QTableWidget)
+
+        # Get column count
+        if self.is_table_widget:
+            self.cols = existing_table.columnCount()
+        else:
+            # For QTableView, get column count from model
+            model = existing_table.model()
+            self.cols = model.columnCount() if model else 0
+
+        # Layout
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Add existing table (don't recreate it!)
+        layout.addWidget(self.table)
+
+        # Create and add totals bar (QTableWidget for simplicity)
+        self.totals_bar = QtWidgets.QTableWidget(1, self.cols)
+        self._setup_totals_bar()
+        layout.addWidget(self.totals_bar)
+
+        # Set up synchronization
+        self._setup_synchronization()
+        self._sync_all_column_widths()  # Initial sync
+        self._update_totals_alignment()
+
+        logger.info(f"TableWithTotalsBar initialized with {self.cols} columns")
+
+    @property
+    def main_table(self):
+        """Access the wrapped table."""
+        return self.table
+
+    def set_total(self, col, value):
+        """
+        Set a total value for a specific column.
+
+        Args:
+            col: Column index
+            value: Total value to display (will be converted to string)
+        """
+        item = self.totals_bar.item(0, col)
+        if item:
+            item.setText(str(value))
+        else:
+            item = QtWidgets.QTableWidgetItem(str(value))
+            item.setTextAlignment(Qt.AlignCenter)
+            font = item.font()
+            font.setBold(True)
+            item.setFont(font)
+            self.totals_bar.setItem(0, col, item)
+
+    def get_total(self, col):
+        """
+        Get total value for a column.
+
+        Args:
+            col: Column index
+
+        Returns:
+            str: Total value as string
+        """
+        item = self.totals_bar.item(0, col)
+        return item.text() if item else ""
+
+    def calculate_totals(self, skip_first_col=True, number_format="{:,.0f}"):
+        """
+        Auto-calculate totals by summing numeric columns.
+
+        Args:
+            skip_first_col: If True, skip column 0 (usually labels/identifiers)
+            number_format: Format string for displaying numbers (default: comma-separated integers)
+        """
+        start_col = 1 if skip_first_col else 0
+
+        if self.is_table_widget:
+            self._calculate_totals_widget(start_col, number_format, skip_first_col)
+        else:
+            self._calculate_totals_view(start_col, number_format, skip_first_col)
+
+    def _calculate_totals_widget(self, start_col, number_format, skip_first_col):
+        """Calculate totals for QTableWidget."""
+        for col in range(start_col, self.cols):
+            total = 0
+            count = 0
+
+            for row in range(self.table.rowCount()):
+                item = self.table.item(row, col)
+                if item:
+                    try:
+                        # Remove commas and currency symbols before parsing
+                        text = item.text().replace(',', '').replace('$', '').replace('€', '').strip()
+                        value = float(text)
+                        total += value
+                        count += 1
+                    except (ValueError, AttributeError):
+                        pass
+
+            if count > 0:
+                self.set_total(col, number_format.format(total))
+
+        # Set label in first column
+        if skip_first_col:
+            self.set_total(0, "TOTAL")
+
+    def _calculate_totals_view(self, start_col, number_format, skip_first_col):
+        """Calculate totals for QTableView with model."""
+        model = self.table.model()
+        if not model:
+            return
+
+        for col in range(start_col, self.cols):
+            total = 0
+            count = 0
+
+            for row in range(model.rowCount()):
+                index = model.index(row, col)
+                data = model.data(index, Qt.DisplayRole)
+
+                if data is not None:
+                    try:
+                        # Handle various data types
+                        if isinstance(data, (int, float)):
+                            value = float(data)
+                        elif isinstance(data, str):
+                            # Remove commas, currency symbols, and formulas
+                            text = data.replace(',', '').replace('$', '').replace('€', '').strip()
+                            # Skip formulas that start with '='
+                            if text.startswith('='):
+                                continue
+                            value = float(text)
+                        else:
+                            continue
+
+                        total += value
+                        count += 1
+                    except (ValueError, AttributeError, TypeError):
+                        pass
+
+            if count > 0:
+                self.set_total(col, number_format.format(total))
+
+        # Set label in first column
+        if skip_first_col:
+            self.set_total(0, "TOTAL")
+
+    def clear_totals(self):
+        """Clear all totals."""
+        for col in range(self.cols):
+            self.set_total(col, "")
+
+    def _setup_totals_bar(self):
+        """Configure the totals bar appearance."""
+        # Hide headers
+        self.totals_bar.verticalHeader().setVisible(False)
+        self.totals_bar.horizontalHeader().setVisible(False)
+
+        # Set fixed height
+        row_height = self.totals_bar.verticalHeader().defaultSectionSize()
+        self.totals_bar.setFixedHeight(row_height + 4)
+
+        # No scrollbars
+        self.totals_bar.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.totals_bar.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        # Styling
+        self.totals_bar.setStyleSheet("""
+            QTableWidget {
+                background-color: #f0f0f0;
+                border-top: 2px solid #333;
+                font-weight: bold;
+                gridline-color: #c0c0c0;
+            }
+        """)
+
+        # Disable editing
+        self.totals_bar.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+
+        # Initialize cells
+        for col in range(self.cols):
+            item = QtWidgets.QTableWidgetItem("")
+            item.setTextAlignment(Qt.AlignCenter)
+            font = item.font()
+            font.setBold(True)
+            item.setFont(font)
+            self.totals_bar.setItem(0, col, item)
+
+    def _setup_synchronization(self):
+        """Set up sync between existing table and totals bar."""
+        # Horizontal scroll sync
+        h_scrollbar = self.table.horizontalScrollBar()
+        if h_scrollbar:
+            h_scrollbar.valueChanged.connect(self._sync_horizontal_scroll)
+
+        # Column width sync (different for QTableWidget vs QTableView)
+        if self.is_table_widget:
+            header = self.table.horizontalHeader()
+        else:
+            header = self.table.horizontalHeader()
+
+        if header:
+            header.sectionResized.connect(self._sync_column_width)
+
+        # Alignment updates
+        v_scrollbar = self.table.verticalScrollBar()
+        if v_scrollbar:
+            v_scrollbar.rangeChanged.connect(self._update_totals_alignment)
+            v_scrollbar.valueChanged.connect(self._update_totals_alignment)
+
+    def _sync_horizontal_scroll(self, value):
+        """Sync horizontal scrolling."""
+        self.totals_bar.blockSignals(True)
+        self.totals_bar.horizontalScrollBar().setValue(value)
+        self.totals_bar.blockSignals(False)
+
+    def _sync_column_width(self, col_index, old_width, new_width):
+        """Sync column width when user resizes."""
+        self.totals_bar.setColumnWidth(col_index, new_width)
+        self._update_totals_alignment()
+
+    def _sync_all_column_widths(self):
+        """Initial sync of all column widths."""
+        if self.is_table_widget:
+            for col in range(self.cols):
+                width = self.table.columnWidth(col)
+                self.totals_bar.setColumnWidth(col, width)
+        else:
+            # For QTableView, get widths from the horizontal header
+            header = self.table.horizontalHeader()
+            if header:
+                for col in range(self.cols):
+                    width = header.sectionSize(col)
+                    self.totals_bar.setColumnWidth(col, width)
+
+    def _update_totals_alignment(self):
+        """
+        CRITICAL: Keep totals columns aligned with table columns.
+        Must account for scrollbar and row header.
+        """
+        scrollbar_width = 0
+        if self.table.verticalScrollBar().isVisible():
+            scrollbar_width = self.table.verticalScrollBar().width()
+
+        row_header_width = self.table.verticalHeader().width()
+
+        self.totals_bar.setContentsMargins(
+            row_header_width,  # Left margin
+            0,
+            scrollbar_width,   # Right margin
+            0
+        )
+
+    def refresh_totals(self):
+        """Refresh totals - recalculate based on current table data."""
+        self.calculate_totals()
+
+    def set_totals_visible(self, visible):
+        """
+        Show or hide the totals bar.
+
+        Args:
+            visible: True to show, False to hide
+        """
+        self.totals_bar.setVisible(visible)
