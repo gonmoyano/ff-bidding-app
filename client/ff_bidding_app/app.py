@@ -446,9 +446,9 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
     def __init__(self, sg_url, sg_script_name, sg_api_key, output_directory, parent=None):
         try:
-            logger.info("Calling super().__init__()...")
+            logger.debug("Calling super().__init__()...")
             super().__init__(parent)
-            logger.info("super().__init__() completed")
+            logger.debug("super().__init__() completed")
 
             self.sg_url = sg_url
             self.sg_script_name = sg_script_name
@@ -459,12 +459,12 @@ class PackageManagerApp(QtWidgets.QMainWindow):
                 script_name=self.sg_script_name,
                 api_key=self.sg_api_key
             )
-            logger.info(f"Shotgrid Session: {self.sg_session}")
+            logger.debug(f"Shotgrid Session: {self.sg_session}")
             self.output_directory = output_directory or str(Path.home() / "shotgrid_packages")
 
             # Initialize app settings
             self.app_settings = AppSettings()
-            logger.info("AppSettings initialized")
+            logger.debug("AppSettings initialized")
 
             # Track the current DPI scale to detect changes
             # This is also used by delegates during preview to get the live scale
@@ -482,15 +482,15 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             # Apply saved DPI scaling to the UI
             saved_dpi_scale = self.app_settings.get_dpi_scale()
             if saved_dpi_scale != 1.0:
-                logger.info(f"Applying saved DPI scale: {saved_dpi_scale}")
+                logger.debug(f"Applying saved DPI scale: {saved_dpi_scale}")
                 self._apply_app_font_scaling(saved_dpi_scale)
 
             # Auto-load the latest project on startup
-            logger.info("Auto-loading latest project...")
+            logger.debug("Auto-loading latest project...")
             self._auto_load_latest_project()
 
             et = self.sg_session.get_vfx_breakdown_entity_type()
-            logger.info(f"VFX Breakdown entity type resolved to: {et}")
+            logger.debug(f"VFX Breakdown entity type resolved to: {et}")
 
 
         except Exception as e:
@@ -511,22 +511,22 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             dpi_scale = settings.get_dpi_scale()
 
             if dpi_scale != 1.0:
-                logger.info(f"Applying DPI scaling: {dpi_scale}")
+                logger.debug(f"Applying DPI scaling: {dpi_scale}")
 
                 # Try to set Qt attributes (only works if QApplication not yet created)
                 try:
                     QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling, True)
                     QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps, True)
                 except RuntimeError:
-                    logger.info("QApplication already exists, cannot set Qt attributes")
+                    logger.debug("QApplication already exists, cannot set Qt attributes")
 
                 # Set environment variable (works if set before Qt init)
                 import os
                 os.environ["QT_SCALE_FACTOR"] = str(dpi_scale)
 
-                logger.info(f"DPI scaling configured: {dpi_scale}x")
+                logger.debug(f"DPI scaling configured: {dpi_scale}x")
             else:
-                logger.info("DPI scaling set to default (1.0x)")
+                logger.debug("DPI scaling set to default (1.0x)")
 
             return dpi_scale
         except Exception as e:
@@ -954,7 +954,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
             main_layout.addWidget(self.tab_widget)
 
-            logger.info("_build_ui() completed successfully")
+            logger.debug("_build_ui() completed successfully")
 
         except Exception as e:
             logger.error(f"Error in _build_ui: {e}", exc_info=True)
@@ -1259,7 +1259,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
     def _load_sg_projects(self):
         """Load Shotgrid projects."""
-        logger.info("_load_sg_projects() started")
+        logger.debug("_load_sg_projects() started")
         self.sg_project_combo.clear()
         self.rfq_combo.clear()
 
@@ -1286,7 +1286,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
     def _auto_load_latest_project(self):
         """Automatically load the most recently created project on startup."""
         try:
-            logger.info("Attempting to auto-load latest project...")
+            logger.debug("Attempting to auto-load latest project...")
 
             # Get projects with created_at field, sorted by newest first
             projects = self.sg_session.sg.find(
@@ -1341,7 +1341,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
     def _load_rfqs(self, project_id):
         """Load RFQs for the selected project."""
-        logger.info(f"_load_rfqs() started for project {project_id}")
+        logger.debug(f"_load_rfqs() started for project {project_id}")
         self.rfq_combo.clear()
 
         # Add empty item
@@ -1355,7 +1355,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
                                                     "created_at"])
 
             if rfqs:
-                logger.info(f"DEBUG: First RFQ data = {rfqs[0]}")
+                logger.debug(f"DEBUG: First RFQ data = {rfqs[0]}")
 
             for rfq in rfqs:
                 display_text = f"{rfq.get('code', 'N/A')}"
@@ -1388,13 +1388,13 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             if not linked_bid:
                 linked_bid = rfq.get("sg_turnover_bid")
 
-            logger.info(f"DEBUG: linked_bid = {linked_bid}")
-            logger.info(f"DEBUG: linked_bid type = {type(linked_bid)}")
+            logger.debug(f"DEBUG: linked_bid = {linked_bid}")
+            logger.debug(f"DEBUG: linked_bid type = {type(linked_bid)}")
             if linked_bid:
                 if isinstance(linked_bid, dict):
-                    logger.info(f"DEBUG: linked_bid keys = {list(linked_bid.keys())}")
-                    logger.info(f"DEBUG: linked_bid['code'] = {linked_bid.get('code')}")
-                    logger.info(f"DEBUG: linked_bid['sg_bid_type'] = {linked_bid.get('sg_bid_type')}")
+                    logger.debug(f"DEBUG: linked_bid keys = {list(linked_bid.keys())}")
+                    logger.debug(f"DEBUG: linked_bid['code'] = {linked_bid.get('code')}")
+                    logger.debug(f"DEBUG: linked_bid['sg_bid_type'] = {linked_bid.get('sg_bid_type')}")
 
             if isinstance(linked_bid, dict):
                 # ShotGrid returns 'name' field for linked entities, not 'code'
@@ -1601,10 +1601,10 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
     def showEvent(self, event):
         """Called when window is shown."""
-        logger.info("showEvent() - Window is being shown")
+        logger.debug("showEvent() - Window is being shown")
         super().showEvent(event)
 
     def closeEvent(self, event):
         """Called when window is closed."""
-        logger.info("closeEvent() - Window is being closed")
+        logger.debug("closeEvent() - Window is being closed")
         super().closeEvent(event)

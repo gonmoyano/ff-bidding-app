@@ -662,7 +662,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         paste_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+V"), self)
         paste_shortcut.activated.connect(self._paste_selection)
 
-        logger.info("Keyboard shortcuts set up: Ctrl+Z (undo), Ctrl+Y (redo), Ctrl+C (copy), Ctrl+V (paste)")
+        logger.debug("Keyboard shortcuts set up: Ctrl+Z (undo), Ctrl+Y (redo), Ctrl+C (copy), Ctrl+V (paste)")
 
     def eventFilter(self, obj, event):
         """Event filter to handle Enter/Delete keys and double-clicks on index widgets."""
@@ -707,14 +707,14 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             self.model.set_field_schema(field_schema)
 
             # Debug: Log list fields and their values
-            logger.info("=== Field Schema Debug ===")
+            logger.debug("=== Field Schema Debug ===")
             for col_idx, field_name in enumerate(self.model.column_fields):
                 if field_name in field_schema:
                     field_info = field_schema[field_name]
                     data_type = field_info.get("data_type")
                     if data_type == "list":
                         list_values = field_info.get("list_values", [])
-                        logger.info(f"List field: {field_name}, values count: {len(list_values)}, values: {list_values[:5] if list_values else 'NONE'}")
+                        logger.debug(f"List field: {field_name}, values count: {len(list_values)}, values: {list_values[:5] if list_values else 'NONE'}")
 
             # Set up delegates for checkbox fields (list fields now use QMenu on double-click)
             for col_idx, field_name in enumerate(self.model.column_fields):
@@ -782,7 +782,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 unique_entities.append(entity)
 
         if len(unique_entities) < len(entities):
-            logger.info(f"Deduplicated entities: {len(entities)} -> {len(unique_entities)}")
+            logger.debug(f"Deduplicated entities: {len(entities)} -> {len(unique_entities)}")
 
         return unique_entities
 
@@ -797,7 +797,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # Get valid asset IDs from the current bid for validation
         valid_entity_ids = self._get_valid_asset_ids()
-        logger.info(f"Setting up bid assets widgets with validation: {valid_entity_ids}")
+        logger.debug(f"Setting up bid assets widgets with validation: {valid_entity_ids}")
 
         # Create widget for each row
         for row in range(self.model.rowCount()):
@@ -807,7 +807,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Check if widget already exists - if so, skip recreation
             existing_widget = self.table_view.indexWidget(index)
             if isinstance(existing_widget, MultiEntityReferenceWidget):
-                logger.debug(f"Widget already exists for row {row}, skipping creation")
                 continue
 
             # Get the actual data row index
@@ -825,7 +824,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Update the model data with deduplicated entities
             if entities != bidding_scene_data.get("sg_bid_assets", []):
                 bidding_scene_data["sg_bid_assets"] = entities
-                logger.info(f"Updated row {row} with deduplicated entities")
+                logger.debug(f"Updated row {row} with deduplicated entities")
 
             # Create the widget with validation
             widget = MultiEntityReferenceWidget(
@@ -855,10 +854,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             if self.table_view.selectionModel():
                 is_selected = self.table_view.selectionModel().isSelected(index)
                 widget.set_selected(is_selected)
-
-            logger.debug(f"Created widget for row {row}, col {assets_col_idx}")
-
-        logger.info(f"Finished setting up bid assets widgets for {self.model.rowCount()} rows")
 
         # Row height is controlled by the slider - don't override it here
 
@@ -918,7 +913,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             bid: Bid dictionary from ShotGrid
         """
         self.current_bid = bid
-        logger.info(f"VFXBreakdownWidget: Current bid set to {bid.get('code') if bid else None}")
+        logger.debug(f"VFXBreakdownWidget: Current bid set to {bid.get('code') if bid else None}")
 
         # Refresh asset widgets with new validation when bid changes
         self._refresh_asset_widgets_validation()
@@ -934,7 +929,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # Get the new valid asset IDs
         valid_entity_ids = self._get_valid_asset_ids()
-        logger.info(f"Refreshing asset widgets validation with IDs: {valid_entity_ids}")
+        logger.debug(f"Refreshing asset widgets validation with IDs: {valid_entity_ids}")
 
         # Update all existing asset widgets
         for row in range(self.model.rowCount()):
