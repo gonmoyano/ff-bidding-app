@@ -258,13 +258,15 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         self.totals_bar.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.totals_bar.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
+        # Disable gridlines for continuous bar appearance
+        self.totals_bar.setShowGrid(False)
+
         # Styling - Dark theme matching VFX table
         self.totals_bar.setStyleSheet("""
             QTableWidget {
                 background-color: #3a3a3a;
                 border-top: 2px solid #555555;
                 font-weight: bold;
-                gridline-color: #555555;
             }
         """)
 
