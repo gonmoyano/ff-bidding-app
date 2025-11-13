@@ -529,16 +529,38 @@ class CostsTab(QtWidgets.QMainWindow):
             # Set the display names on the model AFTER loading data
             if hasattr(self.shots_cost_widget, 'model'):
                 # Add virtual columns to the model's column_fields
+                columns_added = []
                 if "_line_item_price" not in self.shots_cost_widget.model.column_fields:
                     self.shots_cost_widget.model.column_fields.append("_line_item_price")
+                    columns_added.append("_line_item_price")
                 if "_calc_price" not in self.shots_cost_widget.model.column_fields:
                     self.shots_cost_widget.model.column_fields.append("_calc_price")
+                    columns_added.append("_calc_price")
                 logger.info(f"  ✓ Added virtual price columns to model")
+
+                # Notify the view that the model structure changed
+                if columns_added:
+                    self.shots_cost_widget.model.layoutChanged.emit()
+                    logger.info(f"  ✓ Emitted layoutChanged signal for {len(columns_added)} new columns")
+
+                # Set default widths for the new columns before updating totals bar
+                if columns_added:
+                    for col_name in columns_added:
+                        col_idx = self.shots_cost_widget.model.column_fields.index(col_name)
+                        # Set a reasonable default width (100 pixels)
+                        self.shots_cost_widget.table_view.setColumnWidth(col_idx, 100)
+                        logger.info(f"  ✓ Set width for column {col_name} (index {col_idx})")
 
                 # Update totals bar to reflect new column count
                 if hasattr(self, 'shots_cost_totals_wrapper'):
                     self.shots_cost_totals_wrapper.update_column_count()
                     logger.info(f"  ✓ Updated totals bar column count")
+
+                # Force viewport update to ensure new columns are immediately visible
+                if columns_added:
+                    self.shots_cost_widget.table_view.viewport().update()
+                    self.shots_cost_widget.table_view.horizontalHeader().viewport().update()
+                    logger.info(f"  ✓ Forced viewport update for new columns")
 
                 # Make Price column read-only
                 if "_calc_price" not in self.shots_cost_widget.model.readonly_columns:
