@@ -375,6 +375,16 @@ class EditCommand:
                 logger.warning(f"Failed to parse '{text}' as float for field '{field_name}'")
                 raise ValueError(f"Invalid float format: '{text}'")
 
+        elif data_type == "currency":
+            try:
+                # Currency fields must be float or int, not string
+                value = float(text)
+                logger.debug(f"Parsed '{text}' as currency (float): {value}")
+                return value
+            except ValueError:
+                logger.warning(f"Failed to parse '{text}' as currency for field '{field_name}'")
+                raise ValueError(f"Invalid currency format: '{text}'")
+
         # For all other types (text, list, entity, etc.), return as string
         return str(text)
 
@@ -501,6 +511,14 @@ class PasteCommand:
 
         elif data_type == "checkbox":
             return text.lower() in ("yes", "true", "1")
+
+        elif data_type == "currency":
+            try:
+                # Currency fields must be float or int, not string
+                return float(text)
+            except ValueError:
+                logger.warning(f"Could not parse '{text}' as currency for field '{field_name}'")
+                return None
 
         elif data_type == "date":
             if text == "-" or text == "":
