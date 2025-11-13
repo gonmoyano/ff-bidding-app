@@ -288,8 +288,11 @@ class CostsTab(QtWidgets.QMainWindow):
         # Remove table_view from layout
         layout.removeWidget(self.shots_cost_widget.table_view)
 
-        # Create wrapper with totals bar
-        self.shots_cost_totals_wrapper = TableWithTotalsBar(self.shots_cost_widget.table_view)
+        # Create wrapper with totals bar, passing app_settings for currency formatting
+        self.shots_cost_totals_wrapper = TableWithTotalsBar(
+            self.shots_cost_widget.table_view,
+            app_settings=self.app_settings
+        )
 
         # Add wrapper back to layout
         layout.addWidget(self.shots_cost_totals_wrapper)
@@ -589,9 +592,14 @@ class CostsTab(QtWidgets.QMainWindow):
 
                 # Configure totals bar for Price column
                 if hasattr(self, 'shots_cost_totals_wrapper'):
+                    # Set formula evaluator on totals wrapper for formula evaluation
+                    self.shots_cost_totals_wrapper.set_formula_evaluator(self.vfx_breakdown_formula_evaluator)
+                    logger.info(f"  ✓ Set formula evaluator on totals wrapper")
+
                     # Mark Price column as blue
                     self.shots_cost_totals_wrapper.set_blue_columns([price_col_index])
-                    # Calculate totals only for Price column
+
+                    # Calculate totals only for Price column (formulas will be evaluated)
                     self.shots_cost_totals_wrapper.calculate_totals(columns=[price_col_index], skip_first_col=True)
                     logger.info(f"  ✓ Configured totals bar for Price column (index {price_col_index})")
 

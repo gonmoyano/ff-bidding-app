@@ -32,13 +32,15 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         table_with_totals.calculate_totals()
     """
 
-    def __init__(self, existing_table, parent=None):
+    def __init__(self, existing_table, parent=None, formula_evaluator=None, app_settings=None):
         """
         Wrap an existing table and add totals bar.
 
         Args:
             existing_table: Your existing QTableWidget or QTableView (already configured)
             parent: Optional parent widget
+            formula_evaluator: Optional FormulaEvaluator for evaluating formula cells in totals
+            app_settings: Optional AppSettings for currency symbol
         """
         super().__init__(parent)
 
@@ -58,6 +60,12 @@ class TableWithTotalsBar(QtWidgets.QWidget):
 
         # Track which columns have blue styling
         self.blue_columns = set()
+
+        # Formula evaluator for calculating totals from formula cells
+        self.formula_evaluator = formula_evaluator
+
+        # App settings for currency formatting
+        self.app_settings = app_settings
 
         # Layout
         layout = QtWidgets.QVBoxLayout(self)
@@ -148,6 +156,24 @@ class TableWithTotalsBar(QtWidgets.QWidget):
                     item.setBackground(QtGui.QColor("#3a3a3a"))
                     item.setForeground(QtGui.QColor("#ffffff"))
 
+    def set_formula_evaluator(self, formula_evaluator):
+        """
+        Set the formula evaluator for calculating totals from formula cells.
+
+        Args:
+            formula_evaluator: FormulaEvaluator instance
+        """
+        self.formula_evaluator = formula_evaluator
+
+    def set_app_settings(self, app_settings):
+        """
+        Set the app settings for currency formatting.
+
+        Args:
+            app_settings: AppSettings instance
+        """
+        self.app_settings = app_settings
+
     def calculate_totals(self, columns=None, skip_first_col=True, number_format="{:,.0f}"):
         """
         Auto-calculate totals by summing numeric columns.
@@ -200,6 +226,11 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         if not model:
             return
 
+        # Get currency symbol if available
+        currency_symbol = ""
+        if self.app_settings:
+            currency_symbol = self.app_settings.get_currency() or ""
+
         for col in cols_to_process:
             total = 0
             count = 0
@@ -214,12 +245,28 @@ class TableWithTotalsBar(QtWidgets.QWidget):
                         if isinstance(data, (int, float)):
                             value = float(data)
                         elif isinstance(data, str):
-                            # Remove commas, currency symbols, and formulas
-                            text = data.replace(',', '').replace('$', '').replace('€', '').strip()
-                            # Skip formulas that start with '='
+                            text = data.strip()
+                            # Handle formulas that start with '=' using formula evaluator
                             if text.startswith('='):
-                                continue
-                            value = float(text)
+                                if self.formula_evaluator:
+                                    try:
+                                        # Evaluate the formula to get numeric result
+                                        result = self.formula_evaluator.evaluate(text, row, col)
+                                        if isinstance(result, (int, float)):
+                                            value = float(result)
+                                        else:
+                                            # Skip non-numeric formula results
+                                            continue
+                                    except Exception as e:
+                                        logger.debug(f"Error evaluating formula at ({row}, {col}): {e}")
+                                        continue
+                                else:
+                                    # No formula evaluator, skip formulas
+                                    continue
+                            else:
+                                # Remove commas and currency symbols before parsing
+                                text = text.replace(',', '').replace('$', '').replace('€', '').replace('£', '').strip()
+                                value = float(text)
                         else:
                             continue
 
@@ -229,7 +276,12 @@ class TableWithTotalsBar(QtWidgets.QWidget):
                         pass
 
             if count > 0:
-                self.set_total(col, number_format.format(total))
+                # Format with currency symbol if this is a blue column (price column)
+                if col in self.blue_columns and currency_symbol:
+                    formatted_total = f"{currency_symbol}{total:,.2f}"
+                else:
+                    formatted_total = number_format.format(total)
+                self.set_total(col, formatted_total)
 
         # Set label in first column
         if skip_first_col:
