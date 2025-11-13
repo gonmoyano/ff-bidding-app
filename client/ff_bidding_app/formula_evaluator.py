@@ -704,7 +704,7 @@ class FormulaEvaluator:
 
                     # Check explicit row header reference (field.1, field.2, etc.)
                     # Check all possible header refs including short names
-                    elif changed_header_refs:
+                    if not formula_depends_on_changed and changed_header_refs:
                         for header_ref in changed_header_refs:
                             if re.search(r'\b' + re.escape(header_ref) + r'\b', value, re.IGNORECASE):
                                 formula_depends_on_changed = True
@@ -713,7 +713,7 @@ class FormulaEvaluator:
 
                     # Check same-row header reference (field without row number)
                     # This is only relevant if the formula is in the same row as the changed cell
-                    elif field_name and row == changed_row:
+                    if not formula_depends_on_changed and field_name and row == changed_row:
                         # Look for the field name (or any of its short versions) used without explicit row number
                         # Pattern: field name not followed by a dot and number
                         logger.info(f"[RECALC] Checking same-row refs for row={row}, changed_row={changed_row}")
