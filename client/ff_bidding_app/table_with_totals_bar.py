@@ -339,6 +339,10 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         # Disable editing
         self.totals_bar.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
 
+        # Disable cell selection
+        self.totals_bar.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.totals_bar.setFocusPolicy(Qt.NoFocus)
+
         # Initialize cells with default dark gray background
         for col in range(self.cols):
             item = QtWidgets.QTableWidgetItem("")

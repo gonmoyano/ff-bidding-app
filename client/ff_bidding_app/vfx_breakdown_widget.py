@@ -1458,6 +1458,26 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Apply the change immediately
             col_index = self.model.column_fields.index(field)
             self.table_view.setColumnHidden(col_index, not is_visible)
+
+            # Link Price and Line Item Price column visibility
+            # When one is hidden, the other should also be hidden
+            if field == '_calc_price' and '_line_item_price' in self.model.column_fields:
+                try:
+                    line_item_idx = self.model.column_fields.index('_line_item_price')
+                    self.column_visibility['_line_item_price'] = is_visible
+                    self.table_view.setColumnHidden(line_item_idx, not is_visible)
+                    logger.info(f"Linked visibility: {'showing' if is_visible else 'hiding'} Line Item Price with Price column")
+                except ValueError:
+                    pass
+            elif field == '_line_item_price' and '_calc_price' in self.model.column_fields:
+                try:
+                    calc_price_idx = self.model.column_fields.index('_calc_price')
+                    self.column_visibility['_calc_price'] = is_visible
+                    self.table_view.setColumnHidden(calc_price_idx, not is_visible)
+                    logger.info(f"Linked visibility: {'showing' if is_visible else 'hiding'} Price with Line Item Price column")
+                except ValueError:
+                    pass
+
             # Save to settings
             self.app_settings.set_column_visibility(self.settings_key, self.column_visibility)
 
@@ -1711,6 +1731,43 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
     def _on_column_moved(self, logical_index, old_visual_index, new_visual_index):
         """Handle column reorder event and save the new order."""
+        header = self.table_view.horizontalHeader()
+
+        # Prevent moving virtual price columns - they should stay at the end
+        if logical_index < len(self.model.column_fields):
+            field_name = self.model.column_fields[logical_index]
+            if field_name in ('_calc_price', '_line_item_price'):
+                # Restore the original position
+                header.moveSection(new_visual_index, old_visual_index)
+                logger.info(f"Prevented moving {field_name} column - it must stay at the end")
+                return
+
+        # Prevent moving other columns after the virtual price columns
+        # Find the visual indices of the price columns
+        calc_price_idx = -1
+        line_item_price_idx = -1
+
+        try:
+            calc_price_logical = self.model.column_fields.index('_calc_price')
+            calc_price_idx = header.visualIndex(calc_price_logical)
+        except (ValueError, AttributeError):
+            pass
+
+        try:
+            line_item_price_logical = self.model.column_fields.index('_line_item_price')
+            line_item_price_idx = header.visualIndex(line_item_price_logical)
+        except (ValueError, AttributeError):
+            pass
+
+        # Get the minimum visual index of price columns (they should be at the end)
+        min_price_visual_idx = min([idx for idx in [calc_price_idx, line_item_price_idx] if idx >= 0], default=-1)
+
+        # If trying to move a non-price column to a position at or after the price columns, prevent it
+        if min_price_visual_idx >= 0 and new_visual_index >= min_price_visual_idx:
+            header.moveSection(new_visual_index, old_visual_index)
+            logger.info(f"Prevented moving column to position after price columns")
+            return
+
         # Get the current visual order of columns
         column_order = self._get_current_column_order()
 
