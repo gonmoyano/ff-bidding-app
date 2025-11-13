@@ -110,8 +110,8 @@ class TableWithTotalsBar(QtWidgets.QWidget):
             item.setBackground(QtGui.QColor("#0078d4"))
             item.setForeground(QtGui.QColor("white"))
         else:
-            item.setBackground(QtGui.QColor("#f0f0f0"))
-            item.setForeground(QtGui.QColor("#000000"))
+            item.setBackground(QtGui.QColor("#3a3a3a"))
+            item.setForeground(QtGui.QColor("#ffffff"))
 
     def get_total(self, col):
         """
@@ -240,8 +240,15 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         v_header.setMinimumWidth(main_v_header_width)
         v_header.setMaximumWidth(main_v_header_width)
 
-        # Hide horizontal header
-        self.totals_bar.horizontalHeader().setVisible(False)
+        # Configure horizontal header to match main table behavior
+        h_header = self.totals_bar.horizontalHeader()
+        h_header.setVisible(False)
+
+        # Match the main table's header resize mode
+        main_h_header = self.table.horizontalHeader()
+        if main_h_header:
+            h_header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+            h_header.setStretchLastSection(main_h_header.stretchLastSection())
 
         # Set fixed height
         row_height = self.totals_bar.verticalHeader().defaultSectionSize()
@@ -251,24 +258,25 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         self.totals_bar.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.totals_bar.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        # Styling - Default gray background, individual cells can be styled per-column
+        # Styling - Dark theme matching VFX table
         self.totals_bar.setStyleSheet("""
             QTableWidget {
-                border-top: 2px solid #333;
+                background-color: #3a3a3a;
+                border-top: 2px solid #555555;
                 font-weight: bold;
-                gridline-color: #c0c0c0;
+                gridline-color: #555555;
             }
         """)
 
         # Disable editing
         self.totals_bar.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
 
-        # Initialize cells with default gray background
+        # Initialize cells with default dark gray background
         for col in range(self.cols):
             item = QtWidgets.QTableWidgetItem("")
             item.setTextAlignment(Qt.AlignCenter)
-            item.setBackground(QtGui.QColor("#f0f0f0"))
-            item.setForeground(QtGui.QColor("#000000"))
+            item.setBackground(QtGui.QColor("#3a3a3a"))
+            item.setForeground(QtGui.QColor("#ffffff"))
             font = item.font()
             font.setBold(True)
             item.setFont(font)
@@ -305,22 +313,40 @@ class TableWithTotalsBar(QtWidgets.QWidget):
 
     def _sync_column_width(self, col_index, old_width, new_width):
         """Sync column width when user resizes."""
-        self.totals_bar.setColumnWidth(col_index, new_width)
+        # Use horizontalHeader().resizeSection() for immediate, reliable sync
+        totals_h_header = self.totals_bar.horizontalHeader()
+        if totals_h_header:
+            totals_h_header.resizeSection(col_index, new_width)
+        else:
+            # Fallback to setColumnWidth
+            self.totals_bar.setColumnWidth(col_index, new_width)
+
         self._update_totals_alignment()
+
+        # Force immediate visual update
+        self.totals_bar.viewport().update()
 
     def _sync_all_column_widths(self):
         """Initial sync of all column widths."""
+        totals_h_header = self.totals_bar.horizontalHeader()
+
         if self.is_table_widget:
             for col in range(self.cols):
                 width = self.table.columnWidth(col)
-                self.totals_bar.setColumnWidth(col, width)
+                if totals_h_header:
+                    totals_h_header.resizeSection(col, width)
+                else:
+                    self.totals_bar.setColumnWidth(col, width)
         else:
             # For QTableView, get widths from the horizontal header
             header = self.table.horizontalHeader()
             if header:
                 for col in range(self.cols):
                     width = header.sectionSize(col)
-                    self.totals_bar.setColumnWidth(col, width)
+                    if totals_h_header:
+                        totals_h_header.resizeSection(col, width)
+                    else:
+                        self.totals_bar.setColumnWidth(col, width)
 
     def _update_totals_alignment(self):
         """
