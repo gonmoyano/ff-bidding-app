@@ -616,6 +616,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         # Flag to prevent recursive updates
         self._updating = False
 
+        # Flag to indicate when undo/redo is in progress
+        self._in_undo_redo = False
+
     def rowCount(self, parent=QtCore.QModelIndex()):
         """Return the number of rows (filtered bidding scenes)."""
         if parent.isValid():
@@ -1221,7 +1224,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
         command = self.undo_stack.pop()
         self._updating = True
+        self._in_undo_redo = True
         command.undo()
+        self._in_undo_redo = False
         self._updating = False
         self.redo_stack.append(command)
         logger.info(f"Undone edit at row {command.row}, col {command.col}")
@@ -1236,7 +1241,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
         command = self.redo_stack.pop()
         self._updating = True
+        self._in_undo_redo = True
         command.redo()
+        self._in_undo_redo = False
         self._updating = False
         self.undo_stack.append(command)
         logger.info(f"Redone edit at row {command.row}, col {command.col}")
