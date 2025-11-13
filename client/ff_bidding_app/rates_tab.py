@@ -817,6 +817,19 @@ class RatesTab(QtWidgets.QWidget):
                 self.line_items_widget.load_bidding_scenes(line_items_list, field_schema=self.line_items_field_schema)
                 logger.info(f"Successfully loaded {len(line_items_list)} Line Item(s) into table")
 
+                # Connect signal for Price Static auto-update (do this every time after loading)
+                if "_calc_price" in self.line_items_field_allowlist and "sg_price_static" in self.line_items_field_allowlist:
+                    if hasattr(self.line_items_widget, 'model') and self.line_items_widget.model:
+                        # Disconnect any existing connection first
+                        try:
+                            self.line_items_widget.model.dataChanged.disconnect(self._on_line_items_data_changed)
+                        except:
+                            pass
+
+                        # Reconnect the signal
+                        self.line_items_widget.model.dataChanged.connect(self._on_line_items_data_changed)
+                        logger.info(f"[Price Static] ✓ Connected dataChanged signal for auto-update (after loading)")
+
                 # Initialize sg_price_static with calculated prices
                 self._initialize_price_static_values()
             else:
