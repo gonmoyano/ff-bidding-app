@@ -816,6 +816,9 @@ class RatesTab(QtWidgets.QWidget):
                 logger.info(f"Line Items data: {line_items_list}")
                 self.line_items_widget.load_bidding_scenes(line_items_list, field_schema=self.line_items_field_schema)
                 logger.info(f"Successfully loaded {len(line_items_list)} Line Item(s) into table")
+
+                # Initialize sg_price_static with calculated prices
+                self._initialize_price_static_values()
             else:
                 self.line_items_widget.clear_data()
                 logger.info(f"No Line Items found for the given IDs")
@@ -846,6 +849,11 @@ class RatesTab(QtWidgets.QWidget):
             # This is a client-side calculated column
             self.line_items_field_allowlist.append("_calc_price")
             logger.info("Added _calc_price as calculated Price field")
+
+            # Add sg_price_static for storing calculated price values
+            if "sg_price_static" in schema:
+                self.line_items_field_allowlist.append("sg_price_static")
+                logger.info("Added sg_price_static field for storing calculated prices")
 
             # If sg_price_formula exists, also include it for storing formulas
             if "sg_price_formula" in schema:
@@ -898,6 +906,9 @@ class RatesTab(QtWidgets.QWidget):
                 # Rename calculated field to "Price"
                 if "_calc_price" in display_names:
                     display_names["_calc_price"] = "Price"
+                # Rename sg_price_static to "Price Static"
+                if "sg_price_static" in display_names:
+                    display_names["sg_price_static"] = "Price Static"
                 self.line_items_widget.model.set_column_headers(display_names)
 
                 # Set up formula delegate for the Price column
@@ -908,8 +919,132 @@ class RatesTab(QtWidgets.QWidget):
                         self.line_items_widget.table_view.setItemDelegateForColumn(price_col_index, formula_delegate)
                         logger.info(f"Set formula delegate for Price column (index {price_col_index}) with app_settings for dynamic currency")
 
+                # Connect to dataChanged signal to auto-update sg_price_static when _calc_price changes
+                if "_calc_price" in self.line_items_field_allowlist and "sg_price_static" in self.line_items_field_allowlist:
+                    self.line_items_widget.model.dataChanged.connect(self._on_line_items_data_changed)
+                    logger.info("Connected dataChanged signal for Price Static auto-update")
+
         except Exception as e:
             logger.error(f"Failed to fetch schema for CustomEntity03: {e}", exc_info=True)
+
+    def _initialize_price_static_values(self):
+        """Initialize sg_price_static values from calculated _calc_price formulas."""
+        try:
+            if not hasattr(self, 'line_items_widget') or not self.line_items_widget:
+                return
+            if not hasattr(self.line_items_widget, 'model') or not self.line_items_widget.model:
+                return
+            if not hasattr(self, 'line_items_formula_evaluator') or not self.line_items_formula_evaluator:
+                return
+
+            model = self.line_items_widget.model
+
+            # Check if we have both columns
+            if "_calc_price" not in model.column_fields or "sg_price_static" not in model.column_fields:
+                return
+
+            price_col_idx = model.column_fields.index("_calc_price")
+            price_static_col_idx = model.column_fields.index("sg_price_static")
+
+            logger.info(f"Initializing sg_price_static for {model.rowCount()} Line Items...")
+
+            # Process each row
+            for row in range(model.rowCount()):
+                # Get the _calc_price formula
+                price_index = model.index(row, price_col_idx)
+                formula = model.data(price_index, QtCore.Qt.EditRole)
+
+                if isinstance(formula, str) and formula.startswith('='):
+                    # Evaluate the formula to get the calculated price
+                    calculated_price = self.line_items_formula_evaluator.evaluate(formula, row, price_col_idx)
+
+                    # Convert to numeric value
+                    if isinstance(calculated_price, (int, float)):
+                        # Get current sg_price_static value
+                        price_static_index = model.index(row, price_static_col_idx)
+                        current_static_price = model.data(price_static_index, QtCore.Qt.EditRole)
+
+                        # Convert current value to numeric for comparison
+                        if current_static_price is None:
+                            current_static_price = 0
+                        elif isinstance(current_static_price, str):
+                            try:
+                                current_static_price = float(current_static_price)
+                            except ValueError:
+                                current_static_price = 0
+
+                        # Update if different (with tolerance for floating point comparison)
+                        if abs(calculated_price - current_static_price) > 0.01:
+                            logger.info(f"  Row {row}: Setting initial sg_price_static = ${calculated_price:,.2f}")
+                            model.setData(price_static_index, calculated_price, QtCore.Qt.EditRole)
+
+            logger.info("Finished initializing sg_price_static values")
+
+        except Exception as e:
+            logger.error(f"Error in _initialize_price_static_values: {e}", exc_info=True)
+
+    def _on_line_items_data_changed(self, top_left, bottom_right, roles):
+        """Handle Line Items data changes to auto-update sg_price_static when _calc_price changes.
+
+        Args:
+            top_left: Top-left index of changed region
+            bottom_right: Bottom-right index of changed region
+            roles: List of changed roles
+        """
+        try:
+            # Check if we have the necessary components
+            if not hasattr(self, 'line_items_widget') or not self.line_items_widget:
+                return
+            if not hasattr(self.line_items_widget, 'model') or not self.line_items_widget.model:
+                return
+            if not hasattr(self, 'line_items_formula_evaluator') or not self.line_items_formula_evaluator:
+                return
+
+            model = self.line_items_widget.model
+
+            # Get column indices
+            if "_calc_price" not in model.column_fields or "sg_price_static" not in model.column_fields:
+                return
+
+            price_col_idx = model.column_fields.index("_calc_price")
+            price_static_col_idx = model.column_fields.index("sg_price_static")
+
+            # Process each changed row
+            for row in range(top_left.row(), bottom_right.row() + 1):
+                # Check if the Price column was affected
+                if top_left.column() <= price_col_idx <= bottom_right.column():
+                    # Get the _calc_price formula
+                    price_index = model.index(row, price_col_idx)
+                    formula = model.data(price_index, QtCore.Qt.EditRole)
+
+                    if isinstance(formula, str) and formula.startswith('='):
+                        # Evaluate the formula to get the calculated price
+                        calculated_price = self.line_items_formula_evaluator.evaluate(formula, row, price_col_idx)
+
+                        # Convert to numeric value
+                        if isinstance(calculated_price, (int, float)):
+                            # Get current sg_price_static value
+                            price_static_index = model.index(row, price_static_col_idx)
+                            current_static_price = model.data(price_static_index, QtCore.Qt.EditRole)
+
+                            # Convert current value to numeric for comparison
+                            if current_static_price is None:
+                                current_static_price = 0
+                            elif isinstance(current_static_price, str):
+                                try:
+                                    current_static_price = float(current_static_price)
+                                except ValueError:
+                                    current_static_price = 0
+
+                            # Check if the value changed (with small tolerance for floating point comparison)
+                            if abs(calculated_price - current_static_price) > 0.01:
+                                logger.info(f"Line Item row {row}: Price changed from ${current_static_price:,.2f} to ${calculated_price:,.2f}, updating sg_price_static")
+
+                                # Update sg_price_static in the model (this will also update ShotGrid)
+                                model.setData(price_static_index, calculated_price, QtCore.Qt.EditRole)
+
+        except Exception as e:
+            logger.error(f"Error in _on_line_items_data_changed: {e}", exc_info=True)
 
 
 class RateCardDialog(QtWidgets.QDialog):
