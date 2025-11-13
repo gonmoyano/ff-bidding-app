@@ -662,7 +662,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         paste_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+V"), self)
         paste_shortcut.activated.connect(self._paste_selection)
 
-        logger.debug("Keyboard shortcuts set up: Ctrl+Z (undo), Ctrl+Y (redo), Ctrl+C (copy), Ctrl+V (paste)")
 
     def eventFilter(self, obj, event):
         """Event filter to handle Enter/Delete keys and double-clicks on index widgets."""
@@ -671,7 +670,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Get the stored model index
             index = obj.property("modelIndex")
             if index and index.isValid():
-                logger.info(f"Double-click detected on Assets widget at row {index.row()}")
                 self._on_cell_double_clicked(index)
                 return True
 
@@ -707,14 +705,12 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             self.model.set_field_schema(field_schema)
 
             # Debug: Log list fields and their values
-            logger.debug("=== Field Schema Debug ===")
             for col_idx, field_name in enumerate(self.model.column_fields):
                 if field_name in field_schema:
                     field_info = field_schema[field_name]
                     data_type = field_info.get("data_type")
                     if data_type == "list":
                         list_values = field_info.get("list_values", [])
-                        logger.debug(f"List field: {field_name}, values count: {len(list_values)}, values: {list_values[:5] if list_values else 'NONE'}")
 
             # Set up delegates for checkbox fields (list fields now use QMenu on double-click)
             for col_idx, field_name in enumerate(self.model.column_fields):
@@ -782,7 +778,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 unique_entities.append(entity)
 
         if len(unique_entities) < len(entities):
-            logger.debug(f"Deduplicated entities: {len(entities)} -> {len(unique_entities)}")
+            pass
 
         return unique_entities
 
@@ -797,7 +793,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # Get valid asset IDs from the current bid for validation
         valid_entity_ids = self._get_valid_asset_ids()
-        logger.debug(f"Setting up bid assets widgets with validation: {valid_entity_ids}")
 
         # Create widget for each row
         for row in range(self.model.rowCount()):
@@ -824,7 +819,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Update the model data with deduplicated entities
             if entities != bidding_scene_data.get("sg_bid_assets", []):
                 bidding_scene_data["sg_bid_assets"] = entities
-                logger.debug(f"Updated row {row} with deduplicated entities")
 
             # Create the widget with validation
             widget = MultiEntityReferenceWidget(
@@ -904,7 +898,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # The model expects the list of entity dicts
         self.model.setData(index, entities, QtCore.Qt.EditRole)
 
-        logger.info(f"Updated sg_bid_assets for row {row}: {[e.get('name') for e in entities]}")
 
     def set_current_bid(self, bid):
         """Set the current Bid for this widget.
@@ -913,7 +906,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             bid: Bid dictionary from ShotGrid
         """
         self.current_bid = bid
-        logger.debug(f"VFXBreakdownWidget: Current bid set to {bid.get('code') if bid else None}")
 
         # Refresh asset widgets with new validation when bid changes
         self._refresh_asset_widgets_validation()
@@ -929,7 +921,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # Get the new valid asset IDs
         valid_entity_ids = self._get_valid_asset_ids()
-        logger.debug(f"Refreshing asset widgets validation with IDs: {valid_entity_ids}")
 
         # Update all existing asset widgets
         for row in range(self.model.rowCount()):
@@ -939,7 +930,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             if isinstance(widget, MultiEntityReferenceWidget):
                 # Update the validation IDs for this widget
                 widget.set_valid_entity_ids(valid_entity_ids)
-                logger.debug(f"Updated validation for row {row}")
 
     def _on_selection_changed(self, selected, deselected):
         """Handle table selection changes to update bid assets widget visual state.
@@ -955,7 +945,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 if field_name == "sg_bid_assets":
                     widget = self.table_view.indexWidget(index)
                     if isinstance(widget, MultiEntityReferenceWidget):
-                        logger.debug(f"Setting deselected state for row {index.row()}")
                         widget.set_selected(False)
 
         # Update selected widgets
@@ -965,13 +954,13 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 if field_name == "sg_bid_assets":
                     widget = self.table_view.indexWidget(index)
                     if isinstance(widget, MultiEntityReferenceWidget):
-                        logger.debug(f"Setting selected state for row {index.row()}")
                         widget.set_selected(True)
 
     def _on_cell_double_clicked(self, index):
         """Handle double-click on a cell.
 
         Shows a dropdown menu for:
+            pass
         - sg_bid_assets column: asset selection menu
         - List type fields: value selection menu
 
@@ -996,7 +985,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Handle list type fields
         if hasattr(self.model, 'field_schema') and self.model.field_schema:
             field_info = self.model.field_schema.get(field_name, {})
-            logger.info(f"Double-click on {field_name}: field_info={field_info}")
 
             # Text fields that are configured for dropdowns should use the menu styling
             if (
@@ -1013,14 +1001,13 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
             if field_info.get("data_type") == "list":
                 list_values = field_info.get("list_values", [])
-                logger.info(f"List field {field_name} has {len(list_values)} values")
                 if list_values:
                     self._show_list_selection_menu(index, field_name, list_values)
                     return
                 else:
                     logger.warning(f"List field {field_name} has no list_values")
             else:
-                logger.info(f"Field {field_name} is not a list type (type={field_info.get('data_type')})")
+                pass
         else:
             logger.warning(f"No field_schema available for {field_name}")
 
@@ -1104,7 +1091,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 if isinstance(widget, MultiEntityReferenceWidget):
                     widget.set_entities(current_entities)
 
-                logger.info(f"Added asset {selected_asset.get('code')} to row {row}")
 
         # Connect signal
         menu.triggered.connect(on_action_triggered)
@@ -1184,16 +1170,13 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                             shared_list.sort(key=lambda v: v.lower() if isinstance(v, str) else str(v).lower())
                             self._on_dropdown_value_added(field_name, new_value)
                         self.model.setData(index, new_value, QtCore.Qt.EditRole)
-                        logger.info(f"Added new dropdown value '{new_value}' to '{field_name}'")
                 return
 
             # Persist selected value (may be None for cleared option)
             if selected_value is None:
                 self.model.setData(index, None, QtCore.Qt.EditRole)
-                logger.info(f"Cleared value for '{field_name}' at row {index.row()}")
             else:
                 self.model.setData(index, selected_value, QtCore.Qt.EditRole)
-                logger.info(f"Set '{field_name}' to '{selected_value}' for row {index.row()}")
 
         menu.triggered.connect(on_action_triggered)
 
@@ -1242,7 +1225,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             selected_value = action.data()
             # Update the model (even if None/empty)
             self.model.setData(index, selected_value, QtCore.Qt.EditRole)
-            logger.info(f"Set {field_name} to '{selected_value}' for row {index.row()}")
 
         # Connect signal
         menu.triggered.connect(on_action_triggered)
@@ -1310,7 +1292,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 ["id", "code", "name", "type"]
             )
 
-            logger.info(f"Found {len(assets)} Asset items in Bid Assets {bid_assets_id}")
             return assets
 
         except Exception as e:
@@ -1334,7 +1315,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Extract IDs into a set
         valid_ids = {asset['id'] for asset in assets if 'id' in asset}
 
-        logger.info(f"Valid asset IDs for current bid: {valid_ids}")
         return valid_ids
 
     def clear_data(self):
@@ -1348,7 +1328,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         if self.model.rowCount() > 0:
             # Recalculate column widths with new DPI scale
             self._autosize_columns()
-            logger.info("Updated table column widths for DPI scale change")
 
     def _on_search_changed(self, text):
         """Handle search text change."""
@@ -1358,7 +1337,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         """Handle header click for sorting."""
         # Block single-column sorting if compound sorting is active
         if self.model.compound_sort_columns:
-            logger.info("Single-column sorting disabled while compound sorting template is active")
             return
 
         # Toggle sort direction
@@ -1370,7 +1348,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.model.set_sort(column_index, direction)
         self._update_header_sort_indicators()
 
-        logger.info(f"Sorting by column {column_index}: {direction}")
 
     def _update_header_sort_indicators(self):
         """Update table headers to show sort indicators."""
@@ -1411,7 +1388,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             self.template_dropdown.setCurrentIndex(0)
 
         self._update_header_sort_indicators()
-        logger.info("Search and sorting cleared")
 
     def _open_compound_sort_dialog(self):
         """Open the compound sorting dialog."""
@@ -1452,7 +1428,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Update header indicators
             self._update_header_sort_indicators()
 
-            logger.info(f"Compound sort applied: {len(sort_config)} levels")
 
     def _open_config_columns_dialog(self):
         """Open the column configuration dialog."""
@@ -1485,7 +1460,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             self.table_view.setColumnHidden(col_index, not is_visible)
             # Save to settings
             self.app_settings.set_column_visibility(self.settings_key, self.column_visibility)
-            logger.info(f"Column '{field}' visibility changed to: {is_visible}")
 
         def on_dropdown_changed(field, has_dropdown):
             """Called when a dropdown checkbox is toggled."""
@@ -1494,7 +1468,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             self._apply_column_dropdowns()
             # Save to settings
             self.app_settings.set_column_dropdowns(self.settings_key, self.column_dropdowns)
-            logger.info(f"Column '{field}' dropdown changed to: {has_dropdown}")
 
         # Open dialog with columns in visual order and callbacks
         dialog = ConfigColumnsDialog(
@@ -1610,7 +1583,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # Save to settings
         self.app_settings.set("vfx_breakdown_row_height", value)
-        logger.info(f"Row height changed to {value}px")
 
     def _apply_column_dropdowns(self):
         """Apply dropdown delegates to columns marked for dropdowns."""
@@ -1649,9 +1621,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
                         self.table_view.setItemDelegateForColumn(col_idx, delegate)
                         active_delegate_fields.add(field_name)
-                        logger.info(
-                            f"Applied dropdown menu styling to '{field_name}' with {len(shared_list)} unique values"
-                        )
 
         # Remove delegates from fields that are no longer marked as dropdowns
         for field_name in list(self._dropdown_delegates.keys()):
@@ -1710,7 +1679,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             new_value: The new value that was added
         """
         # The value is already in the shared list, but we can log it or save to settings
-        logger.info(f"New dropdown value added to '{field_name}': '{new_value}'")
 
     def _get_unique_column_values(self, field_name):
         """Extract unique non-empty values from a column.
@@ -1749,7 +1717,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Save to settings
         self.app_settings.set_column_order(self.settings_key, column_order)
 
-        logger.info(f"Column moved: {self.model.column_fields[logical_index]} from position {old_visual_index} to {new_visual_index}")
 
     def _get_current_column_order(self):
         """Get the current visual order of columns.
@@ -1796,7 +1763,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                     if current_visual_index != visual_index:
                         header.moveSection(current_visual_index, visual_index)
 
-            logger.info(f"Loaded column order with {len(saved_order)} columns")
 
         finally:
             header.blockSignals(False)
@@ -1814,7 +1780,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Save to settings
         self.app_settings.set_column_widths(self.settings_key, widths)
 
-        logger.info(f"Column '{field_name}' resized from {old_size}px to {new_size}px")
 
     def _get_current_column_widths(self):
         """Get the current widths of all columns.
@@ -1851,7 +1816,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                     width = saved_widths[field_name]
                     self.table_view.setColumnWidth(logical_index, width)
 
-            logger.info(f"Loaded column widths for {len(saved_widths)} columns")
 
         finally:
             header.blockSignals(False)
@@ -1862,14 +1826,12 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             if self.model.compound_sort_columns:
                 self.model.clear_sorting()
                 self._update_header_sort_indicators()
-                logger.info("Compound sorting cleared")
             return
 
         templates = self.model.get_sort_templates()
         if template_name in templates:
             self.model.set_compound_sort(templates[template_name])
             self._update_header_sort_indicators()
-            logger.info(f"Sort template applied: {template_name}")
 
     def _update_template_dropdown(self):
         """Update the template dropdown with current templates."""
@@ -1953,7 +1915,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         num_cells = len(rows) * len(cols)
         self.statusMessageChanged.emit(f"Copied {num_cells} cell(s) to clipboard", False)
-        logger.info(f"Copied {len(rows)} row(s) × {len(cols)} col(s) to clipboard")
 
     def _paste_selection(self):
         """Paste from clipboard to selected cells."""
@@ -2083,7 +2044,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             self.model.redo_stack.clear()
 
             self.statusMessageChanged.emit(f"✓ Pasted {len(changes)} cell(s) to ShotGrid", False)
-            logger.info(f"Successfully pasted {len(changes)} cells")
 
         except Exception as e:
             logger.error(f"Failed to paste cells: {e}", exc_info=True)
@@ -2207,7 +2167,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         try:
             # Delete from ShotGrid
             self.sg_session.sg.delete("CustomEntity07", asset_id)
-            logger.info(f"Deleted Asset item: {asset_code} (ID: {asset_id})")
 
             # Remove from model data
             self.model.all_bidding_scenes_data.pop(data_row)
@@ -2271,7 +2230,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             }
 
             new_line_item = self.sg_session.sg.create("CustomEntity03", sg_data)
-            logger.info(f"Created new Line Item: {new_line_item}")
 
             # Link it to the Price List
             # Get current sg_line_items
@@ -2384,7 +2342,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             data_row: Index in all_bidding_scenes_data
             name: The name entered by the user
         """
-        logger.info(f"_save_unsaved_line_item called: data_row={data_row}, name={name}")
 
         # Get context
         context = self.context_provider if self.context_provider else self.parent()
@@ -2408,7 +2365,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         try:
             # Check if a Line Item with this name already exists in this project
-            logger.info(f"Checking if Line Item '{name}' already exists in project {project_id}")
             existing_items = self.sg_session.sg.find(
                 "CustomEntity03",
                 [
@@ -2440,14 +2396,12 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 return
 
             # Name is unique - create in ShotGrid
-            logger.info(f"Creating Line Item '{name}' in ShotGrid")
             sg_data = {
                 "project": {"type": "Project", "id": project_id},
                 "code": name
             }
 
             new_line_item = self.sg_session.sg.create("CustomEntity03", sg_data)
-            logger.info(f"Created new Line Item: {new_line_item}")
 
             # Update the local data with the new ID and remove the unsaved marker
             self.model.all_bidding_scenes_data[data_row]["id"] = new_line_item["id"]
@@ -2474,7 +2428,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             )
 
             self.statusMessageChanged.emit(f"Created Line Item '{name}'", False)
-            logger.info(f"Successfully saved Line Item '{name}' with ID {new_line_item['id']}")
 
         except Exception as e:
             logger.error(f"Failed to save Line Item: {e}", exc_info=True)
@@ -2508,7 +2461,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # If it's an unsaved local item, just remove it from the model
         if not line_item_id or is_unsaved:
-            logger.info(f"Removing unsaved Line Item from local data: {line_item_code}")
             self.model.all_bidding_scenes_data.pop(data_row)
             # Rebuild display mappings and notify views
             self.model.apply_filters()
@@ -2555,7 +2507,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
             # Delete from ShotGrid
             self.sg_session.sg.delete("CustomEntity03", line_item_id)
-            logger.info(f"Deleted Line Item: {line_item_code} (ID: {line_item_id})")
 
             # Reload data
             if hasattr(context, '_load_line_items'):
@@ -2594,7 +2545,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         sample_text = "M" * 200  # Use 'M' as it's typically the widest character
         text_column_max_px = fm.horizontalAdvance(sample_text) + extra_padding
 
-        logger.info(f"Auto-sizing {self.model.columnCount()} columns for {self.model.rowCount()} rows")
 
         # Now apply our constraints on top
         for col in range(self.model.columnCount()):
@@ -2617,22 +2567,18 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 # For text fields, cap at 200 characters
                 if current_width > text_column_max_px:
                     self.table_view.setColumnWidth(col, text_column_max_px)
-                    logger.info(f"Column {col} ({field_name}): text field capped at {text_column_max_px}px (~200 chars), was {current_width}px")
                 elif current_width < min_px:
                     self.table_view.setColumnWidth(col, min_px)
-                    logger.info(f"Column {col} ({field_name}): text field expanded to min {min_px}px")
                 else:
-                    logger.info(f"Column {col} ({field_name}): text field at {current_width}px")
+                    pass
             else:
                 # For other fields, use standard constraints
                 if current_width > max_px:
                     self.table_view.setColumnWidth(col, max_px)
-                    logger.debug(f"Column {col} ({field_name}, {data_type}): capped at {max_px}px, was {current_width}px")
                 elif current_width < min_px:
                     self.table_view.setColumnWidth(col, min_px)
-                    logger.debug(f"Column {col} ({field_name}, {data_type}): expanded to min {min_px}px")
                 else:
-                    logger.debug(f"Column {col} ({field_name}, {data_type}): at {current_width}px")
+                    pass
 
 
     def _on_model_status_changed(self, message, is_error):

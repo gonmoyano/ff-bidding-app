@@ -37,9 +37,9 @@ class FormulaEvaluator:
 
         # Log available sheets for debugging
         if self.sheet_models:
-            logger.info(f"FormulaEvaluator initialized with {len(self.sheet_models)} sheet(s): {list(self.sheet_models.keys())}")
+            pass
         else:
-            logger.info("FormulaEvaluator initialized with no cross-sheet references")
+            pass
 
     @staticmethod
     def col_index_to_letter(col):
@@ -350,14 +350,11 @@ class FormulaEvaluator:
                 return result
 
             except NotImplementedError:
-                logger.debug(f"Formula contains unsupported function: '{formula}'")
                 return "#NOT_SUPPORTED!"
             except Exception as e:
-                logger.debug(f"Error executing formula '{formula}': {e}")
                 return "#ERROR!"
 
         except Exception as e:
-            logger.debug(f"Error parsing formula '{formula}': {e}")
             return "#PARSE_ERROR!"
         finally:
             # Remove from calculating set
@@ -561,7 +558,6 @@ class FormulaEvaluator:
                 # Return the evaluated cell reference
                 return evaluated_ref
             except Exception as e:
-                logger.debug(f"Error resolving INDIRECT: {e}")
                 return "A1"  # Fallback to A1
 
         # Replace INDIRECT(...) with the resolved reference
@@ -692,18 +688,14 @@ class FormulaEvaluator:
             changed_row: Row index of the changed cell
             changed_col: Column index of the changed cell
         """
-        logger.info(f"[RECALC] recalculate_dependents called for row={changed_row}, col={changed_col}")
         dependents = self.find_dependent_cells(changed_row, changed_col)
-        logger.info(f"[RECALC] Found {len(dependents)} dependent cells: {dependents}")
 
         for dep_row, dep_col in dependents:
             index = self.table_model.index(dep_row, dep_col)
             formula = self.table_model.data(index, QtCore.Qt.EditRole)
-            logger.info(f"[RECALC] Dependent cell ({dep_row}, {dep_col}) formula: {formula[:50] if formula else None}")
 
             if isinstance(formula, str) and formula.startswith('='):
                 # Trigger recalculation by emitting dataChanged
-                logger.info(f"[RECALC] Emitting dataChanged for dependent cell ({dep_row}, {dep_col})")
                 self.table_model.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole])
             else:
                 logger.warning(f"[RECALC] Dependent cell ({dep_row}, {dep_col}) does not have a formula")

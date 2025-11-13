@@ -129,7 +129,6 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
         self.list_values = list_values or []
         # Store normalized versions for validation
         self.normalized_valid_values = {str(v).strip(): v for v in self.list_values if v}
-        logger.debug(f"ValidatedComboBoxDelegate initialized with {len(self.list_values)} valid values: {self.list_values}")
 
     def update_valid_values(self, valid_values):
         """Update the list of valid values and trigger repaint.
@@ -139,7 +138,6 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
         """
         self.list_values = valid_values if valid_values else []
         self.normalized_valid_values = {str(v).strip(): v for v in self.list_values if v}
-        logger.debug(f"ValidatedComboBoxDelegate updated with {len(self.list_values)} valid values: {self.list_values}")
 
     def paint(self, painter, option, index):
         """Paint the cell with validation coloring matching Asset pill colors."""
@@ -294,7 +292,6 @@ class EditCommand:
 
         # Update on ShotGrid using the configured entity type
         self.sg_session.sg.update(self.entity_type, bidding_scene_id, {self.field_name: update_value})
-        logger.info(f"Updated {self.entity_type} {bidding_scene_id} field '{self.field_name}' to: {update_value}")
 
     def _parse_value(self, text, field_name):
         """Parse text value to appropriate type based on ShotGrid schema."""
@@ -302,7 +299,6 @@ class EditCommand:
         field_info = self.field_schema.get(field_name, {})
         data_type = field_info.get("data_type")
 
-        logger.debug(f"Parsing field '{field_name}' with data_type '{data_type}': '{text}'")
 
         # Special handling for rate and mandays fields - always convert to float
         if field_name.endswith("_rate") or field_name.endswith("_mandays"):
@@ -310,7 +306,6 @@ class EditCommand:
                 return None
             try:
                 value = float(text)
-                logger.debug(f"Parsed '{text}' as float for rate/mandays field: {value}")
                 return value
             except (ValueError, TypeError):
                 logger.warning(f"Failed to parse '{text}' as float for field '{field_name}'")
@@ -334,7 +329,6 @@ class EditCommand:
         if data_type == "multi_entity":
             # If already a list, return it as-is
             if isinstance(text, list):
-                logger.debug(f"Returning multi_entity list with {len(text)} entities")
                 return text
             # Handle empty values
             if not text or text == "-" or text == "":
@@ -356,11 +350,9 @@ class EditCommand:
                 # Try int first
                 if '.' not in str(text):
                     value = int(text)
-                    logger.debug(f"Parsed '{text}' as int: {value}")
                     return value
                 else:
                     value = float(text)
-                    logger.debug(f"Parsed '{text}' as float: {value}")
                     return value
             except ValueError:
                 logger.warning(f"Failed to parse '{text}' as number for field '{field_name}'")
@@ -369,7 +361,6 @@ class EditCommand:
         elif data_type == "float":
             try:
                 value = float(text)
-                logger.debug(f"Parsed '{text}' as float: {value}")
                 return value
             except ValueError:
                 logger.warning(f"Failed to parse '{text}' as float for field '{field_name}'")
@@ -379,7 +370,6 @@ class EditCommand:
             try:
                 # Currency fields must be float or int, not string
                 value = float(text)
-                logger.debug(f"Parsed '{text}' as currency (float): {value}")
                 return value
             except ValueError:
                 logger.warning(f"Failed to parse '{text}' as currency for field '{field_name}'")
@@ -449,7 +439,6 @@ class PasteCommand:
 
         # Update on ShotGrid using the configured entity type
         self.sg_session.sg.update(self.entity_type, bidding_scene_id, {field_name: update_value})
-        logger.info(f"Updated {self.entity_type} {bidding_scene_id} field '{field_name}' to: {update_value}")
 
     def _parse_value(self, text, field_name):
         """Parse text value to appropriate type based on ShotGrid schema."""
@@ -459,7 +448,6 @@ class PasteCommand:
                 return None
             try:
                 value = float(text)
-                logger.debug(f"Parsed '{text}' as float for rate/mandays field: {value}")
                 return value
             except (ValueError, TypeError):
                 logger.warning(f"Failed to parse '{text}' as float for field '{field_name}'")
@@ -473,7 +461,6 @@ class PasteCommand:
         if data_type == "multi_entity":
             # If already a list, return it as-is
             if isinstance(text, list):
-                logger.debug(f"Returning multi_entity list with {len(text)} entities")
                 return text
             # Handle empty values
             if not text or text == "-" or text == "":
@@ -489,7 +476,6 @@ class PasteCommand:
         if not text or text == "-" or text == "":
             return None
 
-        logger.debug(f"Parsing field '{field_name}' with data_type '{data_type}': '{text}'")
 
         # Parse based on ShotGrid data type
         if data_type == "number":
@@ -772,7 +758,6 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
                 self._updating = False
 
-                logger.info(f"Updated unsaved item field '{field_name}' to '{new_value}' (local only, pending save)")
 
                 return True
 
@@ -797,7 +782,6 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
                 self._updating = False
 
-                logger.info(f"Updated virtual field '{field_name}' to '{new_value}' (local only)")
 
                 # Recalculate dependent cells if formula evaluator is available
                 if self.formula_evaluator:
@@ -842,7 +826,6 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
                     self._updating = False
                     reason = "undo/redo" if self._in_undo_redo else "automatic update"
-                    logger.info(f"Updated {field_name} during {reason} (no new undo command)")
 
                     # Recalculate dependent cells if formula evaluator is available
                     if self.formula_evaluator:
@@ -881,7 +864,6 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
                     self._updating = False
 
                     self.statusMessageChanged.emit(f"✓ Updated {field_name} on ShotGrid", False)
-                    logger.info(f"Successfully updated Bidding Scene {bidding_scene_data.get('id')} field '{field_name}' to '{new_value}'")
 
                     # Recalculate dependent cells if formula evaluator is available
                     if self.formula_evaluator:
@@ -1097,7 +1079,6 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         shown_rows = len(self.filtered_row_indices)
         self.rowCountChanged.emit(shown_rows, total_rows)
 
-        logger.info(f"Filters applied: showing {shown_rows} of {total_rows} rows")
 
     def _matches_global_search(self, bidding_scene_data, search_text):
         """Check if bidding scene data matches global search text."""
@@ -1258,7 +1239,6 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
     def undo(self):
         """Undo the last change."""
         if not self.undo_stack:
-            logger.info("Nothing to undo")
             return False
 
         command = self.undo_stack.pop()
@@ -1272,19 +1252,16 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         # Recalculate dependent cells AFTER flags are cleared
         if self.formula_evaluator:
             field_name = self.column_fields[command.col] if command.col < len(self.column_fields) else "unknown"
-            logger.info(f"[UNDO] Triggering recalculate_dependents for row={command.row}, col={command.col} (field={field_name})")
             self.formula_evaluator.recalculate_dependents(command.row, command.col)
         else:
             logger.warning(f"[UNDO] No formula_evaluator available to recalculate dependents")
 
-        logger.info(f"Undone edit at row {command.row}, col {command.col}")
         self.statusMessageChanged.emit(f"Undone change to {self.column_fields[command.col]}", False)
         return True
 
     def redo(self):
         """Redo the last undone change."""
         if not self.redo_stack:
-            logger.info("Nothing to redo")
             return False
 
         command = self.redo_stack.pop()
@@ -1299,7 +1276,6 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         if self.formula_evaluator:
             self.formula_evaluator.recalculate_dependents(command.row, command.col)
 
-        logger.info(f"Redone edit at row {command.row}, col {command.col}")
         self.statusMessageChanged.emit(f"Redone change to {self.column_fields[command.col]}", False)
         return True
 

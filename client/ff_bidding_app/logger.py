@@ -40,11 +40,6 @@ def get_logger():
         _logger = logging.getLogger("FFPackageManager")
         _logger.setLevel(logging.DEBUG)
 
-        _logger.info("=" * 80)
-        _logger.info("FF Package Manager Logging Started")
-        _logger.info(f"Log file: {log_file}")
-        _logger.info(f"Addon root: {addon_root}")
-        _logger.info("=" * 80)
 
         return _logger
 
