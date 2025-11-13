@@ -668,7 +668,6 @@ class FormulaEvaluator:
 
         # Get all potential short names for this field
         short_names = self._extract_short_field_names(field_name) if field_name else []
-        logger.info(f"[RECALC] Field '{field_name}' has short names: {short_names}")
 
         # Create patterns to match:
         # 1. Standard cell ref: A1, B2, etc.
@@ -681,7 +680,6 @@ class FormulaEvaluator:
         changed_header_refs = [f"{name}.{changed_row + 1}" for name in short_names]
 
         # Scan all cells to find those with formulas referencing the changed cell
-        found_any_formulas = False
         for row in range(self.table_model.rowCount()):
             for col in range(self.table_model.columnCount()):
                 index = self.table_model.index(row, col)
@@ -689,18 +687,11 @@ class FormulaEvaluator:
 
                 # Check if it's a formula
                 if isinstance(value, str) and value.startswith('='):
-                    found_any_formulas = True
-                    # Log formulas we find (only for the changed row for now)
-                    if row == changed_row:
-                        col_name = self.table_model.column_fields[col] if col < len(self.table_model.column_fields) else f"col{col}"
-                        logger.info(f"[RECALC] Found formula at ({row}, {col}) '{col_name}': {value[:300]}")
-
                     formula_depends_on_changed = False
 
                     # Check standard cell reference (A1, B2, etc.)
                     if re.search(r'\b' + changed_ref + r'\b', value, re.IGNORECASE):
                         formula_depends_on_changed = True
-                        logger.info(f"[RECALC] Match found via standard ref '{changed_ref}' at ({row}, {col})")
 
                     # Check explicit row header reference (field.1, field.2, etc.)
                     # Check all possible header refs including short names
@@ -708,7 +699,6 @@ class FormulaEvaluator:
                         for header_ref in changed_header_refs:
                             if re.search(r'\b' + re.escape(header_ref) + r'\b', value, re.IGNORECASE):
                                 formula_depends_on_changed = True
-                                logger.info(f"[RECALC] Match found via header ref '{header_ref}' at ({row}, {col})")
                                 break
 
                     # Check same-row header reference (field without row number)
@@ -716,16 +706,11 @@ class FormulaEvaluator:
                     if not formula_depends_on_changed and field_name and row == changed_row:
                         # Look for the field name (or any of its short versions) used without explicit row number
                         # Pattern: field name not followed by a dot and number
-                        logger.info(f"[RECALC] Checking same-row refs for row={row}, changed_row={changed_row}")
                         for name in short_names:
                             pattern = r'\b' + re.escape(name) + r'\b(?!\s*\.)'
-                            logger.info(f"[RECALC] Testing pattern '{pattern}' against formula")
                             if re.search(pattern, value, re.IGNORECASE):
                                 formula_depends_on_changed = True
-                                logger.info(f"[RECALC] Match found via same-row ref '{name}' at ({row}, {col})")
                                 break
-                            else:
-                                logger.info(f"[RECALC] Pattern '{pattern}' did not match for name '{name}'")
 
                     # Check sheet references (e.g., 'Sheet'!field.1, Sheet!field)
                     # This is a simple check - just see if the field name appears in a sheet reference
@@ -743,9 +728,6 @@ class FormulaEvaluator:
                     if formula_depends_on_changed:
                         dependents.add((row, col))
 
-        if not found_any_formulas:
-            logger.warning(f"[RECALC] No formulas found in entire table!")
-
         return dependents
 
     def recalculate_dependents(self, changed_row: int, changed_col: int):
@@ -755,18 +737,12 @@ class FormulaEvaluator:
             changed_row: Row index of the changed cell
             changed_col: Column index of the changed cell
         """
-        logger.info(f"[RECALC] recalculate_dependents called for row={changed_row}, col={changed_col}")
         dependents = self.find_dependent_cells(changed_row, changed_col)
-        logger.info(f"[RECALC] Found {len(dependents)} dependent cells: {dependents}")
 
         for dep_row, dep_col in dependents:
             index = self.table_model.index(dep_row, dep_col)
             formula = self.table_model.data(index, QtCore.Qt.EditRole)
-            logger.info(f"[RECALC] Dependent cell ({dep_row}, {dep_col}) formula: {formula[:50] if formula else None}")
 
             if isinstance(formula, str) and formula.startswith('='):
                 # Trigger recalculation by emitting dataChanged
-                logger.info(f"[RECALC] Emitting dataChanged for dependent cell ({dep_row}, {dep_col})")
                 self.table_model.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole])
-            else:
-                logger.warning(f"[RECALC] Dependent cell ({dep_row}, {dep_col}) does not have a formula")
