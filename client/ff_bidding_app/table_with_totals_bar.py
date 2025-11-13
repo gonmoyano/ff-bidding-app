@@ -95,6 +95,7 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         else:
             item = QtWidgets.QTableWidgetItem(str(value))
             item.setTextAlignment(Qt.AlignCenter)
+            item.setForeground(QtGui.QColor("white"))
             font = item.font()
             font.setBold(True)
             item.setFont(font)
@@ -201,8 +202,18 @@ class TableWithTotalsBar(QtWidgets.QWidget):
 
     def _setup_totals_bar(self):
         """Configure the totals bar appearance."""
-        # Hide headers
-        self.totals_bar.verticalHeader().setVisible(False)
+        # Configure vertical header to match main table
+        v_header = self.totals_bar.verticalHeader()
+        v_header.setVisible(True)  # Keep visible to maintain spacing
+        v_header.setDefaultSectionSize(self.table.verticalHeader().defaultSectionSize())
+
+        # Match the width of the main table's vertical header
+        main_v_header_width = self.table.verticalHeader().width()
+        v_header.setFixedWidth(main_v_header_width)
+        v_header.setMinimumWidth(main_v_header_width)
+        v_header.setMaximumWidth(main_v_header_width)
+
+        # Hide horizontal header
         self.totals_bar.horizontalHeader().setVisible(False)
 
         # Set fixed height
@@ -213,23 +224,30 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         self.totals_bar.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.totals_bar.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        # Styling
+        # Styling - Blue background matching Price column (#0078d4)
         self.totals_bar.setStyleSheet("""
             QTableWidget {
-                background-color: #f0f0f0;
+                background-color: #0078d4;
                 border-top: 2px solid #333;
                 font-weight: bold;
-                gridline-color: #c0c0c0;
+                gridline-color: #ffffff;
+                color: white;
+            }
+            QTableWidget::item {
+                background-color: #0078d4;
+                color: white;
+                padding: 4px;
             }
         """)
 
         # Disable editing
         self.totals_bar.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
 
-        # Initialize cells
+        # Initialize cells with white text
         for col in range(self.cols):
             item = QtWidgets.QTableWidgetItem("")
             item.setTextAlignment(Qt.AlignCenter)
+            item.setForeground(QtGui.QColor("white"))
             font = item.font()
             font.setBold(True)
             item.setFont(font)
@@ -242,16 +260,17 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         if h_scrollbar:
             h_scrollbar.valueChanged.connect(self._sync_horizontal_scroll)
 
-        # Column width sync (different for QTableWidget vs QTableView)
-        if self.is_table_widget:
-            header = self.table.horizontalHeader()
-        else:
-            header = self.table.horizontalHeader()
+        # Column width sync
+        h_header = self.table.horizontalHeader()
+        if h_header:
+            h_header.sectionResized.connect(self._sync_column_width)
 
-        if header:
-            header.sectionResized.connect(self._sync_column_width)
+        # Vertical header width sync
+        v_header = self.table.verticalHeader()
+        if v_header:
+            v_header.sectionResized.connect(self._update_totals_alignment)
 
-        # Alignment updates
+        # Alignment updates on scroll changes
         v_scrollbar = self.table.verticalScrollBar()
         if v_scrollbar:
             v_scrollbar.rangeChanged.connect(self._update_totals_alignment)
@@ -285,20 +304,16 @@ class TableWithTotalsBar(QtWidgets.QWidget):
     def _update_totals_alignment(self):
         """
         CRITICAL: Keep totals columns aligned with table columns.
-        Must account for scrollbar and row header.
+        Sync vertical header width to ensure proper alignment.
         """
-        scrollbar_width = 0
-        if self.table.verticalScrollBar().isVisible():
-            scrollbar_width = self.table.verticalScrollBar().width()
+        # Update the totals bar's vertical header width to match the main table
+        main_v_header_width = self.table.verticalHeader().width()
+        totals_v_header = self.totals_bar.verticalHeader()
 
-        row_header_width = self.table.verticalHeader().width()
-
-        self.totals_bar.setContentsMargins(
-            row_header_width,  # Left margin
-            0,
-            scrollbar_width,   # Right margin
-            0
-        )
+        if totals_v_header.width() != main_v_header_width:
+            totals_v_header.setFixedWidth(main_v_header_width)
+            totals_v_header.setMinimumWidth(main_v_header_width)
+            totals_v_header.setMaximumWidth(main_v_header_width)
 
     def refresh_totals(self):
         """Refresh totals - recalculate based on current table data."""
