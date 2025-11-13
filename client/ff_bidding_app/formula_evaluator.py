@@ -693,7 +693,7 @@ class FormulaEvaluator:
                     # Log formulas we find (only for the changed row for now)
                     if row == changed_row:
                         col_name = self.table_model.column_fields[col] if col < len(self.table_model.column_fields) else f"col{col}"
-                        logger.info(f"[RECALC] Found formula at ({row}, {col}) '{col_name}': {value[:100]}")
+                        logger.info(f"[RECALC] Found formula at ({row}, {col}) '{col_name}': {value[:300]}")
 
                     formula_depends_on_changed = False
 
@@ -716,12 +716,16 @@ class FormulaEvaluator:
                     elif field_name and row == changed_row:
                         # Look for the field name (or any of its short versions) used without explicit row number
                         # Pattern: field name not followed by a dot and number
+                        logger.info(f"[RECALC] Checking same-row refs for row={row}, changed_row={changed_row}")
                         for name in short_names:
                             pattern = r'\b' + re.escape(name) + r'\b(?!\s*\.)'
+                            logger.info(f"[RECALC] Testing pattern '{pattern}' against formula")
                             if re.search(pattern, value, re.IGNORECASE):
                                 formula_depends_on_changed = True
                                 logger.info(f"[RECALC] Match found via same-row ref '{name}' at ({row}, {col})")
                                 break
+                            else:
+                                logger.info(f"[RECALC] Pattern '{pattern}' did not match for name '{name}'")
 
                     # Check sheet references (e.g., 'Sheet'!field.1, Sheet!field)
                     # This is a simple check - just see if the field name appears in a sheet reference
