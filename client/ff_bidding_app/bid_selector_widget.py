@@ -2224,7 +2224,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         if bid:
             bid_name = bid.get("code") or f"Bid {bid.get('id', 'N/A')}"
-            logger.info(f"Bid selected: {bid_name} (ID: {bid.get('id')})")
+            logger.info(f"BID SELECTOR - Bid selected: {bid_name} (ID: {bid.get('id')})")
+            logger.info(f"  Bid data keys: {list(bid.keys())}")
+            logger.info(f"  sg_bid_assets: {bid.get('sg_bid_assets')}")
+            logger.info(f"  sg_vfx_breakdown: {bid.get('sg_vfx_breakdown')}")
+            logger.info(f"  sg_price_list: {bid.get('sg_price_list')}")
         else:
             if index == 0:
                 self._set_status("Select a Bid to view its details.")
@@ -2233,6 +2237,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self._update_bid_info_label(bid)
 
         # Emit signal
+        logger.info(f"BID SELECTOR - Emitting bidChanged signal with bid: {bid.get('code') if bid else None}")
         self.bidChanged.emit(bid)
 
     def _on_set_current_bid(self):
