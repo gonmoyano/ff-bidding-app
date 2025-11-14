@@ -525,6 +525,11 @@ class CostsTab(QtWidgets.QMainWindow):
         self.current_project_id = project_id
 
         if bid_data and project_id:
+            # Load Line Items first - needed for both VFX breakdown and asset cost pricing
+            logger.info("Loading Line Items for pricing...")
+            self._load_line_item_names()
+            self._load_line_items_with_prices()
+
             # Load VFX Breakdown linked to this bid into Shots Cost widget
             self._load_vfx_breakdown_for_bid(bid_data)
 
@@ -654,12 +659,7 @@ class CostsTab(QtWidgets.QMainWindow):
                 self.shots_cost_widget.load_bidding_scenes([])
                 return
 
-            # Load Line Items for VFX Shot Work validation
-            self._load_line_item_names()
-
-            # Load Line Items with prices for Price column calculation
-            self._load_line_items_with_prices()
-
+            # Line Items are loaded in set_bid() before this method is called
             # Populate virtual price columns for each bidding scene
             for scene in bidding_scenes_data:
                 vfx_shot_work = scene.get("sg_vfx_shot_work")
