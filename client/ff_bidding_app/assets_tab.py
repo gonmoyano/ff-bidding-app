@@ -178,8 +178,8 @@ class AssetsTab(QtWidgets.QWidget):
         # Extract bid assets name
         if isinstance(linked_bid_assets, dict):
             bid_assets_name = linked_bid_assets.get("name") or linked_bid_assets.get("code") or f"ID {linked_bid_assets.get('id', 'N/A')}"
-            self.bid_assets_info_label.setText(f"Current Bid linked to: {bid_assets_name}")
-            self.bid_assets_selector_group.setAdditionalInfo(f"Linked: {bid_assets_name}")
+            self.bid_assets_info_label.setText(f"Linked to current Bid: {bid_assets_name}")
+            self.bid_assets_selector_group.setAdditionalInfo(f"Linked to current Bid: {bid_assets_name}")
         else:
             self.bid_assets_info_label.setText("")
             self.bid_assets_selector_group.setAdditionalInfo("")

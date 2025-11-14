@@ -401,7 +401,11 @@ class RatesTab(QtWidgets.QWidget):
         # Start with "Current Price List: (name)"
         title_text = f"Current Price List: {price_list_name}"
 
-        # Add Rate Card info
+        # Show the Price List linked to current Bid
+        self.price_lists_info_label.setText(f"Linked to current Bid: {price_list_name}")
+        self.price_lists_selector_group.setAdditionalInfo(f"Linked to current Bid: {price_list_name}")
+
+        # Add Rate Card info to title text
         rate_card = price_list_data.get("sg_rate_card")
         if rate_card:
             # Extract rate card name/code
@@ -412,13 +416,6 @@ class RatesTab(QtWidgets.QWidget):
             else:
                 rate_card_name = str(rate_card)
             title_text += f" | Rate Card: {rate_card_name}"
-            # Update the dedicated info label with Rate Card
-            self.price_lists_info_label.setText(f"Rate Card: {rate_card_name}")
-            self.price_lists_selector_group.setAdditionalInfo(f"Rate Card: {rate_card_name}")
-        else:
-            # No Rate Card assigned
-            self.price_lists_info_label.setText("No Rate Card assigned")
-            self.price_lists_selector_group.setAdditionalInfo("")
 
         # Update the status label to just show the price list name
         self.price_lists_status_label.setText(f"Selected Price List: '{price_list_name}'.")

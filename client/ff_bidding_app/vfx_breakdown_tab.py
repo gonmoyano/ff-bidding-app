@@ -2692,8 +2692,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 breakdown_name = first_breakdown.get("name") or first_breakdown.get("code") or f"ID {first_breakdown.get('id', 'N/A')}"
 
         if breakdown_name:
-            self.vfx_breakdown_info_label.setText(f"Current Bid linked to: {breakdown_name}")
-            self.vfx_breakdown_selector_group.setAdditionalInfo(f"Linked: {breakdown_name}")
+            self.vfx_breakdown_info_label.setText(f"Linked to current Bid: {breakdown_name}")
+            self.vfx_breakdown_selector_group.setAdditionalInfo(f"Linked to current Bid: {breakdown_name}")
         else:
             self.vfx_breakdown_info_label.setText("")
             self.vfx_breakdown_selector_group.setAdditionalInfo("")
