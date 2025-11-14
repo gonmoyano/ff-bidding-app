@@ -617,6 +617,104 @@ class CostsTab(QtWidgets.QMainWindow):
 
         return widget
 
+    def _update_total_cost_summary(self):
+        """Update the Total Cost summary table with live totals from each dock."""
+        try:
+            # Get Shot Costs total
+            shot_total = 0.0
+            if hasattr(self, 'shots_cost_totals_wrapper') and hasattr(self, 'shots_cost_widget'):
+                if hasattr(self.shots_cost_widget, 'model') and self.shots_cost_widget.model:
+                    # Find the Price column index (_calc_price)
+                    try:
+                        price_col_idx = self.shots_cost_widget.model.column_fields.index("_calc_price")
+                        total_str = self.shots_cost_totals_wrapper.get_total(price_col_idx)
+                        # Parse the total string (format: "$1,234.56")
+                        shot_total = self._parse_currency_value(total_str)
+                    except (ValueError, AttributeError) as e:
+                        logger.debug(f"Could not get shot costs total: {e}")
+
+            # Get Asset Costs total
+            asset_total = 0.0
+            if hasattr(self, 'asset_cost_totals_wrapper') and hasattr(self, 'asset_cost_widget'):
+                if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
+                    # Find the Price column index (_calc_price)
+                    try:
+                        price_col_idx = self.asset_cost_widget.model.column_fields.index("_calc_price")
+                        total_str = self.asset_cost_totals_wrapper.get_total(price_col_idx)
+                        # Parse the total string (format: "$1,234.56")
+                        asset_total = self._parse_currency_value(total_str)
+                    except (ValueError, AttributeError) as e:
+                        logger.debug(f"Could not get asset costs total: {e}")
+
+            # Get Misc total (for now, 0.00 - will be implemented later)
+            misc_total = 0.0
+
+            # Calculate grand total
+            grand_total = shot_total + asset_total + misc_total
+
+            # Get currency symbol
+            currency_symbol = "$"
+            if self.app_settings:
+                currency_symbol = self.app_settings.get_currency() or "$"
+
+            # Update the summary table
+            self.total_cost_table.item(0, 1).setText(f"{currency_symbol}{shot_total:,.2f}")
+            self.total_cost_table.item(1, 1).setText(f"{currency_symbol}{asset_total:,.2f}")
+            self.total_cost_table.item(2, 1).setText(f"{currency_symbol}{misc_total:,.2f}")
+            self.total_cost_table.item(3, 1).setText(f"{currency_symbol}{grand_total:,.2f}")
+
+            logger.debug(f"Updated Total Cost summary: Shots=${shot_total:,.2f}, Assets=${asset_total:,.2f}, Total=${grand_total:,.2f}")
+
+        except Exception as e:
+            logger.error(f"Error updating Total Cost summary: {e}", exc_info=True)
+
+    def _parse_currency_value(self, value_str):
+        """Parse a currency string and return the numeric value.
+
+        Args:
+            value_str: String like "$1,234.56" or "1234.56"
+
+        Returns:
+            float: Parsed numeric value, or 0.0 if parsing fails
+        """
+        if not value_str:
+            return 0.0
+
+        try:
+            # Remove currency symbols, commas, and whitespace
+            cleaned = value_str.replace('$', '').replace('€', '').replace('£', '').replace(',', '').strip()
+            return float(cleaned)
+        except (ValueError, AttributeError):
+            return 0.0
+
+    def _on_shots_data_changed(self):
+        """Handle data changes in the Shots Cost model - recalculate totals and update summary."""
+        if hasattr(self, 'shots_cost_totals_wrapper') and hasattr(self, 'shots_cost_widget'):
+            if hasattr(self.shots_cost_widget, 'model') and self.shots_cost_widget.model:
+                try:
+                    # Find the Price column index
+                    price_col_idx = self.shots_cost_widget.model.column_fields.index("_calc_price")
+                    # Recalculate totals
+                    self.shots_cost_totals_wrapper.calculate_totals(columns=[price_col_idx], skip_first_col=True)
+                    # Update Total Cost summary
+                    self._update_total_cost_summary()
+                except (ValueError, AttributeError) as e:
+                    logger.debug(f"Could not recalculate shots totals: {e}")
+
+    def _on_assets_data_changed(self):
+        """Handle data changes in the Assets Cost model - recalculate totals and update summary."""
+        if hasattr(self, 'asset_cost_totals_wrapper') and hasattr(self, 'asset_cost_widget'):
+            if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
+                try:
+                    # Find the Price column index
+                    price_col_idx = self.asset_cost_widget.model.column_fields.index("_calc_price")
+                    # Recalculate totals
+                    self.asset_cost_totals_wrapper.calculate_totals(columns=[price_col_idx], skip_first_col=True)
+                    # Update Total Cost summary
+                    self._update_total_cost_summary()
+                except (ValueError, AttributeError) as e:
+                    logger.debug(f"Could not recalculate assets totals: {e}")
+
     def _update_total_cost_visibility(self):
         """Update the Total Cost dock visibility based on Shots and Assets dock states."""
         # Check if both Shots Cost and Assets Cost docks are collapsed
@@ -668,6 +766,9 @@ class CostsTab(QtWidgets.QMainWindow):
             self._refresh_asset_cost()
             logger.info("Finished refreshing Asset Cost")
             self._refresh_total_cost()
+
+            # Update Total Cost summary with initial totals
+            QtCore.QTimer.singleShot(100, self._update_total_cost_summary)
         else:
             # Clear all cost views
             if hasattr(self, 'shots_cost_widget'):
@@ -894,6 +995,10 @@ class CostsTab(QtWidgets.QMainWindow):
                     # Calculate totals only for Price column (formulas will be evaluated)
                     self.shots_cost_totals_wrapper.calculate_totals(columns=[price_col_index], skip_first_col=True)
                     logger.info(f"  ✓ Configured totals bar for Price column (index {price_col_index})")
+
+                # Connect model dataChanged signal to update Total Cost summary
+                self.shots_cost_widget.model.dataChanged.connect(self._on_shots_data_changed)
+                logger.info(f"  ✓ Connected shots model dataChanged signal to Total Cost summary update")
 
                 # Force the header view to update
                 if hasattr(self.shots_cost_widget, 'table_view'):
@@ -1369,6 +1474,10 @@ class CostsTab(QtWidgets.QMainWindow):
                     # Calculate totals only for Price column (formulas will be evaluated)
                     self.asset_cost_totals_wrapper.calculate_totals(columns=[price_col_index], skip_first_col=True)
                     logger.info(f"  ✓ Configured totals bar for Price column (index {price_col_index})")
+
+                # Connect model dataChanged signal to update Total Cost summary
+                self.asset_cost_widget.model.dataChanged.connect(self._on_assets_data_changed)
+                logger.info(f"  ✓ Connected assets model dataChanged signal to Total Cost summary update")
 
                 # Force the header view to update
                 if hasattr(self.asset_cost_widget, 'table_view'):
