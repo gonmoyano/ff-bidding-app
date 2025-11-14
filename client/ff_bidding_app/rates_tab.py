@@ -312,15 +312,24 @@ class RatesTab(QtWidgets.QWidget):
                     # No linked Price List - trigger cascade
                     logger.info("No Price List linked to Bid - selecting placeholder")
                     self._on_price_lists_changed(0)  # Manually trigger cascade
+
+                # Update info label to show linked Price List
+                self._update_price_list_info_label()
             else:
                 self._set_price_lists_status("No Price Lists found for this project.")
                 self.price_lists_set_btn.setEnabled(False)
                 # Trigger cascade to clear downstream
                 self._on_price_lists_changed(0)
+                # Clear info label
+                self.price_lists_info_label.setText("")
+                self.price_lists_selector_group.setAdditionalInfo("")
 
         except Exception as e:
             logger.error(f"Failed to refresh Price Lists: {e}", exc_info=True)
             self._set_price_lists_status("Failed to load Price Lists.", is_error=True)
+            # Clear info label on error
+            self.price_lists_info_label.setText("")
+            self.price_lists_selector_group.setAdditionalInfo("")
 
     def _on_price_lists_changed(self, index):
         """Handle Price Lists selection change.
@@ -332,7 +341,7 @@ class RatesTab(QtWidgets.QWidget):
         if index < 0:
             self.current_price_list_id = None
             self.current_price_list_data = None
-            self._update_price_list_info_label(None)
+            self._update_price_list_info_label()
             # Ensure cascade happens even for invalid index
             if hasattr(self, 'line_items_widget'):
                 self._clear_line_items_tab()
@@ -344,7 +353,7 @@ class RatesTab(QtWidgets.QWidget):
             self.current_price_list_id = None
             self.current_price_list_data = None
             self._set_price_lists_status("Select a Price List to view details.")
-            self._update_price_list_info_label(None)
+            self._update_price_list_info_label()
             # ALWAYS Clear Line Items tab when placeholder selected
             if hasattr(self, 'line_items_widget'):
                 self._clear_line_items_tab()
@@ -374,57 +383,34 @@ class RatesTab(QtWidgets.QWidget):
             )
             self.current_price_list_data = price_list_data
             logger.info(f"Fetched Price List data: {price_list_data}")
-            # Update the info label with Rate Card and Line Item details
-            self._update_price_list_info_label(price_list_data)
             # Load Rate Card data for formula evaluator
             self._load_rate_card_for_formula_evaluator()
         except Exception as e:
             logger.error(f"Failed to fetch Price List data: {e}", exc_info=True)
             self.current_price_list_data = None
-            self._update_price_list_info_label(None)
 
-    def _update_price_list_info_label(self, price_list_data):
-        """Update the price list info label and group box title with Rate Card info.
-
-        Args:
-            price_list_data: Price List data dict or None
-        """
-        if not price_list_data:
-            # Clear labels and group box title if no price list selected
-            self.price_lists_status_label.setText("Select a Bid to view Price Lists.")
+    def _update_price_list_info_label(self):
+        """Update the info label to show linked Price List from current Bid."""
+        if not self.current_bid_data:
             self.price_lists_info_label.setText("")
             self.price_lists_selector_group.setAdditionalInfo("")
             return
 
-        # Get price list name for title bar
-        price_list_name = price_list_data.get("code") or f"Price List {price_list_data.get('id', 'N/A')}"
-        # Start with "Current Price List: (name)"
-        title_text = f"Current Price List: {price_list_name}"
-
-        # Add Rate Card info
-        rate_card = price_list_data.get("sg_rate_card")
-        if rate_card:
-            # Extract rate card name/code
-            if isinstance(rate_card, dict):
-                rate_card_name = rate_card.get("name") or rate_card.get("code") or f"ID {rate_card.get('id', 'N/A')}"
-            elif isinstance(rate_card, list) and rate_card:
-                rate_card_name = rate_card[0].get("name") or rate_card[0].get("code") or f"ID {rate_card[0].get('id', 'N/A')}"
-            else:
-                rate_card_name = str(rate_card)
-            title_text += f" | Rate Card: {rate_card_name}"
-            # Update the dedicated info label with Rate Card
-            self.price_lists_info_label.setText(f"Rate Card: {rate_card_name}")
-            self.price_lists_selector_group.setAdditionalInfo(f"Rate Card: {rate_card_name}")
-        else:
-            # No Rate Card assigned
-            self.price_lists_info_label.setText("No Rate Card assigned")
+        # Get linked Price List from Bid
+        linked_price_list = self.current_bid_data.get("sg_price_list")
+        if not linked_price_list:
+            self.price_lists_info_label.setText("")
             self.price_lists_selector_group.setAdditionalInfo("")
+            return
 
-        # Update the status label to just show the price list name
-        self.price_lists_status_label.setText(f"Selected Price List: '{price_list_name}'.")
-
-        # Update the group box title with price list name and info (for collapsed state)
-        self.price_lists_group_box.setAdditionalInfo(title_text)
+        # Extract price list name
+        if isinstance(linked_price_list, dict):
+            price_list_name = linked_price_list.get("code") or linked_price_list.get("name") or f"ID {linked_price_list.get('id', 'N/A')}"
+            self.price_lists_info_label.setText(f"Linked to current Bid: {price_list_name}")
+            self.price_lists_selector_group.setAdditionalInfo(f"Linked to current Bid: {price_list_name}")
+        else:
+            self.price_lists_info_label.setText("")
+            self.price_lists_selector_group.setAdditionalInfo("")
 
     def _load_rate_card_for_formula_evaluator(self):
         """Load the Rate Card data for the current Price List into the formula evaluator.
