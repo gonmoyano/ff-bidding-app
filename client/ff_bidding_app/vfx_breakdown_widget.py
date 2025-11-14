@@ -14,12 +14,14 @@ try:
     from .settings import AppSettings
     from .multi_entity_reference_widget import MultiEntityReferenceWidget
     from .formula_evaluator import FormulaEvaluator
+    from .bid_selector_widget import CollapsibleGroupBox
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
     from vfx_breakdown_model import VFXBreakdownModel, PasteCommand, CheckBoxDelegate
     from settings import AppSettings
     from multi_entity_reference_widget import MultiEntityReferenceWidget
     from formula_evaluator import FormulaEvaluator
+    from bid_selector_widget import CollapsibleGroupBox
 
 
 class NoElideDelegate(QtWidgets.QStyledItemDelegate):
@@ -535,8 +537,12 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # Toolbar (search and filter controls)
         self.toolbar_widget = None
+        self.toolbar_group = None
         if self.show_toolbar:
-            # Create a container widget for the toolbar so we can hide/show it easily
+            # Create collapsible group for toolbar
+            self.toolbar_group = CollapsibleGroupBox("Search & Sort")
+
+            # Create a container widget for the toolbar contents
             self.toolbar_widget = QtWidgets.QWidget()
             toolbar_layout = QtWidgets.QHBoxLayout(self.toolbar_widget)
             toolbar_layout.setContentsMargins(0, 0, 0, 0)
@@ -595,7 +601,14 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             self.row_count_label.setStyleSheet("color: #606060; padding: 2px 4px;")
             toolbar_layout.addWidget(self.row_count_label)
 
-            layout.addWidget(self.toolbar_widget)
+            # Add toolbar widget to collapsible group
+            self.toolbar_group.addWidget(self.toolbar_widget)
+
+            # Set default state to collapsed
+            self.toolbar_group.set_collapsed(True)
+
+            # Add collapsible group to main layout
+            layout.addWidget(self.toolbar_group)
 
         # Table view
         self.table_view = QtWidgets.QTableView()
