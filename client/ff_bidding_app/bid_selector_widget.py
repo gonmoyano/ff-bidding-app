@@ -34,25 +34,30 @@ class CollapsibleGroupBox(QtWidgets.QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # Toggle button with arrow
-        self.toggle_button = QtWidgets.QPushButton()
-        self.toggle_button.setCheckable(True)
-        self.toggle_button.setChecked(True)
-        self.toggle_button.setStyleSheet("""
-            QPushButton {
-                text-align: left;
+        # Create a custom title bar widget with label for rich text support
+        self.title_bar = QtWidgets.QWidget()
+        self.title_bar.setStyleSheet("""
+            QWidget {
                 border: 1px solid #555555;
                 border-radius: 4px;
                 padding: 3px 5px;
                 background-color: #2b2b2b;
-                color: #e0e0e0;
-                font-weight: bold;
-                font-size: 11px;
             }
         """)
-        self.toggle_button.clicked.connect(self._on_toggle)
+        self.title_bar.setCursor(QtCore.Qt.PointingHandCursor)
+        self.title_bar.mousePressEvent = lambda event: self._on_toggle()
+
+        title_layout = QtWidgets.QHBoxLayout(self.title_bar)
+        title_layout.setContentsMargins(2, 2, 2, 2)
+
+        # Label with rich text support
+        self.title_label = QtWidgets.QLabel()
+        self.title_label.setStyleSheet("color: #e0e0e0; font-weight: bold; font-size: 11px; border: none; background: transparent;")
+        self.title_label.setTextFormat(QtCore.Qt.RichText)
+        title_layout.addWidget(self.title_label)
+
         self._update_button_text()
-        main_layout.addWidget(self.toggle_button)
+        main_layout.addWidget(self.title_bar)
 
         # Content frame
         self.content_frame = QtWidgets.QFrame()
@@ -70,14 +75,13 @@ class CollapsibleGroupBox(QtWidgets.QWidget):
     def _update_button_text(self):
         """Update button text with arrow indicator and additional info."""
         arrow = "▼" if not self.is_collapsed else "▶"
-        # Only show additional info when collapsed, and use HTML for colored text
+        # Show additional info when collapsed with blue color
         if self.is_collapsed and self.additional_info:
             # Use HTML to color the additional info in blue
-            self.toggle_button.setText(f"{arrow} {self.base_title}")
-            # Add additional info as rich text with blue color
-            self.toggle_button.setText(f'<html><head/><body><p>{arrow} {self.base_title} | <span style="color:#6b9bd1;">{self.additional_info}</span></p></body></html>')
+            html_text = f'{arrow} {self.base_title} | <span style="color:#6b9bd1;">{self.additional_info}</span>'
+            self.title_label.setText(html_text)
         else:
-            self.toggle_button.setText(f"{arrow} {self.base_title}")
+            self.title_label.setText(f"{arrow} {self.base_title}")
 
     def _on_toggle(self):
         """Toggle the visibility of the content."""
