@@ -398,8 +398,8 @@ class RatesTab(QtWidgets.QWidget):
 
         # Get price list name for title bar
         price_list_name = price_list_data.get("code") or f"Price List {price_list_data.get('id', 'N/A')}"
-        # Start with "Current Price List: (name)"
-        title_text = f"Current Price List: {price_list_name}"
+        # Start with "Linked to Current Bid: (name)"
+        title_text = f"Linked to Current Bid: {price_list_name}"
 
         # Show the Price List linked to current Bid
         self.price_lists_info_label.setText(f"Linked to current Bid: {price_list_name}")
