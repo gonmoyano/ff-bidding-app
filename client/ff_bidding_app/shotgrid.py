@@ -332,7 +332,7 @@ class ShotgridClient:
             List of Bid dictionaries
         """
         if fields is None:
-            fields = ["id", "code", "sg_bid_type", "sg_vfx_breakdown", "created_at", "updated_at"]
+            fields = ["id", "code", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list", "created_at", "updated_at"]
         if order is None:
             order = [{"field_name": "created_at", "direction": "desc"}]
 

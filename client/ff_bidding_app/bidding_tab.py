@@ -197,6 +197,11 @@ class BiddingTab(QtWidgets.QWidget):
         if hasattr(self, 'costs_tab'):
             if bid_data and self.current_project_id:
                 # Pass full bid_data for costs calculation
+                logger.info(f"BIDDING TAB - Passing bid to costs_tab:")
+                logger.info(f"  Bid ID: {bid_data.get('id')}")
+                logger.info(f"  Bid Code: {bid_data.get('code')}")
+                logger.info(f"  sg_bid_assets present: {'sg_bid_assets' in bid_data}")
+                logger.info(f"  sg_bid_assets value: {bid_data.get('sg_bid_assets')}")
                 self.costs_tab.set_bid(bid_data, self.current_project_id)
             else:
                 # Clear costs tab if no bid selected (cascading reset)
