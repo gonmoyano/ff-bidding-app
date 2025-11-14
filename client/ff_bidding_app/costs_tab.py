@@ -22,73 +22,8 @@ except ImportError:
     from table_with_totals_bar import TableWithTotalsBar
 
 
-class CollapsibleDockTitleBar(QtWidgets.QWidget):
-    """Custom title bar for collapsible dock widgets."""
-
-    def __init__(self, dock_widget, parent=None):
-        """Initialize the title bar.
-
-        Args:
-            dock_widget: The dock widget this title bar belongs to
-            parent: Parent widget
-        """
-        super().__init__(parent)
-        self.dock_widget = dock_widget
-
-        # Create layout
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(5, 0, 5, 0)
-        layout.setSpacing(5)
-
-        # Collapse/expand button
-        self.collapse_btn = QtWidgets.QToolButton()
-        self.collapse_btn.setArrowType(QtCore.Qt.DownArrow)
-        self.collapse_btn.setAutoRaise(True)
-        self.collapse_btn.clicked.connect(self._on_collapse_clicked)
-        self.collapse_btn.setToolTip("Collapse/Expand")
-        layout.addWidget(self.collapse_btn)
-
-        # Title label
-        self.title_label = QtWidgets.QLabel(dock_widget.windowTitle())
-        self.title_label.setStyleSheet("font-weight: bold;")
-        layout.addWidget(self.title_label)
-
-        layout.addStretch()
-
-        # Style
-        self.setStyleSheet("""
-            CollapsibleDockTitleBar {
-                background-color: palette(window);
-                border: 1px solid palette(mid);
-                border-bottom: 1px solid palette(dark);
-            }
-            QToolButton:hover {
-                background-color: palette(light);
-            }
-        """)
-
-    def _on_collapse_clicked(self):
-        """Handle collapse button click."""
-        if hasattr(self.dock_widget, 'toggle_collapse'):
-            self.dock_widget.toggle_collapse()
-
-    def set_collapsed(self, collapsed):
-        """Update the button arrow based on collapsed state.
-
-        Args:
-            collapsed: Whether the dock is collapsed
-        """
-        if collapsed:
-            self.collapse_btn.setArrowType(QtCore.Qt.RightArrow)
-        else:
-            self.collapse_btn.setArrowType(QtCore.Qt.DownArrow)
-
-
 class CostDock(QtWidgets.QDockWidget):
-    """A collapsible dockable cost widget."""
-
-    # Signal emitted when collapsed state changes
-    collapsed_state_changed = QtCore.Signal(bool)
+    """A dockable cost widget."""
 
     def __init__(self, title, widget, parent=None):
         """Initialize the cost dock.
@@ -103,229 +38,6 @@ class CostDock(QtWidgets.QDockWidget):
         self.setWidget(widget)
         # No features - docks cannot be closed, moved, or floated
         self.setFeatures(QtWidgets.QDockWidget.NoDockWidgetFeatures)
-
-        # Create custom title bar
-        self.title_bar = CollapsibleDockTitleBar(self)
-        self.setTitleBarWidget(self.title_bar)
-
-        # Track collapsed state
-        self._is_collapsed = False
-        self._content_widget = widget
-        self._expanded_size = None
-
-        # Store original margins for restoration when expanding
-        self._saved_margins = None
-        self._saved_layout_margins = None
-        self._saved_layout_spacing = None
-        self._saved_wrapper_margins = None
-        self._saved_wrapper_spacing = None
-
-    def toggle_collapse(self):
-        """Toggle the collapsed state of the dock."""
-        if self._is_collapsed:
-            self.expand()
-        else:
-            self.collapse()
-
-    def collapse(self):
-        """Collapse the dock to show only the title bar (or totals bar if available)."""
-        if self._is_collapsed:
-            return
-
-        # Save current size
-        self._expanded_size = self.size()
-
-        # Check if content widget contains a TableWithTotalsBar that we should partially collapse
-        totals_wrapper = self._find_totals_wrapper()
-        if totals_wrapper:
-            # Collapse just the table, keep totals bar visible
-            totals_wrapper.collapse_table()
-
-            # Also hide the toolbar if it exists
-            toolbar = self._find_toolbar()
-            if toolbar:
-                toolbar.setVisible(False)
-
-            # Save and remove all content margins to eliminate spacing
-            if self._content_widget and self._content_widget.layout():
-                layout = self._content_widget.layout()
-                # Save original margins and spacing
-                self._saved_layout_margins = layout.contentsMargins()
-                self._saved_layout_spacing = layout.spacing()
-                # Set to 0 to remove spacing
-                layout.setContentsMargins(0, 0, 0, 0)
-                layout.setSpacing(0)
-
-            # Also remove margins from the totals wrapper's layout
-            if hasattr(totals_wrapper, 'layout') and totals_wrapper.layout():
-                wrapper_layout = totals_wrapper.layout()
-                if not hasattr(self, '_saved_wrapper_margins'):
-                    self._saved_wrapper_margins = wrapper_layout.contentsMargins()
-                    self._saved_wrapper_spacing = wrapper_layout.spacing()
-                wrapper_layout.setContentsMargins(0, 0, 0, 0)
-                wrapper_layout.setSpacing(0)
-
-            # Save and remove content margins from the dock widget itself
-            self._saved_margins = self.contentsMargins()
-            self.setContentsMargins(0, 0, 0, 0)
-
-            # Calculate height: title bar + totals bar (no padding, no spacing)
-            # Use actual height instead of sizeHint for more accurate measurement
-            title_height = self.title_bar.height() if self.title_bar.height() > 0 else self.title_bar.sizeHint().height()
-            totals_height = totals_wrapper.totals_bar.height() if totals_wrapper.totals_bar.height() > 0 else totals_wrapper.totals_bar.sizeHint().height()
-
-            # Set exact height with no extra space
-            collapsed_height = title_height + totals_height
-            self.setMinimumHeight(collapsed_height)
-            self.setMaximumHeight(collapsed_height)
-        else:
-            # Traditional collapse: hide content widget entirely
-            if self._content_widget:
-                self._content_widget.hide()
-            # Set minimum and maximum height to title bar height
-            title_height = self.title_bar.sizeHint().height()
-            self.setMinimumHeight(title_height)
-            self.setMaximumHeight(title_height)
-
-        self._is_collapsed = True
-        self.title_bar.set_collapsed(True)
-
-        # Emit signal
-        self.collapsed_state_changed.emit(True)
-
-        logger.debug(f"Collapsed dock: {self.windowTitle()}")
-
-    def expand(self):
-        """Expand the dock to show the content widget."""
-        if not self._is_collapsed:
-            return
-
-        # Check if content widget contains a TableWithTotalsBar
-        totals_wrapper = self._find_totals_wrapper()
-        if totals_wrapper:
-            # Expand the table to show both table and totals bar
-            totals_wrapper.expand_table()
-
-            # Also show the toolbar if it exists
-            toolbar = self._find_toolbar()
-            if toolbar:
-                toolbar.setVisible(True)
-
-            # Restore layout margins and spacing
-            if self._content_widget and self._content_widget.layout():
-                layout = self._content_widget.layout()
-                if self._saved_layout_margins is not None:
-                    layout.setContentsMargins(self._saved_layout_margins)
-                    self._saved_layout_margins = None
-                if self._saved_layout_spacing is not None:
-                    layout.setSpacing(self._saved_layout_spacing)
-                    self._saved_layout_spacing = None
-
-            # Restore totals wrapper margins and spacing
-            if hasattr(totals_wrapper, 'layout') and totals_wrapper.layout():
-                wrapper_layout = totals_wrapper.layout()
-                if self._saved_wrapper_margins is not None:
-                    wrapper_layout.setContentsMargins(self._saved_wrapper_margins)
-                    self._saved_wrapper_margins = None
-                if self._saved_wrapper_spacing is not None:
-                    wrapper_layout.setSpacing(self._saved_wrapper_spacing)
-                    self._saved_wrapper_spacing = None
-
-            # Restore dock widget margins
-            if self._saved_margins is not None:
-                self.setContentsMargins(self._saved_margins)
-                self._saved_margins = None
-        else:
-            # Traditional expand: show content widget
-            if self._content_widget:
-                self._content_widget.show()
-
-        # Reset size constraints
-        self.setMinimumHeight(0)
-        self.setMaximumHeight(16777215)  # Qt's QWIDGETSIZE_MAX
-
-        # Restore size if we saved it
-        if self._expanded_size:
-            self.resize(self._expanded_size)
-
-        self._is_collapsed = False
-        self.title_bar.set_collapsed(False)
-
-        # Emit signal
-        self.collapsed_state_changed.emit(False)
-
-        logger.debug(f"Expanded dock: {self.windowTitle()}")
-
-    def _find_totals_wrapper(self):
-        """Find TableWithTotalsBar widget within the content widget.
-
-        Returns:
-            TableWithTotalsBar instance or None if not found
-        """
-        if not self._content_widget:
-            return None
-
-        # Check if the content widget itself is a TableWithTotalsBar
-        if isinstance(self._content_widget, TableWithTotalsBar):
-            return self._content_widget
-
-        # Search through the widget's children recursively
-        def find_in_children(widget):
-            for child in widget.findChildren(TableWithTotalsBar):
-                return child
-            return None
-
-        return find_in_children(self._content_widget)
-
-    def _find_toolbar(self):
-        """Find the toolbar group widget within the content widget.
-
-        Returns:
-            Toolbar group widget or None if not found
-        """
-        if not self._content_widget:
-            return None
-
-        # Check if the content widget itself is a VFXBreakdownWidget
-        if isinstance(self._content_widget, VFXBreakdownWidget):
-            # Return toolbar_group if available (wrapped in collapsible group), otherwise toolbar_widget
-            if hasattr(self._content_widget, 'toolbar_group') and self._content_widget.toolbar_group:
-                return self._content_widget.toolbar_group
-            elif hasattr(self._content_widget, 'toolbar_widget') and self._content_widget.toolbar_widget:
-                return self._content_widget.toolbar_widget
-
-        # Search for VFXBreakdownWidget in children
-        # VFXBreakdownWidget is already imported at the top of this file
-        def find_in_children(widget):
-            # Look for VFXBreakdownWidget
-            for child in widget.findChildren(VFXBreakdownWidget):
-                # Return toolbar_group if available, otherwise toolbar_widget
-                if hasattr(child, 'toolbar_group') and child.toolbar_group:
-                    return child.toolbar_group
-                elif hasattr(child, 'toolbar_widget') and child.toolbar_widget:
-                    return child.toolbar_widget
-            return None
-
-        return find_in_children(self._content_widget)
-
-    def is_collapsed(self):
-        """Get the collapsed state.
-
-        Returns:
-            bool: True if collapsed, False otherwise
-        """
-        return self._is_collapsed
-
-    def set_collapsed(self, collapsed):
-        """Set the collapsed state.
-
-        Args:
-            collapsed: True to collapse, False to expand
-        """
-        if collapsed:
-            self.collapse()
-        else:
-            self.expand()
 
 
 class CostsTab(QtWidgets.QMainWindow):
@@ -418,10 +130,6 @@ class CostsTab(QtWidgets.QMainWindow):
             self._create_total_cost_widget(),
             self
         )
-
-        # Connect signals to update Total Cost dock visibility
-        self.shots_cost_dock.collapsed_state_changed.connect(self._update_total_cost_visibility)
-        self.asset_cost_dock.collapsed_state_changed.connect(self._update_total_cost_visibility)
 
         # Add docks as tabs - Order: Shots Cost -> Assets Cost -> Misc Cost -> Total Cost
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.shots_cost_dock)
@@ -714,21 +422,6 @@ class CostsTab(QtWidgets.QMainWindow):
                     self._update_total_cost_summary()
                 except (ValueError, AttributeError) as e:
                     logger.debug(f"Could not recalculate assets totals: {e}")
-
-    def _update_total_cost_visibility(self):
-        """Update the Total Cost dock visibility based on Shots and Assets dock states."""
-        # Check if both Shots Cost and Assets Cost docks are collapsed
-        shots_collapsed = self.shots_cost_dock.is_collapsed()
-        assets_collapsed = self.asset_cost_dock.is_collapsed()
-
-        if shots_collapsed and assets_collapsed:
-            # Hide the Total Cost dock
-            self.total_cost_dock.hide()
-            logger.debug("Hiding Total Cost dock (both Shots and Assets collapsed)")
-        else:
-            # Show the Total Cost dock
-            self.total_cost_dock.show()
-            logger.debug("Showing Total Cost dock (at least one dock expanded)")
 
     def set_bid(self, bid_data, project_id):
         """Set the current bid and update all cost views.
@@ -1586,13 +1279,7 @@ class CostsTab(QtWidgets.QMainWindow):
         settings = QtCore.QSettings()
         settings.setValue(self.SETTINGS_KEY, self.saveState())
 
-        # Save collapsed state for each dock
-        settings.setValue(f"{self.SETTINGS_KEY}/shots_cost_collapsed", self.shots_cost_dock.is_collapsed())
-        settings.setValue(f"{self.SETTINGS_KEY}/asset_cost_collapsed", self.asset_cost_dock.is_collapsed())
-        settings.setValue(f"{self.SETTINGS_KEY}/misc_cost_collapsed", self.misc_cost_dock.is_collapsed())
-        settings.setValue(f"{self.SETTINGS_KEY}/total_cost_collapsed", self.total_cost_dock.is_collapsed())
-
-        logger.info("Saved costs dock layout and collapsed states")
+        logger.info("Saved costs dock layout")
 
     def load_layout(self):
         """Load the saved dock layout from settings."""
@@ -1600,19 +1287,7 @@ class CostsTab(QtWidgets.QMainWindow):
         state = settings.value(self.SETTINGS_KEY)
         if state is not None:
             self.restoreState(state)
-
-            # Restore collapsed state for each dock
-            shots_collapsed = settings.value(f"{self.SETTINGS_KEY}/shots_cost_collapsed", False, type=bool)
-            asset_collapsed = settings.value(f"{self.SETTINGS_KEY}/asset_cost_collapsed", False, type=bool)
-            misc_collapsed = settings.value(f"{self.SETTINGS_KEY}/misc_cost_collapsed", False, type=bool)
-            total_collapsed = settings.value(f"{self.SETTINGS_KEY}/total_cost_collapsed", False, type=bool)
-
-            self.shots_cost_dock.set_collapsed(shots_collapsed)
-            self.asset_cost_dock.set_collapsed(asset_collapsed)
-            self.misc_cost_dock.set_collapsed(misc_collapsed)
-            self.total_cost_dock.set_collapsed(total_collapsed)
-
-            logger.info("Loaded costs dock layout and collapsed states")
+            logger.info("Loaded costs dock layout")
         else:
             logger.info("No saved layout found, using default")
 
@@ -1638,12 +1313,6 @@ class CostsTab(QtWidgets.QMainWindow):
 
         # Show the first tab by default
         self.shots_cost_dock.raise_()
-
-        # Reset collapsed states to expanded
-        self.shots_cost_dock.set_collapsed(False)
-        self.asset_cost_dock.set_collapsed(False)
-        self.misc_cost_dock.set_collapsed(False)
-        self.total_cost_dock.set_collapsed(False)
 
         logger.info("Reset costs dock layout to default")
 
