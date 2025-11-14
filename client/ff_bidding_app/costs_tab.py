@@ -87,6 +87,9 @@ class CollapsibleDockTitleBar(QtWidgets.QWidget):
 class CostDock(QtWidgets.QDockWidget):
     """A collapsible dockable cost widget."""
 
+    # Signal emitted when collapsed state changes
+    collapsed_state_changed = QtCore.Signal(bool)
+
     def __init__(self, title, widget, parent=None):
         """Initialize the cost dock.
 
@@ -187,6 +190,9 @@ class CostDock(QtWidgets.QDockWidget):
         self._is_collapsed = True
         self.title_bar.set_collapsed(True)
 
+        # Emit signal
+        self.collapsed_state_changed.emit(True)
+
         logger.debug(f"Collapsed dock: {self.windowTitle()}")
 
     def expand(self):
@@ -244,6 +250,9 @@ class CostDock(QtWidgets.QDockWidget):
 
         self._is_collapsed = False
         self.title_bar.set_collapsed(False)
+
+        # Emit signal
+        self.collapsed_state_changed.emit(False)
 
         logger.debug(f"Expanded dock: {self.windowTitle()}")
 
@@ -396,6 +405,13 @@ class CostsTab(QtWidgets.QMainWindow):
             self
         )
 
+        # Miscellaneous Costs
+        self.misc_cost_dock = CostDock(
+            "Miscellaneous Costs",
+            self._create_misc_cost_widget(),
+            self
+        )
+
         # Total Cost
         self.total_cost_dock = CostDock(
             "Total Cost",
@@ -403,14 +419,20 @@ class CostsTab(QtWidgets.QMainWindow):
             self
         )
 
-        # Add docks vertically stacked - Order: Shots Cost -> Assets Cost -> Total Cost
+        # Connect signals to update Total Cost dock visibility
+        self.shots_cost_dock.collapsed_state_changed.connect(self._update_total_cost_visibility)
+        self.asset_cost_dock.collapsed_state_changed.connect(self._update_total_cost_visibility)
+
+        # Add docks vertically stacked - Order: Shots Cost -> Assets Cost -> Misc Cost -> Total Cost
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.shots_cost_dock)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.asset_cost_dock)
+        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.misc_cost_dock)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.total_cost_dock)
 
         # Force vertical stacking
         self.splitDockWidget(self.shots_cost_dock, self.asset_cost_dock, QtCore.Qt.Vertical)
-        self.splitDockWidget(self.asset_cost_dock, self.total_cost_dock, QtCore.Qt.Vertical)
+        self.splitDockWidget(self.asset_cost_dock, self.misc_cost_dock, QtCore.Qt.Vertical)
+        self.splitDockWidget(self.misc_cost_dock, self.total_cost_dock, QtCore.Qt.Vertical)
 
     def _create_shots_cost_widget(self):
         """Create the Shots Cost widget using VFXBreakdownWidget."""
@@ -480,29 +502,132 @@ class CostsTab(QtWidgets.QMainWindow):
 
         return self.asset_cost_widget
 
+    def _create_misc_cost_widget(self):
+        """Create the Miscellaneous Costs widget with a simple spreadsheet table."""
+        widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(widget)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        # Create a simple table for miscellaneous costs
+        self.misc_cost_table = QtWidgets.QTableWidget()
+        self.misc_cost_table.setColumnCount(3)
+        self.misc_cost_table.setHorizontalHeaderLabels(["Description", "Amount", "Formula"])
+        self.misc_cost_table.setRowCount(10)  # Start with 10 rows
+
+        # Set column widths
+        self.misc_cost_table.setColumnWidth(0, 200)
+        self.misc_cost_table.setColumnWidth(1, 150)
+        self.misc_cost_table.setColumnWidth(2, 200)
+
+        # Enable editing
+        self.misc_cost_table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked | QtWidgets.QAbstractItemView.EditKeyPressed)
+
+        # Add some example formulas in the first row
+        desc_item = QtWidgets.QTableWidgetItem("Example")
+        amount_item = QtWidgets.QTableWidgetItem("1000")
+        formula_item = QtWidgets.QTableWidgetItem("=1000")
+        self.misc_cost_table.setItem(0, 0, desc_item)
+        self.misc_cost_table.setItem(0, 1, amount_item)
+        self.misc_cost_table.setItem(0, 2, formula_item)
+
+        # Make amount column right-aligned
+        for row in range(self.misc_cost_table.rowCount()):
+            for col in [1, 2]:  # Amount and Formula columns
+                item = self.misc_cost_table.item(row, col)
+                if item is None:
+                    item = QtWidgets.QTableWidgetItem("")
+                    self.misc_cost_table.setItem(row, col, item)
+                item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+
+        layout.addWidget(self.misc_cost_table)
+
+        # Add button to add more rows
+        add_row_btn = QtWidgets.QPushButton("Add Row")
+        add_row_btn.clicked.connect(self._add_misc_cost_row)
+        layout.addWidget(add_row_btn)
+
+        return widget
+
+    def _add_misc_cost_row(self):
+        """Add a new row to the miscellaneous costs table."""
+        row_count = self.misc_cost_table.rowCount()
+        self.misc_cost_table.insertRow(row_count)
+
+        # Add right-aligned items for Amount and Formula columns
+        for col in [1, 2]:
+            item = QtWidgets.QTableWidgetItem("")
+            item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            self.misc_cost_table.setItem(row_count, col, item)
+
     def _create_total_cost_widget(self):
-        """Create the Total Cost widget."""
+        """Create the Total Cost widget with summary table."""
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(10, 10, 10, 10)
 
         # Title
-        title = QtWidgets.QLabel("Total Cost")
+        title = QtWidgets.QLabel("Total Cost Summary")
         title.setStyleSheet("font-size: 16px; font-weight: bold; padding: 5px;")
         layout.addWidget(title)
 
-        # Placeholder content
-        content = QtWidgets.QTextEdit()
-        content.setPlaceholderText("Total cost summary will be displayed here...\n\n"
-                                   "This will show:\n"
-                                   "- Grand total for all shots and assets\n"
-                                   "- Cost breakdown by category\n"
-                                   "- Budget vs actual\n"
-                                   "- Overall project cost summary")
-        content.setReadOnly(True)
-        layout.addWidget(content)
+        # Create summary table
+        self.total_cost_table = QtWidgets.QTableWidget()
+        self.total_cost_table.setColumnCount(2)
+        self.total_cost_table.setHorizontalHeaderLabels(["Category", "Amount"])
+        self.total_cost_table.setRowCount(4)
+
+        # Disable editing for the summary table
+        self.total_cost_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+
+        # Set row labels
+        row_labels = ["Shot Costs", "Asset Costs", "Misc", "Total Cost"]
+        for row, label in enumerate(row_labels):
+            category_item = QtWidgets.QTableWidgetItem(label)
+            category_item.setFlags(category_item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.total_cost_table.setItem(row, 0, category_item)
+
+            # Create amount cell
+            amount_item = QtWidgets.QTableWidgetItem("$0.00")
+            amount_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            amount_item.setFlags(amount_item.flags() & ~QtCore.Qt.ItemIsEditable)
+            self.total_cost_table.setItem(row, 1, amount_item)
+
+        # Style the Total Cost row
+        total_row_idx = 3
+        for col in range(2):
+            item = self.total_cost_table.item(total_row_idx, col)
+            if item:
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
+                item.setBackground(QtGui.QColor("#3a3a3a"))
+
+        # Set column widths
+        self.total_cost_table.setColumnWidth(0, 200)
+        self.total_cost_table.setColumnWidth(1, 150)
+
+        # Adjust table height to fit content
+        self.total_cost_table.setMaximumHeight(200)
+
+        layout.addWidget(self.total_cost_table)
+        layout.addStretch()
 
         return widget
+
+    def _update_total_cost_visibility(self):
+        """Update the Total Cost dock visibility based on Shots and Assets dock states."""
+        # Check if both Shots Cost and Assets Cost docks are collapsed
+        shots_collapsed = self.shots_cost_dock.is_collapsed()
+        assets_collapsed = self.asset_cost_dock.is_collapsed()
+
+        if shots_collapsed and assets_collapsed:
+            # Hide the Total Cost dock
+            self.total_cost_dock.hide()
+            logger.debug("Hiding Total Cost dock (both Shots and Assets collapsed)")
+        else:
+            # Show the Total Cost dock
+            self.total_cost_dock.show()
+            logger.debug("Showing Total Cost dock (at least one dock expanded)")
 
     def set_bid(self, bid_data, project_id):
         """Set the current bid and update all cost views.
@@ -1352,6 +1477,7 @@ class CostsTab(QtWidgets.QMainWindow):
         # Save collapsed state for each dock
         settings.setValue(f"{self.SETTINGS_KEY}/shots_cost_collapsed", self.shots_cost_dock.is_collapsed())
         settings.setValue(f"{self.SETTINGS_KEY}/asset_cost_collapsed", self.asset_cost_dock.is_collapsed())
+        settings.setValue(f"{self.SETTINGS_KEY}/misc_cost_collapsed", self.misc_cost_dock.is_collapsed())
         settings.setValue(f"{self.SETTINGS_KEY}/total_cost_collapsed", self.total_cost_dock.is_collapsed())
 
         logger.info("Saved costs dock layout and collapsed states")
@@ -1366,10 +1492,12 @@ class CostsTab(QtWidgets.QMainWindow):
             # Restore collapsed state for each dock
             shots_collapsed = settings.value(f"{self.SETTINGS_KEY}/shots_cost_collapsed", False, type=bool)
             asset_collapsed = settings.value(f"{self.SETTINGS_KEY}/asset_cost_collapsed", False, type=bool)
+            misc_collapsed = settings.value(f"{self.SETTINGS_KEY}/misc_cost_collapsed", False, type=bool)
             total_collapsed = settings.value(f"{self.SETTINGS_KEY}/total_cost_collapsed", False, type=bool)
 
             self.shots_cost_dock.set_collapsed(shots_collapsed)
             self.asset_cost_dock.set_collapsed(asset_collapsed)
+            self.misc_cost_dock.set_collapsed(misc_collapsed)
             self.total_cost_dock.set_collapsed(total_collapsed)
 
             logger.info("Loaded costs dock layout and collapsed states")
@@ -1382,21 +1510,24 @@ class CostsTab(QtWidgets.QMainWindow):
         settings.remove(self.SETTINGS_KEY)
 
         # Remove all docks
-        for dock in (self.shots_cost_dock, self.asset_cost_dock, self.total_cost_dock):
+        for dock in (self.shots_cost_dock, self.asset_cost_dock, self.misc_cost_dock, self.total_cost_dock):
             self.removeDockWidget(dock)
 
         # Re-add in default positions (vertical stacking)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.shots_cost_dock)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.asset_cost_dock)
+        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.misc_cost_dock)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.total_cost_dock)
 
         # Force vertical stacking
         self.splitDockWidget(self.shots_cost_dock, self.asset_cost_dock, QtCore.Qt.Vertical)
-        self.splitDockWidget(self.asset_cost_dock, self.total_cost_dock, QtCore.Qt.Vertical)
+        self.splitDockWidget(self.asset_cost_dock, self.misc_cost_dock, QtCore.Qt.Vertical)
+        self.splitDockWidget(self.misc_cost_dock, self.total_cost_dock, QtCore.Qt.Vertical)
 
         # Reset collapsed states to expanded
         self.shots_cost_dock.set_collapsed(False)
         self.asset_cost_dock.set_collapsed(False)
+        self.misc_cost_dock.set_collapsed(False)
         self.total_cost_dock.set_collapsed(False)
 
         logger.info("Reset costs dock layout to default")
