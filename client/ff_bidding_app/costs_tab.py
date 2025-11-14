@@ -1215,7 +1215,7 @@ class CostsTab(QtWidgets.QMainWindow):
                 logger.info(f"  ✓ Set {len(display_names)} column headers with display names")
 
                 # Create FormulaEvaluator for the Asset Cost model
-                from .formula_evaluator import FormulaEvaluator
+                # FormulaEvaluator is already imported at the top of the file
                 self.asset_cost_formula_evaluator = FormulaEvaluator(
                     self.asset_cost_widget.model
                 )
