@@ -423,16 +423,19 @@ class CostsTab(QtWidgets.QMainWindow):
         self.shots_cost_dock.collapsed_state_changed.connect(self._update_total_cost_visibility)
         self.asset_cost_dock.collapsed_state_changed.connect(self._update_total_cost_visibility)
 
-        # Add docks vertically stacked - Order: Shots Cost -> Assets Cost -> Misc Cost -> Total Cost
+        # Add docks as tabs - Order: Shots Cost -> Assets Cost -> Misc Cost -> Total Cost
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.shots_cost_dock)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.asset_cost_dock)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.misc_cost_dock)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.total_cost_dock)
 
-        # Force vertical stacking
-        self.splitDockWidget(self.shots_cost_dock, self.asset_cost_dock, QtCore.Qt.Vertical)
-        self.splitDockWidget(self.asset_cost_dock, self.misc_cost_dock, QtCore.Qt.Vertical)
-        self.splitDockWidget(self.misc_cost_dock, self.total_cost_dock, QtCore.Qt.Vertical)
+        # Create tabs instead of vertical stacking
+        self.tabifyDockWidget(self.shots_cost_dock, self.asset_cost_dock)
+        self.tabifyDockWidget(self.asset_cost_dock, self.misc_cost_dock)
+        self.tabifyDockWidget(self.misc_cost_dock, self.total_cost_dock)
+
+        # Show the first tab by default
+        self.shots_cost_dock.raise_()
 
     def _create_shots_cost_widget(self):
         """Create the Shots Cost widget using VFXBreakdownWidget."""
@@ -1513,16 +1516,19 @@ class CostsTab(QtWidgets.QMainWindow):
         for dock in (self.shots_cost_dock, self.asset_cost_dock, self.misc_cost_dock, self.total_cost_dock):
             self.removeDockWidget(dock)
 
-        # Re-add in default positions (vertical stacking)
+        # Re-add in default positions (as tabs)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.shots_cost_dock)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.asset_cost_dock)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.misc_cost_dock)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.total_cost_dock)
 
-        # Force vertical stacking
-        self.splitDockWidget(self.shots_cost_dock, self.asset_cost_dock, QtCore.Qt.Vertical)
-        self.splitDockWidget(self.asset_cost_dock, self.misc_cost_dock, QtCore.Qt.Vertical)
-        self.splitDockWidget(self.misc_cost_dock, self.total_cost_dock, QtCore.Qt.Vertical)
+        # Create tabs
+        self.tabifyDockWidget(self.shots_cost_dock, self.asset_cost_dock)
+        self.tabifyDockWidget(self.asset_cost_dock, self.misc_cost_dock)
+        self.tabifyDockWidget(self.misc_cost_dock, self.total_cost_dock)
+
+        # Show the first tab by default
+        self.shots_cost_dock.raise_()
 
         # Reset collapsed states to expanded
         self.shots_cost_dock.set_collapsed(False)
