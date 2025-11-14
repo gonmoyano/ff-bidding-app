@@ -1009,7 +1009,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
 
         # Selector group (collapsible)
-        selector_group = CollapsibleGroupBox("VFX Breakdowns")
+        self.vfx_breakdown_selector_group = CollapsibleGroupBox("VFX Breakdowns")
+        selector_group = self.vfx_breakdown_selector_group
 
         selector_row = QtWidgets.QHBoxLayout()
         selector_label = QtWidgets.QLabel("VFX Breakdown:")
@@ -1048,10 +1049,20 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
         selector_group.addWidget(self.vfx_breakdown_status_label)
 
-        layout.addWidget(selector_group)
+        # Add info label for linked VFX Breakdown
+        self.vfx_breakdown_info_label = QtWidgets.QLabel("")
+        self.vfx_breakdown_info_label.setObjectName("vfxBreakdownInfoLabel")
+        self.vfx_breakdown_info_label.setStyleSheet("color: #6b9bd1; font-weight: bold; padding: 2px 0;")
+        selector_group.addWidget(self.vfx_breakdown_info_label)
 
-        # Create reusable VFX Breakdown widget
+        # Create reusable VFX Breakdown widget before adding selector_group to layout
         self.breakdown_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
+
+        # Add search and sort toolbar to the selector group
+        if self.breakdown_widget.toolbar_widget:
+            selector_group.addWidget(self.breakdown_widget.toolbar_widget)
+
+        layout.addWidget(selector_group)
 
         # Connect widget signals
         self.breakdown_widget.statusMessageChanged.connect(self._on_widget_status_changed)
@@ -2630,9 +2641,13 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     logger.warning(f"Linked VFX Breakdown {linked_id} not found in project breakdowns")
             # If no linked breakdown, leave at placeholder (index 0)
             # Don't auto-select the first breakdown - user must explicitly choose
+
+            # Update info label to show linked VFX Breakdown from current Bid
+            self._update_vfx_breakdown_info_label()
         else:
             self._set_vfx_breakdown_status("No VFX Breakdowns found in this project.")
             self._clear_vfx_breakdown_table()
+            self.vfx_breakdown_info_label.setText("")
 
     def _set_vfx_breakdown_status(self, message, is_error=False):
         """Set the status message.
@@ -2644,6 +2659,44 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         color = "#ff8080" if is_error else "#a0a0a0"
         self.vfx_breakdown_status_label.setStyleSheet(f"color: {color}; padding: 2px 0;")
         self.vfx_breakdown_status_label.setText(message)
+
+    def _update_vfx_breakdown_info_label(self):
+        """Update the info label to show linked VFX Breakdown from current Bid."""
+        if not self.parent_app or not hasattr(self.parent_app, 'bidding_tab'):
+            self.vfx_breakdown_info_label.setText("")
+            self.vfx_breakdown_selector_group.setAdditionalInfo("")
+            return
+
+        # Get current bid from bidding tab
+        bid = getattr(self.parent_app.bidding_tab, 'current_bid', None)
+        if not bid:
+            self.vfx_breakdown_info_label.setText("")
+            self.vfx_breakdown_selector_group.setAdditionalInfo("")
+            return
+
+        # Get linked VFX Breakdown from Bid
+        linked_breakdown = bid.get("sg_vfx_breakdown")
+        if not linked_breakdown:
+            self.vfx_breakdown_info_label.setText("")
+            self.vfx_breakdown_selector_group.setAdditionalInfo("")
+            return
+
+        # Extract breakdown name
+        breakdown_name = ""
+        if isinstance(linked_breakdown, dict):
+            breakdown_name = linked_breakdown.get("name") or linked_breakdown.get("code") or f"ID {linked_breakdown.get('id', 'N/A')}"
+        elif isinstance(linked_breakdown, list) and linked_breakdown:
+            # Handle list case
+            first_breakdown = linked_breakdown[0] if linked_breakdown else None
+            if first_breakdown and isinstance(first_breakdown, dict):
+                breakdown_name = first_breakdown.get("name") or first_breakdown.get("code") or f"ID {first_breakdown.get('id', 'N/A')}"
+
+        if breakdown_name:
+            self.vfx_breakdown_info_label.setText(f"Current Bid linked to: {breakdown_name}")
+            self.vfx_breakdown_selector_group.setAdditionalInfo(f"Linked: {breakdown_name}")
+        else:
+            self.vfx_breakdown_info_label.setText("")
+            self.vfx_breakdown_selector_group.setAdditionalInfo("")
 
     def _clear_vfx_breakdown_table(self):
         """Clear the VFX Breakdown table."""

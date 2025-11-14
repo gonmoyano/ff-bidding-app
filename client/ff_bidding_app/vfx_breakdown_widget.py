@@ -536,12 +536,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         # Toolbar (search and filter controls)
+        # Create toolbar widget that parent can add to their own layouts
         self.toolbar_widget = None
-        self.toolbar_group = None
         if self.show_toolbar:
-            # Create collapsible group for toolbar
-            self.toolbar_group = CollapsibleGroupBox("Search & Sort")
-
             # Create a container widget for the toolbar contents
             self.toolbar_widget = QtWidgets.QWidget()
             toolbar_layout = QtWidgets.QHBoxLayout(self.toolbar_widget)
@@ -600,15 +597,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             self.row_count_label = QtWidgets.QLabel("Showing 0 of 0 rows")
             self.row_count_label.setStyleSheet("color: #606060; padding: 2px 4px;")
             toolbar_layout.addWidget(self.row_count_label)
-
-            # Add toolbar widget to collapsible group
-            self.toolbar_group.addWidget(self.toolbar_widget)
-
-            # Set default state to collapsed
-            self.toolbar_group.set_collapsed(True)
-
-            # Add collapsible group to main layout
-            layout.addWidget(self.toolbar_group)
 
         # Table view
         self.table_view = QtWidgets.QTableView()

@@ -73,7 +73,8 @@ class RatesTab(QtWidgets.QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
 
         # Selector group (collapsible)
-        selector_group = CollapsibleGroupBox("Price Lists")
+        self.price_lists_selector_group = CollapsibleGroupBox("Price Lists")
+        selector_group = self.price_lists_selector_group
         self.price_lists_group_box = selector_group
 
         selector_row = QtWidgets.QHBoxLayout()
@@ -123,10 +124,16 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_info_label.setStyleSheet("color: #6b9bd1; font-weight: bold; padding: 2px 0;")
         selector_group.addWidget(self.price_lists_info_label)
 
+        # Create Line Items widget before adding selector_group to layout
+        line_items_content = self._create_line_items_tab()
+
+        # Add search and sort toolbar to the selector group
+        if self.line_items_widget.toolbar_widget:
+            selector_group.addWidget(self.line_items_widget.toolbar_widget)
+
         layout.addWidget(selector_group)
 
-        # Create and add Line Items widget directly (no nested tabs)
-        line_items_content = self._create_line_items_tab()
+        # Add Line Items widget content
         layout.addWidget(line_items_content)
 
     def _create_line_items_tab(self):
@@ -386,7 +393,7 @@ class RatesTab(QtWidgets.QWidget):
             # Clear labels and group box title if no price list selected
             self.price_lists_status_label.setText("Select a Bid to view Price Lists.")
             self.price_lists_info_label.setText("")
-            self.price_lists_group_box.setAdditionalInfo("")
+            self.price_lists_selector_group.setAdditionalInfo("")
             return
 
         # Get price list name for title bar
@@ -407,9 +414,11 @@ class RatesTab(QtWidgets.QWidget):
             title_text += f" | Rate Card: {rate_card_name}"
             # Update the dedicated info label with Rate Card
             self.price_lists_info_label.setText(f"Rate Card: {rate_card_name}")
+            self.price_lists_selector_group.setAdditionalInfo(f"Rate Card: {rate_card_name}")
         else:
             # No Rate Card assigned
             self.price_lists_info_label.setText("No Rate Card assigned")
+            self.price_lists_selector_group.setAdditionalInfo("")
 
         # Update the status label to just show the price list name
         self.price_lists_status_label.setText(f"Selected Price List: '{price_list_name}'.")

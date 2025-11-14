@@ -76,7 +76,8 @@ class AssetsTab(QtWidgets.QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
 
         # Selector group (collapsible)
-        selector_group = CollapsibleGroupBox("Bid Assets")
+        self.bid_assets_selector_group = CollapsibleGroupBox("Bid Assets")
+        selector_group = self.bid_assets_selector_group
 
         selector_row = QtWidgets.QHBoxLayout()
         selector_label = QtWidgets.QLabel("Bid Assets:")
@@ -115,10 +116,20 @@ class AssetsTab(QtWidgets.QWidget):
         self.bid_assets_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
         selector_group.addWidget(self.bid_assets_status_label)
 
-        layout.addWidget(selector_group)
+        # Add info label for linked Bid Assets
+        self.bid_assets_info_label = QtWidgets.QLabel("")
+        self.bid_assets_info_label.setObjectName("bidAssetsInfoLabel")
+        self.bid_assets_info_label.setStyleSheet("color: #6b9bd1; font-weight: bold; padding: 2px 0;")
+        selector_group.addWidget(self.bid_assets_info_label)
 
-        # Create reusable Assets widget (reusing VFXBreakdownWidget)
+        # Create reusable Assets widget (reusing VFXBreakdownWidget) before adding selector_group to layout
         self.assets_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, settings_key="assets", parent=self)
+
+        # Add search and sort toolbar to the selector group
+        if self.assets_widget.toolbar_widget:
+            selector_group.addWidget(self.assets_widget.toolbar_widget)
+
+        layout.addWidget(selector_group)
 
         # Configure the model to use Asset-specific columns
         # Override the default VFX Breakdown columns with Asset columns
@@ -149,6 +160,29 @@ class AssetsTab(QtWidgets.QWidget):
         else:
             self.bid_assets_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
         self.bid_assets_status_label.setText(message)
+
+    def _update_bid_assets_info_label(self):
+        """Update the info label to show linked Bid Assets from current Bid."""
+        if not self.current_bid_data:
+            self.bid_assets_info_label.setText("")
+            self.bid_assets_selector_group.setAdditionalInfo("")
+            return
+
+        # Get linked Bid Assets from Bid
+        linked_bid_assets = self.current_bid_data.get("sg_bid_assets")
+        if not linked_bid_assets:
+            self.bid_assets_info_label.setText("")
+            self.bid_assets_selector_group.setAdditionalInfo("")
+            return
+
+        # Extract bid assets name
+        if isinstance(linked_bid_assets, dict):
+            bid_assets_name = linked_bid_assets.get("name") or linked_bid_assets.get("code") or f"ID {linked_bid_assets.get('id', 'N/A')}"
+            self.bid_assets_info_label.setText(f"Current Bid linked to: {bid_assets_name}")
+            self.bid_assets_selector_group.setAdditionalInfo(f"Linked: {bid_assets_name}")
+        else:
+            self.bid_assets_info_label.setText("")
+            self.bid_assets_selector_group.setAdditionalInfo("")
 
     def set_bid(self, bid_data, project_id):
         """Set the current bid and load associated bid assets.
@@ -272,10 +306,14 @@ class AssetsTab(QtWidgets.QWidget):
                         logger.warning(f"Linked Bid Assets {linked_bid_assets_id} not found in project")
                 # If no linked Bid Assets, leave at placeholder (index 0)
                 # Don't auto-select - user must explicitly choose
+
+                # Update info label to show linked Bid Assets
+                self._update_bid_assets_info_label()
             else:
                 self._set_bid_assets_status("No Bid Assets found for this project.")
                 self.bid_assets_set_btn.setEnabled(False)
                 self.assets_widget.clear_data()
+                self.bid_assets_info_label.setText("")
 
         except Exception as e:
             logger.error(f"Failed to refresh Bid Assets: {e}", exc_info=True)
