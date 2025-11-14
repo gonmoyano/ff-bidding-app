@@ -926,22 +926,22 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             top_bar = self._create_top_bar()
             main_layout.addWidget(top_bar)
 
-            # Tabbed section
-            self.tab_widget = QtWidgets.QTabWidget()
+            # Stacked widget for view switching
+            self.view_stack = QtWidgets.QStackedWidget()
 
-            # Create Bidding tab (contains VFX Breakdown, Assets, Rates, and Reports as nested tabs)
-            bidding_tab = self._create_bidding_tab()
-            self.tab_widget.addTab(bidding_tab, "Bidding")
+            # Create Bidding view (contains VFX Breakdown, Assets, Rates, and Reports as nested tabs)
+            bidding_view = self._create_bidding_tab()
+            self.view_stack.addWidget(bidding_view)
 
-            # Create Packages tab
-            packages_tab = self._create_packages_tab()
-            self.tab_widget.addTab(packages_tab, "Packages")
+            # Create Packages view
+            packages_view = self._create_packages_tab()
+            self.view_stack.addWidget(packages_view)
 
-            # Create Delivery tab
-            delivery_tab = self._create_delivery_tab()
-            self.tab_widget.addTab(delivery_tab, "Delivery")
+            # Create Delivery view
+            delivery_view = self._create_delivery_tab()
+            self.view_stack.addWidget(delivery_view)
 
-            main_layout.addWidget(self.tab_widget)
+            main_layout.addWidget(self.view_stack)
 
 
         except Exception as e:
@@ -1004,6 +1004,21 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
         bar_layout.addStretch()
 
+        # View selector section
+        view_label = QtWidgets.QLabel("View:")
+        bar_layout.addWidget(view_label)
+
+        self.view_selector = QtWidgets.QComboBox()
+        self.view_selector.setMinimumWidth(150)
+        self.view_selector.addItem("Bidding", 0)
+        self.view_selector.addItem("Packages", 1)
+        self.view_selector.addItem("Delivery", 2)
+        self.view_selector.currentIndexChanged.connect(self._on_view_changed)
+        bar_layout.addWidget(self.view_selector)
+
+        # Spacer
+        bar_layout.addSpacing(20)
+
         # Project Details button
         details_btn = QtWidgets.QPushButton("Project Details")
         details_btn.clicked.connect(self._show_project_details)
@@ -1019,6 +1034,12 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
         dialog = ProjectDetailsDialog(project, rfq, parent=self)
         dialog.exec()
+
+    def _on_view_changed(self, index):
+        """Handle view selection change."""
+        view_index = self.view_selector.currentData()
+        if view_index is not None:
+            self.view_stack.setCurrentIndex(view_index)
 
     def _show_config_rfqs_dialog(self):
         """Show the RFQ configuration dialog."""
