@@ -269,17 +269,20 @@ class CostDock(QtWidgets.QDockWidget):
         return find_in_children(self._content_widget)
 
     def _find_toolbar(self):
-        """Find the toolbar widget within the content widget.
+        """Find the toolbar group widget within the content widget.
 
         Returns:
-            Toolbar widget or None if not found
+            Toolbar group widget or None if not found
         """
         if not self._content_widget:
             return None
 
         # Check if the content widget itself is a VFXBreakdownWidget
         if isinstance(self._content_widget, VFXBreakdownWidget):
-            if hasattr(self._content_widget, 'toolbar_widget') and self._content_widget.toolbar_widget:
+            # Return toolbar_group if available (wrapped in collapsible group), otherwise toolbar_widget
+            if hasattr(self._content_widget, 'toolbar_group') and self._content_widget.toolbar_group:
+                return self._content_widget.toolbar_group
+            elif hasattr(self._content_widget, 'toolbar_widget') and self._content_widget.toolbar_widget:
                 return self._content_widget.toolbar_widget
 
         # Search for VFXBreakdownWidget in children
@@ -287,7 +290,10 @@ class CostDock(QtWidgets.QDockWidget):
         def find_in_children(widget):
             # Look for VFXBreakdownWidget
             for child in widget.findChildren(VFXBreakdownWidget):
-                if hasattr(child, 'toolbar_widget') and child.toolbar_widget:
+                # Return toolbar_group if available, otherwise toolbar_widget
+                if hasattr(child, 'toolbar_group') and child.toolbar_group:
+                    return child.toolbar_group
+                elif hasattr(child, 'toolbar_widget') and child.toolbar_widget:
                     return child.toolbar_widget
             return None
 
