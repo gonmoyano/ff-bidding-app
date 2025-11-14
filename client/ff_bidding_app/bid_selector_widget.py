@@ -96,6 +96,15 @@ class CollapsibleGroupBox(QtWidgets.QWidget):
         self.additional_info = info
         self._update_button_text()
 
+    def set_collapsed(self, collapsed):
+        """Set the collapsed state of the group.
+
+        Args:
+            collapsed: True to collapse, False to expand
+        """
+        if self.is_collapsed != collapsed:
+            self._on_toggle()
+
     def addWidget(self, widget):
         """Add a widget to the content area."""
         self.content_layout.addWidget(widget)
