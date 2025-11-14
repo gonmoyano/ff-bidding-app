@@ -70,9 +70,12 @@ class CollapsibleGroupBox(QtWidgets.QWidget):
     def _update_button_text(self):
         """Update button text with arrow indicator and additional info."""
         arrow = "▼" if not self.is_collapsed else "▶"
-        # Only show additional info when collapsed
+        # Only show additional info when collapsed, and use HTML for colored text
         if self.is_collapsed and self.additional_info:
-            self.toggle_button.setText(f"{arrow} {self.base_title} | {self.additional_info}")
+            # Use HTML to color the additional info in blue
+            self.toggle_button.setText(f"{arrow} {self.base_title}")
+            # Add additional info as rich text with blue color
+            self.toggle_button.setText(f'<html><head/><body><p>{arrow} {self.base_title} | <span style="color:#6b9bd1;">{self.additional_info}</span></p></body></html>')
         else:
             self.toggle_button.setText(f"{arrow} {self.base_title}")
 

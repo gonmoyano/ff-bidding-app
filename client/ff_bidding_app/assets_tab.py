@@ -76,7 +76,8 @@ class AssetsTab(QtWidgets.QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
 
         # Selector group (collapsible)
-        selector_group = CollapsibleGroupBox("Bid Assets")
+        self.bid_assets_selector_group = CollapsibleGroupBox("Bid Assets")
+        selector_group = self.bid_assets_selector_group
 
         selector_row = QtWidgets.QHBoxLayout()
         selector_label = QtWidgets.QLabel("Bid Assets:")
@@ -164,20 +165,24 @@ class AssetsTab(QtWidgets.QWidget):
         """Update the info label to show linked Bid Assets from current Bid."""
         if not self.current_bid_data:
             self.bid_assets_info_label.setText("")
+            self.bid_assets_selector_group.setAdditionalInfo("")
             return
 
         # Get linked Bid Assets from Bid
         linked_bid_assets = self.current_bid_data.get("sg_bid_assets")
         if not linked_bid_assets:
             self.bid_assets_info_label.setText("")
+            self.bid_assets_selector_group.setAdditionalInfo("")
             return
 
         # Extract bid assets name
         if isinstance(linked_bid_assets, dict):
             bid_assets_name = linked_bid_assets.get("name") or linked_bid_assets.get("code") or f"ID {linked_bid_assets.get('id', 'N/A')}"
             self.bid_assets_info_label.setText(f"Current Bid linked to: {bid_assets_name}")
+            self.bid_assets_selector_group.setAdditionalInfo(f"Linked: {bid_assets_name}")
         else:
             self.bid_assets_info_label.setText("")
+            self.bid_assets_selector_group.setAdditionalInfo("")
 
     def set_bid(self, bid_data, project_id):
         """Set the current bid and load associated bid assets.

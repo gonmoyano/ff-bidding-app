@@ -1009,7 +1009,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
 
         # Selector group (collapsible)
-        selector_group = CollapsibleGroupBox("VFX Breakdowns")
+        self.vfx_breakdown_selector_group = CollapsibleGroupBox("VFX Breakdowns")
+        selector_group = self.vfx_breakdown_selector_group
 
         selector_row = QtWidgets.QHBoxLayout()
         selector_label = QtWidgets.QLabel("VFX Breakdown:")
@@ -2663,34 +2664,39 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         """Update the info label to show linked VFX Breakdown from current Bid."""
         if not self.parent_app or not hasattr(self.parent_app, 'bidding_tab'):
             self.vfx_breakdown_info_label.setText("")
+            self.vfx_breakdown_selector_group.setAdditionalInfo("")
             return
 
         # Get current bid from bidding tab
         bid = getattr(self.parent_app.bidding_tab, 'current_bid', None)
         if not bid:
             self.vfx_breakdown_info_label.setText("")
+            self.vfx_breakdown_selector_group.setAdditionalInfo("")
             return
 
         # Get linked VFX Breakdown from Bid
         linked_breakdown = bid.get("sg_vfx_breakdown")
         if not linked_breakdown:
             self.vfx_breakdown_info_label.setText("")
+            self.vfx_breakdown_selector_group.setAdditionalInfo("")
             return
 
         # Extract breakdown name
+        breakdown_name = ""
         if isinstance(linked_breakdown, dict):
             breakdown_name = linked_breakdown.get("name") or linked_breakdown.get("code") or f"ID {linked_breakdown.get('id', 'N/A')}"
-            self.vfx_breakdown_info_label.setText(f"Current Bid linked to: {breakdown_name}")
         elif isinstance(linked_breakdown, list) and linked_breakdown:
             # Handle list case
             first_breakdown = linked_breakdown[0] if linked_breakdown else None
             if first_breakdown and isinstance(first_breakdown, dict):
                 breakdown_name = first_breakdown.get("name") or first_breakdown.get("code") or f"ID {first_breakdown.get('id', 'N/A')}"
-                self.vfx_breakdown_info_label.setText(f"Current Bid linked to: {breakdown_name}")
-            else:
-                self.vfx_breakdown_info_label.setText("")
+
+        if breakdown_name:
+            self.vfx_breakdown_info_label.setText(f"Current Bid linked to: {breakdown_name}")
+            self.vfx_breakdown_selector_group.setAdditionalInfo(f"Linked: {breakdown_name}")
         else:
             self.vfx_breakdown_info_label.setText("")
+            self.vfx_breakdown_selector_group.setAdditionalInfo("")
 
     def _clear_vfx_breakdown_table(self):
         """Clear the VFX Breakdown table."""

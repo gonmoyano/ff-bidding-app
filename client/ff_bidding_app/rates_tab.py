@@ -73,7 +73,8 @@ class RatesTab(QtWidgets.QWidget):
         layout.setContentsMargins(6, 6, 6, 6)
 
         # Selector group (collapsible)
-        selector_group = CollapsibleGroupBox("Price Lists")
+        self.price_lists_selector_group = CollapsibleGroupBox("Price Lists")
+        selector_group = self.price_lists_selector_group
         self.price_lists_group_box = selector_group
 
         selector_row = QtWidgets.QHBoxLayout()
@@ -392,7 +393,7 @@ class RatesTab(QtWidgets.QWidget):
             # Clear labels and group box title if no price list selected
             self.price_lists_status_label.setText("Select a Bid to view Price Lists.")
             self.price_lists_info_label.setText("")
-            self.price_lists_group_box.setAdditionalInfo("")
+            self.price_lists_selector_group.setAdditionalInfo("")
             return
 
         # Get price list name for title bar
@@ -413,9 +414,11 @@ class RatesTab(QtWidgets.QWidget):
             title_text += f" | Rate Card: {rate_card_name}"
             # Update the dedicated info label with Rate Card
             self.price_lists_info_label.setText(f"Rate Card: {rate_card_name}")
+            self.price_lists_selector_group.setAdditionalInfo(f"Rate Card: {rate_card_name}")
         else:
             # No Rate Card assigned
             self.price_lists_info_label.setText("No Rate Card assigned")
+            self.price_lists_selector_group.setAdditionalInfo("")
 
         # Update the status label to just show the price list name
         self.price_lists_status_label.setText(f"Selected Price List: '{price_list_name}'.")
