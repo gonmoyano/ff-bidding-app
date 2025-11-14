@@ -529,12 +529,16 @@ class CostsTab(QtWidgets.QMainWindow):
             logger.info("Loading Line Items for pricing...")
             self._load_line_item_names()
             self._load_line_items_with_prices()
+            logger.info(f"Loaded {len(self.line_item_names)} line item names")
+            logger.info(f"Loaded {len(self.line_items_price_map)} line item prices")
 
             # Load VFX Breakdown linked to this bid into Shots Cost widget
             self._load_vfx_breakdown_for_bid(bid_data)
 
             # Refresh other cost views
+            logger.info("About to refresh Asset Cost...")
             self._refresh_asset_cost()
+            logger.info("Finished refreshing Asset Cost")
             self._refresh_total_cost()
         else:
             # Clear all cost views
@@ -1061,7 +1065,9 @@ class CostsTab(QtWidgets.QMainWindow):
         Args:
             bid_data: Dictionary containing Bid data
         """
+        logger.info("="*80)
         logger.info(f"COSTS TAB - Loading Asset items...")
+        logger.info(f"  Bid data keys: {list(bid_data.keys())}")
 
         # Get the linked Bid Assets from the bid
         bid_assets = bid_data.get("sg_bid_assets")
@@ -1071,7 +1077,9 @@ class CostsTab(QtWidgets.QMainWindow):
         if not bid_assets:
             logger.warning("  ❌ No Bid Assets linked to this bid")
             logger.warning("  Please link Bid Assets to this Bid in ShotGrid")
-            self.asset_cost_widget.load_bidding_scenes([])
+            logger.warning("  Clearing Asset Cost table")
+            if hasattr(self, 'asset_cost_widget'):
+                self.asset_cost_widget.load_bidding_scenes([])
             return
 
         # Extract Bid Assets ID
@@ -1239,14 +1247,16 @@ class CostsTab(QtWidgets.QMainWindow):
                     self.asset_cost_widget.table_view.horizontalHeader().viewport().update()
                     logger.info(f"  ✓ Forced header view update")
 
+            logger.info(f"  ✅ SUCCESSFULLY LOADED {len(asset_items_data)} ASSET ITEMS")
             logger.info("="*80)
 
             # Apply Asset Type delegate
             self._apply_asset_type_delegate()
 
         except Exception as e:
-            logger.error(f"Failed to load Asset items: {e}", exc_info=True)
-            self.asset_cost_widget.load_bidding_scenes([])
+            logger.error(f"❌ Failed to load Asset items: {e}", exc_info=True)
+            if hasattr(self, 'asset_cost_widget'):
+                self.asset_cost_widget.load_bidding_scenes([])
 
     def _apply_asset_type_delegate(self):
         """Apply ValidatedComboBoxDelegate to the sg_bid_asset_type column."""
@@ -1319,11 +1329,14 @@ class CostsTab(QtWidgets.QMainWindow):
     def _refresh_asset_cost(self):
         """Refresh the asset cost view."""
         logger.info("Refreshing asset cost view")
+        if not hasattr(self, 'asset_cost_widget'):
+            logger.warning("  ❌ asset_cost_widget not initialized yet")
+            return
+
         if self.current_bid_data and self.current_bid_id:
             self._load_asset_items_for_bid(self.current_bid_data)
         else:
-            if hasattr(self, 'asset_cost_widget'):
-                self.asset_cost_widget.load_bidding_scenes([])
+            self.asset_cost_widget.load_bidding_scenes([])
 
     def _refresh_total_cost(self):
         """Refresh the total cost view."""
