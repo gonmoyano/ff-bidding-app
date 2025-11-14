@@ -115,10 +115,14 @@ class AssetsTab(QtWidgets.QWidget):
         self.bid_assets_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
         selector_group.addWidget(self.bid_assets_status_label)
 
-        layout.addWidget(selector_group)
-
-        # Create reusable Assets widget (reusing VFXBreakdownWidget)
+        # Create reusable Assets widget (reusing VFXBreakdownWidget) before adding selector_group to layout
         self.assets_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, settings_key="assets", parent=self)
+
+        # Add search and sort toolbar to the selector group
+        if self.assets_widget.toolbar_widget:
+            selector_group.addWidget(self.assets_widget.toolbar_widget)
+
+        layout.addWidget(selector_group)
 
         # Configure the model to use Asset-specific columns
         # Override the default VFX Breakdown columns with Asset columns

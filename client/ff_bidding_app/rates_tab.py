@@ -123,10 +123,16 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_info_label.setStyleSheet("color: #6b9bd1; font-weight: bold; padding: 2px 0;")
         selector_group.addWidget(self.price_lists_info_label)
 
+        # Create Line Items widget before adding selector_group to layout
+        line_items_content = self._create_line_items_tab()
+
+        # Add search and sort toolbar to the selector group
+        if self.line_items_widget.toolbar_widget:
+            selector_group.addWidget(self.line_items_widget.toolbar_widget)
+
         layout.addWidget(selector_group)
 
-        # Create and add Line Items widget directly (no nested tabs)
-        line_items_content = self._create_line_items_tab()
+        # Add Line Items widget content
         layout.addWidget(line_items_content)
 
     def _create_line_items_tab(self):

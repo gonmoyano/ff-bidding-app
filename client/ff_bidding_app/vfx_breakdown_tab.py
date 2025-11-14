@@ -1048,10 +1048,14 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
         selector_group.addWidget(self.vfx_breakdown_status_label)
 
-        layout.addWidget(selector_group)
-
-        # Create reusable VFX Breakdown widget
+        # Create reusable VFX Breakdown widget before adding selector_group to layout
         self.breakdown_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
+
+        # Add search and sort toolbar to the selector group
+        if self.breakdown_widget.toolbar_widget:
+            selector_group.addWidget(self.breakdown_widget.toolbar_widget)
+
+        layout.addWidget(selector_group)
 
         # Connect widget signals
         self.breakdown_widget.statusMessageChanged.connect(self._on_widget_status_changed)
