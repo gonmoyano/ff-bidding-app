@@ -214,11 +214,7 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(5)
 
-        # Create toolbar
-        self._create_toolbar()
-        layout.addWidget(self.toolbar)
-
-        # Create table view
+        # Create table view FIRST (before toolbar)
         self.table_view = QtWidgets.QTableView()
         self.table_view.setAlternatingRowColors(True)
         self.table_view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
@@ -237,6 +233,11 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.table_view.setShowGrid(True)
         self.table_view.setGridStyle(Qt.SolidLine)
 
+        # Create toolbar (after table_view exists)
+        self._create_toolbar()
+        layout.addWidget(self.toolbar)
+
+        # Add table view
         layout.addWidget(self.table_view)
 
         # Create formula evaluator
