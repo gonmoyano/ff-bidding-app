@@ -227,24 +227,6 @@ class CostsTab(QtWidgets.QMainWindow):
             parent=self
         )
 
-        # Create wrapper widget to hold spreadsheet and totals bar
-        wrapper = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(wrapper)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        # Add spreadsheet
-        layout.addWidget(self.misc_cost_spreadsheet)
-
-        # Create totals bar for the spreadsheet
-        self.misc_cost_totals_wrapper = TableWithTotalsBar(
-            self.misc_cost_spreadsheet.table_view,
-            app_settings=self.app_settings
-        )
-
-        # We'll add this after the initial data is loaded
-        # For now, store reference for later
-
         # Add some example formulas
         self.misc_cost_spreadsheet.set_cell_value(0, 0, "Description")
         self.misc_cost_spreadsheet.set_cell_value(0, 1, "Amount")
@@ -262,7 +244,7 @@ class CostsTab(QtWidgets.QMainWindow):
 
         logger.info("Created Miscellaneous Costs spreadsheet")
 
-        return wrapper
+        return self.misc_cost_spreadsheet
 
     def _create_total_cost_widget(self):
         """Create the Total Cost widget with summary table."""
