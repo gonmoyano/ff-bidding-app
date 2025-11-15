@@ -219,9 +219,8 @@ class CostsTab(QtWidgets.QMainWindow):
 
     def _create_misc_cost_widget(self):
         """Create the Miscellaneous Costs widget with full Google Sheets-style spreadsheet."""
-        # Create the spreadsheet widget
+        # Create the spreadsheet widget (defaults to 10 rows)
         self.misc_cost_spreadsheet = SpreadsheetWidget(
-            rows=50,
             cols=10,
             app_settings=self.app_settings,
             parent=self

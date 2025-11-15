@@ -197,11 +197,11 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
 class SpreadsheetWidget(QtWidgets.QWidget):
     """Full-featured spreadsheet widget with Excel formula support."""
 
-    def __init__(self, rows=100, cols=26, app_settings=None, parent=None):
+    def __init__(self, rows=10, cols=26, app_settings=None, parent=None):
         """Initialize the spreadsheet widget.
 
         Args:
-            rows: Number of rows
+            rows: Number of rows (default: 10)
             cols: Number of columns
             app_settings: AppSettings instance for currency formatting
             parent: Parent widget
@@ -216,9 +216,13 @@ class SpreadsheetWidget(QtWidgets.QWidget):
 
         # Create table view FIRST (before toolbar)
         self.table_view = QtWidgets.QTableView()
-        self.table_view.setAlternatingRowColors(True)
+        self.table_view.setAlternatingRowColors(False)  # Disable alternating colors
         self.table_view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
         self.table_view.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+
+        # Enable context menu
+        self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table_view.customContextMenuRequested.connect(self._show_context_menu)
 
         # Create model
         self.model = SpreadsheetModel(rows, cols)
@@ -292,6 +296,141 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         if next_row < self.model.rowCount():
             next_index = self.model.index(next_row, current.column())
             self.table_view.setCurrentIndex(next_index)
+
+    def _show_context_menu(self, position):
+        """Show context menu on right-click."""
+        # Get the index at the clicked position
+        index = self.table_view.indexAt(position)
+        if not index.isValid():
+            return
+
+        # Create context menu
+        menu = QtWidgets.QMenu(self)
+
+        # Row operations
+        insert_row_above = menu.addAction("Insert Row Above")
+        insert_row_below = menu.addAction("Insert Row Below")
+        delete_row = menu.addAction("Delete Row")
+        menu.addSeparator()
+
+        # Column operations
+        delete_column = menu.addAction("Delete Column")
+
+        # Show menu and get action
+        action = menu.exec_(self.table_view.viewport().mapToGlobal(position))
+
+        if action == insert_row_above:
+            self._insert_row_above(index.row())
+        elif action == insert_row_below:
+            self._insert_row_below(index.row())
+        elif action == delete_row:
+            self._delete_row(index.row())
+        elif action == delete_column:
+            self._delete_column(index.column())
+
+    def _insert_row_above(self, row):
+        """Insert a new row above the specified row."""
+        self.model.beginInsertRows(QtCore.QModelIndex(), row, row)
+
+        # Shift all data down
+        self.model._rows += 1
+        new_data = {}
+        new_formulas = {}
+
+        for (r, c), value in self.model._data.items():
+            if r >= row:
+                new_data[(r + 1, c)] = value
+            else:
+                new_data[(r, c)] = value
+
+        for (r, c), formula in self.model._formulas.items():
+            if r >= row:
+                new_formulas[(r + 1, c)] = formula
+            else:
+                new_formulas[(r, c)] = formula
+
+        self.model._data = new_data
+        self.model._formulas = new_formulas
+        self.model._evaluated_cache.clear()
+
+        self.model.endInsertRows()
+        logger.info(f"Inserted row above row {row + 1}")
+
+    def _insert_row_below(self, row):
+        """Insert a new row below the specified row."""
+        self._insert_row_above(row + 1)
+
+    def _delete_row(self, row):
+        """Delete the specified row."""
+        if self.model._rows <= 1:
+            logger.warning("Cannot delete the last row")
+            return
+
+        self.model.beginRemoveRows(QtCore.QModelIndex(), row, row)
+
+        # Shift all data up
+        self.model._rows -= 1
+        new_data = {}
+        new_formulas = {}
+
+        for (r, c), value in self.model._data.items():
+            if r == row:
+                continue  # Skip the deleted row
+            elif r > row:
+                new_data[(r - 1, c)] = value
+            else:
+                new_data[(r, c)] = value
+
+        for (r, c), formula in self.model._formulas.items():
+            if r == row:
+                continue  # Skip the deleted row
+            elif r > row:
+                new_formulas[(r - 1, c)] = formula
+            else:
+                new_formulas[(r, c)] = formula
+
+        self.model._data = new_data
+        self.model._formulas = new_formulas
+        self.model._evaluated_cache.clear()
+
+        self.model.endRemoveRows()
+        logger.info(f"Deleted row {row + 1}")
+
+    def _delete_column(self, col):
+        """Delete the specified column."""
+        if self.model._cols <= 1:
+            logger.warning("Cannot delete the last column")
+            return
+
+        self.model.beginRemoveColumns(QtCore.QModelIndex(), col, col)
+
+        # Shift all data left
+        self.model._cols -= 1
+        new_data = {}
+        new_formulas = {}
+
+        for (r, c), value in self.model._data.items():
+            if c == col:
+                continue  # Skip the deleted column
+            elif c > col:
+                new_data[(r, c - 1)] = value
+            else:
+                new_data[(r, c)] = value
+
+        for (r, c), formula in self.model._formulas.items():
+            if c == col:
+                continue  # Skip the deleted column
+            elif c > col:
+                new_formulas[(r, c - 1)] = formula
+            else:
+                new_formulas[(r, c)] = formula
+
+        self.model._data = new_data
+        self.model._formulas = new_formulas
+        self.model._evaluated_cache.clear()
+
+        self.model.endRemoveColumns()
+        logger.info(f"Deleted column {self.model._column_name(col)}")
 
     def set_formula_evaluator(self, evaluator):
         """Set the formula evaluator."""
