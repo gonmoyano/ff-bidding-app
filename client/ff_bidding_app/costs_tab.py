@@ -213,61 +213,131 @@ class CostsTab(QtWidgets.QMainWindow):
         return self.asset_cost_widget
 
     def _create_misc_cost_widget(self):
-        """Create the Miscellaneous Costs widget with a simple spreadsheet table."""
-        widget = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(widget)
-        layout.setContentsMargins(5, 5, 5, 5)
+        """Create the Miscellaneous Costs widget with spreadsheet functionality."""
+        # Use VFXBreakdownWidget with toolbar for full spreadsheet functionality
+        self.misc_cost_widget = VFXBreakdownWidget(
+            self.sg_session,
+            show_toolbar=True,  # Show search and sort toolbar in collapsible group
+            entity_name="Misc Cost",
+            settings_key="misc_cost",  # Unique settings key for Misc Cost table
+            parent=self
+        )
 
-        # Create a simple table for miscellaneous costs
-        self.misc_cost_table = QtWidgets.QTableWidget()
-        self.misc_cost_table.setColumnCount(3)
-        self.misc_cost_table.setHorizontalHeaderLabels(["Description", "Amount", "Formula"])
-        self.misc_cost_table.setRowCount(10)  # Start with 10 rows
+        # Define custom fields for Miscellaneous Costs
+        # We'll create a simple schema for Description, Amount, and Formula columns
+        field_schema = {
+            "id": {"data_type": "number", "properties": {}},
+            "code": {"data_type": "text", "properties": {}},
+            "sg_description": {"data_type": "text", "properties": {}},
+            "sg_amount": {"data_type": "number", "properties": {}},
+            "sg_formula": {"data_type": "text", "properties": {}},
+        }
 
-        # Set column widths
-        self.misc_cost_table.setColumnWidth(0, 200)
-        self.misc_cost_table.setColumnWidth(1, 150)
-        self.misc_cost_table.setColumnWidth(2, 200)
+        display_names = {
+            "id": "ID",
+            "code": "Code",
+            "sg_description": "Description",
+            "sg_amount": "Amount",
+            "sg_formula": "Formula",
+        }
 
-        # Enable editing
-        self.misc_cost_table.setEditTriggers(QtWidgets.QAbstractItemView.DoubleClicked | QtWidgets.QAbstractItemView.EditKeyPressed)
+        # Configure the model with custom columns
+        if hasattr(self.misc_cost_widget, 'model') and self.misc_cost_widget.model:
+            misc_field_list = ["id", "code", "sg_description", "sg_amount", "sg_formula"]
+            self.misc_cost_widget.model.column_fields = misc_field_list.copy()
+            # Set a custom entity type (we'll use local data, not ShotGrid)
+            self.misc_cost_widget.model.entity_type = "MiscCost"
+            logger.info(f"Configured Misc Cost widget model with fields: {misc_field_list}")
 
-        # Add some example formulas in the first row
-        desc_item = QtWidgets.QTableWidgetItem("Example")
-        amount_item = QtWidgets.QTableWidgetItem("1000")
-        formula_item = QtWidgets.QTableWidgetItem("=1000")
-        self.misc_cost_table.setItem(0, 0, desc_item)
-        self.misc_cost_table.setItem(0, 1, amount_item)
-        self.misc_cost_table.setItem(0, 2, formula_item)
+            # Set display names
+            self.misc_cost_widget.model.set_column_headers(display_names)
 
-        # Make amount column right-aligned
-        for row in range(self.misc_cost_table.rowCount()):
-            for col in [1, 2]:  # Amount and Formula columns
-                item = self.misc_cost_table.item(row, col)
-                if item is None:
-                    item = QtWidgets.QTableWidgetItem("")
-                    self.misc_cost_table.setItem(row, col, item)
-                item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            # Load with a few example rows
+            example_data = [
+                {
+                    "id": 1,
+                    "code": "MISC_001",
+                    "sg_description": "Example Item",
+                    "sg_amount": 1000,
+                    "sg_formula": "=1000",
+                },
+            ]
+            self.misc_cost_widget.load_bidding_scenes(example_data, field_schema=field_schema)
 
-        layout.addWidget(self.misc_cost_table)
+        # Now intercept the layout and replace table_view with wrapped version
+        layout = self.misc_cost_widget.layout()
 
-        # Add button to add more rows
+        # Remove table_view from layout
+        layout.removeWidget(self.misc_cost_widget.table_view)
+
+        # Create wrapper with totals bar
+        self.misc_cost_totals_wrapper = TableWithTotalsBar(
+            self.misc_cost_widget.table_view,
+            app_settings=self.app_settings
+        )
+
+        # Add wrapper back to layout
+        layout.addWidget(self.misc_cost_totals_wrapper)
+
+        # Add button to add new rows
         add_row_btn = QtWidgets.QPushButton("Add Row")
         add_row_btn.clicked.connect(self._add_misc_cost_row)
         layout.addWidget(add_row_btn)
 
-        return widget
+        # Create FormulaEvaluator for the Misc Cost model
+        if hasattr(self.misc_cost_widget, 'model') and self.misc_cost_widget.model:
+            self.misc_cost_formula_evaluator = FormulaEvaluator(
+                self.misc_cost_widget.model
+            )
+            # Set the formula evaluator on the model for dependency tracking
+            self.misc_cost_widget.model.set_formula_evaluator(self.misc_cost_formula_evaluator)
+
+            # Set formula evaluator on totals wrapper
+            self.misc_cost_totals_wrapper.set_formula_evaluator(self.misc_cost_formula_evaluator)
+
+            # Apply FormulaDelegate to the Formula column
+            try:
+                formula_col_index = self.misc_cost_widget.model.column_fields.index("sg_formula")
+                formula_delegate = FormulaDelegate(self.misc_cost_formula_evaluator, app_settings=self.app_settings)
+                self.misc_cost_widget.table_view.setItemDelegateForColumn(formula_col_index, formula_delegate)
+
+                # Mark Formula column as blue for totals bar
+                self.misc_cost_totals_wrapper.set_blue_columns([formula_col_index])
+
+                # Calculate totals for Formula column
+                self.misc_cost_totals_wrapper.calculate_totals(columns=[formula_col_index], skip_first_col=True)
+            except ValueError:
+                logger.debug("sg_formula column not found in misc cost model")
+
+            # Connect model dataChanged signal to update Total Cost summary
+            self.misc_cost_widget.model.dataChanged.connect(self._on_misc_data_changed)
+
+        return self.misc_cost_widget
 
     def _add_misc_cost_row(self):
         """Add a new row to the miscellaneous costs table."""
-        row_count = self.misc_cost_table.rowCount()
-        self.misc_cost_table.insertRow(row_count)
+        if hasattr(self, 'misc_cost_widget') and hasattr(self.misc_cost_widget, 'model'):
+            model = self.misc_cost_widget.model
+            # Get current row count
+            current_count = model.rowCount()
 
-        # Add right-aligned items for Amount and Formula columns
-        for col in [1, 2]:
-            item = QtWidgets.QTableWidgetItem("")
-            item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            self.misc_cost_table.setItem(row_count, col, item)
+            # Create a new empty row
+            new_row = {
+                "id": current_count + 1,
+                "code": f"MISC_{current_count + 1:03d}",
+                "sg_description": "",
+                "sg_amount": 0,
+                "sg_formula": "",
+            }
+
+            # Add to the model's data
+            if hasattr(model, 'all_bidding_scenes_data'):
+                model.all_bidding_scenes_data.append(new_row)
+                model.filtered_row_indices.append(len(model.all_bidding_scenes_data) - 1)
+
+                # Notify view of data change
+                model.layoutChanged.emit()
+                logger.info(f"Added new misc cost row: {new_row['code']}")
 
     def _create_total_cost_widget(self):
         """Create the Total Cost widget with summary table."""
@@ -353,8 +423,18 @@ class CostsTab(QtWidgets.QMainWindow):
                     except (ValueError, AttributeError) as e:
                         logger.debug(f"Could not get asset costs total: {e}")
 
-            # Get Misc total (for now, 0.00 - will be implemented later)
+            # Get Misc total
             misc_total = 0.0
+            if hasattr(self, 'misc_cost_totals_wrapper') and hasattr(self, 'misc_cost_widget'):
+                if hasattr(self.misc_cost_widget, 'model') and self.misc_cost_widget.model:
+                    # Find the Formula column index (sg_formula)
+                    try:
+                        formula_col_idx = self.misc_cost_widget.model.column_fields.index("sg_formula")
+                        total_str = self.misc_cost_totals_wrapper.get_total(formula_col_idx)
+                        # Parse the total string (format: "$1,234.56")
+                        misc_total = self._parse_currency_value(total_str)
+                    except (ValueError, AttributeError) as e:
+                        logger.debug(f"Could not get misc costs total: {e}")
 
             # Calculate grand total
             grand_total = shot_total + asset_total + misc_total
@@ -421,6 +501,20 @@ class CostsTab(QtWidgets.QMainWindow):
                     self._update_total_cost_summary()
                 except (ValueError, AttributeError) as e:
                     logger.debug(f"Could not recalculate assets totals: {e}")
+
+    def _on_misc_data_changed(self):
+        """Handle data changes in the Misc Cost model - recalculate totals and update summary."""
+        if hasattr(self, 'misc_cost_totals_wrapper') and hasattr(self, 'misc_cost_widget'):
+            if hasattr(self.misc_cost_widget, 'model') and self.misc_cost_widget.model:
+                try:
+                    # Find the Formula column index
+                    formula_col_idx = self.misc_cost_widget.model.column_fields.index("sg_formula")
+                    # Recalculate totals
+                    self.misc_cost_totals_wrapper.calculate_totals(columns=[formula_col_idx], skip_first_col=True)
+                    # Update Total Cost summary
+                    self._update_total_cost_summary()
+                except (ValueError, AttributeError) as e:
+                    logger.debug(f"Could not recalculate misc totals: {e}")
 
     def set_bid(self, bid_data, project_id):
         """Set the current bid and update all cost views.
