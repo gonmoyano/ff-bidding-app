@@ -147,11 +147,10 @@ class CostsTab(QtWidgets.QMainWindow):
 
     def _create_shots_cost_widget(self):
         """Create the Shots Cost widget using VFXBreakdownWidget."""
-        # Use VFXBreakdownWidget without toolbar for Costs tab
-        # since the breakdown is preselected from the bid
+        # Use VFXBreakdownWidget with toolbar for search and sort functionality
         self.shots_cost_widget = VFXBreakdownWidget(
             self.sg_session,
-            show_toolbar=False,  # No search and sort toolbar in Costs tab
+            show_toolbar=True,  # Show search and sort toolbar in collapsible group
             entity_name="Shot",
             settings_key="shots_cost",  # Unique settings key for Shots Cost table
             parent=self
@@ -176,10 +175,10 @@ class CostsTab(QtWidgets.QMainWindow):
 
     def _create_asset_cost_widget(self):
         """Create the Asset Cost widget using VFXBreakdownWidget."""
-        # Use VFXBreakdownWidget without toolbar for Costs tab
+        # Use VFXBreakdownWidget with toolbar for search and sort functionality
         self.asset_cost_widget = VFXBreakdownWidget(
             self.sg_session,
-            show_toolbar=False,  # No search and sort toolbar in Costs tab
+            show_toolbar=True,  # Show search and sort toolbar in collapsible group
             entity_name="Asset",
             settings_key="asset_cost",  # Unique settings key for Asset Cost table
             parent=self
