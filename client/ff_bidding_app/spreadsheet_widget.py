@@ -76,11 +76,6 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
             except (ValueError, AttributeError):
                 return Qt.AlignLeft | Qt.AlignVCenter
 
-        elif role == Qt.BackgroundRole:
-            # Formulas have a light blue background
-            if (row, col) in self._formulas:
-                return QtGui.QColor("#e8f4f8")
-
         return None
 
     def _get_evaluated_value(self, row, col, formula):
@@ -173,6 +168,14 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
             name = chr(65 + (index % 26)) + name
             index //= 26
         return name
+
+    @staticmethod
+    def letter_to_col(letter):
+        """Convert column letter to index (A->0, B->1, ..., Z->25, AA->26)."""
+        col = 0
+        for char in letter:
+            col = col * 26 + (ord(char) - 65 + 1)
+        return col - 1
 
     def get_cell_value(self, row, col):
         """Get the raw value of a cell (not the formula)."""
@@ -314,6 +317,8 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         menu.addSeparator()
 
         # Column operations
+        insert_col_left = menu.addAction("Insert Column Left")
+        insert_col_right = menu.addAction("Insert Column Right")
         delete_column = menu.addAction("Delete Column")
 
         # Show menu and get action
@@ -325,6 +330,10 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             self._insert_row_below(index.row())
         elif action == delete_row:
             self._delete_row(index.row())
+        elif action == insert_col_left:
+            self._insert_column_left(index.column())
+        elif action == insert_col_right:
+            self._insert_column_right(index.column())
         elif action == delete_column:
             self._delete_column(index.column())
 
@@ -385,9 +394,13 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             if r == row:
                 continue  # Skip the deleted row
             elif r > row:
-                new_formulas[(r - 1, c)] = formula
+                # Update formula to adjust for row shift
+                updated_formula = self._update_formula_for_row_deletion(formula, row)
+                new_formulas[(r - 1, c)] = updated_formula
             else:
-                new_formulas[(r, c)] = formula
+                # Update formula even if not shifting position
+                updated_formula = self._update_formula_for_row_deletion(formula, row)
+                new_formulas[(r, c)] = updated_formula
 
         self.model._data = new_data
         self.model._formulas = new_formulas
@@ -421,9 +434,13 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             if c == col:
                 continue  # Skip the deleted column
             elif c > col:
-                new_formulas[(r, c - 1)] = formula
+                # Update formula to adjust for column shift
+                updated_formula = self._update_formula_for_column_deletion(formula, col)
+                new_formulas[(r, c - 1)] = updated_formula
             else:
-                new_formulas[(r, c)] = formula
+                # Update formula even if not shifting position
+                updated_formula = self._update_formula_for_column_deletion(formula, col)
+                new_formulas[(r, c)] = updated_formula
 
         self.model._data = new_data
         self.model._formulas = new_formulas
@@ -431,6 +448,104 @@ class SpreadsheetWidget(QtWidgets.QWidget):
 
         self.model.endRemoveColumns()
         logger.info(f"Deleted column {self.model._column_name(col)}")
+
+    def _insert_column_left(self, col):
+        """Insert a new column to the left of the specified column."""
+        self.model.beginInsertColumns(QtCore.QModelIndex(), col, col)
+
+        # Shift all data right
+        self.model._cols += 1
+        new_data = {}
+        new_formulas = {}
+
+        for (r, c), value in self.model._data.items():
+            if c >= col:
+                new_data[(r, c + 1)] = value
+            else:
+                new_data[(r, c)] = value
+
+        for (r, c), formula in self.model._formulas.items():
+            if c >= col:
+                new_formulas[(r, c + 1)] = formula
+            else:
+                new_formulas[(r, c)] = formula
+
+        self.model._data = new_data
+        self.model._formulas = new_formulas
+        self.model._evaluated_cache.clear()
+
+        self.model.endInsertColumns()
+        logger.info(f"Inserted column left of {self.model._column_name(col)}")
+
+    def _insert_column_right(self, col):
+        """Insert a new column to the right of the specified column."""
+        self._insert_column_left(col + 1)
+
+    def _update_formula_for_row_deletion(self, formula, deleted_row):
+        """Update cell references in a formula after a row deletion.
+
+        Args:
+            formula: The formula string (e.g., "=SUM(A1:A10)")
+            deleted_row: The row that was deleted (0-based)
+
+        Returns:
+            Updated formula string
+        """
+        import re
+
+        # Pattern to match cell references like A1, B2, $A$1, etc.
+        pattern = r'(\$?)([A-Z]+)(\$?)(\d+)'
+
+        def replace_ref(match):
+            col_abs = match.group(1)  # $ before column
+            col_letter = match.group(2)
+            row_abs = match.group(3)  # $ before row
+            row_num = int(match.group(4))
+
+            # Convert to 0-based
+            row_idx = row_num - 1
+
+            # If not absolute row reference and row > deleted_row, decrement
+            if not row_abs and row_idx > deleted_row:
+                new_row_num = row_num - 1
+                return f"{col_abs}{col_letter}{row_abs}{new_row_num}"
+
+            return match.group(0)
+
+        return re.sub(pattern, replace_ref, formula)
+
+    def _update_formula_for_column_deletion(self, formula, deleted_col):
+        """Update cell references in a formula after a column deletion.
+
+        Args:
+            formula: The formula string (e.g., "=SUM(A1:B10)")
+            deleted_col: The column that was deleted (0-based)
+
+        Returns:
+            Updated formula string
+        """
+        import re
+
+        # Pattern to match cell references like A1, B2, $A$1, etc.
+        pattern = r'(\$?)([A-Z]+)(\$?)(\d+)'
+
+        def replace_ref(match):
+            col_abs = match.group(1)  # $ before column
+            col_letter = match.group(2)
+            row_abs = match.group(3)  # $ before row
+            row_num = match.group(4)
+
+            # Convert column letter to index
+            col_idx = self.model.letter_to_col(col_letter)
+
+            # If not absolute column reference and col > deleted_col, shift left
+            if not col_abs and col_idx > deleted_col:
+                new_col_letter = self.model._column_name(col_idx - 1)
+                return f"{col_abs}{new_col_letter}{row_abs}{row_num}"
+
+            return match.group(0)
+
+        return re.sub(pattern, replace_ref, formula)
 
     def set_formula_evaluator(self, evaluator):
         """Set the formula evaluator."""

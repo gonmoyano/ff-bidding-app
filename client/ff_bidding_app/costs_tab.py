@@ -226,21 +226,6 @@ class CostsTab(QtWidgets.QMainWindow):
             parent=self
         )
 
-        # Add some example formulas
-        self.misc_cost_spreadsheet.set_cell_value(0, 0, "Description")
-        self.misc_cost_spreadsheet.set_cell_value(0, 1, "Amount")
-        self.misc_cost_spreadsheet.set_cell_value(0, 2, "Formula")
-
-        self.misc_cost_spreadsheet.set_cell_value(1, 0, "Example Item")
-        self.misc_cost_spreadsheet.set_cell_value(1, 1, "1000")
-        self.misc_cost_spreadsheet.set_cell_value(1, 2, "=1000")
-
-        self.misc_cost_spreadsheet.set_cell_value(2, 0, "Reference Shot Total")
-        self.misc_cost_spreadsheet.set_cell_value(2, 2, "=ShotCosts.Total")
-
-        self.misc_cost_spreadsheet.set_cell_value(3, 0, "Total")
-        self.misc_cost_spreadsheet.set_cell_value(3, 2, "=SUM(C2:C3)")
-
         logger.info("Created Miscellaneous Costs spreadsheet")
 
         return self.misc_cost_spreadsheet
