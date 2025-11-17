@@ -108,6 +108,10 @@ class PackagesTab(QtWidgets.QWidget):
         bid_tracker_layout = QtWidgets.QVBoxLayout(bid_tracker_tab)
         bid_tracker_layout.setContentsMargins(0, 0, 0, 0)
 
+        # Create VFX Breakdown selector group
+        breakdown_selector_group = CollapsibleGroupBox("VFX Breakdown")
+
+        # Create reusable VFX Breakdown widget
         self.breakdown_widget = VFXBreakdownWidget(
             self.sg_session,
             show_toolbar=True,
@@ -115,6 +119,12 @@ class PackagesTab(QtWidgets.QWidget):
             settings_key="packages_bid_tracker",
             parent=self
         )
+
+        # Add search and sort toolbar to the selector group
+        if self.breakdown_widget.toolbar_widget:
+            breakdown_selector_group.addWidget(self.breakdown_widget.toolbar_widget)
+
+        bid_tracker_layout.addWidget(breakdown_selector_group)
         bid_tracker_layout.addWidget(self.breakdown_widget)
 
         # Placeholder tabs for other content
