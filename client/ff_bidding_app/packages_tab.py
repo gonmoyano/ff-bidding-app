@@ -7,8 +7,10 @@ from pathlib import Path
 try:
     from .package_data_treeview import PackageTreeView, CustomCheckBox
     from .logger import logger
+    from .bid_selector_widget import CollapsibleGroupBox
 except ImportError:
     from package_data_treeview import PackageTreeView, CustomCheckBox
+    from bid_selector_widget import CollapsibleGroupBox
     logger = logging.getLogger("FFPackageManager")
 
 
@@ -40,23 +42,20 @@ class PackagesTab(QtWidgets.QWidget):
     def _build_ui(self):
         """Build the Packages tab UI."""
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(5, 5, 5, 5)
 
-        # Splitter for left and right panels
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        # Data to Fetch collapsible group
+        self.data_fetch_group = self._create_data_fetch_group()
+        layout.addWidget(self.data_fetch_group)
 
-        # Left panel: Data to Fetch + Output Settings
-        left_panel = self._create_left_panel()
-        splitter.addWidget(left_panel)
+        # Output Settings collapsible group
+        self.output_settings_group = self._create_output_settings_group()
+        layout.addWidget(self.output_settings_group)
 
-        # Right panel: Package Data tree
+        # Package Data tree
         self.package_data_tree = PackageTreeView()
         self.package_data_tree.set_sg_session(self.sg_session)
-        splitter.addWidget(self.package_data_tree)
-
-        # Set initial sizes (40% left, 60% right)
-        splitter.setSizes([400, 600])
-        layout.addWidget(splitter)
+        layout.addWidget(self.package_data_tree, 1)  # Give it stretch factor
 
         # Bottom section: Status + Create Package button
         bottom_layout = QtWidgets.QHBoxLayout()
@@ -72,20 +71,14 @@ class PackagesTab(QtWidgets.QWidget):
 
         layout.addLayout(bottom_layout)
 
-    def _create_left_panel(self):
-        """Create the left panel for the Packages tab."""
-        left_panel = QtWidgets.QWidget()
-        left_layout = QtWidgets.QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(5, 5, 5, 5)
-
-        # Data selection group
-        data_group = QtWidgets.QGroupBox("Data to Fetch")
-        data_layout = QtWidgets.QVBoxLayout(data_group)
+    def _create_data_fetch_group(self):
+        """Create the Data to Fetch collapsible group."""
+        data_group = CollapsibleGroupBox("Data to Fetch")
 
         # Entity types
         entity_label = QtWidgets.QLabel("Entity Types:")
         entity_label.setStyleSheet("font-weight: bold;")
-        data_layout.addWidget(entity_label)
+        data_group.addWidget(entity_label)
 
         # Define categories that will appear in the tree view
         categories = [
@@ -101,14 +94,18 @@ class PackagesTab(QtWidgets.QWidget):
             checkbox.setChecked(True)
             # Connect to handler that will show/hide tree items
             checkbox.stateChanged.connect(lambda state, cat=category: self._on_entity_type_toggled(cat, state))
-            data_layout.addWidget(checkbox)
+            data_group.addWidget(checkbox)
             self.entity_type_checkboxes[category] = checkbox
 
-        left_layout.addWidget(data_group)
+        return data_group
 
-        # Output settings group
-        output_group = QtWidgets.QGroupBox("Output Settings")
-        output_layout = QtWidgets.QFormLayout(output_group)
+    def _create_output_settings_group(self):
+        """Create the Output Settings collapsible group."""
+        output_group = CollapsibleGroupBox("Output Settings")
+
+        # Create a form layout for the output settings
+        form_widget = QtWidgets.QWidget()
+        output_layout = QtWidgets.QFormLayout(form_widget)
 
         output_path_row = QtWidgets.QHBoxLayout()
         self.output_path_input = QtWidgets.QLineEdit(self.output_directory)
@@ -124,10 +121,9 @@ class PackagesTab(QtWidgets.QWidget):
         self.package_name_input.setPlaceholderText("Auto-generated from RFQ")
         output_layout.addRow("Package Name:", self.package_name_input)
 
-        left_layout.addWidget(output_group)
-        left_layout.addStretch()
+        output_group.addWidget(form_widget)
 
-        return left_panel
+        return output_group
 
     def set_rfq(self, rfq):
         """Set the current RFQ and update the tree view.
