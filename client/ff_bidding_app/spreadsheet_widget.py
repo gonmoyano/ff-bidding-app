@@ -634,6 +634,18 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.table_view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
         self.table_view.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)  # Single selection for fill handle
 
+        # Custom selection styling - transparent background with blue border drawn in paintEvent
+        self.table_view.setStyleSheet("""
+            QTableView {
+                selection-background-color: transparent;
+                selection-color: inherit;
+            }
+            QTableView::item:selected {
+                background-color: transparent;
+                color: inherit;
+            }
+        """)
+
         # Enable context menu
         self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table_view.customContextMenuRequested.connect(self._show_context_menu)
