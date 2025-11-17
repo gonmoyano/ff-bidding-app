@@ -28,6 +28,10 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         self._drag_current_index = None
         self.setMouseTracking(True)
 
+        # Clipboard data for cut/copy/paste
+        self._clipboard_data = None
+        self._clipboard_is_cut = False
+
     def paintEvent(self, event):
         """Paint the table and add blue border with fill handle."""
         super().paintEvent(event)
@@ -206,6 +210,186 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                 return f"{col_abs}{col_letter}{row_abs}{new_row_num}"
 
             return match.group(0)
+
+        return re.sub(pattern, replace_ref, formula)
+
+    def keyPressEvent(self, event):
+        """Handle keyboard events for copy/cut/paste operations."""
+        # Check for Ctrl+C (Copy)
+        if event.key() == Qt.Key_C and event.modifiers() == Qt.ControlModifier:
+            self._copy_selection()
+            event.accept()
+            return
+
+        # Check for Ctrl+X (Cut)
+        if event.key() == Qt.Key_X and event.modifiers() == Qt.ControlModifier:
+            self._cut_selection()
+            event.accept()
+            return
+
+        # Check for Ctrl+V (Paste)
+        if event.key() == Qt.Key_V and event.modifiers() == Qt.ControlModifier:
+            self._paste_selection()
+            event.accept()
+            return
+
+        # Check for Delete key
+        if event.key() == Qt.Key_Delete:
+            self._delete_selection()
+            event.accept()
+            return
+
+        super().keyPressEvent(event)
+
+    def _copy_selection(self):
+        """Copy the current cell to clipboard."""
+        current = self.currentIndex()
+        if not current.isValid():
+            return
+
+        model = self.model()
+        if not model:
+            return
+
+        # Get the cell's formula or value (EditRole shows formula if present)
+        value = model.data(current, Qt.EditRole)
+
+        # Store in internal clipboard
+        self._clipboard_data = {
+            'value': value,
+            'row': current.row(),
+            'col': current.column()
+        }
+        self._clipboard_is_cut = False
+
+        # Also copy to system clipboard as text
+        clipboard = QtWidgets.QApplication.clipboard()
+        display_value = model.data(current, Qt.DisplayRole)
+        clipboard.setText(str(display_value) if display_value else "")
+
+        logger.debug(f"Copied cell ({current.row()},{current.column()}): {value}")
+
+    def _cut_selection(self):
+        """Cut the current cell to clipboard."""
+        current = self.currentIndex()
+        if not current.isValid():
+            return
+
+        # First copy the data
+        self._copy_selection()
+
+        # Mark as cut operation
+        self._clipboard_is_cut = True
+
+        logger.debug(f"Cut cell ({current.row()},{current.column()})")
+
+    def _paste_selection(self):
+        """Paste clipboard data to the current cell."""
+        current = self.currentIndex()
+        if not current.isValid():
+            return
+
+        model = self.model()
+        if not model:
+            return
+
+        # Try internal clipboard first
+        if self._clipboard_data:
+            source_row = self._clipboard_data.get('row', 0)
+            source_col = self._clipboard_data.get('col', 0)
+            value = self._clipboard_data.get('value', '')
+
+            # If it's a formula and we're pasting to a different cell, adjust references
+            if isinstance(value, str) and value.startswith('='):
+                row_offset = current.row() - source_row
+                col_offset = current.column() - source_col
+
+                if row_offset != 0 or col_offset != 0:
+                    value = self._adjust_formula_for_paste(value, row_offset, col_offset)
+
+            # Set the data
+            model.setData(current, value, Qt.EditRole)
+
+            # If it was a cut operation, clear the source cell
+            if self._clipboard_is_cut and self._clipboard_data:
+                source_index = model.index(source_row, source_col)
+                model.setData(source_index, "", Qt.EditRole)
+                self._clipboard_is_cut = False
+
+            logger.debug(f"Pasted to cell ({current.row()},{current.column()}): {value}")
+        else:
+            # Try system clipboard
+            clipboard = QtWidgets.QApplication.clipboard()
+            text = clipboard.text()
+            if text:
+                model.setData(current, text, Qt.EditRole)
+                logger.debug(f"Pasted from system clipboard to ({current.row()},{current.column()}): {text}")
+
+    def _delete_selection(self):
+        """Delete the content of the current cell."""
+        current = self.currentIndex()
+        if not current.isValid():
+            return
+
+        model = self.model()
+        if not model:
+            return
+
+        # Clear the cell
+        model.setData(current, "", Qt.EditRole)
+        logger.debug(f"Deleted cell ({current.row()},{current.column()})")
+
+    def _adjust_formula_for_paste(self, formula, row_offset, col_offset):
+        """Adjust formula references when pasting to a different cell.
+
+        Args:
+            formula: Original formula string
+            row_offset: Number of rows to offset (positive = down, negative = up)
+            col_offset: Number of columns to offset (positive = right, negative = left)
+
+        Returns:
+            Adjusted formula string
+        """
+        # Pattern to match cell references like A1, B2, $A$1, etc.
+        pattern = r'(\$?)([A-Z]+)(\$?)(\d+)'
+
+        def replace_ref(match):
+            col_abs = match.group(1)  # $ before column
+            col_letter = match.group(2)
+            row_abs = match.group(3)  # $ before row
+            row_num = int(match.group(4))
+
+            # Adjust row if not absolute
+            if not row_abs:
+                new_row_num = row_num + row_offset
+                if new_row_num < 1:
+                    new_row_num = 1
+            else:
+                new_row_num = row_num
+
+            # Adjust column if not absolute
+            if not col_abs:
+                # Convert column letter to index, adjust, and convert back
+                col_idx = 0
+                for char in col_letter:
+                    col_idx = col_idx * 26 + (ord(char) - 65 + 1)
+                col_idx -= 1  # Make 0-based
+
+                new_col_idx = col_idx + col_offset
+                if new_col_idx < 0:
+                    new_col_idx = 0
+
+                # Convert back to letter
+                new_col_letter = ""
+                temp_idx = new_col_idx + 1
+                while temp_idx > 0:
+                    temp_idx -= 1
+                    new_col_letter = chr(65 + (temp_idx % 26)) + new_col_letter
+                    temp_idx //= 26
+            else:
+                new_col_letter = col_letter
+
+            return f"{col_abs}{new_col_letter}{row_abs}{new_row_num}"
 
         return re.sub(pattern, replace_ref, formula)
 
