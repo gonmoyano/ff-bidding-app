@@ -124,7 +124,7 @@ class CostsTab(QtWidgets.QMainWindow):
 
         # Miscellaneous Costs
         self.misc_cost_dock = CostDock(
-            "Miscellaneous Costs",
+            "Misc",
             self._create_misc_cost_widget(),
             self
         )
@@ -218,7 +218,7 @@ class CostsTab(QtWidgets.QMainWindow):
         return self.asset_cost_widget
 
     def _create_misc_cost_widget(self):
-        """Create the Miscellaneous Costs widget with full Google Sheets-style spreadsheet."""
+        """Create the Misc widget with full Google Sheets-style spreadsheet."""
         # Create the spreadsheet widget (defaults to 10 rows)
         self.misc_cost_spreadsheet = SpreadsheetWidget(
             cols=10,
@@ -226,7 +226,7 @@ class CostsTab(QtWidgets.QMainWindow):
             parent=self
         )
 
-        logger.info("Created Miscellaneous Costs spreadsheet")
+        logger.info("Created Misc spreadsheet")
 
         return self.misc_cost_spreadsheet
 
@@ -241,47 +241,34 @@ class CostsTab(QtWidgets.QMainWindow):
         title.setStyleSheet("font-size: 16px; font-weight: bold; padding: 5px;")
         layout.addWidget(title)
 
-        # Create summary table
-        self.total_cost_table = QtWidgets.QTableWidget()
-        self.total_cost_table.setColumnCount(2)
-        self.total_cost_table.setHorizontalHeaderLabels(["Category", "Amount"])
-        self.total_cost_table.setRowCount(4)
+        # Create summary table using SpreadsheetWidget for formula support
+        self.total_cost_spreadsheet = SpreadsheetWidget(
+            rows=5,  # Header + 4 data rows
+            cols=2,
+            app_settings=self.app_settings,
+            parent=self
+        )
 
-        # Disable editing for the summary table
-        self.total_cost_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-
-        # Set row labels
+        # Initialize with labels
         row_labels = ["Shot Costs", "Asset Costs", "Misc", "Total Cost"]
-        for row, label in enumerate(row_labels):
-            category_item = QtWidgets.QTableWidgetItem(label)
-            category_item.setFlags(category_item.flags() & ~QtCore.Qt.ItemIsEditable)
-            self.total_cost_table.setItem(row, 0, category_item)
+        self.total_cost_spreadsheet.set_cell_value(0, 0, "Category")
+        self.total_cost_spreadsheet.set_cell_value(0, 1, "Amount")
 
-            # Create amount cell
-            amount_item = QtWidgets.QTableWidgetItem("$0.00")
-            amount_item.setTextAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-            amount_item.setFlags(amount_item.flags() & ~QtCore.Qt.ItemIsEditable)
-            self.total_cost_table.setItem(row, 1, amount_item)
-
-        # Style the Total Cost row
-        total_row_idx = 3
-        for col in range(2):
-            item = self.total_cost_table.item(total_row_idx, col)
-            if item:
-                font = item.font()
-                font.setBold(True)
-                item.setFont(font)
-                item.setBackground(QtGui.QColor("#3a3a3a"))
+        for row, label in enumerate(row_labels, start=1):
+            self.total_cost_spreadsheet.set_cell_value(row, 0, label)
+            self.total_cost_spreadsheet.set_cell_value(row, 1, "$0.00")
 
         # Set column widths
-        self.total_cost_table.setColumnWidth(0, 200)
-        self.total_cost_table.setColumnWidth(1, 150)
+        self.total_cost_spreadsheet.table_view.setColumnWidth(0, 200)
+        self.total_cost_spreadsheet.table_view.setColumnWidth(1, 150)
 
         # Adjust table height to fit content
-        self.total_cost_table.setMaximumHeight(200)
+        self.total_cost_spreadsheet.setMaximumHeight(250)
 
-        layout.addWidget(self.total_cost_table)
+        layout.addWidget(self.total_cost_spreadsheet)
         layout.addStretch()
+
+        logger.info("Created Total Cost Summary spreadsheet")
 
         return widget
 
@@ -336,11 +323,11 @@ class CostsTab(QtWidgets.QMainWindow):
             if self.app_settings:
                 currency_symbol = self.app_settings.get_currency() or "$"
 
-            # Update the summary table
-            self.total_cost_table.item(0, 1).setText(f"{currency_symbol}{shot_total:,.2f}")
-            self.total_cost_table.item(1, 1).setText(f"{currency_symbol}{asset_total:,.2f}")
-            self.total_cost_table.item(2, 1).setText(f"{currency_symbol}{misc_total:,.2f}")
-            self.total_cost_table.item(3, 1).setText(f"{currency_symbol}{grand_total:,.2f}")
+            # Update the summary spreadsheet (rows 1-4, column 1)
+            self.total_cost_spreadsheet.set_cell_value(1, 1, f"{currency_symbol}{shot_total:,.2f}")
+            self.total_cost_spreadsheet.set_cell_value(2, 1, f"{currency_symbol}{asset_total:,.2f}")
+            self.total_cost_spreadsheet.set_cell_value(3, 1, f"{currency_symbol}{misc_total:,.2f}")
+            self.total_cost_spreadsheet.set_cell_value(4, 1, f"{currency_symbol}{grand_total:,.2f}")
 
             logger.debug(f"Updated Total Cost summary: Shots=${shot_total:,.2f}, Assets=${asset_total:,.2f}, Total=${grand_total:,.2f}")
 
@@ -414,7 +401,7 @@ class CostsTab(QtWidgets.QMainWindow):
 
         # Add Misc Costs spreadsheet model
         if hasattr(self, 'misc_cost_spreadsheet') and hasattr(self.misc_cost_spreadsheet, 'model'):
-            sheet_models['MiscCosts'] = self.misc_cost_spreadsheet.model
+            sheet_models['Misc'] = self.misc_cost_spreadsheet.model
 
         # Create formula evaluator with cross-tab support
         self.misc_cost_formula_evaluator = FormulaEvaluator(
@@ -428,7 +415,23 @@ class CostsTab(QtWidgets.QMainWindow):
         # Connect dataChanged signal
         self.misc_cost_spreadsheet.model.dataChanged.connect(self._on_misc_data_changed)
 
-        logger.info("Set up cross-tab formula references for Miscellaneous Costs")
+        # Set up formula evaluator for Total Cost Summary spreadsheet
+        if hasattr(self, 'total_cost_spreadsheet') and hasattr(self.total_cost_spreadsheet, 'model'):
+            # Add Total Cost Summary model to sheet_models
+            sheet_models['TotalCost'] = self.total_cost_spreadsheet.model
+
+            # Create formula evaluator with cross-tab support for Total Cost Summary
+            self.total_cost_formula_evaluator = FormulaEvaluator(
+                table_model=self.total_cost_spreadsheet.model,
+                sheet_models=sheet_models
+            )
+
+            # Set the formula evaluator on the spreadsheet
+            self.total_cost_spreadsheet.set_formula_evaluator(self.total_cost_formula_evaluator)
+
+            logger.info("Set up cross-tab formula references for Total Cost Summary")
+
+        logger.info("Set up cross-tab formula references for all cost sheets")
 
     def set_bid(self, bid_data, project_id):
         """Set the current bid and update all cost views.
