@@ -12,6 +12,7 @@ try:
     from .vfx_breakdown_model import ValidatedComboBoxDelegate
     from .formula_evaluator import FormulaEvaluator
     from .table_with_totals_bar import TableWithTotalsBar
+    from .spreadsheet_widget import SpreadsheetWidget
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
@@ -20,72 +21,11 @@ except ImportError:
     from vfx_breakdown_model import ValidatedComboBoxDelegate
     from formula_evaluator import FormulaEvaluator
     from table_with_totals_bar import TableWithTotalsBar
-
-
-class CollapsibleDockTitleBar(QtWidgets.QWidget):
-    """Custom title bar for collapsible dock widgets."""
-
-    def __init__(self, dock_widget, parent=None):
-        """Initialize the title bar.
-
-        Args:
-            dock_widget: The dock widget this title bar belongs to
-            parent: Parent widget
-        """
-        super().__init__(parent)
-        self.dock_widget = dock_widget
-
-        # Create layout
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(5, 0, 5, 0)
-        layout.setSpacing(5)
-
-        # Collapse/expand button
-        self.collapse_btn = QtWidgets.QToolButton()
-        self.collapse_btn.setArrowType(QtCore.Qt.DownArrow)
-        self.collapse_btn.setAutoRaise(True)
-        self.collapse_btn.clicked.connect(self._on_collapse_clicked)
-        self.collapse_btn.setToolTip("Collapse/Expand")
-        layout.addWidget(self.collapse_btn)
-
-        # Title label
-        self.title_label = QtWidgets.QLabel(dock_widget.windowTitle())
-        self.title_label.setStyleSheet("font-weight: bold;")
-        layout.addWidget(self.title_label)
-
-        layout.addStretch()
-
-        # Style
-        self.setStyleSheet("""
-            CollapsibleDockTitleBar {
-                background-color: palette(window);
-                border: 1px solid palette(mid);
-                border-bottom: 1px solid palette(dark);
-            }
-            QToolButton:hover {
-                background-color: palette(light);
-            }
-        """)
-
-    def _on_collapse_clicked(self):
-        """Handle collapse button click."""
-        if hasattr(self.dock_widget, 'toggle_collapse'):
-            self.dock_widget.toggle_collapse()
-
-    def set_collapsed(self, collapsed):
-        """Update the button arrow based on collapsed state.
-
-        Args:
-            collapsed: Whether the dock is collapsed
-        """
-        if collapsed:
-            self.collapse_btn.setArrowType(QtCore.Qt.RightArrow)
-        else:
-            self.collapse_btn.setArrowType(QtCore.Qt.DownArrow)
+    from spreadsheet_widget import SpreadsheetWidget
 
 
 class CostDock(QtWidgets.QDockWidget):
-    """A collapsible dockable cost widget."""
+    """A dockable cost widget."""
 
     def __init__(self, title, widget, parent=None):
         """Initialize the cost dock.
@@ -100,223 +40,6 @@ class CostDock(QtWidgets.QDockWidget):
         self.setWidget(widget)
         # No features - docks cannot be closed, moved, or floated
         self.setFeatures(QtWidgets.QDockWidget.NoDockWidgetFeatures)
-
-        # Create custom title bar
-        self.title_bar = CollapsibleDockTitleBar(self)
-        self.setTitleBarWidget(self.title_bar)
-
-        # Track collapsed state
-        self._is_collapsed = False
-        self._content_widget = widget
-        self._expanded_size = None
-
-        # Store original margins for restoration when expanding
-        self._saved_margins = None
-        self._saved_layout_margins = None
-        self._saved_layout_spacing = None
-        self._saved_wrapper_margins = None
-        self._saved_wrapper_spacing = None
-
-    def toggle_collapse(self):
-        """Toggle the collapsed state of the dock."""
-        if self._is_collapsed:
-            self.expand()
-        else:
-            self.collapse()
-
-    def collapse(self):
-        """Collapse the dock to show only the title bar (or totals bar if available)."""
-        if self._is_collapsed:
-            return
-
-        # Save current size
-        self._expanded_size = self.size()
-
-        # Check if content widget contains a TableWithTotalsBar that we should partially collapse
-        totals_wrapper = self._find_totals_wrapper()
-        if totals_wrapper:
-            # Collapse just the table, keep totals bar visible
-            totals_wrapper.collapse_table()
-
-            # Also hide the toolbar if it exists
-            toolbar = self._find_toolbar()
-            if toolbar:
-                toolbar.setVisible(False)
-
-            # Save and remove all content margins to eliminate spacing
-            if self._content_widget and self._content_widget.layout():
-                layout = self._content_widget.layout()
-                # Save original margins and spacing
-                self._saved_layout_margins = layout.contentsMargins()
-                self._saved_layout_spacing = layout.spacing()
-                # Set to 0 to remove spacing
-                layout.setContentsMargins(0, 0, 0, 0)
-                layout.setSpacing(0)
-
-            # Also remove margins from the totals wrapper's layout
-            if hasattr(totals_wrapper, 'layout') and totals_wrapper.layout():
-                wrapper_layout = totals_wrapper.layout()
-                if not hasattr(self, '_saved_wrapper_margins'):
-                    self._saved_wrapper_margins = wrapper_layout.contentsMargins()
-                    self._saved_wrapper_spacing = wrapper_layout.spacing()
-                wrapper_layout.setContentsMargins(0, 0, 0, 0)
-                wrapper_layout.setSpacing(0)
-
-            # Save and remove content margins from the dock widget itself
-            self._saved_margins = self.contentsMargins()
-            self.setContentsMargins(0, 0, 0, 0)
-
-            # Calculate height: title bar + totals bar (no padding, no spacing)
-            # Use actual height instead of sizeHint for more accurate measurement
-            title_height = self.title_bar.height() if self.title_bar.height() > 0 else self.title_bar.sizeHint().height()
-            totals_height = totals_wrapper.totals_bar.height() if totals_wrapper.totals_bar.height() > 0 else totals_wrapper.totals_bar.sizeHint().height()
-
-            # Set exact height with no extra space
-            collapsed_height = title_height + totals_height
-            self.setMinimumHeight(collapsed_height)
-            self.setMaximumHeight(collapsed_height)
-        else:
-            # Traditional collapse: hide content widget entirely
-            if self._content_widget:
-                self._content_widget.hide()
-            # Set minimum and maximum height to title bar height
-            title_height = self.title_bar.sizeHint().height()
-            self.setMinimumHeight(title_height)
-            self.setMaximumHeight(title_height)
-
-        self._is_collapsed = True
-        self.title_bar.set_collapsed(True)
-
-        logger.debug(f"Collapsed dock: {self.windowTitle()}")
-
-    def expand(self):
-        """Expand the dock to show the content widget."""
-        if not self._is_collapsed:
-            return
-
-        # Check if content widget contains a TableWithTotalsBar
-        totals_wrapper = self._find_totals_wrapper()
-        if totals_wrapper:
-            # Expand the table to show both table and totals bar
-            totals_wrapper.expand_table()
-
-            # Also show the toolbar if it exists
-            toolbar = self._find_toolbar()
-            if toolbar:
-                toolbar.setVisible(True)
-
-            # Restore layout margins and spacing
-            if self._content_widget and self._content_widget.layout():
-                layout = self._content_widget.layout()
-                if self._saved_layout_margins is not None:
-                    layout.setContentsMargins(self._saved_layout_margins)
-                    self._saved_layout_margins = None
-                if self._saved_layout_spacing is not None:
-                    layout.setSpacing(self._saved_layout_spacing)
-                    self._saved_layout_spacing = None
-
-            # Restore totals wrapper margins and spacing
-            if hasattr(totals_wrapper, 'layout') and totals_wrapper.layout():
-                wrapper_layout = totals_wrapper.layout()
-                if self._saved_wrapper_margins is not None:
-                    wrapper_layout.setContentsMargins(self._saved_wrapper_margins)
-                    self._saved_wrapper_margins = None
-                if self._saved_wrapper_spacing is not None:
-                    wrapper_layout.setSpacing(self._saved_wrapper_spacing)
-                    self._saved_wrapper_spacing = None
-
-            # Restore dock widget margins
-            if self._saved_margins is not None:
-                self.setContentsMargins(self._saved_margins)
-                self._saved_margins = None
-        else:
-            # Traditional expand: show content widget
-            if self._content_widget:
-                self._content_widget.show()
-
-        # Reset size constraints
-        self.setMinimumHeight(0)
-        self.setMaximumHeight(16777215)  # Qt's QWIDGETSIZE_MAX
-
-        # Restore size if we saved it
-        if self._expanded_size:
-            self.resize(self._expanded_size)
-
-        self._is_collapsed = False
-        self.title_bar.set_collapsed(False)
-
-        logger.debug(f"Expanded dock: {self.windowTitle()}")
-
-    def _find_totals_wrapper(self):
-        """Find TableWithTotalsBar widget within the content widget.
-
-        Returns:
-            TableWithTotalsBar instance or None if not found
-        """
-        if not self._content_widget:
-            return None
-
-        # Check if the content widget itself is a TableWithTotalsBar
-        if isinstance(self._content_widget, TableWithTotalsBar):
-            return self._content_widget
-
-        # Search through the widget's children recursively
-        def find_in_children(widget):
-            for child in widget.findChildren(TableWithTotalsBar):
-                return child
-            return None
-
-        return find_in_children(self._content_widget)
-
-    def _find_toolbar(self):
-        """Find the toolbar group widget within the content widget.
-
-        Returns:
-            Toolbar group widget or None if not found
-        """
-        if not self._content_widget:
-            return None
-
-        # Check if the content widget itself is a VFXBreakdownWidget
-        if isinstance(self._content_widget, VFXBreakdownWidget):
-            # Return toolbar_group if available (wrapped in collapsible group), otherwise toolbar_widget
-            if hasattr(self._content_widget, 'toolbar_group') and self._content_widget.toolbar_group:
-                return self._content_widget.toolbar_group
-            elif hasattr(self._content_widget, 'toolbar_widget') and self._content_widget.toolbar_widget:
-                return self._content_widget.toolbar_widget
-
-        # Search for VFXBreakdownWidget in children
-        # VFXBreakdownWidget is already imported at the top of this file
-        def find_in_children(widget):
-            # Look for VFXBreakdownWidget
-            for child in widget.findChildren(VFXBreakdownWidget):
-                # Return toolbar_group if available, otherwise toolbar_widget
-                if hasattr(child, 'toolbar_group') and child.toolbar_group:
-                    return child.toolbar_group
-                elif hasattr(child, 'toolbar_widget') and child.toolbar_widget:
-                    return child.toolbar_widget
-            return None
-
-        return find_in_children(self._content_widget)
-
-    def is_collapsed(self):
-        """Get the collapsed state.
-
-        Returns:
-            bool: True if collapsed, False otherwise
-        """
-        return self._is_collapsed
-
-    def set_collapsed(self, collapsed):
-        """Set the collapsed state.
-
-        Args:
-            collapsed: True to collapse, False to expand
-        """
-        if collapsed:
-            self.collapse()
-        else:
-            self.expand()
 
 
 class CostsTab(QtWidgets.QMainWindow):
@@ -375,6 +98,9 @@ class CostsTab(QtWidgets.QMainWindow):
         # Create cost docks
         self._create_cost_docks()
 
+        # Set up cross-tab formula evaluator after all widgets are created
+        self._setup_cross_tab_formulas()
+
         # Load saved layout
         QtCore.QTimer.singleShot(0, self.load_layout)
 
@@ -396,6 +122,13 @@ class CostsTab(QtWidgets.QMainWindow):
             self
         )
 
+        # Miscellaneous Costs
+        self.misc_cost_dock = CostDock(
+            "Misc",
+            self._create_misc_cost_widget(),
+            self
+        )
+
         # Total Cost
         self.total_cost_dock = CostDock(
             "Total Cost",
@@ -403,22 +136,26 @@ class CostsTab(QtWidgets.QMainWindow):
             self
         )
 
-        # Add docks vertically stacked - Order: Shots Cost -> Assets Cost -> Total Cost
+        # Add docks as tabs - Order: Shots Cost -> Assets Cost -> Misc Cost -> Total Cost
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.shots_cost_dock)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.asset_cost_dock)
+        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.misc_cost_dock)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.total_cost_dock)
 
-        # Force vertical stacking
-        self.splitDockWidget(self.shots_cost_dock, self.asset_cost_dock, QtCore.Qt.Vertical)
-        self.splitDockWidget(self.asset_cost_dock, self.total_cost_dock, QtCore.Qt.Vertical)
+        # Create tabs instead of vertical stacking
+        self.tabifyDockWidget(self.shots_cost_dock, self.asset_cost_dock)
+        self.tabifyDockWidget(self.asset_cost_dock, self.misc_cost_dock)
+        self.tabifyDockWidget(self.misc_cost_dock, self.total_cost_dock)
+
+        # Show the first tab by default
+        self.shots_cost_dock.raise_()
 
     def _create_shots_cost_widget(self):
         """Create the Shots Cost widget using VFXBreakdownWidget."""
-        # Use VFXBreakdownWidget without toolbar for Costs tab
-        # since the breakdown is preselected from the bid
+        # Use VFXBreakdownWidget with toolbar for search and sort functionality
         self.shots_cost_widget = VFXBreakdownWidget(
             self.sg_session,
-            show_toolbar=False,  # No search and sort toolbar in Costs tab
+            show_toolbar=True,  # Show search and sort toolbar in collapsible group
             entity_name="Shot",
             settings_key="shots_cost",  # Unique settings key for Shots Cost table
             parent=self
@@ -443,10 +180,10 @@ class CostsTab(QtWidgets.QMainWindow):
 
     def _create_asset_cost_widget(self):
         """Create the Asset Cost widget using VFXBreakdownWidget."""
-        # Use VFXBreakdownWidget without toolbar for Costs tab
+        # Use VFXBreakdownWidget with toolbar for search and sort functionality
         self.asset_cost_widget = VFXBreakdownWidget(
             self.sg_session,
-            show_toolbar=False,  # No search and sort toolbar in Costs tab
+            show_toolbar=True,  # Show search and sort toolbar in collapsible group
             entity_name="Asset",
             settings_key="asset_cost",  # Unique settings key for Asset Cost table
             parent=self
@@ -480,29 +217,221 @@ class CostsTab(QtWidgets.QMainWindow):
 
         return self.asset_cost_widget
 
+    def _create_misc_cost_widget(self):
+        """Create the Misc widget with full Google Sheets-style spreadsheet."""
+        # Create the spreadsheet widget (defaults to 10 rows)
+        self.misc_cost_spreadsheet = SpreadsheetWidget(
+            cols=10,
+            app_settings=self.app_settings,
+            parent=self
+        )
+
+        logger.info("Created Misc spreadsheet")
+
+        return self.misc_cost_spreadsheet
+
     def _create_total_cost_widget(self):
-        """Create the Total Cost widget."""
+        """Create the Total Cost widget with summary table."""
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(widget)
         layout.setContentsMargins(10, 10, 10, 10)
 
         # Title
-        title = QtWidgets.QLabel("Total Cost")
+        title = QtWidgets.QLabel("Total Cost Summary")
         title.setStyleSheet("font-size: 16px; font-weight: bold; padding: 5px;")
         layout.addWidget(title)
 
-        # Placeholder content
-        content = QtWidgets.QTextEdit()
-        content.setPlaceholderText("Total cost summary will be displayed here...\n\n"
-                                   "This will show:\n"
-                                   "- Grand total for all shots and assets\n"
-                                   "- Cost breakdown by category\n"
-                                   "- Budget vs actual\n"
-                                   "- Overall project cost summary")
-        content.setReadOnly(True)
-        layout.addWidget(content)
+        # Create summary table using SpreadsheetWidget for formula support
+        self.total_cost_spreadsheet = SpreadsheetWidget(
+            rows=5,  # Header + 4 data rows
+            cols=2,
+            app_settings=self.app_settings,
+            parent=self
+        )
+
+        # Initialize with labels
+        row_labels = ["Shot Costs", "Asset Costs", "Misc", "Total Cost"]
+        self.total_cost_spreadsheet.set_cell_value(0, 0, "Category")
+        self.total_cost_spreadsheet.set_cell_value(0, 1, "Amount")
+
+        for row, label in enumerate(row_labels, start=1):
+            self.total_cost_spreadsheet.set_cell_value(row, 0, label)
+            self.total_cost_spreadsheet.set_cell_value(row, 1, "$0.00")
+
+        # Set column widths
+        self.total_cost_spreadsheet.table_view.setColumnWidth(0, 200)
+        self.total_cost_spreadsheet.table_view.setColumnWidth(1, 150)
+
+        # Adjust table height to fit content
+        self.total_cost_spreadsheet.setMaximumHeight(250)
+
+        layout.addWidget(self.total_cost_spreadsheet)
+        layout.addStretch()
+
+        logger.info("Created Total Cost Summary spreadsheet")
 
         return widget
+
+    def _update_total_cost_summary(self):
+        """Update the Total Cost summary table with live totals from each dock."""
+        try:
+            # Get Shot Costs total
+            shot_total = 0.0
+            if hasattr(self, 'shots_cost_totals_wrapper') and hasattr(self, 'shots_cost_widget'):
+                if hasattr(self.shots_cost_widget, 'model') and self.shots_cost_widget.model:
+                    # Find the Price column index (_calc_price)
+                    try:
+                        price_col_idx = self.shots_cost_widget.model.column_fields.index("_calc_price")
+                        total_str = self.shots_cost_totals_wrapper.get_total(price_col_idx)
+                        # Parse the total string (format: "$1,234.56")
+                        shot_total = self._parse_currency_value(total_str)
+                    except (ValueError, AttributeError) as e:
+                        logger.debug(f"Could not get shot costs total: {e}")
+
+            # Get Asset Costs total
+            asset_total = 0.0
+            if hasattr(self, 'asset_cost_totals_wrapper') and hasattr(self, 'asset_cost_widget'):
+                if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
+                    # Find the Price column index (_calc_price)
+                    try:
+                        price_col_idx = self.asset_cost_widget.model.column_fields.index("_calc_price")
+                        total_str = self.asset_cost_totals_wrapper.get_total(price_col_idx)
+                        # Parse the total string (format: "$1,234.56")
+                        asset_total = self._parse_currency_value(total_str)
+                    except (ValueError, AttributeError) as e:
+                        logger.debug(f"Could not get asset costs total: {e}")
+
+            # Get Misc total from spreadsheet
+            misc_total = 0.0
+            if hasattr(self, 'misc_cost_spreadsheet') and hasattr(self.misc_cost_spreadsheet, 'model'):
+                # Sum all values in column C (index 2) which contains formulas
+                # Starting from row 2 (index 1) to skip header
+                try:
+                    for row in range(1, self.misc_cost_spreadsheet.model.rowCount()):
+                        value = self.misc_cost_spreadsheet.get_cell_value(row, 2)  # Column C
+                        if value:
+                            parsed_value = self._parse_currency_value(str(value))
+                            misc_total += parsed_value
+                except (ValueError, AttributeError) as e:
+                    logger.debug(f"Could not calculate misc costs total: {e}")
+
+            # Calculate grand total
+            grand_total = shot_total + asset_total + misc_total
+
+            # Get currency symbol
+            currency_symbol = "$"
+            if self.app_settings:
+                currency_symbol = self.app_settings.get_currency() or "$"
+
+            # Update the summary spreadsheet (rows 1-4, column 1)
+            self.total_cost_spreadsheet.set_cell_value(1, 1, f"{currency_symbol}{shot_total:,.2f}")
+            self.total_cost_spreadsheet.set_cell_value(2, 1, f"{currency_symbol}{asset_total:,.2f}")
+            self.total_cost_spreadsheet.set_cell_value(3, 1, f"{currency_symbol}{misc_total:,.2f}")
+            self.total_cost_spreadsheet.set_cell_value(4, 1, f"{currency_symbol}{grand_total:,.2f}")
+
+            logger.debug(f"Updated Total Cost summary: Shots=${shot_total:,.2f}, Assets=${asset_total:,.2f}, Total=${grand_total:,.2f}")
+
+        except Exception as e:
+            logger.error(f"Error updating Total Cost summary: {e}", exc_info=True)
+
+    def _parse_currency_value(self, value_str):
+        """Parse a currency string and return the numeric value.
+
+        Args:
+            value_str: String like "$1,234.56" or "1234.56"
+
+        Returns:
+            float: Parsed numeric value, or 0.0 if parsing fails
+        """
+        if not value_str:
+            return 0.0
+
+        try:
+            # Remove currency symbols, commas, and whitespace
+            cleaned = value_str.replace('$', '').replace('€', '').replace('£', '').replace(',', '').strip()
+            return float(cleaned)
+        except (ValueError, AttributeError):
+            return 0.0
+
+    def _on_shots_data_changed(self):
+        """Handle data changes in the Shots Cost model - recalculate totals and update summary."""
+        if hasattr(self, 'shots_cost_totals_wrapper') and hasattr(self, 'shots_cost_widget'):
+            if hasattr(self.shots_cost_widget, 'model') and self.shots_cost_widget.model:
+                try:
+                    # Find the Price column index
+                    price_col_idx = self.shots_cost_widget.model.column_fields.index("_calc_price")
+                    # Recalculate totals
+                    self.shots_cost_totals_wrapper.calculate_totals(columns=[price_col_idx], skip_first_col=True)
+                    # Update Total Cost summary
+                    self._update_total_cost_summary()
+                except (ValueError, AttributeError) as e:
+                    logger.debug(f"Could not recalculate shots totals: {e}")
+
+    def _on_assets_data_changed(self):
+        """Handle data changes in the Assets Cost model - recalculate totals and update summary."""
+        if hasattr(self, 'asset_cost_totals_wrapper') and hasattr(self, 'asset_cost_widget'):
+            if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
+                try:
+                    # Find the Price column index
+                    price_col_idx = self.asset_cost_widget.model.column_fields.index("_calc_price")
+                    # Recalculate totals
+                    self.asset_cost_totals_wrapper.calculate_totals(columns=[price_col_idx], skip_first_col=True)
+                    # Update Total Cost summary
+                    self._update_total_cost_summary()
+                except (ValueError, AttributeError) as e:
+                    logger.debug(f"Could not recalculate assets totals: {e}")
+
+    def _on_misc_data_changed(self):
+        """Handle data changes in the Misc Cost spreadsheet - update summary."""
+        # Update Total Cost summary
+        self._update_total_cost_summary()
+
+    def _setup_cross_tab_formulas(self):
+        """Set up cross-tab formula references between cost sheets."""
+        # Create a dictionary of sheet models for cross-tab references
+        sheet_models = {}
+
+        # Add Shot Costs model
+        if hasattr(self, 'shots_cost_widget') and hasattr(self.shots_cost_widget, 'model'):
+            sheet_models['ShotCosts'] = self.shots_cost_widget.model
+
+        # Add Asset Costs model
+        if hasattr(self, 'asset_cost_widget') and hasattr(self.asset_cost_widget, 'model'):
+            sheet_models['AssetCosts'] = self.asset_cost_widget.model
+
+        # Add Misc Costs spreadsheet model
+        if hasattr(self, 'misc_cost_spreadsheet') and hasattr(self.misc_cost_spreadsheet, 'model'):
+            sheet_models['Misc'] = self.misc_cost_spreadsheet.model
+
+        # Create formula evaluator with cross-tab support
+        self.misc_cost_formula_evaluator = FormulaEvaluator(
+            table_model=self.misc_cost_spreadsheet.model,
+            sheet_models=sheet_models
+        )
+
+        # Set the formula evaluator on the spreadsheet
+        self.misc_cost_spreadsheet.set_formula_evaluator(self.misc_cost_formula_evaluator)
+
+        # Connect dataChanged signal
+        self.misc_cost_spreadsheet.model.dataChanged.connect(self._on_misc_data_changed)
+
+        # Set up formula evaluator for Total Cost Summary spreadsheet
+        if hasattr(self, 'total_cost_spreadsheet') and hasattr(self.total_cost_spreadsheet, 'model'):
+            # Add Total Cost Summary model to sheet_models
+            sheet_models['TotalCost'] = self.total_cost_spreadsheet.model
+
+            # Create formula evaluator with cross-tab support for Total Cost Summary
+            self.total_cost_formula_evaluator = FormulaEvaluator(
+                table_model=self.total_cost_spreadsheet.model,
+                sheet_models=sheet_models
+            )
+
+            # Set the formula evaluator on the spreadsheet
+            self.total_cost_spreadsheet.set_formula_evaluator(self.total_cost_formula_evaluator)
+
+            logger.info("Set up cross-tab formula references for Total Cost Summary")
+
+        logger.info("Set up cross-tab formula references for all cost sheets")
 
     def set_bid(self, bid_data, project_id):
         """Set the current bid and update all cost views.
@@ -540,6 +469,9 @@ class CostsTab(QtWidgets.QMainWindow):
             self._refresh_asset_cost()
             logger.info("Finished refreshing Asset Cost")
             self._refresh_total_cost()
+
+            # Update Total Cost summary with initial totals
+            QtCore.QTimer.singleShot(100, self._update_total_cost_summary)
         else:
             # Clear all cost views
             if hasattr(self, 'shots_cost_widget'):
@@ -766,6 +698,10 @@ class CostsTab(QtWidgets.QMainWindow):
                     # Calculate totals only for Price column (formulas will be evaluated)
                     self.shots_cost_totals_wrapper.calculate_totals(columns=[price_col_index], skip_first_col=True)
                     logger.info(f"  ✓ Configured totals bar for Price column (index {price_col_index})")
+
+                # Connect model dataChanged signal to update Total Cost summary
+                self.shots_cost_widget.model.dataChanged.connect(self._on_shots_data_changed)
+                logger.info(f"  ✓ Connected shots model dataChanged signal to Total Cost summary update")
 
                 # Force the header view to update
                 if hasattr(self.shots_cost_widget, 'table_view'):
@@ -1242,6 +1178,10 @@ class CostsTab(QtWidgets.QMainWindow):
                     self.asset_cost_totals_wrapper.calculate_totals(columns=[price_col_index], skip_first_col=True)
                     logger.info(f"  ✓ Configured totals bar for Price column (index {price_col_index})")
 
+                # Connect model dataChanged signal to update Total Cost summary
+                self.asset_cost_widget.model.dataChanged.connect(self._on_assets_data_changed)
+                logger.info(f"  ✓ Connected assets model dataChanged signal to Total Cost summary update")
+
                 # Force the header view to update
                 if hasattr(self.asset_cost_widget, 'table_view'):
                     self.asset_cost_widget.table_view.horizontalHeader().viewport().update()
@@ -1349,12 +1289,7 @@ class CostsTab(QtWidgets.QMainWindow):
         settings = QtCore.QSettings()
         settings.setValue(self.SETTINGS_KEY, self.saveState())
 
-        # Save collapsed state for each dock
-        settings.setValue(f"{self.SETTINGS_KEY}/shots_cost_collapsed", self.shots_cost_dock.is_collapsed())
-        settings.setValue(f"{self.SETTINGS_KEY}/asset_cost_collapsed", self.asset_cost_dock.is_collapsed())
-        settings.setValue(f"{self.SETTINGS_KEY}/total_cost_collapsed", self.total_cost_dock.is_collapsed())
-
-        logger.info("Saved costs dock layout and collapsed states")
+        logger.info("Saved costs dock layout")
 
     def load_layout(self):
         """Load the saved dock layout from settings."""
@@ -1362,17 +1297,7 @@ class CostsTab(QtWidgets.QMainWindow):
         state = settings.value(self.SETTINGS_KEY)
         if state is not None:
             self.restoreState(state)
-
-            # Restore collapsed state for each dock
-            shots_collapsed = settings.value(f"{self.SETTINGS_KEY}/shots_cost_collapsed", False, type=bool)
-            asset_collapsed = settings.value(f"{self.SETTINGS_KEY}/asset_cost_collapsed", False, type=bool)
-            total_collapsed = settings.value(f"{self.SETTINGS_KEY}/total_cost_collapsed", False, type=bool)
-
-            self.shots_cost_dock.set_collapsed(shots_collapsed)
-            self.asset_cost_dock.set_collapsed(asset_collapsed)
-            self.total_cost_dock.set_collapsed(total_collapsed)
-
-            logger.info("Loaded costs dock layout and collapsed states")
+            logger.info("Loaded costs dock layout")
         else:
             logger.info("No saved layout found, using default")
 
@@ -1382,22 +1307,22 @@ class CostsTab(QtWidgets.QMainWindow):
         settings.remove(self.SETTINGS_KEY)
 
         # Remove all docks
-        for dock in (self.shots_cost_dock, self.asset_cost_dock, self.total_cost_dock):
+        for dock in (self.shots_cost_dock, self.asset_cost_dock, self.misc_cost_dock, self.total_cost_dock):
             self.removeDockWidget(dock)
 
-        # Re-add in default positions (vertical stacking)
+        # Re-add in default positions (as tabs)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.shots_cost_dock)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.asset_cost_dock)
+        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.misc_cost_dock)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.total_cost_dock)
 
-        # Force vertical stacking
-        self.splitDockWidget(self.shots_cost_dock, self.asset_cost_dock, QtCore.Qt.Vertical)
-        self.splitDockWidget(self.asset_cost_dock, self.total_cost_dock, QtCore.Qt.Vertical)
+        # Create tabs
+        self.tabifyDockWidget(self.shots_cost_dock, self.asset_cost_dock)
+        self.tabifyDockWidget(self.asset_cost_dock, self.misc_cost_dock)
+        self.tabifyDockWidget(self.misc_cost_dock, self.total_cost_dock)
 
-        # Reset collapsed states to expanded
-        self.shots_cost_dock.set_collapsed(False)
-        self.asset_cost_dock.set_collapsed(False)
-        self.total_cost_dock.set_collapsed(False)
+        # Show the first tab by default
+        self.shots_cost_dock.raise_()
 
         logger.info("Reset costs dock layout to default")
 
