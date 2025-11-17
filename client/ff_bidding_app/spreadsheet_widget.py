@@ -32,6 +32,9 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         self._clipboard_data = None
         self._clipboard_is_cut = False
 
+        # Ensure the table view can receive keyboard events
+        self.setFocusPolicy(Qt.StrongFocus)
+
     def paintEvent(self, event):
         """Paint the table and add blue border with fill handle."""
         super().paintEvent(event)
@@ -215,26 +218,35 @@ class SpreadsheetTableView(QtWidgets.QTableView):
 
     def keyPressEvent(self, event):
         """Handle keyboard events for copy/cut/paste operations."""
+        key = event.key()
+        modifiers = event.modifiers()
+
+        logger.debug(f"KeyPress: key={key}, modifiers={modifiers}")
+
         # Check for Ctrl+C (Copy)
-        if event.key() == Qt.Key_C and event.modifiers() == Qt.ControlModifier:
+        if key == Qt.Key_C and (modifiers & Qt.ControlModifier):
+            logger.info("Ctrl+C detected - copying")
             self._copy_selection()
             event.accept()
             return
 
         # Check for Ctrl+X (Cut)
-        if event.key() == Qt.Key_X and event.modifiers() == Qt.ControlModifier:
+        if key == Qt.Key_X and (modifiers & Qt.ControlModifier):
+            logger.info("Ctrl+X detected - cutting")
             self._cut_selection()
             event.accept()
             return
 
         # Check for Ctrl+V (Paste)
-        if event.key() == Qt.Key_V and event.modifiers() == Qt.ControlModifier:
+        if key == Qt.Key_V and (modifiers & Qt.ControlModifier):
+            logger.info("Ctrl+V detected - pasting")
             self._paste_selection()
             event.accept()
             return
 
         # Check for Delete key
-        if event.key() == Qt.Key_Delete:
+        if key == Qt.Key_Delete:
+            logger.info("Delete key detected")
             self._delete_selection()
             event.accept()
             return
@@ -245,14 +257,18 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         """Copy the current cell to clipboard."""
         current = self.currentIndex()
         if not current.isValid():
+            logger.debug("Copy: No valid cell selected")
             return
 
         model = self.model()
         if not model:
+            logger.debug("Copy: No model available")
             return
 
         # Get the cell's formula or value (EditRole shows formula if present)
         value = model.data(current, Qt.EditRole)
+        if value is None:
+            value = ""
 
         # Store in internal clipboard
         self._clipboard_data = {
@@ -267,12 +283,13 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         display_value = model.data(current, Qt.DisplayRole)
         clipboard.setText(str(display_value) if display_value else "")
 
-        logger.debug(f"Copied cell ({current.row()},{current.column()}): {value}")
+        logger.info(f"Copied cell ({current.row()},{current.column()}): {value}")
 
     def _cut_selection(self):
         """Cut the current cell to clipboard."""
         current = self.currentIndex()
         if not current.isValid():
+            logger.debug("Cut: No valid cell selected")
             return
 
         # First copy the data
@@ -281,16 +298,18 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         # Mark as cut operation
         self._clipboard_is_cut = True
 
-        logger.debug(f"Cut cell ({current.row()},{current.column()})")
+        logger.info(f"Cut cell ({current.row()},{current.column()})")
 
     def _paste_selection(self):
         """Paste clipboard data to the current cell."""
         current = self.currentIndex()
         if not current.isValid():
+            logger.debug("Paste: No valid cell selected")
             return
 
         model = self.model()
         if not model:
+            logger.debug("Paste: No model available")
             return
 
         # Try internal clipboard first
@@ -299,13 +318,17 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             source_col = self._clipboard_data.get('col', 0)
             value = self._clipboard_data.get('value', '')
 
+            logger.info(f"Pasting from internal clipboard: {value}")
+
             # If it's a formula and we're pasting to a different cell, adjust references
             if isinstance(value, str) and value.startswith('='):
                 row_offset = current.row() - source_row
                 col_offset = current.column() - source_col
 
                 if row_offset != 0 or col_offset != 0:
-                    value = self._adjust_formula_for_paste(value, row_offset, col_offset)
+                    adjusted_value = self._adjust_formula_for_paste(value, row_offset, col_offset)
+                    logger.info(f"Adjusted formula from {value} to {adjusted_value}")
+                    value = adjusted_value
 
             # Set the data
             model.setData(current, value, Qt.EditRole)
@@ -315,29 +338,34 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                 source_index = model.index(source_row, source_col)
                 model.setData(source_index, "", Qt.EditRole)
                 self._clipboard_is_cut = False
+                logger.info(f"Cleared source cell ({source_row},{source_col}) after cut")
 
-            logger.debug(f"Pasted to cell ({current.row()},{current.column()}): {value}")
+            logger.info(f"Pasted to cell ({current.row()},{current.column()}): {value}")
         else:
             # Try system clipboard
             clipboard = QtWidgets.QApplication.clipboard()
             text = clipboard.text()
             if text:
                 model.setData(current, text, Qt.EditRole)
-                logger.debug(f"Pasted from system clipboard to ({current.row()},{current.column()}): {text}")
+                logger.info(f"Pasted from system clipboard to ({current.row()},{current.column()}): {text}")
+            else:
+                logger.debug("Paste: No data in clipboard")
 
     def _delete_selection(self):
         """Delete the content of the current cell."""
         current = self.currentIndex()
         if not current.isValid():
+            logger.debug("Delete: No valid cell selected")
             return
 
         model = self.model()
         if not model:
+            logger.debug("Delete: No model available")
             return
 
         # Clear the cell
         model.setData(current, "", Qt.EditRole)
-        logger.debug(f"Deleted cell ({current.row()},{current.column()})")
+        logger.info(f"Deleted cell ({current.row()},{current.column()})")
 
     def _adjust_formula_for_paste(self, formula, row_offset, col_offset):
         """Adjust formula references when pasting to a different cell.
