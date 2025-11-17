@@ -318,37 +318,61 @@ class PackagesTab(QtWidgets.QWidget):
                 return
 
             project_id = project.get('id')
-            rfq_id = rfq.get('id')
 
-            # Query for all bids linked to this project
-            filters = [['project', 'is', {'type': 'Project', 'id': project_id}]]
-            fields = ['code', 'sg_status', 'sg_is_current', 'sg_rfq']
-            bids = self.sg_session.find('CustomEntity02', filters, fields)
-
+            # Get all bids for the project using the same method as BidSelectorWidget
+            bids = self.sg_session.get_bids(project_id, fields=["id", "code", "name", "sg_bid_type"])
             logger.info(f"Found {len(bids)} bids for project {project.get('code', 'Unknown')}")
 
             # Add bids to combo
             for bid in bids:
-                label = bid.get('code', 'Unnamed')
-                if bid.get('sg_is_current'):
-                    label += " (Current)"
+                # Format label: "Bid Name (Bid Type)"
+                bid_name = bid.get("code") or f"Bid {bid.get('id', 'N/A')}"
+                bid_type = bid.get("sg_bid_type", "Unknown")
+                label = f"{bid_name} ({bid_type})"
                 self.bid_combo.addItem(label, bid)
 
-            # Auto-select the bid linked to the current RFQ
-            if rfq_id:
-                for i in range(self.bid_combo.count()):
-                    bid = self.bid_combo.itemData(i)
-                    if bid:
-                        bid_rfq = bid.get('sg_rfq')
-                        if bid_rfq and isinstance(bid_rfq, dict) and bid_rfq.get('id') == rfq_id:
-                            self.bid_combo.setCurrentIndex(i)
-                            logger.info(f"Auto-selected bid: {bid.get('code', 'Unknown')}")
-                            break
+            # Auto-select the bid linked to the RFQ
+            # Check Early Bid first, then Turnover Bid (same logic as BidSelectorWidget)
+            linked_bid = rfq.get("sg_early_bid")
+            if not linked_bid:
+                linked_bid = rfq.get("sg_turnover_bid")
+
+            linked_bid_id = None
+            if isinstance(linked_bid, dict):
+                linked_bid_id = linked_bid.get("id")
+            elif isinstance(linked_bid, list) and linked_bid:
+                linked_bid_id = linked_bid[0].get("id") if linked_bid[0] else None
+
+            if linked_bid_id:
+                # Try to select the linked bid
+                if self._select_bid_by_id(linked_bid_id):
+                    logger.info(f"Auto-selected bid with ID: {linked_bid_id}")
+                else:
+                    logger.warning(f"Linked bid {linked_bid_id} not found in project bids")
 
         except Exception as e:
             logger.error(f"Error loading bids: {e}", exc_info=True)
         finally:
             self.bid_combo.blockSignals(False)
+
+    def _select_bid_by_id(self, bid_id):
+        """Select a bid by its ID.
+
+        Args:
+            bid_id: Bid ID to select
+
+        Returns:
+            bool: True if found and selected, False otherwise
+        """
+        if not bid_id:
+            return False
+
+        for index in range(self.bid_combo.count()):
+            bid = self.bid_combo.itemData(index)
+            if isinstance(bid, dict) and bid.get("id") == bid_id:
+                self.bid_combo.setCurrentIndex(index)
+                return True
+        return False
 
     def _serialize_for_json(self, obj):
         """
