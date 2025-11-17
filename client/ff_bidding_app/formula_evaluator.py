@@ -451,13 +451,18 @@ class FormulaEvaluator:
 
             target_model = self.sheet_models[sheet_name]
 
-            # Resolve the cell reference (with or without explicit row)
-            standard_ref = self.resolve_header_reference(cell_ref, current_row=row, model=target_model)
+            # Check if it's already a standard cell reference (A1, B2, etc.)
+            # Standard cell references don't need header resolution
+            if re.match(r'^[A-Z]+\d+$', cell_ref.upper()):
+                standard_ref = cell_ref
+            else:
+                # Resolve the cell reference (with or without explicit row)
+                standard_ref = self.resolve_header_reference(cell_ref, current_row=row, model=target_model)
 
-            if not standard_ref:
-                # Field not found in target sheet
-                logger.warning(f"Could not resolve field reference in sheet '{sheet_name}': {cell_ref}")
-                return "#REF!"
+                if not standard_ref:
+                    # Field not found in target sheet
+                    logger.warning(f"Could not resolve field reference in sheet '{sheet_name}': {cell_ref}")
+                    return "#REF!"
 
             # Fetch the actual value from the target sheet
             value = self._get_cell_value_from_model(standard_ref, target_model)
@@ -492,13 +497,18 @@ class FormulaEvaluator:
 
             target_model = self.sheet_models[sheet_name]
 
-            # Resolve the cell reference (with or without explicit row)
-            standard_ref = self.resolve_header_reference(cell_ref, current_row=row, model=target_model)
+            # Check if it's already a standard cell reference (A1, B2, etc.)
+            # Standard cell references don't need header resolution
+            if re.match(r'^[A-Z]+\d+$', cell_ref.upper()):
+                standard_ref = cell_ref
+            else:
+                # Resolve the cell reference (with or without explicit row)
+                standard_ref = self.resolve_header_reference(cell_ref, current_row=row, model=target_model)
 
-            if not standard_ref:
-                # Field not found in target sheet
-                logger.warning(f"Could not resolve field reference in sheet '{sheet_name}': {cell_ref}")
-                return "#REF!"
+                if not standard_ref:
+                    # Field not found in target sheet
+                    logger.warning(f"Could not resolve field reference in sheet '{sheet_name}': {cell_ref}")
+                    return "#REF!"
 
             # Fetch the actual value from the target sheet
             value = self._get_cell_value_from_model(standard_ref, target_model)
@@ -565,16 +575,18 @@ class FormulaEvaluator:
             return field_name
 
         # Process in order of specificity:
-        # 1. Sheet references (quoted): 'Sheet Name'!field.row or 'Sheet Name'!field
+        # 1. Sheet references (quoted): 'Sheet Name'!field.row or 'Sheet Name'!field or 'Sheet Name'!A1
+        # Updated regex to match both field-based references and standard cell references (A1, B2, etc.)
         formula = re.sub(
-            r"'([^']+)'!([a-zA-Z_][a-zA-Z0-9_]*(?:\.\d+)?)\b",
+            r"'([^']+)'!([a-zA-Z_][a-zA-Z0-9_]*(?:\.\d+)?|[A-Z]+\d+)\b",
             replace_sheet_reference_quoted,
             formula
         )
 
-        # 2. Sheet references (unquoted): Sheet!field.row or Sheet!field
+        # 2. Sheet references (unquoted): Sheet!field.row or Sheet!field or Sheet!A1
+        # Updated regex to match both field-based references and standard cell references (A1, B2, etc.)
         formula = re.sub(
-            r'\b([a-zA-Z_][a-zA-Z0-9_]+)!([a-zA-Z_][a-zA-Z0-9_]*(?:\.\d+)?)\b',
+            r'\b([a-zA-Z_][a-zA-Z0-9_]+)!([a-zA-Z_][a-zA-Z0-9_]*(?:\.\d+)?|[A-Z]+\d+)\b',
             replace_sheet_reference_unquoted,
             formula
         )
