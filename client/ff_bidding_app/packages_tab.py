@@ -290,7 +290,7 @@ class PackagesTab(QtWidgets.QWidget):
             logger.info(f"Output directory changed to: {directory}")
 
     def _populate_bids(self, rfq):
-        """Populate the bids dropdown for the selected RFQ.
+        """Populate the bids dropdown with all project bids and select the RFQ's bid.
 
         Args:
             rfq: RFQ data dict
@@ -302,42 +302,48 @@ class PackagesTab(QtWidgets.QWidget):
         self.bid_combo.clear()
         self.bid_combo.addItem("-- Select Bid --", None)
 
-        if not rfq:
+        if not rfq or not self.parent_app:
             self.bid_combo.blockSignals(False)
             return
 
         try:
-            # Fetch bids for this RFQ
-            rfq_id = rfq.get('id')
-            if not rfq_id:
-                logger.warning("RFQ has no ID")
+            # Get the current project from parent app
+            project = self.parent_app.sg_project_combo.itemData(
+                self.parent_app.sg_project_combo.currentIndex()
+            )
+
+            if not project:
+                logger.warning("No project selected")
                 self.bid_combo.blockSignals(False)
                 return
 
-            # Query for bids linked to this RFQ
-            filters = [['sg_rfq', 'is', {'type': 'CustomEntity03', 'id': rfq_id}]]
-            fields = ['code', 'sg_status', 'sg_is_current']
+            project_id = project.get('id')
+            rfq_id = rfq.get('id')
+
+            # Query for all bids linked to this project
+            filters = [['project', 'is', {'type': 'Project', 'id': project_id}]]
+            fields = ['code', 'sg_status', 'sg_is_current', 'sg_rfq']
             bids = self.sg_session.find('CustomEntity02', filters, fields)
 
-            logger.info(f"Found {len(bids)} bids for RFQ {rfq.get('code', 'Unknown')}")
+            logger.info(f"Found {len(bids)} bids for project {project.get('code', 'Unknown')}")
 
-            # Add bids to combo, with current bid first
-            current_bids = [b for b in bids if b.get('sg_is_current')]
-            other_bids = [b for b in bids if not b.get('sg_is_current')]
-
-            for bid in current_bids + other_bids:
+            # Add bids to combo
+            for bid in bids:
                 label = bid.get('code', 'Unnamed')
                 if bid.get('sg_is_current'):
                     label += " (Current)"
                 self.bid_combo.addItem(label, bid)
 
-            # Auto-select the current bid if there is one
-            if current_bids:
+            # Auto-select the bid linked to the current RFQ
+            if rfq_id:
                 for i in range(self.bid_combo.count()):
                     bid = self.bid_combo.itemData(i)
-                    if bid and bid.get('sg_is_current'):
-                        self.bid_combo.setCurrentIndex(i)
-                        break
+                    if bid:
+                        bid_rfq = bid.get('sg_rfq')
+                        if bid_rfq and isinstance(bid_rfq, dict) and bid_rfq.get('id') == rfq_id:
+                            self.bid_combo.setCurrentIndex(i)
+                            logger.info(f"Auto-selected bid: {bid.get('code', 'Unknown')}")
+                            break
 
         except Exception as e:
             logger.error(f"Error loading bids: {e}", exc_info=True)
