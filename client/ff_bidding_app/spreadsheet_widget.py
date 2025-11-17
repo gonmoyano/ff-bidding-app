@@ -35,35 +35,6 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         # Ensure the table view can receive keyboard events
         self.setFocusPolicy(Qt.StrongFocus)
 
-        # Set up keyboard shortcuts using QShortcut for more reliable handling
-        self._setup_shortcuts()
-
-    def _setup_shortcuts(self):
-        """Set up keyboard shortcuts for copy/cut/paste/delete operations."""
-        from PySide6.QtGui import QShortcut, QKeySequence
-
-        # Copy shortcut (Ctrl+C)
-        copy_shortcut = QShortcut(QKeySequence.Copy, self)
-        copy_shortcut.activated.connect(self._copy_selection)
-        copy_shortcut.setContext(Qt.WidgetShortcut)
-
-        # Cut shortcut (Ctrl+X)
-        cut_shortcut = QShortcut(QKeySequence.Cut, self)
-        cut_shortcut.activated.connect(self._cut_selection)
-        cut_shortcut.setContext(Qt.WidgetShortcut)
-
-        # Paste shortcut (Ctrl+V)
-        paste_shortcut = QShortcut(QKeySequence.Paste, self)
-        paste_shortcut.activated.connect(self._paste_selection)
-        paste_shortcut.setContext(Qt.WidgetShortcut)
-
-        # Delete shortcut
-        delete_shortcut = QShortcut(QKeySequence.Delete, self)
-        delete_shortcut.activated.connect(self._delete_selection)
-        delete_shortcut.setContext(Qt.WidgetShortcut)
-
-        logger.info("Keyboard shortcuts configured for spreadsheet")
-
     def paintEvent(self, event):
         """Paint the table and add blue border with fill handle."""
         super().paintEvent(event)
@@ -244,6 +215,43 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             return match.group(0)
 
         return re.sub(pattern, replace_ref, formula)
+
+    def keyPressEvent(self, event):
+        """Handle keyboard events for copy/cut/paste operations."""
+        key = event.key()
+        modifiers = event.modifiers()
+
+        logger.debug(f"KeyPress: key={key}, modifiers={modifiers}")
+
+        # Check for Ctrl+C (Copy)
+        if key == Qt.Key_C and (modifiers & Qt.ControlModifier):
+            logger.info("Ctrl+C detected - copying")
+            self._copy_selection()
+            event.accept()
+            return
+
+        # Check for Ctrl+X (Cut)
+        if key == Qt.Key_X and (modifiers & Qt.ControlModifier):
+            logger.info("Ctrl+X detected - cutting")
+            self._cut_selection()
+            event.accept()
+            return
+
+        # Check for Ctrl+V (Paste)
+        if key == Qt.Key_V and (modifiers & Qt.ControlModifier):
+            logger.info("Ctrl+V detected - pasting")
+            self._paste_selection()
+            event.accept()
+            return
+
+        # Check for Delete key
+        if key == Qt.Key_Delete:
+            logger.info("Delete key detected")
+            self._delete_selection()
+            event.accept()
+            return
+
+        super().keyPressEvent(event)
 
     def _copy_selection(self):
         """Copy the current cell to clipboard."""
@@ -625,17 +633,6 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.table_view.setAlternatingRowColors(False)  # Disable alternating colors
         self.table_view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
         self.table_view.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)  # Single selection for fill handle
-
-        # Remove any background styling to match the rest of the application
-        self.table_view.setStyleSheet("""
-            QTableView {
-                background-color: transparent;
-                alternate-background-color: transparent;
-            }
-            QTableView::item {
-                background-color: transparent;
-            }
-        """)
 
         # Enable context menu
         self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
