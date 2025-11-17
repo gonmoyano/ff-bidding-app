@@ -238,6 +238,9 @@ class FormulaEvaluator:
             # Handle percentage
             if isinstance(value, str) and value.endswith('%'):
                 return float(value[:-1]) / 100
+            # Remove formatting characters (commas, dollar signs, spaces) before conversion
+            if isinstance(value, str):
+                value = value.replace(',', '').replace('$', '').replace(' ', '').strip()
             return float(value) if value else 0
         except (ValueError, TypeError):
             # Return the string value or 0
@@ -272,6 +275,9 @@ class FormulaEvaluator:
             # Handle percentage
             if isinstance(value, str) and value.endswith('%'):
                 return float(value[:-1]) / 100
+            # Remove formatting characters (commas, dollar signs, spaces) before conversion
+            if isinstance(value, str):
+                value = value.replace(',', '').replace('$', '').replace(' ', '').strip()
             return float(value) if value else 0
         except (ValueError, TypeError):
             # Return the string value or 0

@@ -6,6 +6,7 @@ A full-featured spreadsheet widget inspired by Google Sheets with Excel formula 
 from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtCore import Qt
 import string
+import re
 
 try:
     from .logger import logger
@@ -14,6 +15,168 @@ except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
     from formula_evaluator import FormulaEvaluator
+
+
+class SpreadsheetTableView(QtWidgets.QTableView):
+    """Custom table view with Excel-like selection and fill handle."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._fill_handle_rect = QtCore.QRect()
+        self._is_dragging_fill_handle = False
+        self._drag_start_index = None
+        self._drag_current_index = None
+        self.setMouseTracking(True)
+
+    def paintEvent(self, event):
+        """Paint the table and add blue border with fill handle."""
+        super().paintEvent(event)
+
+        # Get current selection
+        current = self.currentIndex()
+        if not current.isValid():
+            return
+
+        # Get the visual rect of the current cell
+        rect = self.visualRect(current)
+        if rect.isEmpty():
+            return
+
+        # Draw blue border around selected cell
+        painter = QtGui.QPainter(self.viewport())
+        painter.setPen(QtGui.QPen(QtGui.QColor("#4472C4"), 2))
+        painter.drawRect(rect.adjusted(1, 1, -1, -1))
+
+        # Draw fill handle (small square at bottom-right)
+        handle_size = 6
+        handle_x = rect.right() - handle_size // 2
+        handle_y = rect.bottom() - handle_size // 2
+        self._fill_handle_rect = QtCore.QRect(handle_x, handle_y, handle_size, handle_size)
+
+        painter.setBrush(QtGui.QColor("#4472C4"))
+        painter.setPen(Qt.NoPen)
+        painter.drawRect(self._fill_handle_rect)
+
+        painter.end()
+
+    def mousePressEvent(self, event):
+        """Handle mouse press for fill handle dragging."""
+        if event.button() == Qt.LeftButton:
+            # Check if clicked on fill handle
+            if self._fill_handle_rect.contains(event.pos()):
+                self._is_dragging_fill_handle = True
+                self._drag_start_index = self.currentIndex()
+                self._drag_current_index = self._drag_start_index
+                event.accept()
+                return
+
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Handle mouse move for fill handle dragging."""
+        # Update cursor when hovering over fill handle
+        if self._fill_handle_rect.contains(event.pos()):
+            self.setCursor(Qt.CrossCursor)
+        else:
+            self.setCursor(Qt.ArrowCursor)
+
+        if self._is_dragging_fill_handle and self._drag_start_index:
+            # Get the index under the mouse
+            index = self.indexAt(event.pos())
+            if index.isValid() and index != self._drag_current_index:
+                self._drag_current_index = index
+                self.viewport().update()
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release to complete fill operation."""
+        if self._is_dragging_fill_handle and self._drag_start_index and self._drag_current_index:
+            if self._drag_current_index != self._drag_start_index:
+                self._perform_fill_operation()
+
+            self._is_dragging_fill_handle = False
+            self._drag_start_index = None
+            self._drag_current_index = None
+            self.viewport().update()
+            event.accept()
+            return
+
+        super().mouseReleaseEvent(event)
+
+    def _perform_fill_operation(self):
+        """Perform the fill operation from start to current cell."""
+        if not self._drag_start_index or not self._drag_current_index:
+            return
+
+        model = self.model()
+        if not model:
+            return
+
+        start_row = self._drag_start_index.row()
+        start_col = self._drag_start_index.column()
+        end_row = self._drag_current_index.row()
+        end_col = self._drag_current_index.column()
+
+        # Only support vertical fill for now (same column)
+        if start_col != end_col:
+            return
+
+        # Ensure we're dragging down
+        if end_row <= start_row:
+            return
+
+        # Get the source cell's data
+        source_data = model.data(self._drag_start_index, Qt.EditRole)
+        source_formula = None
+
+        if hasattr(model, '_formulas'):
+            source_formula = model._formulas.get((start_row, start_col))
+
+        # Fill the cells
+        for row in range(start_row + 1, end_row + 1):
+            if source_formula:
+                # It's a formula - adjust row references
+                row_offset = row - start_row
+                new_formula = self._adjust_formula_for_fill(source_formula, row_offset)
+                target_index = model.index(row, start_col)
+                model.setData(target_index, new_formula, Qt.EditRole)
+            else:
+                # It's a value - copy as is
+                target_index = model.index(row, start_col)
+                model.setData(target_index, source_data, Qt.EditRole)
+
+        logger.info(f"Filled cells from ({start_row},{start_col}) to ({end_row},{end_col})")
+
+    def _adjust_formula_for_fill(self, formula, row_offset):
+        """Adjust formula references when filling down.
+
+        Args:
+            formula: Original formula string
+            row_offset: Number of rows to offset (positive = down)
+
+        Returns:
+            Adjusted formula string
+        """
+        # Pattern to match cell references like A1, B2, $A$1, etc.
+        pattern = r'(\$?)([A-Z]+)(\$?)(\d+)'
+
+        def replace_ref(match):
+            col_abs = match.group(1)  # $ before column
+            col_letter = match.group(2)
+            row_abs = match.group(3)  # $ before row
+            row_num = int(match.group(4))
+
+            # If not absolute row reference, adjust the row
+            if not row_abs:
+                new_row_num = row_num + row_offset
+                return f"{col_abs}{col_letter}{row_abs}{new_row_num}"
+
+            return match.group(0)
+
+        return re.sub(pattern, replace_ref, formula)
 
 
 class SpreadsheetModel(QtCore.QAbstractTableModel):
@@ -184,7 +347,12 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
             formula = self._formulas[(row, col)]
             return self._get_evaluated_value(row, col, formula)
         else:
-            return self._data.get((row, col), "")
+            value = self._data.get((row, col), "")
+            # Try to convert to number if possible
+            try:
+                return float(str(value).replace(',', '').replace('$', ''))
+            except (ValueError, AttributeError):
+                return value if value else ""
 
     def get_cell_formula(self, row, col):
         """Get the formula of a cell if it exists."""
@@ -217,11 +385,11 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(5)
 
-        # Create table view FIRST (before toolbar)
-        self.table_view = QtWidgets.QTableView()
+        # Create custom table view FIRST (before toolbar)
+        self.table_view = SpreadsheetTableView()
         self.table_view.setAlternatingRowColors(False)  # Disable alternating colors
         self.table_view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
-        self.table_view.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.table_view.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)  # Single selection for fill handle
 
         # Enable context menu
         self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
