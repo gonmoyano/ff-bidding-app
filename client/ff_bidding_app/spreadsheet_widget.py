@@ -32,8 +32,12 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         """Paint the table and add blue border with fill handle."""
         super().paintEvent(event)
 
-        # Get current selection
-        current = self.currentIndex()
+        # Get current selection (use drag start if dragging, otherwise use current)
+        if self._is_dragging_fill_handle and self._drag_start_index:
+            current = self._drag_start_index
+        else:
+            current = self.currentIndex()
+
         if not current.isValid():
             return
 
@@ -42,8 +46,27 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         if rect.isEmpty():
             return
 
-        # Draw blue border around selected cell
         painter = QtGui.QPainter(self.viewport())
+
+        # If dragging, draw preview of fill range
+        if self._is_dragging_fill_handle and self._drag_current_index and self._drag_current_index != self._drag_start_index:
+            # Draw light gray overlay on cells being filled
+            start_row = self._drag_start_index.row()
+            start_col = self._drag_start_index.column()
+            end_row = self._drag_current_index.row()
+            end_col = self._drag_current_index.column()
+
+            # Only support vertical fill (same column)
+            if start_col == end_col and end_row > start_row:
+                painter.setBrush(QtGui.QColor(68, 114, 196, 30))  # Light blue with alpha
+                painter.setPen(Qt.NoPen)
+
+                for row in range(start_row + 1, end_row + 1):
+                    cell_rect = self.visualRect(self.model().index(row, start_col))
+                    if not cell_rect.isEmpty():
+                        painter.drawRect(cell_rect)
+
+        # Draw blue border around selected cell
         painter.setPen(QtGui.QPen(QtGui.QColor("#4472C4"), 2))
         painter.drawRect(rect.adjusted(1, 1, -1, -1))
 
@@ -67,6 +90,7 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                 self._is_dragging_fill_handle = True
                 self._drag_start_index = self.currentIndex()
                 self._drag_current_index = self._drag_start_index
+                # Don't call super() - we don't want to change selection
                 event.accept()
                 return
 

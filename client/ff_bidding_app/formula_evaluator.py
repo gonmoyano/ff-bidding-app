@@ -283,6 +283,56 @@ class FormulaEvaluator:
             # Return the string value or 0
             return value if value else 0
 
+    def _get_range_values(self, range_ref: str) -> list:
+        """Expand a range reference and get all values.
+
+        Args:
+            range_ref: Range reference like "A1:A3" or "A1:B3"
+
+        Returns:
+            2D list of values for the range
+        """
+        import numpy as np
+
+        # Parse the range (e.g., "A1:A3")
+        if ':' not in range_ref:
+            return [[self.get_cell_value(range_ref)]]
+
+        parts = range_ref.split(':')
+        if len(parts) != 2:
+            return [[0]]
+
+        start_ref = parts[0].strip().replace('$', '')
+        end_ref = parts[1].strip().replace('$', '')
+
+        # Parse start and end coordinates
+        start_coords = self.parse_cell_reference(start_ref)
+        end_coords = self.parse_cell_reference(end_ref)
+
+        if not start_coords or not end_coords:
+            return [[0]]
+
+        start_row, start_col = start_coords
+        end_row, end_col = end_coords
+
+        # Ensure start <= end
+        if start_row > end_row:
+            start_row, end_row = end_row, start_row
+        if start_col > end_col:
+            start_col, end_col = end_col, start_col
+
+        # Build the 2D array of values
+        values = []
+        for row in range(start_row, end_row + 1):
+            row_values = []
+            for col in range(start_col, end_col + 1):
+                cell_ref = f"{self.col_index_to_letter(col)}{row + 1}"
+                row_values.append(self.get_cell_value(cell_ref))
+            values.append(row_values)
+
+        # Convert to numpy array for formulas library
+        return np.array(values) if values else [[0]]
+
     def evaluate(self, formula: str, row: int = None, col: int = None) -> Any:
         """Evaluate a formula and return the result.
 
@@ -334,7 +384,13 @@ class FormulaEvaluator:
             # Get values for each input
             input_values = []
             for input_ref in inputs:
-                input_values.append(self.get_cell_value(input_ref))
+                # Check if it's a range (contains :)
+                if ':' in input_ref:
+                    # Expand the range and get all values
+                    range_values = self._get_range_values(input_ref)
+                    input_values.append(range_values)
+                else:
+                    input_values.append(self.get_cell_value(input_ref))
 
             # Execute the formula
             try:
