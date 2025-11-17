@@ -9,10 +9,12 @@ try:
     from .logger import logger
     from .bid_selector_widget import CollapsibleGroupBox
     from .settings import AppSettings
+    from .vfx_breakdown_widget import VFXBreakdownWidget
 except ImportError:
     from package_data_treeview import PackageTreeView, CustomCheckBox
     from bid_selector_widget import CollapsibleGroupBox
     from settings import AppSettings
+    from vfx_breakdown_widget import VFXBreakdownWidget
     logger = logging.getLogger("FFPackageManager")
 
 
@@ -37,6 +39,8 @@ class PackagesTab(QtWidgets.QWidget):
 
         # Current context
         self.current_rfq = None
+        self.current_bid = None
+        self.field_schema = None
 
         # UI widgets
         self.package_data_tree = None
@@ -44,10 +48,11 @@ class PackagesTab(QtWidgets.QWidget):
         self.entity_type_checkboxes = {}
         self.output_path_input = None
         self.package_name_input = None
-        self.bid_combo = None
         self.packages_tab_widget = None
+        self.breakdown_widget = None
 
         self._build_ui()
+        self._load_field_schema()
 
     def _build_ui(self):
         """Build the Packages tab UI."""
@@ -89,26 +94,30 @@ class PackagesTab(QtWidgets.QWidget):
             self.packages_tab_widget.setCurrentIndex(last_tab)
 
     def _create_left_pane(self):
-        """Create the left pane with bid selector and tabs."""
+        """Create the left pane with tabs."""
         left_widget = QtWidgets.QWidget()
         left_layout = QtWidgets.QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Bid selector group
-        bid_group = self._create_bid_selector_group()
-        left_layout.addWidget(bid_group)
 
         # Tab widget for Bid Tracker, Concept, Script, References
         self.packages_tab_widget = QtWidgets.QTabWidget()
         self.packages_tab_widget.currentChanged.connect(self._on_tab_changed)
 
-        # Create placeholder widgets for each tab
+        # Bid Tracker tab with VFX Breakdown widget
         bid_tracker_tab = QtWidgets.QWidget()
         bid_tracker_layout = QtWidgets.QVBoxLayout(bid_tracker_tab)
-        bid_tracker_label = QtWidgets.QLabel("Bid Tracker content coming soon...")
-        bid_tracker_label.setAlignment(QtCore.Qt.AlignCenter)
-        bid_tracker_layout.addWidget(bid_tracker_label)
+        bid_tracker_layout.setContentsMargins(0, 0, 0, 0)
 
+        self.breakdown_widget = VFXBreakdownWidget(
+            self.sg_session,
+            show_toolbar=True,
+            entity_name="Bidding Scene",
+            settings_key="packages_bid_tracker",
+            parent=self
+        )
+        bid_tracker_layout.addWidget(self.breakdown_widget)
+
+        # Placeholder tabs for other content
         concept_tab = QtWidgets.QWidget()
         concept_layout = QtWidgets.QVBoxLayout(concept_tab)
         concept_label = QtWidgets.QLabel("Concept content coming soon...")
@@ -158,35 +167,103 @@ class PackagesTab(QtWidgets.QWidget):
 
         return right_widget
 
-    def _create_bid_selector_group(self):
-        """Create the Bid selector collapsible group."""
-        bid_group = CollapsibleGroupBox("Bids")
-
-        # Bid selector row
-        selector_row = QtWidgets.QHBoxLayout()
-        selector_label = QtWidgets.QLabel("Bid:")
-        selector_row.addWidget(selector_label)
-
-        self.bid_combo = QtWidgets.QComboBox()
-        self.bid_combo.setMinimumWidth(150)
-        self.bid_combo.currentIndexChanged.connect(self._on_bid_changed)
-        selector_row.addWidget(self.bid_combo, stretch=1)
-
-        bid_group.addLayout(selector_row)
-
-        return bid_group
-
     def _on_tab_changed(self, index):
         """Handle tab change to save the selection."""
         self.app_settings.set("packagesTab/lastSelectedTab", index)
 
-    def _on_bid_changed(self, index):
-        """Handle bid selection change."""
-        bid = self.bid_combo.itemData(index)
-        if bid:
-            logger.info(f"Selected bid: {bid.get('code', 'Unknown')}")
-        else:
-            logger.info("No bid selected")
+    def _load_field_schema(self):
+        """Load field schema for CustomEntity02 (Bidding Scenes)."""
+        try:
+            raw_schema = self.sg_session.sg.schema_field_read("CustomEntity02")
+            self.field_schema = {}
+            for field_name, field_info in raw_schema.items():
+                self.field_schema[field_name] = field_info
+            logger.info(f"Loaded field schema for CustomEntity02 with {len(self.field_schema)} fields")
+        except Exception as e:
+            logger.error(f"Error loading field schema: {e}", exc_info=True)
+            self.field_schema = {}
+
+    def _load_breakdown_for_rfq(self, rfq):
+        """Load VFX Breakdown bidding scenes for the bid linked to the RFQ.
+
+        Args:
+            rfq: RFQ data dict
+        """
+        if not rfq or not self.breakdown_widget:
+            return
+
+        try:
+            # Get the bid linked to this RFQ (check Early Bid first, then Turnover Bid)
+            linked_bid = rfq.get("sg_early_bid")
+            if not linked_bid:
+                linked_bid = rfq.get("sg_turnover_bid")
+
+            if not linked_bid:
+                logger.info("No bid linked to this RFQ")
+                self.breakdown_widget.load_bidding_scenes([])
+                return
+
+            # Extract bid ID
+            bid_id = None
+            if isinstance(linked_bid, dict):
+                bid_id = linked_bid.get("id")
+            elif isinstance(linked_bid, list) and linked_bid:
+                bid_id = linked_bid[0].get("id") if linked_bid[0] else None
+
+            if not bid_id:
+                logger.warning("Could not extract bid ID from RFQ")
+                self.breakdown_widget.load_bidding_scenes([])
+                return
+
+            # Get the full bid data including sg_vfx_breakdown
+            bid = self.sg_session.sg.find_one(
+                "CustomEntity06",
+                [["id", "is", bid_id]],
+                ["id", "code", "sg_bid_type", "sg_vfx_breakdown"]
+            )
+
+            if not bid:
+                logger.warning(f"Bid {bid_id} not found")
+                self.breakdown_widget.load_bidding_scenes([])
+                return
+
+            self.current_bid = bid
+
+            # Get the VFX Breakdown linked to this bid
+            breakdown = bid.get("sg_vfx_breakdown")
+            if not breakdown:
+                logger.info(f"No VFX Breakdown linked to bid {bid.get('code', 'Unknown')}")
+                self.breakdown_widget.load_bidding_scenes([])
+                return
+
+            # Extract breakdown ID
+            breakdown_id = None
+            if isinstance(breakdown, dict):
+                breakdown_id = breakdown.get("id")
+            elif isinstance(breakdown, list) and breakdown:
+                breakdown_id = breakdown[0].get("id") if breakdown[0] else None
+
+            if not breakdown_id:
+                logger.warning("Could not extract breakdown ID from bid")
+                self.breakdown_widget.load_bidding_scenes([])
+                return
+
+            logger.info(f"Loading bidding scenes for VFX Breakdown {breakdown_id}")
+
+            # Fetch bidding scenes for this breakdown
+            bidding_scenes = self.sg_session.get_bidding_scenes_for_vfx_breakdown(
+                breakdown_id,
+                fields=None  # Use default fields
+            )
+
+            logger.info(f"Loaded {len(bidding_scenes)} bidding scenes")
+
+            # Load into the breakdown widget
+            self.breakdown_widget.load_bidding_scenes(bidding_scenes, field_schema=self.field_schema)
+
+        except Exception as e:
+            logger.error(f"Error loading breakdown for RFQ: {e}", exc_info=True)
+            self.breakdown_widget.load_bidding_scenes([])
 
     def _create_data_fetch_group(self):
         """Create the Data to Fetch collapsible group."""
@@ -243,7 +320,7 @@ class PackagesTab(QtWidgets.QWidget):
         return output_group
 
     def set_rfq(self, rfq):
-        """Set the current RFQ and update the tree view.
+        """Set the current RFQ and update the tree view and VFX Breakdown.
 
         Args:
             rfq: RFQ data dict
@@ -254,8 +331,8 @@ class PackagesTab(QtWidgets.QWidget):
             self.package_data_tree.set_rfq(rfq)
             QtCore.QTimer.singleShot(0, self._apply_checkbox_states_to_tree)
 
-        # Populate bids for the selected RFQ
-        self._populate_bids(rfq)
+        # Load VFX Breakdown for the bid linked to this RFQ
+        self._load_breakdown_for_rfq(rfq)
 
     def clear(self):
         """Clear the package data tree."""
@@ -288,91 +365,6 @@ class PackagesTab(QtWidgets.QWidget):
         if directory:
             self.output_path_input.setText(directory)
             logger.info(f"Output directory changed to: {directory}")
-
-    def _populate_bids(self, rfq):
-        """Populate the bids dropdown with all project bids and select the RFQ's bid.
-
-        Args:
-            rfq: RFQ data dict
-        """
-        if not self.bid_combo:
-            return
-
-        self.bid_combo.blockSignals(True)
-        self.bid_combo.clear()
-        self.bid_combo.addItem("-- Select Bid --", None)
-
-        if not rfq or not self.parent_app:
-            self.bid_combo.blockSignals(False)
-            return
-
-        try:
-            # Get the current project from parent app
-            project = self.parent_app.sg_project_combo.itemData(
-                self.parent_app.sg_project_combo.currentIndex()
-            )
-
-            if not project:
-                logger.warning("No project selected")
-                self.bid_combo.blockSignals(False)
-                return
-
-            project_id = project.get('id')
-
-            # Get all bids for the project using the same method as BidSelectorWidget
-            bids = self.sg_session.get_bids(project_id, fields=["id", "code", "name", "sg_bid_type"])
-            logger.info(f"Found {len(bids)} bids for project {project.get('code', 'Unknown')}")
-
-            # Add bids to combo
-            for bid in bids:
-                # Format label: "Bid Name (Bid Type)"
-                bid_name = bid.get("code") or f"Bid {bid.get('id', 'N/A')}"
-                bid_type = bid.get("sg_bid_type", "Unknown")
-                label = f"{bid_name} ({bid_type})"
-                self.bid_combo.addItem(label, bid)
-
-            # Auto-select the bid linked to the RFQ
-            # Check Early Bid first, then Turnover Bid (same logic as BidSelectorWidget)
-            linked_bid = rfq.get("sg_early_bid")
-            if not linked_bid:
-                linked_bid = rfq.get("sg_turnover_bid")
-
-            linked_bid_id = None
-            if isinstance(linked_bid, dict):
-                linked_bid_id = linked_bid.get("id")
-            elif isinstance(linked_bid, list) and linked_bid:
-                linked_bid_id = linked_bid[0].get("id") if linked_bid[0] else None
-
-            if linked_bid_id:
-                # Try to select the linked bid
-                if self._select_bid_by_id(linked_bid_id):
-                    logger.info(f"Auto-selected bid with ID: {linked_bid_id}")
-                else:
-                    logger.warning(f"Linked bid {linked_bid_id} not found in project bids")
-
-        except Exception as e:
-            logger.error(f"Error loading bids: {e}", exc_info=True)
-        finally:
-            self.bid_combo.blockSignals(False)
-
-    def _select_bid_by_id(self, bid_id):
-        """Select a bid by its ID.
-
-        Args:
-            bid_id: Bid ID to select
-
-        Returns:
-            bool: True if found and selected, False otherwise
-        """
-        if not bid_id:
-            return False
-
-        for index in range(self.bid_combo.count()):
-            bid = self.bid_combo.itemData(index)
-            if isinstance(bid, dict) and bid.get("id") == bid_id:
-                self.bid_combo.setCurrentIndex(index)
-                return True
-        return False
 
     def _serialize_for_json(self, obj):
         """
