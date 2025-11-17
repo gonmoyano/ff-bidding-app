@@ -7,8 +7,14 @@ from pathlib import Path
 try:
     from .package_data_treeview import PackageTreeView, CustomCheckBox
     from .logger import logger
+    from .bid_selector_widget import CollapsibleGroupBox
+    from .settings import AppSettings
+    from .vfx_breakdown_widget import VFXBreakdownWidget
 except ImportError:
     from package_data_treeview import PackageTreeView, CustomCheckBox
+    from bid_selector_widget import CollapsibleGroupBox
+    from settings import AppSettings
+    from vfx_breakdown_widget import VFXBreakdownWidget
     logger = logging.getLogger("FFPackageManager")
 
 
@@ -28,34 +34,44 @@ class PackagesTab(QtWidgets.QWidget):
         self.output_directory = output_directory
         self.parent_app = parent
 
+        # Settings
+        self.app_settings = AppSettings()
+
+        # Current context
+        self.current_rfq = None
+        self.current_bid = None
+        self.field_schema = None
+
         # UI widgets
         self.package_data_tree = None
         self.status_label = None
         self.entity_type_checkboxes = {}
         self.output_path_input = None
         self.package_name_input = None
+        self.packages_tab_widget = None
+        self.breakdown_widget = None
 
         self._build_ui()
+        self._load_field_schema()
 
     def _build_ui(self):
         """Build the Packages tab UI."""
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(5, 5, 5, 5)
 
-        # Splitter for left and right panels
+        # Horizontal splitter for left and right panes
         splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
 
-        # Left panel: Data to Fetch + Output Settings
-        left_panel = self._create_left_panel()
-        splitter.addWidget(left_panel)
+        # Left pane: Bid selector + Tabs
+        left_pane = self._create_left_pane()
+        splitter.addWidget(left_pane)
 
-        # Right panel: Package Data tree
-        self.package_data_tree = PackageTreeView()
-        self.package_data_tree.set_sg_session(self.sg_session)
-        splitter.addWidget(self.package_data_tree)
+        # Right pane: Data to Fetch, Output Settings, Package Data tree
+        right_pane = self._create_right_pane()
+        splitter.addWidget(right_pane)
 
-        # Set initial sizes (40% left, 60% right)
-        splitter.setSizes([400, 600])
+        # Set initial sizes (30% left, 70% right)
+        splitter.setSizes([300, 700])
         layout.addWidget(splitter)
 
         # Bottom section: Status + Create Package button
@@ -72,20 +88,201 @@ class PackagesTab(QtWidgets.QWidget):
 
         layout.addLayout(bottom_layout)
 
-    def _create_left_panel(self):
-        """Create the left panel for the Packages tab."""
-        left_panel = QtWidgets.QWidget()
-        left_layout = QtWidgets.QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(5, 5, 5, 5)
+        # Restore last selected tab
+        last_tab = self.app_settings.get("packagesTab/lastSelectedTab", 0)
+        if self.packages_tab_widget and 0 <= last_tab < self.packages_tab_widget.count():
+            self.packages_tab_widget.setCurrentIndex(last_tab)
 
-        # Data selection group
-        data_group = QtWidgets.QGroupBox("Data to Fetch")
-        data_layout = QtWidgets.QVBoxLayout(data_group)
+    def _create_left_pane(self):
+        """Create the left pane with tabs."""
+        left_widget = QtWidgets.QWidget()
+        left_layout = QtWidgets.QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Tab widget for Bid Tracker, Concept, Script, References
+        self.packages_tab_widget = QtWidgets.QTabWidget()
+        self.packages_tab_widget.currentChanged.connect(self._on_tab_changed)
+
+        # Bid Tracker tab with VFX Breakdown widget
+        bid_tracker_tab = QtWidgets.QWidget()
+        bid_tracker_layout = QtWidgets.QVBoxLayout(bid_tracker_tab)
+        bid_tracker_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Create VFX Breakdown selector group
+        breakdown_selector_group = CollapsibleGroupBox("VFX Breakdown")
+
+        # Create reusable VFX Breakdown widget
+        self.breakdown_widget = VFXBreakdownWidget(
+            self.sg_session,
+            show_toolbar=True,
+            entity_name="Bidding Scene",
+            settings_key="packages_bid_tracker",
+            parent=self
+        )
+
+        # Add search and sort toolbar to the selector group
+        if self.breakdown_widget.toolbar_widget:
+            breakdown_selector_group.addWidget(self.breakdown_widget.toolbar_widget)
+
+        bid_tracker_layout.addWidget(breakdown_selector_group)
+        bid_tracker_layout.addWidget(self.breakdown_widget)
+
+        # Placeholder tabs for other content
+        concept_tab = QtWidgets.QWidget()
+        concept_layout = QtWidgets.QVBoxLayout(concept_tab)
+        concept_label = QtWidgets.QLabel("Concept content coming soon...")
+        concept_label.setAlignment(QtCore.Qt.AlignCenter)
+        concept_layout.addWidget(concept_label)
+
+        script_tab = QtWidgets.QWidget()
+        script_layout = QtWidgets.QVBoxLayout(script_tab)
+        script_label = QtWidgets.QLabel("Script content coming soon...")
+        script_label.setAlignment(QtCore.Qt.AlignCenter)
+        script_layout.addWidget(script_label)
+
+        references_tab = QtWidgets.QWidget()
+        references_layout = QtWidgets.QVBoxLayout(references_tab)
+        references_label = QtWidgets.QLabel("References content coming soon...")
+        references_label.setAlignment(QtCore.Qt.AlignCenter)
+        references_layout.addWidget(references_label)
+
+        # Add tabs
+        self.packages_tab_widget.addTab(bid_tracker_tab, "Bid Tracker")
+        self.packages_tab_widget.addTab(concept_tab, "Concept")
+        self.packages_tab_widget.addTab(script_tab, "Script")
+        self.packages_tab_widget.addTab(references_tab, "References")
+
+        left_layout.addWidget(self.packages_tab_widget, 1)  # Give it stretch factor
+
+        return left_widget
+
+    def _create_right_pane(self):
+        """Create the right pane with Data to Fetch, Output Settings, and Package Data tree."""
+        right_widget = QtWidgets.QWidget()
+        right_layout = QtWidgets.QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Data to Fetch collapsible group
+        self.data_fetch_group = self._create_data_fetch_group()
+        right_layout.addWidget(self.data_fetch_group)
+
+        # Output Settings collapsible group
+        self.output_settings_group = self._create_output_settings_group()
+        right_layout.addWidget(self.output_settings_group)
+
+        # Package Data tree
+        self.package_data_tree = PackageTreeView()
+        self.package_data_tree.set_sg_session(self.sg_session)
+        right_layout.addWidget(self.package_data_tree, 1)  # Give it stretch factor
+
+        return right_widget
+
+    def _on_tab_changed(self, index):
+        """Handle tab change to save the selection."""
+        self.app_settings.set("packagesTab/lastSelectedTab", index)
+
+    def _load_field_schema(self):
+        """Load field schema for CustomEntity02 (Bidding Scenes)."""
+        try:
+            raw_schema = self.sg_session.sg.schema_field_read("CustomEntity02")
+            self.field_schema = {}
+            for field_name, field_info in raw_schema.items():
+                self.field_schema[field_name] = field_info
+            logger.info(f"Loaded field schema for CustomEntity02 with {len(self.field_schema)} fields")
+        except Exception as e:
+            logger.error(f"Error loading field schema: {e}", exc_info=True)
+            self.field_schema = {}
+
+    def _load_breakdown_for_rfq(self, rfq):
+        """Load VFX Breakdown bidding scenes for the bid linked to the RFQ.
+
+        Args:
+            rfq: RFQ data dict
+        """
+        if not rfq or not self.breakdown_widget:
+            return
+
+        try:
+            # Get the bid linked to this RFQ (check Early Bid first, then Turnover Bid)
+            linked_bid = rfq.get("sg_early_bid")
+            if not linked_bid:
+                linked_bid = rfq.get("sg_turnover_bid")
+
+            if not linked_bid:
+                logger.info("No bid linked to this RFQ")
+                self.breakdown_widget.load_bidding_scenes([])
+                return
+
+            # Extract bid ID
+            bid_id = None
+            if isinstance(linked_bid, dict):
+                bid_id = linked_bid.get("id")
+            elif isinstance(linked_bid, list) and linked_bid:
+                bid_id = linked_bid[0].get("id") if linked_bid[0] else None
+
+            if not bid_id:
+                logger.warning("Could not extract bid ID from RFQ")
+                self.breakdown_widget.load_bidding_scenes([])
+                return
+
+            # Get the full bid data including sg_vfx_breakdown
+            bid = self.sg_session.sg.find_one(
+                "CustomEntity06",
+                [["id", "is", bid_id]],
+                ["id", "code", "sg_bid_type", "sg_vfx_breakdown"]
+            )
+
+            if not bid:
+                logger.warning(f"Bid {bid_id} not found")
+                self.breakdown_widget.load_bidding_scenes([])
+                return
+
+            self.current_bid = bid
+
+            # Get the VFX Breakdown linked to this bid
+            breakdown = bid.get("sg_vfx_breakdown")
+            if not breakdown:
+                logger.info(f"No VFX Breakdown linked to bid {bid.get('code', 'Unknown')}")
+                self.breakdown_widget.load_bidding_scenes([])
+                return
+
+            # Extract breakdown ID
+            breakdown_id = None
+            if isinstance(breakdown, dict):
+                breakdown_id = breakdown.get("id")
+            elif isinstance(breakdown, list) and breakdown:
+                breakdown_id = breakdown[0].get("id") if breakdown[0] else None
+
+            if not breakdown_id:
+                logger.warning("Could not extract breakdown ID from bid")
+                self.breakdown_widget.load_bidding_scenes([])
+                return
+
+            logger.info(f"Loading bidding scenes for VFX Breakdown {breakdown_id}")
+
+            # Fetch bidding scenes for this breakdown
+            bidding_scenes = self.sg_session.get_bidding_scenes_for_vfx_breakdown(
+                breakdown_id,
+                fields=None  # Use default fields
+            )
+
+            logger.info(f"Loaded {len(bidding_scenes)} bidding scenes")
+
+            # Load into the breakdown widget
+            self.breakdown_widget.load_bidding_scenes(bidding_scenes, field_schema=self.field_schema)
+
+        except Exception as e:
+            logger.error(f"Error loading breakdown for RFQ: {e}", exc_info=True)
+            self.breakdown_widget.load_bidding_scenes([])
+
+    def _create_data_fetch_group(self):
+        """Create the Data to Fetch collapsible group."""
+        data_group = CollapsibleGroupBox("Data to Fetch")
 
         # Entity types
         entity_label = QtWidgets.QLabel("Entity Types:")
         entity_label.setStyleSheet("font-weight: bold;")
-        data_layout.addWidget(entity_label)
+        data_group.addWidget(entity_label)
 
         # Define categories that will appear in the tree view
         categories = [
@@ -101,14 +298,18 @@ class PackagesTab(QtWidgets.QWidget):
             checkbox.setChecked(True)
             # Connect to handler that will show/hide tree items
             checkbox.stateChanged.connect(lambda state, cat=category: self._on_entity_type_toggled(cat, state))
-            data_layout.addWidget(checkbox)
+            data_group.addWidget(checkbox)
             self.entity_type_checkboxes[category] = checkbox
 
-        left_layout.addWidget(data_group)
+        return data_group
 
-        # Output settings group
-        output_group = QtWidgets.QGroupBox("Output Settings")
-        output_layout = QtWidgets.QFormLayout(output_group)
+    def _create_output_settings_group(self):
+        """Create the Output Settings collapsible group."""
+        output_group = CollapsibleGroupBox("Output Settings")
+
+        # Create a form layout for the output settings
+        form_widget = QtWidgets.QWidget()
+        output_layout = QtWidgets.QFormLayout(form_widget)
 
         output_path_row = QtWidgets.QHBoxLayout()
         self.output_path_input = QtWidgets.QLineEdit(self.output_directory)
@@ -124,20 +325,24 @@ class PackagesTab(QtWidgets.QWidget):
         self.package_name_input.setPlaceholderText("Auto-generated from RFQ")
         output_layout.addRow("Package Name:", self.package_name_input)
 
-        left_layout.addWidget(output_group)
-        left_layout.addStretch()
+        output_group.addWidget(form_widget)
 
-        return left_panel
+        return output_group
 
     def set_rfq(self, rfq):
-        """Set the current RFQ and update the tree view.
+        """Set the current RFQ and update the tree view and VFX Breakdown.
 
         Args:
             rfq: RFQ data dict
         """
+        self.current_rfq = rfq
+
         if self.package_data_tree:
             self.package_data_tree.set_rfq(rfq)
             QtCore.QTimer.singleShot(0, self._apply_checkbox_states_to_tree)
+
+        # Load VFX Breakdown for the bid linked to this RFQ
+        self._load_breakdown_for_rfq(rfq)
 
     def clear(self):
         """Clear the package data tree."""
