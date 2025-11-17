@@ -98,20 +98,25 @@ class SpreadsheetTableView(QtWidgets.QTableView):
 
     def mouseMoveEvent(self, event):
         """Handle mouse move for fill handle dragging."""
-        # Update cursor when hovering over fill handle
-        if self._fill_handle_rect.contains(event.pos()):
-            self.setCursor(Qt.CrossCursor)
-        else:
-            self.setCursor(Qt.ArrowCursor)
-
         if self._is_dragging_fill_handle and self._drag_start_index:
+            # During drag, update cursor and track position
+            self.setCursor(Qt.CrossCursor)
+
             # Get the index under the mouse
             index = self.indexAt(event.pos())
             if index.isValid() and index != self._drag_current_index:
                 self._drag_current_index = index
                 self.viewport().update()
+
+            # Don't call super() - we don't want selection to change
             event.accept()
             return
+
+        # Update cursor when hovering over fill handle (not dragging)
+        if self._fill_handle_rect.contains(event.pos()):
+            self.setCursor(Qt.CrossCursor)
+        else:
+            self.setCursor(Qt.ArrowCursor)
 
         super().mouseMoveEvent(event)
 
@@ -124,7 +129,9 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             self._is_dragging_fill_handle = False
             self._drag_start_index = None
             self._drag_current_index = None
+            self.setCursor(Qt.ArrowCursor)  # Reset cursor
             self.viewport().update()
+            # Don't call super() - we handled the event
             event.accept()
             return
 
