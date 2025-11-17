@@ -943,6 +943,10 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
             main_layout.addWidget(self.view_stack)
 
+            # Restore last selected view
+            last_view = self.app_settings.get("app/lastSelectedView", 0)
+            if 0 <= last_view < self.view_selector.count():
+                self.view_selector.setCurrentIndex(last_view)
 
         except Exception as e:
             logger.error(f"Error in _build_ui: {e}", exc_info=True)
@@ -1040,6 +1044,8 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         view_index = self.view_selector.currentData()
         if view_index is not None:
             self.view_stack.setCurrentIndex(view_index)
+            # Save the selected view
+            self.app_settings.set("app/lastSelectedView", index)
 
     def _show_config_rfqs_dialog(self):
         """Show the RFQ configuration dialog."""

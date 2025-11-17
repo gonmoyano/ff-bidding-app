@@ -8,9 +8,11 @@ try:
     from .package_data_treeview import PackageTreeView, CustomCheckBox
     from .logger import logger
     from .bid_selector_widget import CollapsibleGroupBox
+    from .settings import AppSettings
 except ImportError:
     from package_data_treeview import PackageTreeView, CustomCheckBox
     from bid_selector_widget import CollapsibleGroupBox
+    from settings import AppSettings
     logger = logging.getLogger("FFPackageManager")
 
 
@@ -30,12 +32,20 @@ class PackagesTab(QtWidgets.QWidget):
         self.output_directory = output_directory
         self.parent_app = parent
 
+        # Settings
+        self.app_settings = AppSettings()
+
+        # Current context
+        self.current_rfq = None
+
         # UI widgets
         self.package_data_tree = None
         self.status_label = None
         self.entity_type_checkboxes = {}
         self.output_path_input = None
         self.package_name_input = None
+        self.bid_combo = None
+        self.packages_tab_widget = None
 
         self._build_ui()
 
@@ -44,18 +54,20 @@ class PackagesTab(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
 
-        # Data to Fetch collapsible group
-        self.data_fetch_group = self._create_data_fetch_group()
-        layout.addWidget(self.data_fetch_group)
+        # Horizontal splitter for left and right panes
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
 
-        # Output Settings collapsible group
-        self.output_settings_group = self._create_output_settings_group()
-        layout.addWidget(self.output_settings_group)
+        # Left pane: Bid selector + Tabs
+        left_pane = self._create_left_pane()
+        splitter.addWidget(left_pane)
 
-        # Package Data tree
-        self.package_data_tree = PackageTreeView()
-        self.package_data_tree.set_sg_session(self.sg_session)
-        layout.addWidget(self.package_data_tree, 1)  # Give it stretch factor
+        # Right pane: Data to Fetch, Output Settings, Package Data tree
+        right_pane = self._create_right_pane()
+        splitter.addWidget(right_pane)
+
+        # Set initial sizes (30% left, 70% right)
+        splitter.setSizes([300, 700])
+        layout.addWidget(splitter)
 
         # Bottom section: Status + Create Package button
         bottom_layout = QtWidgets.QHBoxLayout()
@@ -70,6 +82,111 @@ class PackagesTab(QtWidgets.QWidget):
         bottom_layout.addWidget(create_package_btn)
 
         layout.addLayout(bottom_layout)
+
+        # Restore last selected tab
+        last_tab = self.app_settings.get("packagesTab/lastSelectedTab", 0)
+        if self.packages_tab_widget and 0 <= last_tab < self.packages_tab_widget.count():
+            self.packages_tab_widget.setCurrentIndex(last_tab)
+
+    def _create_left_pane(self):
+        """Create the left pane with bid selector and tabs."""
+        left_widget = QtWidgets.QWidget()
+        left_layout = QtWidgets.QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Bid selector group
+        bid_group = self._create_bid_selector_group()
+        left_layout.addWidget(bid_group)
+
+        # Tab widget for Bid Tracker, Concept, Script, References
+        self.packages_tab_widget = QtWidgets.QTabWidget()
+        self.packages_tab_widget.currentChanged.connect(self._on_tab_changed)
+
+        # Create placeholder widgets for each tab
+        bid_tracker_tab = QtWidgets.QWidget()
+        bid_tracker_layout = QtWidgets.QVBoxLayout(bid_tracker_tab)
+        bid_tracker_label = QtWidgets.QLabel("Bid Tracker content coming soon...")
+        bid_tracker_label.setAlignment(QtCore.Qt.AlignCenter)
+        bid_tracker_layout.addWidget(bid_tracker_label)
+
+        concept_tab = QtWidgets.QWidget()
+        concept_layout = QtWidgets.QVBoxLayout(concept_tab)
+        concept_label = QtWidgets.QLabel("Concept content coming soon...")
+        concept_label.setAlignment(QtCore.Qt.AlignCenter)
+        concept_layout.addWidget(concept_label)
+
+        script_tab = QtWidgets.QWidget()
+        script_layout = QtWidgets.QVBoxLayout(script_tab)
+        script_label = QtWidgets.QLabel("Script content coming soon...")
+        script_label.setAlignment(QtCore.Qt.AlignCenter)
+        script_layout.addWidget(script_label)
+
+        references_tab = QtWidgets.QWidget()
+        references_layout = QtWidgets.QVBoxLayout(references_tab)
+        references_label = QtWidgets.QLabel("References content coming soon...")
+        references_label.setAlignment(QtCore.Qt.AlignCenter)
+        references_layout.addWidget(references_label)
+
+        # Add tabs
+        self.packages_tab_widget.addTab(bid_tracker_tab, "Bid Tracker")
+        self.packages_tab_widget.addTab(concept_tab, "Concept")
+        self.packages_tab_widget.addTab(script_tab, "Script")
+        self.packages_tab_widget.addTab(references_tab, "References")
+
+        left_layout.addWidget(self.packages_tab_widget, 1)  # Give it stretch factor
+
+        return left_widget
+
+    def _create_right_pane(self):
+        """Create the right pane with Data to Fetch, Output Settings, and Package Data tree."""
+        right_widget = QtWidgets.QWidget()
+        right_layout = QtWidgets.QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Data to Fetch collapsible group
+        self.data_fetch_group = self._create_data_fetch_group()
+        right_layout.addWidget(self.data_fetch_group)
+
+        # Output Settings collapsible group
+        self.output_settings_group = self._create_output_settings_group()
+        right_layout.addWidget(self.output_settings_group)
+
+        # Package Data tree
+        self.package_data_tree = PackageTreeView()
+        self.package_data_tree.set_sg_session(self.sg_session)
+        right_layout.addWidget(self.package_data_tree, 1)  # Give it stretch factor
+
+        return right_widget
+
+    def _create_bid_selector_group(self):
+        """Create the Bid selector collapsible group."""
+        bid_group = CollapsibleGroupBox("Bids")
+
+        # Bid selector row
+        selector_row = QtWidgets.QHBoxLayout()
+        selector_label = QtWidgets.QLabel("Bid:")
+        selector_row.addWidget(selector_label)
+
+        self.bid_combo = QtWidgets.QComboBox()
+        self.bid_combo.setMinimumWidth(150)
+        self.bid_combo.currentIndexChanged.connect(self._on_bid_changed)
+        selector_row.addWidget(self.bid_combo, stretch=1)
+
+        bid_group.addLayout(selector_row)
+
+        return bid_group
+
+    def _on_tab_changed(self, index):
+        """Handle tab change to save the selection."""
+        self.app_settings.set("packagesTab/lastSelectedTab", index)
+
+    def _on_bid_changed(self, index):
+        """Handle bid selection change."""
+        bid = self.bid_combo.itemData(index)
+        if bid:
+            logger.info(f"Selected bid: {bid.get('code', 'Unknown')}")
+        else:
+            logger.info("No bid selected")
 
     def _create_data_fetch_group(self):
         """Create the Data to Fetch collapsible group."""
@@ -131,9 +248,14 @@ class PackagesTab(QtWidgets.QWidget):
         Args:
             rfq: RFQ data dict
         """
+        self.current_rfq = rfq
+
         if self.package_data_tree:
             self.package_data_tree.set_rfq(rfq)
             QtCore.QTimer.singleShot(0, self._apply_checkbox_states_to_tree)
+
+        # Populate bids for the selected RFQ
+        self._populate_bids(rfq)
 
     def clear(self):
         """Clear the package data tree."""
@@ -166,6 +288,61 @@ class PackagesTab(QtWidgets.QWidget):
         if directory:
             self.output_path_input.setText(directory)
             logger.info(f"Output directory changed to: {directory}")
+
+    def _populate_bids(self, rfq):
+        """Populate the bids dropdown for the selected RFQ.
+
+        Args:
+            rfq: RFQ data dict
+        """
+        if not self.bid_combo:
+            return
+
+        self.bid_combo.blockSignals(True)
+        self.bid_combo.clear()
+        self.bid_combo.addItem("-- Select Bid --", None)
+
+        if not rfq:
+            self.bid_combo.blockSignals(False)
+            return
+
+        try:
+            # Fetch bids for this RFQ
+            rfq_id = rfq.get('id')
+            if not rfq_id:
+                logger.warning("RFQ has no ID")
+                self.bid_combo.blockSignals(False)
+                return
+
+            # Query for bids linked to this RFQ
+            filters = [['sg_rfq', 'is', {'type': 'CustomEntity03', 'id': rfq_id}]]
+            fields = ['code', 'sg_status', 'sg_is_current']
+            bids = self.sg_session.find('CustomEntity02', filters, fields)
+
+            logger.info(f"Found {len(bids)} bids for RFQ {rfq.get('code', 'Unknown')}")
+
+            # Add bids to combo, with current bid first
+            current_bids = [b for b in bids if b.get('sg_is_current')]
+            other_bids = [b for b in bids if not b.get('sg_is_current')]
+
+            for bid in current_bids + other_bids:
+                label = bid.get('code', 'Unnamed')
+                if bid.get('sg_is_current'):
+                    label += " (Current)"
+                self.bid_combo.addItem(label, bid)
+
+            # Auto-select the current bid if there is one
+            if current_bids:
+                for i in range(self.bid_combo.count()):
+                    bid = self.bid_combo.itemData(i)
+                    if bid and bid.get('sg_is_current'):
+                        self.bid_combo.setCurrentIndex(i)
+                        break
+
+        except Exception as e:
+            logger.error(f"Error loading bids: {e}", exc_info=True)
+        finally:
+            self.bid_combo.blockSignals(False)
 
     def _serialize_for_json(self, obj):
         """
