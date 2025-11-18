@@ -1136,7 +1136,24 @@ class PackagesTab(QtWidgets.QWidget):
             )
             return
 
-        # Rename package
+        # Get package data to check for ShotGrid ID
+        package_data = self.packages.get(old_name, {})
+        sg_package_id = package_data.get("sg_package_id")
+
+        # Update in ShotGrid if package has a ShotGrid ID
+        if sg_package_id:
+            try:
+                self.sg_session.update_package(sg_package_id, package_name=new_name)
+                logger.info(f"Updated Package {sg_package_id} in ShotGrid with new name: {new_name}")
+            except Exception as e:
+                logger.error(f"Error updating Package in ShotGrid: {e}")
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "ShotGrid Error",
+                    f"Package renamed locally but failed to update in ShotGrid: {str(e)}"
+                )
+
+        # Rename package locally
         self.packages[new_name] = self.packages.pop(old_name)
 
         # Update dropdown
@@ -1164,6 +1181,31 @@ class PackagesTab(QtWidgets.QWidget):
             return
 
         name = self.current_package_name
+
+        # Get package data to check for ShotGrid ID
+        package_data = self.packages.get(name, {})
+        sg_package_id = package_data.get("sg_package_id")
+
+        # Delete from ShotGrid if package has a ShotGrid ID
+        if sg_package_id:
+            try:
+                # First unlink from RFQ if we have an RFQ context
+                if self.current_rfq:
+                    rfq_id = self.current_rfq.get("id")
+                    self.sg_session.unlink_package_from_rfq(sg_package_id, rfq_id)
+                    logger.info(f"Unlinked Package {sg_package_id} from RFQ {rfq_id}")
+
+                # Then delete the package entity
+                self.sg_session.delete_package(sg_package_id)
+                logger.info(f"Deleted Package {sg_package_id} from ShotGrid")
+
+            except Exception as e:
+                logger.error(f"Error deleting Package from ShotGrid: {e}")
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "ShotGrid Error",
+                    f"Package deleted locally but failed to delete from ShotGrid: {str(e)}"
+                )
 
         # Remove from packages dict
         if name in self.packages:

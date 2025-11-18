@@ -1074,6 +1074,98 @@ class ShotgridClient:
 
         return result
 
+    def update_package(self, package_id, package_name=None, description=None):
+        """
+        Update a Package (CustomEntity12) entity in ShotGrid.
+
+        Args:
+            package_id: ID of the package to update
+            package_name: New name/code for the package (optional)
+            description: New description (optional)
+
+        Returns:
+            Updated package entity dictionary
+        """
+        update_data = {}
+
+        if package_name:
+            update_data["code"] = package_name
+        if description is not None:
+            update_data["description"] = description
+
+        if not update_data:
+            logger.warning(f"No update data provided for Package {package_id}")
+            return None
+
+        logger.info(f"Updating Package {package_id}: {update_data}")
+        package = self.sg.update("CustomEntity12", int(package_id), update_data)
+        logger.info(f"Successfully updated Package {package_id}")
+
+        return package
+
+    def delete_package(self, package_id):
+        """
+        Delete a Package (CustomEntity12) entity from ShotGrid.
+
+        Args:
+            package_id: ID of the package to delete
+
+        Returns:
+            True if successful, False otherwise
+        """
+        logger.info(f"Deleting Package {package_id} from ShotGrid")
+        result = self.sg.delete("CustomEntity12", int(package_id))
+        logger.info(f"Successfully deleted Package {package_id}")
+
+        return result
+
+    def unlink_package_from_rfq(self, package_id, rfq_id):
+        """
+        Unlink a Package from an RFQ's sg_packages field.
+
+        Args:
+            package_id: ID of the package to unlink
+            rfq_id: ID of the RFQ
+
+        Returns:
+            Updated RFQ entity or None if failed
+        """
+        # Get current packages linked to the RFQ
+        rfq = self.sg.find_one(
+            "CustomEntity04",
+            [["id", "is", int(rfq_id)]],
+            ["sg_packages"]
+        )
+
+        if not rfq:
+            logger.error(f"RFQ {rfq_id} not found")
+            return None
+
+        # Get existing packages
+        existing_packages = rfq.get("sg_packages") or []
+
+        # Remove the package from the list
+        updated_packages = [
+            pkg for pkg in existing_packages
+            if pkg.get("id") != int(package_id)
+        ]
+
+        # Only update if something changed
+        if len(updated_packages) == len(existing_packages):
+            logger.info(f"Package {package_id} was not linked to RFQ {rfq_id}")
+            return rfq
+
+        # Update the RFQ
+        logger.info(f"Unlinking Package {package_id} from RFQ {rfq_id}")
+        result = self.sg.update(
+            "CustomEntity04",
+            int(rfq_id),
+            {"sg_packages": updated_packages}
+        )
+        logger.info(f"Successfully unlinked Package from RFQ")
+
+        return result
+
     def __enter__(self):
         """Context manager entry."""
         self.connect()
