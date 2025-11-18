@@ -724,7 +724,7 @@ class PackagesTab(QtWidgets.QWidget):
             if not selected_scenes:
                 QtWidgets.QMessageBox.warning(
                     self, "Warning",
-                    "No scenes selected for export. Please check the 'Export to Excel' column to select scenes."
+                    "No scenes selected for export. Please check the 'Export' column to select scenes."
                 )
                 return
 
@@ -740,13 +740,20 @@ class PackagesTab(QtWidgets.QWidget):
             if not file_path:
                 return  # User cancelled
 
-            # Prepare data for export (exclude the virtual _export_to_excel column)
+            # Get column visibility settings
+            column_visibility = self.breakdown_widget.column_visibility
+
+            # Prepare data for export (only visible columns, exclude _export_to_excel)
             export_data = []
             for scene in selected_scenes:
                 row = {}
                 for field in self.breakdown_widget.model.column_fields:
                     if field == "_export_to_excel":
                         continue  # Skip the export checkbox column
+
+                    # Skip hidden columns
+                    if not column_visibility.get(field, True):
+                        continue
 
                     value = scene.get(field)
 
@@ -772,10 +779,10 @@ class PackagesTab(QtWidgets.QWidget):
             # Create DataFrame
             df = pd.DataFrame(export_data)
 
-            # Get column headers for display
+            # Get column headers for display (only for visible columns)
             column_headers = {}
             for i, field in enumerate(self.breakdown_widget.model.column_fields):
-                if field != "_export_to_excel":
+                if field != "_export_to_excel" and column_visibility.get(field, True):
                     column_headers[field] = self.breakdown_widget.model.column_headers[i]
 
             # Rename columns to use display names
