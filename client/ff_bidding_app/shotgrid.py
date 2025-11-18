@@ -9,6 +9,8 @@ except ImportError:
     Shotgun = None
     print("Warning: shotgun_api3 not installed. Using simulated data.")
 
+logger = logging.getLogger(__name__)
+
 
 class ShotgridClient:
     """
