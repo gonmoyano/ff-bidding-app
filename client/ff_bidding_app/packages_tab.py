@@ -452,6 +452,9 @@ class PackagesTab(QtWidgets.QWidget):
         # Load VFX Breakdown for the bid linked to this RFQ
         self._load_breakdown_for_rfq(rfq)
 
+        # Load packages attached to this RFQ from ShotGrid
+        self._load_packages_from_shotgrid(rfq)
+
     def clear(self):
         """Clear the package data tree."""
         if self.package_data_tree:
@@ -909,6 +912,53 @@ class PackagesTab(QtWidgets.QWidget):
             logger.info(f"Loaded package: {package_name}")
         else:
             logger.warning(f"Package not found: {package_name}")
+
+    def _load_packages_from_shotgrid(self, rfq):
+        """Load packages from ShotGrid that are linked to the RFQ.
+
+        Args:
+            rfq: RFQ data dict
+        """
+        if not rfq:
+            return
+
+        try:
+            rfq_id = rfq.get("id")
+            if not rfq_id:
+                return
+
+            # Query ShotGrid for packages linked to this RFQ
+            logger.info(f"Loading packages for RFQ {rfq_id} from ShotGrid...")
+            sg_packages = self.sg_session.get_packages_for_rfq(rfq_id, fields=["id", "code", "description", "created_at"])
+
+            # Clear existing packages from dropdown (keep "(No Package)")
+            self.package_selector_dropdown.blockSignals(True)  # Prevent triggering selection events
+            while self.package_selector_dropdown.count() > 1:
+                self.package_selector_dropdown.removeItem(1)
+
+            # Add packages to dropdown and to self.packages dict
+            for sg_package in sg_packages:
+                package_name = sg_package.get("code", "Unnamed Package")
+
+                # Store basic package data (will be populated with actual state when selected)
+                # For now, we just store the ShotGrid metadata
+                if package_name not in self.packages:
+                    self.packages[package_name] = {
+                        "created_at": sg_package.get("created_at", datetime.now().isoformat()),
+                        "sg_package_id": sg_package.get("id"),
+                        "export_selections": {},
+                        "column_visibility": {},
+                    }
+
+                # Add to dropdown
+                self.package_selector_dropdown.addItem(package_name)
+
+            self.package_selector_dropdown.blockSignals(False)
+
+            logger.info(f"Loaded {len(sg_packages)} package(s) from ShotGrid")
+
+        except Exception as e:
+            logger.error(f"Error loading packages from ShotGrid: {e}")
 
     def _get_next_package_version_for_rfq(self):
         """Get the next available version number for a package based on current RFQ.
