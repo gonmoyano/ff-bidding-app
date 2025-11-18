@@ -1010,13 +1010,19 @@ class PackagesTab(QtWidgets.QWidget):
         # Create Package entity in ShotGrid and link to RFQ
         try:
             rfq_id = self.current_rfq.get("id")
-            project_id = self.parent_app.current_project.get("id") if self.parent_app and self.parent_app.current_project else None
+
+            # Get project from parent app's combo box
+            if self.parent_app and hasattr(self.parent_app, 'sg_project_combo'):
+                current_project_index = self.parent_app.sg_project_combo.currentIndex()
+                sg_project = self.parent_app.sg_project_combo.itemData(current_project_index)
+                project_id = sg_project.get("id") if sg_project else None
+            else:
+                project_id = None
 
             if project_id:
                 # Create the Package entity
                 sg_package = self.sg_session.create_package(
                     package_name=name,
-                    rfq_id=rfq_id,
                     project_id=project_id,
                     description=f"Package created from FF Bidding App"
                 )

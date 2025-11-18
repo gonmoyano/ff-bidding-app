@@ -960,13 +960,15 @@ class ShotgridClient:
     # Package Management (CustomEntity12)
     # ------------------------------------------------------------------
 
-    def create_package(self, package_name, rfq_id, project_id, description=None):
+    def create_package(self, package_name, project_id, description=None):
         """
         Create a new Package (CustomEntity12) entity in ShotGrid.
 
+        Note: Package does not directly link to RFQ. The relationship is one-way
+        via the RFQ's sg_packages field.
+
         Args:
             package_name: Name/code of the package
-            rfq_id: ID of the RFQ to link to
             project_id: ID of the project
             description: Optional description
 
@@ -976,13 +978,12 @@ class ShotgridClient:
         package_data = {
             "code": package_name,
             "project": {"type": "Project", "id": int(project_id)},
-            "sg_rfq": {"type": "CustomEntity04", "id": int(rfq_id)},
         }
 
         if description:
             package_data["description"] = description
 
-        logger.info(f"Creating Package: {package_name} for RFQ {rfq_id}")
+        logger.info(f"Creating Package: {package_name} in project {project_id}")
         package = self.sg.create("CustomEntity12", package_data)
         logger.info(f"Created Package with ID: {package['id']}")
 
@@ -990,7 +991,7 @@ class ShotgridClient:
 
     def get_packages_for_rfq(self, rfq_id, fields=None):
         """
-        Get all Packages (CustomEntity12) linked to an RFQ.
+        Get all Packages (CustomEntity12) linked to an RFQ via its sg_packages field.
 
         Args:
             rfq_id: ID of the RFQ
@@ -1000,11 +1001,28 @@ class ShotgridClient:
             List of package dictionaries
         """
         if fields is None:
-            fields = ["id", "code", "description", "created_at", "sg_rfq"]
+            fields = ["id", "code", "description", "created_at"]
 
+        # Get the RFQ with its sg_packages field
+        rfq = self.sg.find_one(
+            "CustomEntity04",
+            [["id", "is", int(rfq_id)]],
+            ["sg_packages"]
+        )
+
+        if not rfq or not rfq.get("sg_packages"):
+            return []
+
+        # Extract package IDs
+        package_ids = [pkg["id"] for pkg in rfq["sg_packages"]]
+
+        if not package_ids:
+            return []
+
+        # Query for those packages
         return self.sg.find(
             "CustomEntity12",
-            [["sg_rfq", "is", {"type": "CustomEntity04", "id": int(rfq_id)}]],
+            [["id", "in", package_ids]],
             fields,
             order=[{"field_name": "created_at", "direction": "desc"}]
         )
