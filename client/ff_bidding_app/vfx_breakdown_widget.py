@@ -2123,36 +2123,47 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             return
 
         row = index.row()
+        col = index.column()
 
         # Create context menu
         menu = QtWidgets.QMenu(self)
 
-        # For Line Items (CustomEntity03), show simplified menu
-        if self.model.entity_type == "CustomEntity03":
-            # Add Line Item (no above/below, just add)
-            add_action = menu.addAction(f"Add {self.entity_name}")
-            add_action.triggered.connect(lambda: self._add_line_item_local(row))
+        # Check if this is the Export to Excel column
+        field_name = self.model.column_fields[col] if col < len(self.model.column_fields) else None
+        if field_name == "_export_to_excel":
+            # Special context menu for Export column
+            select_all_action = menu.addAction("Select All for Export")
+            select_all_action.triggered.connect(self.model.select_all_for_export)
 
-            menu.addSeparator()
-
-            # Delete item
-            delete_action = menu.addAction(f"Delete {self.entity_name}")
-            delete_action.triggered.connect(lambda: self._delete_bidding_scene(row))
+            deselect_all_action = menu.addAction("Deselect All for Export")
+            deselect_all_action.triggered.connect(self.model.deselect_all_for_export)
         else:
-            # For other entity types, keep the original behavior
-            # Add item above
-            add_above_action = menu.addAction(f"Add {self.entity_name} Above")
-            add_above_action.triggered.connect(lambda: self._add_bidding_scene_above(row))
+            # For Line Items (CustomEntity03), show simplified menu
+            if self.model.entity_type == "CustomEntity03":
+                # Add Line Item (no above/below, just add)
+                add_action = menu.addAction(f"Add {self.entity_name}")
+                add_action.triggered.connect(lambda: self._add_line_item_local(row))
 
-            # Add item below
-            add_below_action = menu.addAction(f"Add {self.entity_name} Below")
-            add_below_action.triggered.connect(lambda: self._add_bidding_scene_below(row))
+                menu.addSeparator()
 
-            menu.addSeparator()
+                # Delete item
+                delete_action = menu.addAction(f"Delete {self.entity_name}")
+                delete_action.triggered.connect(lambda: self._delete_bidding_scene(row))
+            else:
+                # For other entity types, keep the original behavior
+                # Add item above
+                add_above_action = menu.addAction(f"Add {self.entity_name} Above")
+                add_above_action.triggered.connect(lambda: self._add_bidding_scene_above(row))
 
-            # Delete item
-            delete_action = menu.addAction(f"Delete {self.entity_name}")
-            delete_action.triggered.connect(lambda: self._delete_bidding_scene(row))
+                # Add item below
+                add_below_action = menu.addAction(f"Add {self.entity_name} Below")
+                add_below_action.triggered.connect(lambda: self._add_bidding_scene_below(row))
+
+                menu.addSeparator()
+
+                # Delete item
+                delete_action = menu.addAction(f"Delete {self.entity_name}")
+                delete_action.triggered.connect(lambda: self._delete_bidding_scene(row))
 
         # Show menu
         menu.exec(self.table_view.viewport().mapToGlobal(position))

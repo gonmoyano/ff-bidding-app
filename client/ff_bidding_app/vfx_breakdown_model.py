@@ -589,7 +589,7 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         # Add virtual field schema for export checkbox
         self.field_schema["_export_to_excel"] = {
             "data_type": "checkbox",
-            "name": {"value": "Export to Excel"},
+            "name": {"value": "Export"},
             "editable": True
         }
 
