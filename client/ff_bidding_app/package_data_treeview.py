@@ -424,6 +424,48 @@ class PackageTreeView(QtWidgets.QWidget):
         # Just load the tree - visibility will be applied from the app
         self.load_tree_data()
 
+    def load_package_versions(self, package_id):
+        """Load versions from a Package instead of from RFQ.
+
+        Args:
+            package_id: ID of the Package entity
+        """
+        logger.info(f"load_package_versions() called with Package ID: {package_id}")
+
+        self.tree_widget.clear()
+        self.category_items.clear()
+
+        if not package_id or not self.sg_session:
+            logger.info("No package ID or SG session - showing empty tree")
+            return
+
+        # Get versions linked to this package
+        versions = self.sg_session.get_package_versions(
+            package_id,
+            fields=[
+                "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
+                "user", "description", "sg_task", "sg_path_to_movie", "sg_path_to_frames",
+                "sg_uploaded_movie", "sg_path_to_geometry", "sg_version_type"
+            ]
+        )
+
+        logger.info(f"Found {len(versions)} versions linked to Package ID {package_id}")
+
+        # Build the tree with actual version data
+        self.set_bid_tracker_item(versions)
+        self.set_script_item(versions)
+        self.set_concept_art_item(versions)
+        self.set_storyboard_item(versions)
+
+        # Apply stored visibility preferences
+        logger.info(f"Applying visibility preferences: {self.category_visibility_prefs}")
+        for category_name, visible in self.category_visibility_prefs.items():
+            if category_name in self.category_items:
+                self.category_items[category_name].setHidden(not visible)
+                logger.info(f"Applied pref: '{category_name}' = {visible}")
+
+        logger.info("load_package_versions() completed")
+
     def clear(self):
         """Clear the tree view."""
         logger.info("clear() called")

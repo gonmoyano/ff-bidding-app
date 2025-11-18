@@ -1166,6 +1166,53 @@ class ShotgridClient:
 
         return result
 
+    def get_package_versions(self, package_id, fields=None):
+        """
+        Get all versions linked to a Package via its sg_versions field.
+
+        Args:
+            package_id: ID of the package
+            fields: List of fields to return for versions
+
+        Returns:
+            List of version dictionaries
+        """
+        if fields is None:
+            fields = [
+                "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
+                "user", "description", "sg_task", "sg_path_to_movie", "sg_path_to_frames",
+                "sg_uploaded_movie", "sg_path_to_geometry", "sg_version_type"
+            ]
+
+        # Get the Package with its sg_versions field
+        package = self.sg.find_one(
+            "CustomEntity12",
+            [["id", "is", int(package_id)]],
+            ["sg_versions"]
+        )
+
+        if not package or not package.get("sg_versions"):
+            logger.info(f"No versions linked to Package {package_id}")
+            return []
+
+        # Extract version IDs
+        version_ids = [v["id"] for v in package["sg_versions"]]
+
+        if not version_ids:
+            return []
+
+        # Query for those versions
+        logger.info(f"Fetching {len(version_ids)} versions for Package {package_id}")
+        return self.sg.find(
+            "Version",
+            [["id", "in", version_ids]],
+            fields,
+            order=[
+                {"field_name": "entity", "direction": "asc"},  # Group by entity
+                {"field_name": "created_at", "direction": "desc"}  # Newest first within entity
+            ]
+        )
+
     def __enter__(self):
         """Context manager entry."""
         self.connect()

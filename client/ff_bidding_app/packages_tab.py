@@ -914,6 +914,9 @@ class PackagesTab(QtWidgets.QWidget):
             self.current_package_name = None
             self.rename_package_btn.setEnabled(False)
             self.delete_package_btn.setEnabled(False)
+            # Clear the package data tree
+            if self.package_data_tree:
+                self.package_data_tree.clear()
             logger.info("No package selected")
             return
 
@@ -925,6 +928,17 @@ class PackagesTab(QtWidgets.QWidget):
         if package_name in self.packages:
             package_data = self.packages[package_name]
             self._load_package_data(package_data)
+
+            # Load versions from the package into the treeview
+            sg_package_id = package_data.get("sg_package_id")
+            if sg_package_id and self.package_data_tree:
+                logger.info(f"Loading versions for Package ID {sg_package_id}")
+                self.package_data_tree.load_package_versions(sg_package_id)
+            else:
+                logger.info("No ShotGrid Package ID found, clearing tree")
+                if self.package_data_tree:
+                    self.package_data_tree.clear()
+
             logger.info(f"Loaded package: {package_name}")
         else:
             logger.warning(f"Package not found: {package_name}")
