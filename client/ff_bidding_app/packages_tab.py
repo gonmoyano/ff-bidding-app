@@ -132,16 +132,22 @@ class PackagesTab(QtWidgets.QWidget):
         if self.breakdown_widget.toolbar_widget:
             breakdown_selector_group.addWidget(self.breakdown_widget.toolbar_widget)
 
-        # Add export button
-        export_button_layout = QtWidgets.QHBoxLayout()
-        self.export_btn = QtWidgets.QPushButton("Export Selected to Excel")
-        self.export_btn.clicked.connect(self._export_to_excel)
-        export_button_layout.addWidget(self.export_btn)
-        export_button_layout.addStretch()
-        breakdown_selector_group.addLayout(export_button_layout)
-
         bid_tracker_layout.addWidget(breakdown_selector_group)
         bid_tracker_layout.addWidget(self.breakdown_widget)
+
+        # Add button bar underneath the VFX breakdown table
+        breakdown_button_layout = QtWidgets.QHBoxLayout()
+
+        self.export_btn = QtWidgets.QPushButton("Export Selected to Excel")
+        self.export_btn.clicked.connect(self._export_to_excel)
+        breakdown_button_layout.addWidget(self.export_btn)
+
+        self.create_bid_tracker_btn = QtWidgets.QPushButton("Create Bid Tracker")
+        self.create_bid_tracker_btn.clicked.connect(self._create_bid_tracker)
+        breakdown_button_layout.addWidget(self.create_bid_tracker_btn)
+
+        breakdown_button_layout.addStretch()
+        bid_tracker_layout.addLayout(breakdown_button_layout)
 
         # Placeholder tabs for other content
         concept_tab = QtWidgets.QWidget()
@@ -880,6 +886,16 @@ class PackagesTab(QtWidgets.QWidget):
                 self, "Error",
                 f"Failed to export to Excel:\n{str(e)}"
             )
+
+    def _create_bid_tracker(self):
+        """Create a new bid tracker document."""
+        QtWidgets.QMessageBox.information(
+            self,
+            "Create Bid Tracker",
+            "This feature is coming soon.\n\n"
+            "This will create a bid tracker document with the selected VFX breakdown data."
+        )
+        logger.info("Create Bid Tracker button clicked")
 
     def _on_entity_type_toggled(self, category, state):
         """Handle entity type checkbox toggle to show/hide tree categories."""
