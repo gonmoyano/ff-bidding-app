@@ -400,7 +400,7 @@ class PackagesTab(QtWidgets.QWidget):
 
         # Define categories that will appear in the tree view
         categories = [
-            "VFX Breakdown",
+            "Bid Tracker",
             "Script",
             "Concept Art",
             "Storyboard"

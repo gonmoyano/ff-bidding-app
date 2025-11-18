@@ -264,7 +264,7 @@ class PackageTreeView(QtWidgets.QWidget):
         self.category_visibility_prefs = {}
 
         # Define canonical order of categories
-        self.category_order = ["VFX Breakdown", "Script", "Concept Art", "Storyboard"]
+        self.category_order = ["Bid Tracker", "Script", "Concept Art", "Storyboard"]
 
         # Build the UI
         self._setup_ui()
@@ -478,7 +478,7 @@ class PackageTreeView(QtWidgets.QWidget):
         logger.info(f"Found {len(versions)} versions linked to RFQ ID {rfq_id}")
 
         # Build the tree with actual version data
-        self.set_vfx_breakdown_item(versions)
+        self.set_bid_tracker_item(versions)
         self.set_script_item(versions)
         self.set_concept_art_item(versions)
         self.set_storyboard_item(versions)
@@ -497,7 +497,7 @@ class PackageTreeView(QtWidgets.QWidget):
         Show or hide a category in the tree.
 
         Args:
-            category_name: Name of the category (e.g., "VFX Breakdown", "Script")
+            category_name: Name of the category (e.g., "Bid Tracker", "Script")
             visible: True to show, False to hide
         """
         # Store the preference
@@ -558,49 +558,43 @@ class PackageTreeView(QtWidgets.QWidget):
         for category_name, visible in visibility_states.items():
             self.set_category_visibility(category_name, visible)
 
-    def set_vfx_breakdown_item(self, versions):
-        """Build VFX Breakdown section with VFX Breakdown entity (no versions underneath)."""
-        # Get VFX Breakdown from the RFQ
-        vfx_breakdown = self.selected_rfq.get('sg_vfx_breakdown')
-
+    def set_bid_tracker_item(self, versions):
+        """Build Bid Tracker section with real version data."""
         # Create root folder with arrow
-        vfx_breakdown_root = SGTreeItem(
+        bid_tracker_root = SGTreeItem(
             self.tree_widget,
-            ["", "VFX Breakdown", "Folder", "", ""],
+            ["", "Bid Tracker", "Folder", "", ""],
             sg_data={'type': 'folder'},
             item_type="folder"
         )
 
-        self.category_items["VFX Breakdown"] = vfx_breakdown_root
-        vfx_breakdown_root.setExpanded(True)
-        font = vfx_breakdown_root.font(1)
+        self.category_items["Bid Tracker"] = bid_tracker_root
+        bid_tracker_root.setExpanded(True)
+        font = bid_tracker_root.font(1)
         font.setBold(True)
-        vfx_breakdown_root.setFont(1, font)
+        bid_tracker_root.setFont(1, font)
 
-        # Add VFX Breakdown entity if it exists (no versions underneath)
-        if vfx_breakdown:
-            logger.info(f"VFX Breakdown field: {vfx_breakdown}")
+        # Filter bid tracker versions
+        bid_tracker_versions = [v for v in versions if self._is_bid_tracker_version(v)]
 
-            # Handle if it's a list or a single entity
-            breakdown_entities = vfx_breakdown if isinstance(vfx_breakdown, list) else [vfx_breakdown]
+        if bid_tracker_versions:
+            for version in bid_tracker_versions:
+                version_code = version.get('code', 'Unknown')
+                status = version.get('sg_status_list', '')
+                status_display = status if status else 'N/A'
+                version_number = version_code.split('_')[-1] if '_' in version_code else ""
 
-            for breakdown in breakdown_entities:
-                if isinstance(breakdown, dict):
-                    breakdown_name = breakdown.get('name', 'Unknown VFX Breakdown')
-                    breakdown_id = breakdown.get('id', 'N/A')
-
-                    # Create VFX Breakdown entity item (no children)
-                    breakdown_item = SGTreeItem(
-                        vfx_breakdown_root,
-                        ["", breakdown_name, "VFX Breakdown", "", f"ID: {breakdown_id}"],
-                        sg_data=breakdown,
-                        item_type="entity"
-                    )
+                # Use helper to create version item with checkbox
+                version_item = self._create_version_item(
+                    bid_tracker_root,
+                    version,
+                    [version_code, "Version", status_display, version_number]
+                )
         else:
-            # No VFX Breakdown entity in RFQ
+            # No bid tracker versions found
             no_data_item = SGTreeItem(
-                vfx_breakdown_root,
-                ["", "No VFX Breakdown linked", "Info", "", ""],
+                bid_tracker_root,
+                ["", "No versions found", "Info", "", ""],
                 item_type="info"
             )
             no_data_item.setForeground(1, QtGui.QColor(120, 120, 120))
@@ -732,8 +726,8 @@ class PackageTreeView(QtWidgets.QWidget):
             )
             no_data_item.setForeground(1, QtGui.QColor(120, 120, 120))
 
-    def _is_vfx_breakdown_version(self, version):
-        """Determine if a version belongs to VFX Breakdown category."""
+    def _is_bid_tracker_version(self, version):
+        """Determine if a version belongs to Bid Tracker category."""
         sg_version_type = version.get('sg_version_type')
 
         # If sg_version_type is set, use it
@@ -745,17 +739,17 @@ class PackageTreeView(QtWidgets.QWidget):
                 version_type = str(sg_version_type).lower()
 
             logger.debug(f"Version {version.get('code')} has type: {version_type}")
-            return 'vfx' in version_type or 'breakdown' in version_type
+            return 'bid' in version_type or 'tracker' in version_type
 
         # Fallback to task/code checking if sg_version_type is not set
         task = version.get('sg_task', {})
         if task:
             task_name = task.get('name', '').lower()
-            if 'vfx' in task_name or 'breakdown' in task_name:
+            if 'bid' in task_name or 'tracker' in task_name:
                 return True
 
         code = version.get('code', '').lower()
-        if 'vfx' in code or 'breakdown' in code:
+        if 'bid' in code or 'tracker' in code:
             return True
 
         return False
