@@ -540,7 +540,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         self.entity_type = "CustomEntity02"  # Default: Bidding Scenes
 
         # Column configuration - matches import mapping fields
+        # First column is a virtual checkbox for Excel export selection
         self.column_fields = [
+            "_export_to_excel",  # Virtual column for export checkbox
             "id",
             "code",
             "sg_bid_assets",
@@ -577,8 +579,19 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         self.filtered_row_indices = []  # Indices into all_bidding_scenes_data that pass filters
         self.display_row_to_data_row = {}  # Maps displayed row -> index in all_bidding_scenes_data
 
+        # Export selection state (separate from bidding scene data)
+        # Maps data row index -> bool (whether to export to Excel)
+        self.export_selection = {}
+
         # Field schema information
         self.field_schema = {}
+
+        # Add virtual field schema for export checkbox
+        self.field_schema["_export_to_excel"] = {
+            "data_type": "checkbox",
+            "name": {"value": "Export to Excel"},
+            "editable": True
+        }
 
         # Undo/Redo stack
         self.undo_stack = []
@@ -635,6 +648,18 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         data_row = self.filtered_row_indices[row]
         bidding_scene_data = self.all_bidding_scenes_data[data_row]
         field_name = self.column_fields[col]
+
+        # Handle virtual export checkbox column
+        if field_name == "_export_to_excel":
+            value = self.export_selection.get(data_row, False)
+            if role == QtCore.Qt.CheckStateRole:
+                return QtCore.Qt.Checked if value else QtCore.Qt.Unchecked
+            elif role == QtCore.Qt.DisplayRole:
+                return ""
+            elif role == QtCore.Qt.EditRole:
+                return value
+            return None
+
         value = bidding_scene_data.get(field_name)
 
         # Check if this is a checkbox field
@@ -731,6 +756,21 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         # Get the actual data row
         data_row = self.filtered_row_indices[row]
         bidding_scene_data = self.all_bidding_scenes_data[data_row]
+
+        # Handle virtual export checkbox column specially
+        if field_name == "_export_to_excel":
+            old_value = self.export_selection.get(data_row, False)
+            new_value = bool(value)
+
+            if new_value == old_value:
+                return False
+
+            # Update export selection state
+            self.export_selection[data_row] = new_value
+
+            # Emit data changed
+            self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole, QtCore.Qt.CheckStateRole])
+            return True
 
         # Get old value
         old_value_raw = bidding_scene_data.get(field_name)
@@ -943,6 +983,11 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         self.display_row_to_data_row.clear()
         self.undo_stack.clear()
         self.redo_stack.clear()
+        self.export_selection.clear()
+
+        # Initialize all rows as selected for export by default
+        for i in range(len(self.all_bidding_scenes_data)):
+            self.export_selection[i] = True
 
         # Apply filters and sorting
         self.apply_filters()
@@ -964,6 +1009,7 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         self.display_row_to_data_row.clear()
         self.undo_stack.clear()
         self.redo_stack.clear()
+        self.export_selection.clear()
         self.sort_column = None
         self.sort_direction = None
         self.endResetModel()
@@ -975,7 +1021,14 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         Args:
             field_schema: Dictionary mapping field names to schema info
         """
+        # Preserve virtual field schemas (fields starting with _)
+        virtual_schemas = {k: v for k, v in self.field_schema.items() if k.startswith("_")}
+
         self.field_schema = field_schema
+
+        # Restore virtual field schemas
+        for field_name, schema in virtual_schemas.items():
+            self.field_schema[field_name] = schema
 
     def set_column_headers(self, display_names):
         """Set the column headers from ShotGrid display names.
@@ -1288,3 +1341,35 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         """
         self.sort_templates = templates.copy()
         self.app_settings.set_sort_templates(self.sort_templates)
+
+    def get_scenes_selected_for_export(self):
+        """Get the bidding scenes that are selected for Excel export.
+
+        Returns:
+            List of bidding scene dictionaries that are selected for export
+        """
+        selected_scenes = []
+        for data_row_idx in range(len(self.all_bidding_scenes_data)):
+            if self.export_selection.get(data_row_idx, False):
+                selected_scenes.append(self.all_bidding_scenes_data[data_row_idx])
+        return selected_scenes
+
+    def select_all_for_export(self):
+        """Select all scenes for Excel export."""
+        for i in range(len(self.all_bidding_scenes_data)):
+            self.export_selection[i] = True
+        # Emit data changed for the first column (export checkbox)
+        if len(self.filtered_row_indices) > 0:
+            top_left = self.index(0, 0)
+            bottom_right = self.index(len(self.filtered_row_indices) - 1, 0)
+            self.dataChanged.emit(top_left, bottom_right, [QtCore.Qt.CheckStateRole])
+
+    def deselect_all_for_export(self):
+        """Deselect all scenes for Excel export."""
+        for i in range(len(self.all_bidding_scenes_data)):
+            self.export_selection[i] = False
+        # Emit data changed for the first column (export checkbox)
+        if len(self.filtered_row_indices) > 0:
+            top_left = self.index(0, 0)
+            bottom_right = self.index(len(self.filtered_row_indices) - 1, 0)
+            self.dataChanged.emit(top_left, bottom_right, [QtCore.Qt.CheckStateRole])

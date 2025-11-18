@@ -124,6 +124,14 @@ class PackagesTab(QtWidgets.QWidget):
         if self.breakdown_widget.toolbar_widget:
             breakdown_selector_group.addWidget(self.breakdown_widget.toolbar_widget)
 
+        # Add export button
+        export_button_layout = QtWidgets.QHBoxLayout()
+        self.export_btn = QtWidgets.QPushButton("Export Selected to Excel")
+        self.export_btn.clicked.connect(self._export_to_excel)
+        export_button_layout.addWidget(self.export_btn)
+        export_button_layout.addStretch()
+        breakdown_selector_group.addLayout(export_button_layout)
+
         bid_tracker_layout.addWidget(breakdown_selector_group)
         bid_tracker_layout.addWidget(self.breakdown_widget)
 
@@ -186,8 +194,29 @@ class PackagesTab(QtWidgets.QWidget):
         try:
             raw_schema = self.sg_session.sg.schema_field_read("CustomEntity02")
             self.field_schema = {}
+            display_names = {}
+
             for field_name, field_info in raw_schema.items():
                 self.field_schema[field_name] = field_info
+                # Extract display name
+                name_info = field_info.get("name", {})
+                if isinstance(name_info, dict):
+                    display_name = name_info.get("value", field_name)
+                else:
+                    display_name = str(name_info) if name_info else field_name
+                display_names[field_name] = display_name
+
+            # Override display name for 'id' field to show 'SG ID'
+            if "id" in display_names:
+                display_names["id"] = "SG ID"
+
+            # Add display name for virtual export checkbox column
+            display_names["_export_to_excel"] = "Export to Excel"
+
+            # Update the model's column headers with display names
+            if self.breakdown_widget and hasattr(self.breakdown_widget, 'model'):
+                self.breakdown_widget.model.set_column_headers(display_names)
+
             logger.info(f"Loaded field schema for CustomEntity02 with {len(self.field_schema)} fields")
         except Exception as e:
             logger.error(f"Error loading field schema: {e}", exc_info=True)
@@ -260,10 +289,36 @@ class PackagesTab(QtWidgets.QWidget):
 
             logger.info(f"Loading bidding scenes for VFX Breakdown {breakdown_id}")
 
-            # Fetch bidding scenes for this breakdown
+            # Fetch bidding scenes for this breakdown with all required fields
+            # These fields match the column_fields in VFXBreakdownModel
+            required_fields = [
+                "id",
+                "code",
+                "sg_bid_assets",
+                "sg_sequence_code",
+                "sg_vfx_breakdown_scene",
+                "sg_interior_exterior",
+                "sg_number_of_shots",
+                "sg_on_set_vfx_needs",
+                "sg_page_eights",
+                "sg_previs",
+                "sg_script_excerpt",
+                "sg_set",
+                "sg_sim",
+                "sg_sorting_priority",
+                "sg_team_notes",
+                "sg_time_of_day",
+                "sg_unit",
+                "sg_vfx_assumptions",
+                "sg_vfx_description",
+                "sg_vfx_questions",
+                "sg_vfx_supervisor_notes",
+                "sg_vfx_type",
+                "sg_vfx_shot_work",
+            ]
             bidding_scenes = self.sg_session.get_bidding_scenes_for_vfx_breakdown(
                 breakdown_id,
-                fields=None  # Use default fields
+                fields=required_fields
             )
 
             logger.info(f"Loaded {len(bidding_scenes)} bidding scenes")
@@ -649,6 +704,119 @@ class PackagesTab(QtWidgets.QWidget):
             )
         finally:
             progress.close()
+
+    def _export_to_excel(self):
+        """Export selected bidding scenes to Excel file."""
+        try:
+            import pandas as pd
+            from datetime import datetime
+
+            # Get selected scenes from the model
+            if not self.breakdown_widget or not self.breakdown_widget.model:
+                QtWidgets.QMessageBox.warning(
+                    self, "Warning",
+                    "No VFX Breakdown data loaded."
+                )
+                return
+
+            selected_scenes = self.breakdown_widget.model.get_scenes_selected_for_export()
+
+            if not selected_scenes:
+                QtWidgets.QMessageBox.warning(
+                    self, "Warning",
+                    "No scenes selected for export. Please check the 'Export to Excel' column to select scenes."
+                )
+                return
+
+            # Prompt for save location
+            default_filename = f"bid_tracker_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            file_path, _ = QtWidgets.QFileDialog.getSaveFileName(
+                self,
+                "Export to Excel",
+                default_filename,
+                "Excel Files (*.xlsx);;All Files (*)"
+            )
+
+            if not file_path:
+                return  # User cancelled
+
+            # Prepare data for export (exclude the virtual _export_to_excel column)
+            export_data = []
+            for scene in selected_scenes:
+                row = {}
+                for field in self.breakdown_widget.model.column_fields:
+                    if field == "_export_to_excel":
+                        continue  # Skip the export checkbox column
+
+                    value = scene.get(field)
+
+                    # Format the value for Excel
+                    if value is None:
+                        row[field] = ""
+                    elif isinstance(value, dict):
+                        # Handle ShotGrid entity references
+                        row[field] = value.get("name", str(value))
+                    elif isinstance(value, list):
+                        # Handle multi-entity references
+                        if value and isinstance(value[0], dict):
+                            row[field] = ", ".join([item.get("name", str(item)) for item in value])
+                        else:
+                            row[field] = ", ".join([str(item) for item in value])
+                    elif isinstance(value, bool):
+                        row[field] = "Yes" if value else "No"
+                    else:
+                        row[field] = value
+
+                export_data.append(row)
+
+            # Create DataFrame
+            df = pd.DataFrame(export_data)
+
+            # Get column headers for display
+            column_headers = {}
+            for i, field in enumerate(self.breakdown_widget.model.column_fields):
+                if field != "_export_to_excel":
+                    column_headers[field] = self.breakdown_widget.model.column_headers[i]
+
+            # Rename columns to use display names
+            df = df.rename(columns=column_headers)
+
+            # Export to Excel
+            with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name='Bid Tracker', index=False)
+
+                # Auto-adjust column widths
+                worksheet = writer.sheets['Bid Tracker']
+                for idx, col in enumerate(df.columns):
+                    max_length = max(
+                        df[col].astype(str).map(len).max(),
+                        len(str(col))
+                    )
+                    # Add some padding
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[chr(65 + idx)].width = adjusted_width
+
+            QtWidgets.QMessageBox.information(
+                self, "Success",
+                f"Exported {len(selected_scenes)} scene(s) to:\n{file_path}"
+            )
+
+            logger.info(f"Exported {len(selected_scenes)} scenes to {file_path}")
+
+        except ImportError as e:
+            logger.error(f"Missing required library for Excel export: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self, "Error",
+                f"Missing required library for Excel export.\n"
+                f"Please install pandas and openpyxl:\n"
+                f"pip install pandas openpyxl"
+            )
+        except Exception as e:
+            logger.error(f"Error exporting to Excel: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self, "Error",
+                f"Failed to export to Excel:\n{str(e)}"
+            )
 
     def _on_entity_type_toggled(self, category, state):
         """Handle entity type checkbox toggle to show/hide tree categories."""
