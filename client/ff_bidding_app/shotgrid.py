@@ -956,6 +956,104 @@ class ShotgridClient:
         """
         return self.download_version_attachment(version_id, "sg_uploaded_movie_mp4", download_path)
 
+    # ------------------------------------------------------------------
+    # Package Management (CustomEntity12)
+    # ------------------------------------------------------------------
+
+    def create_package(self, package_name, rfq_id, project_id, description=None):
+        """
+        Create a new Package (CustomEntity12) entity in ShotGrid.
+
+        Args:
+            package_name: Name/code of the package
+            rfq_id: ID of the RFQ to link to
+            project_id: ID of the project
+            description: Optional description
+
+        Returns:
+            Created package entity dictionary
+        """
+        package_data = {
+            "code": package_name,
+            "project": {"type": "Project", "id": int(project_id)},
+            "sg_rfq": {"type": "CustomEntity04", "id": int(rfq_id)},
+        }
+
+        if description:
+            package_data["description"] = description
+
+        logger.info(f"Creating Package: {package_name} for RFQ {rfq_id}")
+        package = self.sg.create("CustomEntity12", package_data)
+        logger.info(f"Created Package with ID: {package['id']}")
+
+        return package
+
+    def get_packages_for_rfq(self, rfq_id, fields=None):
+        """
+        Get all Packages (CustomEntity12) linked to an RFQ.
+
+        Args:
+            rfq_id: ID of the RFQ
+            fields: List of fields to return
+
+        Returns:
+            List of package dictionaries
+        """
+        if fields is None:
+            fields = ["id", "code", "description", "created_at", "sg_rfq"]
+
+        return self.sg.find(
+            "CustomEntity12",
+            [["sg_rfq", "is", {"type": "CustomEntity04", "id": int(rfq_id)}]],
+            fields,
+            order=[{"field_name": "created_at", "direction": "desc"}]
+        )
+
+    def link_package_to_rfq(self, package_id, rfq_id):
+        """
+        Link a Package to an RFQ's sg_packages field (multi-entity field).
+
+        Args:
+            package_id: ID of the package to link
+            rfq_id: ID of the RFQ
+
+        Returns:
+            Updated RFQ entity
+        """
+        # Get current packages linked to the RFQ
+        rfq = self.sg.find_one(
+            "CustomEntity04",
+            [["id", "is", int(rfq_id)]],
+            ["sg_packages"]
+        )
+
+        if not rfq:
+            logger.error(f"RFQ {rfq_id} not found")
+            return None
+
+        # Get existing packages (or empty list if None)
+        existing_packages = rfq.get("sg_packages") or []
+
+        # Check if package is already linked
+        package_link = {"type": "CustomEntity12", "id": int(package_id)}
+        if any(p.get("id") == int(package_id) for p in existing_packages):
+            logger.info(f"Package {package_id} already linked to RFQ {rfq_id}")
+            return rfq
+
+        # Add the new package to the list
+        updated_packages = existing_packages + [package_link]
+
+        # Update the RFQ
+        logger.info(f"Linking Package {package_id} to RFQ {rfq_id}")
+        result = self.sg.update(
+            "CustomEntity04",
+            int(rfq_id),
+            {"sg_packages": updated_packages}
+        )
+        logger.info(f"Successfully linked Package to RFQ")
+
+        return result
+
     def __enter__(self):
         """Context manager entry."""
         self.connect()

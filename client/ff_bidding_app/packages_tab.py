@@ -910,15 +910,83 @@ class PackagesTab(QtWidgets.QWidget):
         else:
             logger.warning(f"Package not found: {package_name}")
 
+    def _get_next_package_version_for_rfq(self):
+        """Get the next available version number for a package based on current RFQ.
+
+        Returns:
+            tuple: (version_number, version_string) e.g., (1, "v001")
+        """
+        if not self.current_rfq:
+            return 1, "v001"
+
+        try:
+            # Get existing packages from ShotGrid for this RFQ
+            rfq_id = self.current_rfq.get("id")
+            existing_packages = self.sg_session.get_packages_for_rfq(rfq_id, fields=["code"])
+
+            # Also check packages in memory
+            rfq_code = self.current_rfq.get("code", "Package")
+            prefix = f"Package-{rfq_code}--v"
+
+            versions = []
+
+            # Extract version numbers from ShotGrid packages
+            for pkg in existing_packages:
+                pkg_name = pkg.get("code", "")
+                if pkg_name.startswith(prefix):
+                    version_part = pkg_name[len(prefix):]
+                    try:
+                        version_num = int(version_part)
+                        versions.append(version_num)
+                    except ValueError:
+                        continue
+
+            # Extract version numbers from in-memory packages
+            for pkg_name in self.packages.keys():
+                if pkg_name.startswith(prefix):
+                    version_part = pkg_name[len(prefix):]
+                    try:
+                        version_num = int(version_part)
+                        versions.append(version_num)
+                    except ValueError:
+                        continue
+
+            # Get next version
+            if versions:
+                next_version = max(versions) + 1
+            else:
+                next_version = 1
+
+            version_string = f"v{next_version:03d}"
+            return next_version, version_string
+
+        except Exception as e:
+            logger.error(f"Error getting next package version: {e}")
+            return 1, "v001"
+
     def _create_new_package(self):
         """Create a new package."""
-        # Prompt for package name
+        # Check if an RFQ is selected
+        if not self.current_rfq:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No RFQ Selected",
+                "Please select an RFQ before creating a package."
+            )
+            return
+
+        # Generate prefilled package name using naming convention
+        rfq_code = self.current_rfq.get("code", "Package")
+        version_num, version_string = self._get_next_package_version_for_rfq()
+        default_name = f"Package-{rfq_code}--{version_string}"
+
+        # Prompt for package name with prefilled default
         name, ok = QtWidgets.QInputDialog.getText(
             self,
             "Create Package",
             "Enter package name:",
             QtWidgets.QLineEdit.Normal,
-            ""
+            default_name
         )
 
         if not ok or not name.strip():
@@ -938,6 +1006,38 @@ class PackagesTab(QtWidgets.QWidget):
         # Create new package with current state
         package_data = self._capture_current_state()
         self.packages[name] = package_data
+
+        # Create Package entity in ShotGrid and link to RFQ
+        try:
+            rfq_id = self.current_rfq.get("id")
+            project_id = self.parent_app.current_project.get("id") if self.parent_app and self.parent_app.current_project else None
+
+            if project_id:
+                # Create the Package entity
+                sg_package = self.sg_session.create_package(
+                    package_name=name,
+                    rfq_id=rfq_id,
+                    project_id=project_id,
+                    description=f"Package created from FF Bidding App"
+                )
+
+                # Link the Package to the RFQ's sg_packages field
+                self.sg_session.link_package_to_rfq(sg_package["id"], rfq_id)
+
+                # Store the ShotGrid package ID in the package data
+                package_data["sg_package_id"] = sg_package["id"]
+
+                logger.info(f"Created Package entity in ShotGrid with ID: {sg_package['id']}")
+            else:
+                logger.warning("No project selected, package created locally only")
+
+        except Exception as e:
+            logger.error(f"Error creating Package in ShotGrid: {e}")
+            QtWidgets.QMessageBox.warning(
+                self,
+                "ShotGrid Error",
+                f"Package created locally but failed to create in ShotGrid: {str(e)}"
+            )
 
         # Add to dropdown
         self.package_selector_dropdown.addItem(name)
