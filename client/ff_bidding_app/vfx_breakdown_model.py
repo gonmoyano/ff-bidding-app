@@ -589,7 +589,7 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         # Add virtual field schema for export checkbox
         self.field_schema["_export_to_excel"] = {
             "data_type": "checkbox",
-            "name": {"value": "Export to Excel"},
+            "name": {"value": "Export"},
             "editable": True
         }
 
@@ -985,9 +985,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         self.redo_stack.clear()
         self.export_selection.clear()
 
-        # Initialize all rows as selected for export by default
+        # Initialize all rows as unselected for export by default
         for i in range(len(self.all_bidding_scenes_data)):
-            self.export_selection[i] = True
+            self.export_selection[i] = False
 
         # Apply filters and sorting
         self.apply_filters()

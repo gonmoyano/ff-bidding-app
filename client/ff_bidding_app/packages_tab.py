@@ -42,6 +42,10 @@ class PackagesTab(QtWidgets.QWidget):
         self.current_bid = None
         self.field_schema = None
 
+        # Package management
+        self.packages = {}  # package_name -> package_data dict
+        self.current_package_name = None
+
         # UI widgets
         self.package_data_tree = None
         self.status_label = None
@@ -50,6 +54,10 @@ class PackagesTab(QtWidgets.QWidget):
         self.package_name_input = None
         self.packages_tab_widget = None
         self.breakdown_widget = None
+        self.package_selector_dropdown = None
+        self.create_package_btn = None
+        self.delete_package_btn = None
+        self.rename_package_btn = None
 
         self._build_ui()
         self._load_field_schema()
@@ -165,10 +173,19 @@ class PackagesTab(QtWidgets.QWidget):
         return left_widget
 
     def _create_right_pane(self):
-        """Create the right pane with Data to Fetch, Output Settings, and Package Data tree."""
+        """Create the right pane with Package Selector, Package Data tree, Data to Fetch, and Output Settings."""
         right_widget = QtWidgets.QWidget()
         right_layout = QtWidgets.QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Package Selector collapsible group
+        self.package_selector_group = self._create_package_selector_group()
+        right_layout.addWidget(self.package_selector_group)
+
+        # Package Data tree
+        self.package_data_tree = PackageTreeView()
+        self.package_data_tree.set_sg_session(self.sg_session)
+        right_layout.addWidget(self.package_data_tree, 1)  # Give it stretch factor
 
         # Data to Fetch collapsible group
         self.data_fetch_group = self._create_data_fetch_group()
@@ -178,12 +195,48 @@ class PackagesTab(QtWidgets.QWidget):
         self.output_settings_group = self._create_output_settings_group()
         right_layout.addWidget(self.output_settings_group)
 
-        # Package Data tree
-        self.package_data_tree = PackageTreeView()
-        self.package_data_tree.set_sg_session(self.sg_session)
-        right_layout.addWidget(self.package_data_tree, 1)  # Give it stretch factor
-
         return right_widget
+
+    def _create_package_selector_group(self):
+        """Create the Package Selector collapsible group."""
+        package_group = CollapsibleGroupBox("Package Manager")
+
+        # Package selector dropdown
+        selector_layout = QtWidgets.QHBoxLayout()
+        selector_layout.addWidget(QtWidgets.QLabel("Current Package:"))
+
+        self.package_selector_dropdown = QtWidgets.QComboBox()
+        self.package_selector_dropdown.setMinimumWidth(200)
+        self.package_selector_dropdown.addItem("(No Package)")
+        self.package_selector_dropdown.currentTextChanged.connect(self._on_package_selected)
+        selector_layout.addWidget(self.package_selector_dropdown, 1)
+
+        package_group.addLayout(selector_layout)
+
+        # Buttons row
+        buttons_layout = QtWidgets.QHBoxLayout()
+
+        self.create_package_btn = QtWidgets.QPushButton("Create")
+        self.create_package_btn.setToolTip("Create a new package")
+        self.create_package_btn.clicked.connect(self._create_new_package)
+        buttons_layout.addWidget(self.create_package_btn)
+
+        self.rename_package_btn = QtWidgets.QPushButton("Rename")
+        self.rename_package_btn.setToolTip("Rename the current package")
+        self.rename_package_btn.clicked.connect(self._rename_package)
+        self.rename_package_btn.setEnabled(False)
+        buttons_layout.addWidget(self.rename_package_btn)
+
+        self.delete_package_btn = QtWidgets.QPushButton("Delete")
+        self.delete_package_btn.setToolTip("Delete the current package")
+        self.delete_package_btn.clicked.connect(self._delete_package)
+        self.delete_package_btn.setEnabled(False)
+        buttons_layout.addWidget(self.delete_package_btn)
+
+        buttons_layout.addStretch()
+        package_group.addLayout(buttons_layout)
+
+        return package_group
 
     def _on_tab_changed(self, index):
         """Handle tab change to save the selection."""
@@ -211,7 +264,7 @@ class PackagesTab(QtWidgets.QWidget):
                 display_names["id"] = "SG ID"
 
             # Add display name for virtual export checkbox column
-            display_names["_export_to_excel"] = "Export to Excel"
+            display_names["_export_to_excel"] = "Export"
 
             # Update the model's column headers with display names
             if self.breakdown_widget and hasattr(self.breakdown_widget, 'model'):
@@ -724,7 +777,7 @@ class PackagesTab(QtWidgets.QWidget):
             if not selected_scenes:
                 QtWidgets.QMessageBox.warning(
                     self, "Warning",
-                    "No scenes selected for export. Please check the 'Export to Excel' column to select scenes."
+                    "No scenes selected for export. Please check the 'Export' column to select scenes."
                 )
                 return
 
@@ -740,13 +793,20 @@ class PackagesTab(QtWidgets.QWidget):
             if not file_path:
                 return  # User cancelled
 
-            # Prepare data for export (exclude the virtual _export_to_excel column)
+            # Get column visibility settings
+            column_visibility = self.breakdown_widget.column_visibility
+
+            # Prepare data for export (only visible columns, exclude _export_to_excel)
             export_data = []
             for scene in selected_scenes:
                 row = {}
                 for field in self.breakdown_widget.model.column_fields:
                     if field == "_export_to_excel":
                         continue  # Skip the export checkbox column
+
+                    # Skip hidden columns
+                    if not column_visibility.get(field, True):
+                        continue
 
                     value = scene.get(field)
 
@@ -772,10 +832,10 @@ class PackagesTab(QtWidgets.QWidget):
             # Create DataFrame
             df = pd.DataFrame(export_data)
 
-            # Get column headers for display
+            # Get column headers for display (only for visible columns)
             column_headers = {}
             for i, field in enumerate(self.breakdown_widget.model.column_fields):
-                if field != "_export_to_excel":
+                if field != "_export_to_excel" and column_visibility.get(field, True):
                     column_headers[field] = self.breakdown_widget.model.column_headers[i]
 
             # Rename columns to use display names
@@ -828,3 +888,194 @@ class PackagesTab(QtWidgets.QWidget):
 
         # Tell the tree view to show/hide this category
         self.package_data_tree.set_category_visibility(category, is_checked)
+
+    def _on_package_selected(self, package_name):
+        """Handle package selection from dropdown."""
+        if package_name == "(No Package)":
+            self.current_package_name = None
+            self.rename_package_btn.setEnabled(False)
+            self.delete_package_btn.setEnabled(False)
+            logger.info("No package selected")
+            return
+
+        self.current_package_name = package_name
+        self.rename_package_btn.setEnabled(True)
+        self.delete_package_btn.setEnabled(True)
+
+        # Load package data
+        if package_name in self.packages:
+            package_data = self.packages[package_name]
+            self._load_package_data(package_data)
+            logger.info(f"Loaded package: {package_name}")
+        else:
+            logger.warning(f"Package not found: {package_name}")
+
+    def _create_new_package(self):
+        """Create a new package."""
+        # Prompt for package name
+        name, ok = QtWidgets.QInputDialog.getText(
+            self,
+            "Create Package",
+            "Enter package name:",
+            QtWidgets.QLineEdit.Normal,
+            ""
+        )
+
+        if not ok or not name.strip():
+            return
+
+        name = name.strip()
+
+        # Check if package already exists
+        if name in self.packages:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Package Exists",
+                f"A package named '{name}' already exists."
+            )
+            return
+
+        # Create new package with current state
+        package_data = self._capture_current_state()
+        self.packages[name] = package_data
+
+        # Add to dropdown
+        self.package_selector_dropdown.addItem(name)
+        self.package_selector_dropdown.setCurrentText(name)
+
+        logger.info(f"Created new package: {name}")
+        self.set_status(f"Created package: {name}")
+
+    def _rename_package(self):
+        """Rename the current package."""
+        if not self.current_package_name:
+            return
+
+        old_name = self.current_package_name
+
+        # Prompt for new name
+        new_name, ok = QtWidgets.QInputDialog.getText(
+            self,
+            "Rename Package",
+            "Enter new package name:",
+            QtWidgets.QLineEdit.Normal,
+            old_name
+        )
+
+        if not ok or not new_name.strip():
+            return
+
+        new_name = new_name.strip()
+
+        # Check if name unchanged
+        if new_name == old_name:
+            return
+
+        # Check if new name already exists
+        if new_name in self.packages:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Package Exists",
+                f"A package named '{new_name}' already exists."
+            )
+            return
+
+        # Rename package
+        self.packages[new_name] = self.packages.pop(old_name)
+
+        # Update dropdown
+        current_index = self.package_selector_dropdown.currentIndex()
+        self.package_selector_dropdown.setItemText(current_index, new_name)
+        self.current_package_name = new_name
+
+        logger.info(f"Renamed package from '{old_name}' to '{new_name}'")
+        self.set_status(f"Renamed package to: {new_name}")
+
+    def _delete_package(self):
+        """Delete the current package."""
+        if not self.current_package_name:
+            return
+
+        # Confirm deletion
+        result = QtWidgets.QMessageBox.question(
+            self,
+            "Delete Package",
+            f"Are you sure you want to delete package '{self.current_package_name}'?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if result != QtWidgets.QMessageBox.Yes:
+            return
+
+        name = self.current_package_name
+
+        # Remove from packages dict
+        if name in self.packages:
+            del self.packages[name]
+
+        # Remove from dropdown
+        current_index = self.package_selector_dropdown.currentIndex()
+        self.package_selector_dropdown.removeItem(current_index)
+
+        # Reset to "(No Package)"
+        self.package_selector_dropdown.setCurrentIndex(0)
+        self.current_package_name = None
+
+        logger.info(f"Deleted package: {name}")
+        self.set_status(f"Deleted package: {name}")
+
+    def _capture_current_state(self):
+        """Capture the current UI state as package data.
+
+        Returns:
+            dict: Package data containing export selections and column visibility
+        """
+        package_data = {
+            "created_at": datetime.now().isoformat(),
+            "export_selections": {},
+            "column_visibility": {},
+        }
+
+        # Capture export selections from the breakdown widget
+        if self.breakdown_widget and self.breakdown_widget.model:
+            package_data["export_selections"] = self.breakdown_widget.model.export_selection.copy()
+
+        # Capture column visibility settings
+        if self.breakdown_widget:
+            package_data["column_visibility"] = self.breakdown_widget.column_visibility.copy()
+
+        return package_data
+
+    def _load_package_data(self, package_data):
+        """Load package data into the UI.
+
+        Args:
+            package_data: dict containing package state
+        """
+        # Restore export selections
+        if self.breakdown_widget and self.breakdown_widget.model:
+            export_selections = package_data.get("export_selections", {})
+            self.breakdown_widget.model.export_selection = export_selections.copy()
+
+            # Emit data changed to refresh checkboxes
+            if len(self.breakdown_widget.model.filtered_row_indices) > 0:
+                top_left = self.breakdown_widget.model.index(0, 0)
+                bottom_right = self.breakdown_widget.model.index(
+                    len(self.breakdown_widget.model.filtered_row_indices) - 1, 0
+                )
+                self.breakdown_widget.model.dataChanged.emit(
+                    top_left, bottom_right, [QtCore.Qt.CheckStateRole]
+                )
+
+        # Restore column visibility
+        if self.breakdown_widget:
+            column_visibility = package_data.get("column_visibility", {})
+            if column_visibility:
+                self.breakdown_widget.column_visibility = column_visibility.copy()
+
+                # Apply visibility to table
+                for i, field in enumerate(self.breakdown_widget.model.column_fields):
+                    is_visible = column_visibility.get(field, True)
+                    self.breakdown_widget.table_view.setColumnHidden(i, not is_visible)
+
+        self.set_status(f"Loaded package: {self.current_package_name}")
