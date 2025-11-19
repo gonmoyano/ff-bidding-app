@@ -68,19 +68,22 @@ class PackagesTab(QtWidgets.QWidget):
         layout.setContentsMargins(5, 5, 5, 5)
 
         # Horizontal splitter for left and right panes
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.splitter.setChildrenCollapsible(False)  # Prevent collapsing panes
 
         # Left pane: Bid selector + Tabs
         left_pane = self._create_left_pane()
-        splitter.addWidget(left_pane)
+        self.splitter.addWidget(left_pane)
 
         # Right pane: Data to Fetch, Output Settings, Package Data tree
         right_pane = self._create_right_pane()
-        splitter.addWidget(right_pane)
+        self.splitter.addWidget(right_pane)
 
-        # Set initial sizes (30% left, 70% right)
-        splitter.setSizes([300, 700])
-        layout.addWidget(splitter)
+        # Set initial sizes (30% left, 70% right) and allow right pane to be freely resizable
+        self.splitter.setSizes([300, 700])
+        self.splitter.setStretchFactor(0, 0)  # Left pane doesn't stretch
+        self.splitter.setStretchFactor(1, 1)  # Right pane stretches with window
+        layout.addWidget(self.splitter)
 
         # Bottom section: Status + Create Package button
         bottom_layout = QtWidgets.QHBoxLayout()
@@ -150,29 +153,22 @@ class PackagesTab(QtWidgets.QWidget):
         bid_tracker_layout.addLayout(breakdown_button_layout)
 
         # Placeholder tabs for other content
-        concept_tab = QtWidgets.QWidget()
-        concept_layout = QtWidgets.QVBoxLayout(concept_tab)
-        concept_label = QtWidgets.QLabel("Concept content coming soon...")
-        concept_label.setAlignment(QtCore.Qt.AlignCenter)
-        concept_layout.addWidget(concept_label)
+        documents_tab = QtWidgets.QWidget()
+        documents_layout = QtWidgets.QVBoxLayout(documents_tab)
+        documents_label = QtWidgets.QLabel("Documents content coming soon...")
+        documents_label.setAlignment(QtCore.Qt.AlignCenter)
+        documents_layout.addWidget(documents_label)
 
-        script_tab = QtWidgets.QWidget()
-        script_layout = QtWidgets.QVBoxLayout(script_tab)
-        script_label = QtWidgets.QLabel("Script content coming soon...")
-        script_label.setAlignment(QtCore.Qt.AlignCenter)
-        script_layout.addWidget(script_label)
-
-        references_tab = QtWidgets.QWidget()
-        references_layout = QtWidgets.QVBoxLayout(references_tab)
-        references_label = QtWidgets.QLabel("References content coming soon...")
-        references_label.setAlignment(QtCore.Qt.AlignCenter)
-        references_layout.addWidget(references_label)
+        images_tab = QtWidgets.QWidget()
+        images_layout = QtWidgets.QVBoxLayout(images_tab)
+        images_label = QtWidgets.QLabel("Images content coming soon...")
+        images_label.setAlignment(QtCore.Qt.AlignCenter)
+        images_layout.addWidget(images_label)
 
         # Add tabs
         self.packages_tab_widget.addTab(bid_tracker_tab, "Bid Tracker")
-        self.packages_tab_widget.addTab(concept_tab, "Concept")
-        self.packages_tab_widget.addTab(script_tab, "Script")
-        self.packages_tab_widget.addTab(references_tab, "References")
+        self.packages_tab_widget.addTab(documents_tab, "Documents")
+        self.packages_tab_widget.addTab(images_tab, "Images")
 
         left_layout.addWidget(self.packages_tab_widget, 1)  # Give it stretch factor
 
