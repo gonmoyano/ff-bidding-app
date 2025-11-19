@@ -7,6 +7,260 @@ except (ImportError, ValueError, SystemError):
     logger = logging.getLogger("FFPackageManager")
 
 
+class ImageViewerDialog(QtWidgets.QDialog):
+    """Dialog for viewing an enlarged image with zoom and pan capabilities."""
+
+    def __init__(self, version_data, sg_session, parent=None):
+        super().__init__(parent)
+        self.version_data = version_data
+        self.sg_session = sg_session
+        self.current_zoom = 1.0
+        self.image_pixmap = None
+
+        version_code = version_data.get('code', 'Image Viewer')
+        self.setWindowTitle(f"Image Viewer - {version_code}")
+        self.resize(1200, 800)
+
+        self._setup_ui()
+        self._load_full_image()
+
+    def _setup_ui(self):
+        """Setup the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+
+        # Toolbar
+        toolbar = QtWidgets.QHBoxLayout()
+
+        # Zoom controls
+        zoom_in_btn = QtWidgets.QPushButton("Zoom In (+)")
+        zoom_in_btn.clicked.connect(self._zoom_in)
+        toolbar.addWidget(zoom_in_btn)
+
+        zoom_out_btn = QtWidgets.QPushButton("Zoom Out (-)")
+        zoom_out_btn.clicked.connect(self._zoom_out)
+        toolbar.addWidget(zoom_out_btn)
+
+        zoom_reset_btn = QtWidgets.QPushButton("Reset (0)")
+        zoom_reset_btn.clicked.connect(self._zoom_reset)
+        toolbar.addWidget(zoom_reset_btn)
+
+        fit_btn = QtWidgets.QPushButton("Fit to Window")
+        fit_btn.clicked.connect(self._fit_to_window)
+        toolbar.addWidget(fit_btn)
+
+        toolbar.addStretch()
+
+        # Zoom level label
+        self.zoom_label = QtWidgets.QLabel("100%")
+        self.zoom_label.setStyleSheet("font-weight: bold;")
+        toolbar.addWidget(self.zoom_label)
+
+        layout.addLayout(toolbar)
+
+        # Graphics view for displaying image
+        self.graphics_view = QtWidgets.QGraphicsView()
+        self.graphics_scene = QtWidgets.QGraphicsScene()
+        self.graphics_view.setScene(self.graphics_scene)
+        self.graphics_view.setRenderHint(QtGui.QPainter.Antialiasing)
+        self.graphics_view.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
+        self.graphics_view.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
+        self.graphics_view.setBackgroundBrush(QtGui.QBrush(QtGui.QColor(30, 30, 30)))
+
+        # Enable wheel zoom
+        self.graphics_view.wheelEvent = self._wheel_event
+
+        layout.addWidget(self.graphics_view)
+
+        # Status bar with image info
+        self.status_label = QtWidgets.QLabel("Loading...")
+        self.status_label.setStyleSheet("padding: 5px; background-color: #2b2b2b;")
+        layout.addWidget(self.status_label)
+
+        # Close button
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        button_layout.addWidget(close_btn)
+        layout.addLayout(button_layout)
+
+    def _load_full_image(self):
+        """Load the full-resolution image from ShotGrid."""
+        try:
+            # First try to get the uploaded movie/image
+            image_url = None
+            image_data = self.version_data.get('image')
+
+            # Check for uploaded movie (could be an image file)
+            uploaded_movie = self.version_data.get('sg_uploaded_movie')
+            if uploaded_movie:
+                if isinstance(uploaded_movie, dict):
+                    image_url = uploaded_movie.get('url') or uploaded_movie.get('link_type')
+                elif isinstance(uploaded_movie, str):
+                    image_url = uploaded_movie
+
+            # If no uploaded movie, use the thumbnail (scaled up)
+            if not image_url and image_data:
+                if isinstance(image_data, str):
+                    image_url = image_data
+                elif isinstance(image_data, dict):
+                    image_url = image_data.get('url') or image_data.get('link_type')
+
+            if not image_url:
+                self.status_label.setText("No image available")
+                return
+
+            # Download image in background
+            from PySide6.QtCore import QThread, QObject, Signal
+            import requests
+
+            class ImageLoader(QObject):
+                finished = Signal(bytes)
+                error = Signal(str)
+
+                def __init__(self, url):
+                    super().__init__()
+                    self.url = url
+
+                def run(self):
+                    try:
+                        response = requests.get(self.url, timeout=30)
+                        if response.status_code == 200:
+                            self.finished.emit(response.content)
+                        else:
+                            self.error.emit(f"HTTP {response.status_code}")
+                    except Exception as e:
+                        logger.error(f"Failed to download image: {e}")
+                        self.error.emit(str(e))
+
+            self.loader = ImageLoader(image_url)
+            self.loader_thread = QThread()
+            self.loader.moveToThread(self.loader_thread)
+            self.loader_thread.started.connect(self.loader.run)
+            self.loader.finished.connect(self._on_image_loaded)
+            self.loader.error.connect(self._on_image_error)
+            self.loader_thread.start()
+
+        except Exception as e:
+            logger.error(f"Error loading full image: {e}")
+            self.status_label.setText(f"Error: {str(e)}")
+
+    def _on_image_loaded(self, image_data):
+        """Handle image loaded."""
+        try:
+            # Create pixmap from image data
+            self.image_pixmap = QtGui.QPixmap()
+            self.image_pixmap.loadFromData(image_data)
+
+            if not self.image_pixmap.isNull():
+                # Add to scene
+                self.graphics_scene.clear()
+                self.pixmap_item = self.graphics_scene.addPixmap(self.image_pixmap)
+
+                # Fit to window initially
+                self._fit_to_window()
+
+                # Update status
+                width = self.image_pixmap.width()
+                height = self.image_pixmap.height()
+                size_kb = len(image_data) / 1024
+                self.status_label.setText(
+                    f"Image: {width}x{height} pixels | Size: {size_kb:.1f} KB | "
+                    f"Version: {self.version_data.get('code', 'Unknown')}"
+                )
+            else:
+                self.status_label.setText("Failed to load image")
+
+            # Clean up thread
+            if hasattr(self, 'loader_thread'):
+                self.loader_thread.quit()
+                self.loader_thread.wait()
+
+        except Exception as e:
+            logger.error(f"Error displaying image: {e}")
+            self.status_label.setText(f"Error: {str(e)}")
+
+    def _on_image_error(self, error_msg):
+        """Handle image load error."""
+        self.status_label.setText(f"Failed to load image: {error_msg}")
+
+        # Clean up thread
+        if hasattr(self, 'loader_thread'):
+            self.loader_thread.quit()
+            self.loader_thread.wait()
+
+    def _wheel_event(self, event):
+        """Handle mouse wheel for zooming."""
+        # Zoom in/out based on wheel direction
+        zoom_factor = 1.15
+
+        if event.angleDelta().y() > 0:
+            # Zoom in
+            self.graphics_view.scale(zoom_factor, zoom_factor)
+            self.current_zoom *= zoom_factor
+        else:
+            # Zoom out
+            self.graphics_view.scale(1 / zoom_factor, 1 / zoom_factor)
+            self.current_zoom /= zoom_factor
+
+        self._update_zoom_label()
+
+    def _zoom_in(self):
+        """Zoom in the image."""
+        zoom_factor = 1.25
+        self.graphics_view.scale(zoom_factor, zoom_factor)
+        self.current_zoom *= zoom_factor
+        self._update_zoom_label()
+
+    def _zoom_out(self):
+        """Zoom out the image."""
+        zoom_factor = 1.25
+        self.graphics_view.scale(1 / zoom_factor, 1 / zoom_factor)
+        self.current_zoom /= zoom_factor
+        self._update_zoom_label()
+
+    def _zoom_reset(self):
+        """Reset zoom to 100%."""
+        self.graphics_view.resetTransform()
+        self.current_zoom = 1.0
+        self._update_zoom_label()
+
+    def _fit_to_window(self):
+        """Fit image to window."""
+        if self.image_pixmap and not self.image_pixmap.isNull():
+            self.graphics_view.fitInView(
+                self.graphics_scene.sceneRect(),
+                QtCore.Qt.KeepAspectRatio
+            )
+            # Calculate the zoom level
+            view_rect = self.graphics_view.viewport().rect()
+            scene_rect = self.graphics_scene.sceneRect()
+
+            x_ratio = view_rect.width() / scene_rect.width() if scene_rect.width() > 0 else 1
+            y_ratio = view_rect.height() / scene_rect.height() if scene_rect.height() > 0 else 1
+            self.current_zoom = min(x_ratio, y_ratio)
+            self._update_zoom_label()
+
+    def _update_zoom_label(self):
+        """Update the zoom level label."""
+        zoom_percent = int(self.current_zoom * 100)
+        self.zoom_label.setText(f"{zoom_percent}%")
+
+    def keyPressEvent(self, event):
+        """Handle keyboard shortcuts."""
+        if event.key() == QtCore.Qt.Key_Plus or event.key() == QtCore.Qt.Key_Equal:
+            self._zoom_in()
+        elif event.key() == QtCore.Qt.Key_Minus:
+            self._zoom_out()
+        elif event.key() == QtCore.Qt.Key_0:
+            self._zoom_reset()
+        elif event.key() == QtCore.Qt.Key_Escape:
+            self.accept()
+        else:
+            super().keyPressEvent(event)
+
+
 class ThumbnailWidget(QtWidgets.QWidget):
     """Widget for displaying a single image thumbnail."""
 
@@ -167,6 +421,16 @@ class ThumbnailWidget(QtWidgets.QWidget):
         """Handle mouse press to select thumbnail."""
         if event.button() == QtCore.Qt.LeftButton:
             self.clicked.emit(self.version_data)
+
+    def mouseDoubleClickEvent(self, event):
+        """Handle double-click to open enlarged view."""
+        if event.button() == QtCore.Qt.LeftButton:
+            self._open_enlarged_view()
+
+    def _open_enlarged_view(self):
+        """Open an enlarged view dialog for this image."""
+        dialog = ImageViewerDialog(self.version_data, self.sg_session, self)
+        dialog.exec()
 
     def set_selected(self, selected):
         """Set the selected state."""
