@@ -282,23 +282,28 @@ class PackagesTab(QtWidgets.QWidget):
 
     def _populate_image_viewer_folders(self):
         """Extract assets and scenes from breakdown and populate image viewer folder tree."""
+        print("\n=== _POPULATE_IMAGE_VIEWER_FOLDERS CALLED ===")
         logger.info("_populate_image_viewer_folders called")
 
         if not self.image_viewer:
+            print("ERROR: No image viewer available")
             logger.warning("No image viewer available")
             return
 
         if not self.breakdown_widget:
+            print("ERROR: No breakdown widget available")
             logger.warning("No breakdown widget available")
             return
 
         if not self.breakdown_widget.model:
+            print("ERROR: No breakdown model available")
             logger.warning("No breakdown model available")
             return
 
         assets = []
         scenes = []
 
+        print(f"Breakdown model has {len(self.breakdown_widget.model.data_list)} scenes")
         logger.info(f"Breakdown model has {len(self.breakdown_widget.model.data_list)} scenes")
 
         # Extract from bidding scenes in the breakdown model
@@ -324,13 +329,20 @@ class PackagesTab(QtWidgets.QWidget):
                 scenes.append(scene_code)
                 logger.debug(f"  Added scene: {scene_code}")
 
+        print(f"Extracted {len(assets)} asset entries ({len(set(assets))} unique)")
+        print(f"Extracted {len(scenes)} scene entries ({len(set(scenes))} unique)")
+        print(f"Unique assets: {sorted(set(assets))[:5] if len(set(assets)) > 5 else sorted(set(assets))}")
+        print(f"Unique scenes: {sorted(set(scenes))[:5] if len(set(scenes)) > 5 else sorted(set(scenes))}")
+
         logger.info(f"Extracted {len(assets)} asset entries ({len(set(assets))} unique)")
         logger.info(f"Extracted {len(scenes)} scene entries ({len(set(scenes))} unique)")
         logger.info(f"Unique assets: {sorted(set(assets))}")
         logger.info(f"Unique scenes: {sorted(set(scenes))}")
 
         # Populate the image viewer folder tree
+        print(f"Calling image_viewer.populate_folders with {len(set(assets))} assets and {len(set(scenes))} scenes")
         self.image_viewer.populate_folders(assets, scenes)
+        print("=== _POPULATE_IMAGE_VIEWER_FOLDERS COMPLETE ===\n")
         logger.info(f"Populated image viewer folders with {len(set(assets))} unique assets and {len(set(scenes))} unique scenes")
 
     def _load_breakdown_for_rfq(self, rfq):

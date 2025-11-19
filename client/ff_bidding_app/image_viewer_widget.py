@@ -698,6 +698,11 @@ class ImageViewerWidget(QtWidgets.QWidget):
         title_label.setFont(title_font)
         dock_layout.addWidget(title_label)
 
+        # Test button to manually populate with dummy data
+        test_btn = QtWidgets.QPushButton("Test: Load Sample Data")
+        test_btn.clicked.connect(self._test_populate_folders)
+        dock_layout.addWidget(test_btn)
+
         # Tree widget for folder view
         self.folder_tree = QtWidgets.QTreeWidget()
         self.folder_tree.setHeaderHidden(True)
@@ -719,7 +724,41 @@ class ImageViewerWidget(QtWidgets.QWidget):
             }
         """)
 
+        # Initialize with empty groups to show the structure
+        self._initialize_empty_tree()
+
         return dock_widget
+
+    def _initialize_empty_tree(self):
+        """Initialize the tree with empty groups."""
+        logger.info("Initializing empty folder tree")
+        self.folder_tree.clear()
+
+        folder_icon = self.style().standardIcon(QtWidgets.QStyle.SP_DirIcon)
+
+        # Assets group (empty initially)
+        assets_item = QtWidgets.QTreeWidgetItem(self.folder_tree)
+        assets_item.setText(0, "Assets (empty)")
+        assets_item.setIcon(0, folder_icon)
+        assets_item.setData(0, QtCore.Qt.UserRole, "assets_group")
+        assets_item.setExpanded(True)
+
+        # Scenes group (empty initially)
+        scenes_item = QtWidgets.QTreeWidgetItem(self.folder_tree)
+        scenes_item.setText(0, "Scenes (empty)")
+        scenes_item.setIcon(0, folder_icon)
+        scenes_item.setData(0, QtCore.Qt.UserRole, "scenes_group")
+        scenes_item.setExpanded(True)
+
+    def _test_populate_folders(self):
+        """Test method to populate with sample data."""
+        logger.info("TEST: Populating with sample data")
+        print("TEST: Populating with sample data")
+
+        sample_assets = ["Asset_A", "Asset_B", "Asset_C"]
+        sample_scenes = ["Scene_010", "Scene_020", "Scene_030"]
+
+        self.populate_folders(sample_assets, sample_scenes)
 
     def _on_filter_changed(self, filter_type, state):
         """Handle filter checkbox changes."""
@@ -797,6 +836,12 @@ class ImageViewerWidget(QtWidgets.QWidget):
             assets: List of asset names
             scenes: List of scene/task names
         """
+        print(f"\n=== POPULATE_FOLDERS CALLED ===")
+        print(f"Assets count: {len(assets)}")
+        print(f"Scenes count: {len(scenes)}")
+        print(f"Assets: {assets[:5] if len(assets) > 5 else assets}")
+        print(f"Scenes: {scenes[:5] if len(scenes) > 5 else scenes}")
+
         logger.info(f"populate_folders called with {len(assets)} assets and {len(scenes)} scenes")
         logger.info(f"Assets received: {assets}")
         logger.info(f"Scenes received: {scenes}")
@@ -808,41 +853,48 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         # Assets group
         assets_item = QtWidgets.QTreeWidgetItem(self.folder_tree)
-        assets_item.setText(0, "Assets")
+        assets_item.setText(0, f"Assets ({len(set(assets))})")
         assets_item.setIcon(0, folder_icon)
         assets_item.setData(0, QtCore.Qt.UserRole, "assets_group")
         assets_item.setExpanded(True)
         logger.info("Created Assets group")
+        print("Created Assets group")
 
         # Add asset folders
         unique_assets = sorted(set(assets))
         logger.info(f"Adding {len(unique_assets)} unique asset folders")
+        print(f"Adding {len(unique_assets)} unique asset folders")
         for asset_name in unique_assets:
             asset_item = QtWidgets.QTreeWidgetItem(assets_item)
             asset_item.setText(0, asset_name)
             asset_item.setIcon(0, folder_icon)
             asset_item.setData(0, QtCore.Qt.UserRole, "asset")
             logger.debug(f"  Added asset folder: {asset_name}")
+            print(f"  - Added asset: {asset_name}")
 
         # Scenes group
         scenes_item = QtWidgets.QTreeWidgetItem(self.folder_tree)
-        scenes_item.setText(0, "Scenes")
+        scenes_item.setText(0, f"Scenes ({len(set(scenes))})")
         scenes_item.setIcon(0, folder_icon)
         scenes_item.setData(0, QtCore.Qt.UserRole, "scenes_group")
         scenes_item.setExpanded(True)
         logger.info("Created Scenes group")
+        print("Created Scenes group")
 
         # Add scene folders
         unique_scenes = sorted(set(scenes))
         logger.info(f"Adding {len(unique_scenes)} unique scene folders")
+        print(f"Adding {len(unique_scenes)} unique scene folders")
         for scene_name in unique_scenes:
             scene_item = QtWidgets.QTreeWidgetItem(scenes_item)
             scene_item.setText(0, scene_name)
             scene_item.setIcon(0, folder_icon)
             scene_item.setData(0, QtCore.Qt.UserRole, "scene")
             logger.debug(f"  Added scene folder: {scene_name}")
+            print(f"  - Added scene: {scene_name}")
 
         logger.info(f"Successfully populated folder tree with {len(unique_assets)} unique assets and {len(unique_scenes)} unique scenes")
+        print(f"=== FOLDER TREE POPULATED: {len(unique_assets)} assets, {len(unique_scenes)} scenes ===\n")
 
     def _apply_filters(self):
         """Apply current filters and rebuild thumbnails."""
