@@ -395,9 +395,9 @@ class PackageTreeView(QtWidgets.QWidget):
 
         layout.addLayout(header_layout)
 
-        # Tree widget - Added "Active" column at the beginning
+        # Tree widget
         self.tree_widget = QtWidgets.QTreeWidget()
-        self.tree_widget.setHeaderLabels(["Active", "Name", "Type", "Status", "Version"])
+        self.tree_widget.setHeaderLabels(["Name", "Type", "Status", "Version"])
 
         # Get DPI scale for column widths
         try:
@@ -408,16 +408,11 @@ class PackageTreeView(QtWidgets.QWidget):
         dpi_scale = app_settings.get_dpi_scale()
 
         # Scale column widths with DPI
-        self.tree_widget.setColumnWidth(0, int(60 * dpi_scale))  # Active checkbox column
-        self.tree_widget.setColumnWidth(1, int(250 * dpi_scale))  # Name
-        self.tree_widget.setColumnWidth(2, int(80 * dpi_scale))  # Type
-        self.tree_widget.setColumnWidth(3, int(80 * dpi_scale))  # Status
+        self.tree_widget.setColumnWidth(0, int(250 * dpi_scale))  # Name
+        self.tree_widget.setColumnWidth(1, int(80 * dpi_scale))  # Type
+        self.tree_widget.setColumnWidth(2, int(80 * dpi_scale))  # Status
         self.tree_widget.setAlternatingRowColors(True)
         self.tree_widget.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-
-        # Set custom delegate for checkbox column to support DPI scaling
-        checkbox_delegate = TreeCheckBoxDelegate(self.tree_widget)
-        self.tree_widget.setItemDelegateForColumn(0, checkbox_delegate)
 
         # Enable tree item animations and proper branch indicators
         self.tree_widget.setAnimated(True)
@@ -428,9 +423,6 @@ class PackageTreeView(QtWidgets.QWidget):
         self.tree_widget.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.tree_widget.customContextMenuRequested.connect(self.show_tree_context_menu)
 
-        # Connect to handle checkbox changes
-        self.tree_widget.itemChanged.connect(self._on_item_changed)
-
         # Connect to handle expand/collapse for arrow updates
         self.tree_widget.itemExpanded.connect(self._on_item_expanded)
         self.tree_widget.itemCollapsed.connect(self._on_item_collapsed)
@@ -440,61 +432,28 @@ class PackageTreeView(QtWidgets.QWidget):
         logger.info("create_panel() completed")
         return panel
 
-    def _on_item_changed(self, item, column):
-        """Handle item changes (checkbox toggles)."""
-        # Only handle column 0 (checkbox column) and only for version items
-        if column == 0 and isinstance(item, SGTreeItem) and item.get_item_type() == "version":
-            is_checked = item.checkState(0) == QtCore.Qt.Checked
-            self._set_version_active_state(item, is_checked)
-            logger.info(f"Version '{item.get_entity_name()}' active state changed to: {is_checked}")
-
     def _on_item_expanded(self, item):
         """Update arrow when item is expanded."""
         if isinstance(item, SGTreeItem) and item.get_item_type() == "folder":
-            text = item.text(1)
+            text = item.text(0)
             if text.startswith("►"):
-                item.setText(1, text.replace("►", "▼", 1))
+                item.setText(0, text.replace("►", "▼", 1))
 
     def _on_item_collapsed(self, item):
         """Update arrow when item is collapsed."""
         if isinstance(item, SGTreeItem) and item.get_item_type() == "folder":
-            text = item.text(1)
+            text = item.text(0)
             if text.startswith("▼"):
-                item.setText(1, text.replace("▼", "►", 1))
-
-    def _set_version_active_state(self, item, is_active):
-        """Set the visual state of a version item based on its active status."""
-        if is_active:
-            # Active state - normal colors (light text for dark theme)
-            for col in range(self.tree_widget.columnCount()):
-                item.setForeground(col, QtGui.QColor(224, 224, 224))  # Light gray text
-                # Restore original font
-                font = item.font(col)
-                font.setStrikeOut(False)
-                item.setFont(col, font)
-        else:
-            # Inactive state - grayed out (darker gray for dark theme)
-            gray_color = QtGui.QColor(100, 100, 100)
-            for col in range(self.tree_widget.columnCount()):
-                item.setForeground(col, gray_color)
-                # Add strikethrough to make it more obvious
-                font = item.font(col)
-                font.setStrikeOut(True)
-                item.setFont(col, font)
+                item.setText(0, text.replace("▼", "►", 1))
 
     def _create_version_item(self, parent, version, column_data):
-        """Helper to create a version item with checkbox."""
+        """Helper to create a version item."""
         version_item = SGTreeItem(
             parent,
-            [""] + column_data,  # Add empty string for checkbox column
+            column_data,
             sg_data=version,
             item_type="version"
         )
-
-        # Make the item checkable in the first column
-        version_item.setFlags(version_item.flags() | QtCore.Qt.ItemIsUserCheckable)
-        version_item.setCheckState(0, QtCore.Qt.Checked)  # Default to checked/active
-
         return version_item
 
     def set_rfq(self, rfq_data):
@@ -575,10 +534,9 @@ class PackageTreeView(QtWidgets.QWidget):
         dpi_scale = app_settings.get_dpi_scale()
 
         # Scale column widths with DPI
-        self.tree_widget.setColumnWidth(0, int(60 * dpi_scale))  # Active checkbox column
-        self.tree_widget.setColumnWidth(1, int(250 * dpi_scale))  # Name
-        self.tree_widget.setColumnWidth(2, int(80 * dpi_scale))  # Type
-        self.tree_widget.setColumnWidth(3, int(80 * dpi_scale))  # Status
+        self.tree_widget.setColumnWidth(0, int(250 * dpi_scale))  # Name
+        self.tree_widget.setColumnWidth(1, int(80 * dpi_scale))  # Type
+        self.tree_widget.setColumnWidth(2, int(80 * dpi_scale))  # Status
         logger.info(f"Updated tree column widths with DPI scale: {dpi_scale}")
 
     def load_tree_data(self):
@@ -693,16 +651,16 @@ class PackageTreeView(QtWidgets.QWidget):
         # Create root folder with arrow
         bid_tracker_root = SGTreeItem(
             self.tree_widget,
-            ["", "Bid Tracker", "Folder", "", ""],
+            ["Bid Tracker", "Folder", "", ""],
             sg_data={'type': 'folder'},
             item_type="folder"
         )
 
         self.category_items["Bid Tracker"] = bid_tracker_root
         bid_tracker_root.setExpanded(True)
-        font = bid_tracker_root.font(1)
+        font = bid_tracker_root.font(0)
         font.setBold(True)
-        bid_tracker_root.setFont(1, font)
+        bid_tracker_root.setFont(0, font)
 
         # Filter bid tracker versions
         bid_tracker_versions = [v for v in versions if self._is_bid_tracker_version(v)]
@@ -714,7 +672,7 @@ class PackageTreeView(QtWidgets.QWidget):
                 status_display = status if status else 'N/A'
                 version_number = version_code.split('_')[-1] if '_' in version_code else ""
 
-                # Use helper to create version item with checkbox
+                # Use helper to create version item
                 version_item = self._create_version_item(
                     bid_tracker_root,
                     version,
@@ -724,25 +682,25 @@ class PackageTreeView(QtWidgets.QWidget):
             # No bid tracker versions found
             no_data_item = SGTreeItem(
                 bid_tracker_root,
-                ["", "No Bid Tracker attached", "Info", "", ""],
+                ["No Bid Tracker attached", "Info", "", ""],
                 item_type="info"
             )
-            no_data_item.setForeground(1, QtGui.QColor(120, 120, 120))
+            no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
 
     def set_script_item(self, versions):
         """Build Script section with real version data."""
         script_root = SGTreeItem(
             self.tree_widget,
-            ["", "Script", "Folder", "", ""],
+            ["Script", "Folder", "", ""],
             sg_data={'type': 'folder'},
             item_type="folder"
         )
 
         self.category_items["Script"] = script_root
         script_root.setExpanded(True)
-        font = script_root.font(1)
+        font = script_root.font(0)
         font.setBold(True)
-        script_root.setFont(1, font)
+        script_root.setFont(0, font)
 
         # Filter script versions
         script_versions = [v for v in versions if self._is_script_version(v)]
@@ -754,7 +712,7 @@ class PackageTreeView(QtWidgets.QWidget):
                 status_display = status if status else 'N/A'
                 version_number = version_code.split('_')[-1] if '_' in version_code else ""
 
-                # Use helper to create version item with checkbox
+                # Use helper to create version item
                 version_item = self._create_version_item(
                     script_root,
                     version,
@@ -764,29 +722,29 @@ class PackageTreeView(QtWidgets.QWidget):
                 # Set status color if it matches our color scheme (check lowercase)
                 status_lower = status.lower() if status else ''
                 if status_lower in status_colors:
-                    version_item.setBackground(3, status_colors[status_lower])
+                    version_item.setBackground(2, status_colors[status_lower])
         else:
             # Add info message if no versions found
             no_data_item = SGTreeItem(
                 script_root,
-                ["", "No versions found", "Info", "", ""],
+                ["No versions found", "Info", "", ""],
                 item_type="info"
             )
-            no_data_item.setForeground(1, QtGui.QColor(120, 120, 120))
+            no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
 
     def set_concept_art_item(self, versions):
         """Build Concept Art section with real version data."""
         concept_root = SGTreeItem(
             self.tree_widget,
-            ["", "Concept Art", "Folder", "", ""],
+            ["Concept Art", "Folder", "", ""],
             sg_data={'type': 'folder'},
             item_type="folder"
         )
         self.category_items["Concept Art"] = concept_root
         concept_root.setExpanded(True)
-        font = concept_root.font(1)
+        font = concept_root.font(0)
         font.setBold(True)
-        concept_root.setFont(1, font)
+        concept_root.setFont(0, font)
 
         # Filter concept art versions
         concept_versions = [v for v in versions if self._is_concept_art_version(v)]
@@ -806,28 +764,28 @@ class PackageTreeView(QtWidgets.QWidget):
 
                 status_lower = status.lower() if status else ''
                 if status_lower in status_colors:
-                    version_item.setBackground(3, status_colors[status_lower])
+                    version_item.setBackground(2, status_colors[status_lower])
         else:
             no_data_item = SGTreeItem(
                 concept_root,
-                ["", "No versions found", "Info", "", ""],
+                ["No versions found", "Info", "", ""],
                 item_type="info"
             )
-            no_data_item.setForeground(1, QtGui.QColor(120, 120, 120))
+            no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
 
     def set_storyboard_item(self, versions):
         """Build Storyboard section with real version data."""
         storyboard_root = SGTreeItem(
             self.tree_widget,
-            ["", "Storyboard", "Folder", "", ""],
+            ["Storyboard", "Folder", "", ""],
             sg_data={'type': 'folder'},
             item_type="folder"
         )
         self.category_items["Storyboard"] = storyboard_root
         storyboard_root.setExpanded(True)
-        font = storyboard_root.font(1)
+        font = storyboard_root.font(0)
         font.setBold(True)
-        storyboard_root.setFont(1, font)
+        storyboard_root.setFont(0, font)
 
         # Filter storyboard versions
         storyboard_versions = [v for v in versions if self._is_storyboard_version(v)]
@@ -847,14 +805,14 @@ class PackageTreeView(QtWidgets.QWidget):
 
                 status_lower = status.lower() if status else ''
                 if status_lower in status_colors:
-                    version_item.setBackground(3, status_colors[status_lower])
+                    version_item.setBackground(2, status_colors[status_lower])
         else:
             no_data_item = SGTreeItem(
                 storyboard_root,
-                ["", "No versions found", "Info", "", ""],
+                ["No versions found", "Info", "", ""],
                 item_type="info"
             )
-            no_data_item.setForeground(1, QtGui.QColor(120, 120, 120))
+            no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
 
     def _is_bid_tracker_version(self, version):
         """Determine if a version belongs to Bid Tracker category."""
@@ -949,12 +907,12 @@ class PackageTreeView(QtWidgets.QWidget):
 
     def get_active_versions(self):
         """
-        Get list of all active (checked) version items.
+        Get list of all version items.
 
         Returns:
-            List of SGTreeItem objects that are versions and are checked
+            List of SGTreeItem objects that are versions
         """
-        active_versions = []
+        versions = []
 
         # Iterate through all top-level items (categories)
         for i in range(self.tree_widget.topLevelItemCount()):
@@ -965,30 +923,29 @@ class PackageTreeView(QtWidgets.QWidget):
                 child = category_item.child(j)
 
                 if isinstance(child, SGTreeItem) and child.get_item_type() == "version":
-                    if child.checkState(0) == QtCore.Qt.Checked:
-                        active_versions.append(child)
+                    versions.append(child)
 
-        return active_versions
+        return versions
 
     def get_active_version_ids(self):
         """
-        Get list of Shotgrid IDs for all active versions.
+        Get list of Shotgrid IDs for all versions.
 
         Returns:
             List of version IDs (integers)
         """
-        active_versions = self.get_active_versions()
-        return [v.get_sg_id() for v in active_versions if v.get_sg_id()]
+        versions = self.get_active_versions()
+        return [v.get_sg_id() for v in versions if v.get_sg_id()]
 
     def get_active_version_data(self):
         """
-        Get full Shotgrid data for all active versions.
+        Get full Shotgrid data for all versions.
 
         Returns:
             List of dictionaries containing version data
         """
-        active_versions = self.get_active_versions()
-        return [v.get_sg_data() for v in active_versions]
+        versions = self.get_active_versions()
+        return [v.get_sg_data() for v in versions]
 
     def get_selected_version_data(self):
         """
@@ -1044,6 +1001,13 @@ class PackageTreeView(QtWidgets.QWidget):
             elif item_type == "entity":
                 expand_action = menu.addAction("Expand All")
                 expand_action.triggered.connect(lambda: item.setExpanded(True))
+
+            elif item_type == "info":
+                # Check if this is the "No Bid Tracker attached" item
+                item_text = item.text(0)
+                if item_text == "No Bid Tracker attached" and self.current_package_id:
+                    select_version_action = menu.addAction("Select Version")
+                    select_version_action.triggered.connect(lambda: self._select_bid_tracker_version())
 
             else:  # folder
                 expand_action = menu.addAction("Expand All")
