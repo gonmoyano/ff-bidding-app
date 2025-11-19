@@ -51,12 +51,21 @@ class ImageViewerDialog(QtWidgets.QDialog):
 
         toolbar.addStretch()
 
+        # Toggle details pane button
+        self.toggle_details_btn = QtWidgets.QPushButton("Hide Details")
+        self.toggle_details_btn.clicked.connect(self._toggle_details_pane)
+        toolbar.addWidget(self.toggle_details_btn)
+
         # Zoom level label
         self.zoom_label = QtWidgets.QLabel("100%")
         self.zoom_label.setStyleSheet("font-weight: bold;")
         toolbar.addWidget(self.zoom_label)
 
         layout.addLayout(toolbar)
+
+        # Splitter for image viewer and details pane
+        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
 
         # Graphics view for displaying image
         self.graphics_view = QtWidgets.QGraphicsView()
@@ -70,7 +79,18 @@ class ImageViewerDialog(QtWidgets.QDialog):
         # Enable wheel zoom
         self.graphics_view.wheelEvent = self._wheel_event
 
-        layout.addWidget(self.graphics_view)
+        self.splitter.addWidget(self.graphics_view)
+
+        # Right pane: Details panel
+        self.details_pane = self._create_details_pane()
+        self.splitter.addWidget(self.details_pane)
+
+        # Set initial sizes (80% image, 20% details)
+        self.splitter.setSizes([960, 240])
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 0)
+
+        layout.addWidget(self.splitter)
 
         # Status bar with image info
         self.status_label = QtWidgets.QLabel("Loading...")
@@ -84,6 +104,103 @@ class ImageViewerDialog(QtWidgets.QDialog):
         close_btn.clicked.connect(self.accept)
         button_layout.addWidget(close_btn)
         layout.addLayout(button_layout)
+
+    def _create_details_pane(self):
+        """Create the details pane."""
+        details_widget = QtWidgets.QWidget()
+        details_layout = QtWidgets.QVBoxLayout(details_widget)
+        details_layout.setContentsMargins(5, 5, 5, 5)
+
+        # Title
+        title_label = QtWidgets.QLabel("Selected Image Details")
+        title_font = title_label.font()
+        title_font.setPointSize(12)
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        details_layout.addWidget(title_label)
+
+        # Details text area
+        self.details_text = QtWidgets.QTextEdit()
+        self.details_text.setReadOnly(True)
+        details_layout.addWidget(self.details_text)
+
+        # Set minimum width for details pane
+        details_widget.setMinimumWidth(250)
+
+        # Populate with version data
+        self._update_details()
+
+        return details_widget
+
+    def _toggle_details_pane(self):
+        """Toggle the visibility of the details pane."""
+        if self.details_pane.isVisible():
+            self.details_pane.hide()
+            self.toggle_details_btn.setText("Show Details")
+        else:
+            self.details_pane.show()
+            self.toggle_details_btn.setText("Hide Details")
+
+    def _update_details(self):
+        """Update the details panel with version information."""
+        details = f"<b>Version:</b> {self.version_data.get('code', 'Unknown')}<br>"
+        details += f"<b>ID:</b> {self.version_data.get('id', 'N/A')}<br>"
+
+        version_type = self.version_data.get('sg_version_type', '')
+        if isinstance(version_type, dict):
+            version_type = version_type.get('name', 'Unknown')
+        details += f"<b>Type:</b> {version_type}<br>"
+
+        status = self.version_data.get('sg_status_list', 'N/A')
+        details += f"<b>Status:</b> {status}<br>"
+
+        entity = self.version_data.get('entity', {})
+        if entity:
+            details += f"<b>Asset:</b> {entity.get('name', 'Unknown')}<br>"
+
+        task = self.version_data.get('sg_task', {})
+        if task:
+            details += f"<b>Task:</b> {task.get('name', 'Unknown')}<br>"
+
+        user = self.version_data.get('user', {})
+        if user:
+            details += f"<b>Created By:</b> {user.get('name', 'Unknown')}<br>"
+
+        created_at = self.version_data.get('created_at', 'N/A')
+        details += f"<b>Created:</b> {created_at}<br>"
+
+        updated_at = self.version_data.get('updated_at', 'N/A')
+        details += f"<b>Updated:</b> {updated_at}<br>"
+
+        description = self.version_data.get('description', '')
+        if description:
+            details += f"<br><b>Description:</b><br>{description}"
+
+        self.details_text.setHtml(details)
+
+    def _update_details_with_image_info(self, width, height, size_kb):
+        """Update the details panel with additional image information."""
+        # Get current HTML
+        current_html = self.details_text.toHtml()
+
+        # Find the insertion point (after Updated field, before Description or at end)
+        if "<b>Description:</b>" in current_html:
+            # Insert before description
+            parts = current_html.split("<b>Description:</b>")
+            image_info = f"<br><b>Image Dimensions:</b> {width}x{height} pixels<br>"
+            image_info += f"<b>File Size:</b> {size_kb:.1f} KB<br>"
+            new_html = parts[0] + image_info + "<br><b>Description:</b>" + parts[1]
+        else:
+            # Append at end
+            # Remove closing tags
+            new_html = current_html.rstrip()
+            if new_html.endswith("</body></html>"):
+                new_html = new_html[:-14]
+            image_info = f"<br><b>Image Dimensions:</b> {width}x{height} pixels<br>"
+            image_info += f"<b>File Size:</b> {size_kb:.1f} KB"
+            new_html += image_info + "</body></html>"
+
+        self.details_text.setHtml(new_html)
 
     def _load_full_image(self):
         """Load the full-resolution image from ShotGrid."""
@@ -169,6 +286,9 @@ class ImageViewerDialog(QtWidgets.QDialog):
                     f"Image: {width}x{height} pixels | Size: {size_kb:.1f} KB | "
                     f"Version: {self.version_data.get('code', 'Unknown')}"
                 )
+
+                # Update details with image dimensions
+                self._update_details_with_image_info(width, height, size_kb)
             else:
                 self.status_label.setText("Failed to load image")
 
