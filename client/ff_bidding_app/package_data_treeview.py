@@ -724,7 +724,7 @@ class PackageTreeView(QtWidgets.QWidget):
             # No bid tracker versions found
             no_data_item = SGTreeItem(
                 bid_tracker_root,
-                ["", "No versions found", "Info", "", ""],
+                ["", "No Bid Tracker attached", "Info", "", ""],
                 item_type="info"
             )
             no_data_item.setForeground(1, QtGui.QColor(120, 120, 120))
@@ -1020,6 +1020,16 @@ class PackageTreeView(QtWidgets.QWidget):
             item_type = item.get_item_type()
 
             if item_type == "version":
+                # Check if this is a Bid Tracker version
+                if self._is_bid_tracker_version(item.get_sg_data()) and self.current_package_id:
+                    select_version_action = menu.addAction("Select Version")
+                    select_version_action.triggered.connect(lambda: self._select_bid_tracker_version())
+
+                    remove_action = menu.addAction("Remove from Package")
+                    remove_action.triggered.connect(lambda: self._remove_bid_tracker_from_package(item))
+
+                    menu.addSeparator()
+
                 view_action = menu.addAction("View Details")
                 view_action.triggered.connect(lambda: self._show_version_details(item))
 
@@ -1036,13 +1046,6 @@ class PackageTreeView(QtWidgets.QWidget):
                 expand_action.triggered.connect(lambda: item.setExpanded(True))
 
             else:  # folder
-                # Check if this is the Bid Tracker folder
-                item_text = item.text(1)  # Get name from column 1
-                if item_text == "Bid Tracker" and self.current_package_id:
-                    select_version_action = menu.addAction("Select Version")
-                    select_version_action.triggered.connect(lambda: self._select_bid_tracker_version())
-                    menu.addSeparator()
-
                 expand_action = menu.addAction("Expand All")
                 expand_action.triggered.connect(lambda: self._expand_all(item))
 
@@ -1252,6 +1255,54 @@ class PackageTreeView(QtWidgets.QWidget):
                 "Error",
                 f"Failed to select version: {str(e)}"
             )
+
+    def _remove_bid_tracker_from_package(self, item):
+        """Remove the Bid Tracker version from the package (but don't delete from ShotGrid)."""
+        if not isinstance(item, SGTreeItem) or not self.current_package_id:
+            return
+
+        version_id = item.get_sg_id()
+        version_code = item.get_entity_name()
+
+        if not version_id:
+            return
+
+        # Confirm the removal
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Remove Bid Tracker",
+            f"Remove '{version_code}' from this package?\n\n"
+            f"The version will not be deleted from ShotGrid,\n"
+            f"only unlinked from this package.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+
+        if reply == QtWidgets.QMessageBox.Yes:
+            try:
+                # Unlink the version from the package
+                self.sg_session.unlink_version_from_package(
+                    version_id,
+                    self.current_package_id
+                )
+                logger.info(f"Removed Bid Tracker version {version_id} from package {self.current_package_id}")
+
+                # Reload the tree to show "No Bid Tracker attached"
+                self.load_package_versions(self.current_package_id)
+
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Bid Tracker Removed",
+                    f"'{version_code}' has been removed from the package."
+                )
+
+            except Exception as e:
+                logger.error(f"Error removing Bid Tracker: {e}", exc_info=True)
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to remove Bid Tracker: {str(e)}"
+                )
 
     def _expand_all(self, item):
         """Recursively expand all children."""
