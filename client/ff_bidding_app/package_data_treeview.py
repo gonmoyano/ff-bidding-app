@@ -1119,17 +1119,18 @@ class PackageTreeView(QtWidgets.QWidget):
 
         try:
             # Get project and RFQ info for querying available versions
-            from .app import PackageManagerApp
+            # Walk up the widget hierarchy to find the parent app
             parent_app = None
             parent_widget = self.parent()
             while parent_widget:
-                if isinstance(parent_widget, PackageManagerApp):
+                # Check if this widget has the required attributes (sg_project_combo and sg_rfq_combo)
+                if hasattr(parent_widget, 'sg_project_combo') and hasattr(parent_widget, 'sg_rfq_combo'):
                     parent_app = parent_widget
                     break
                 parent_widget = parent_widget.parent()
 
             if not parent_app:
-                logger.error("Could not find parent PackageManagerApp")
+                logger.error("Could not find parent app with sg_project_combo and sg_rfq_combo")
                 return
 
             # Get project ID
