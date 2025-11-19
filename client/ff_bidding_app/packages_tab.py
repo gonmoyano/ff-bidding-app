@@ -280,6 +280,37 @@ class PackagesTab(QtWidgets.QWidget):
             logger.error(f"Error loading field schema: {e}", exc_info=True)
             self.field_schema = {}
 
+    def _populate_image_viewer_folders(self):
+        """Extract assets and scenes from breakdown and populate image viewer folder tree."""
+        if not self.image_viewer or not self.breakdown_widget or not self.breakdown_widget.model:
+            return
+
+        assets = []
+        scenes = []
+
+        # Extract from bidding scenes in the breakdown model
+        for row_idx in range(len(self.breakdown_widget.model.data_list)):
+            scene = self.breakdown_widget.model.data_list[row_idx]
+
+            # Extract assets
+            bid_assets = scene.get('sg_bid_assets', [])
+            if bid_assets:
+                if isinstance(bid_assets, list):
+                    for asset in bid_assets:
+                        if isinstance(asset, dict):
+                            asset_name = asset.get('name', '')
+                            if asset_name:
+                                assets.append(asset_name)
+
+            # Extract scene name from code
+            scene_code = scene.get('code', '')
+            if scene_code:
+                scenes.append(scene_code)
+
+        # Populate the image viewer folder tree
+        self.image_viewer.populate_folders(assets, scenes)
+        logger.info(f"Populated image viewer folders with {len(set(assets))} unique assets and {len(set(scenes))} unique scenes")
+
     def _load_breakdown_for_rfq(self, rfq):
         """Load VFX Breakdown bidding scenes for the bid linked to the RFQ.
 
@@ -384,6 +415,9 @@ class PackagesTab(QtWidgets.QWidget):
             # Load into the breakdown widget
             self.breakdown_widget.load_bidding_scenes(bidding_scenes, field_schema=self.field_schema)
 
+            # Update image viewer folders after breakdown is loaded
+            self._populate_image_viewer_folders()
+
         except Exception as e:
             logger.error(f"Error loading breakdown for RFQ: {e}", exc_info=True)
             self.breakdown_widget.load_bidding_scenes([])
@@ -468,6 +502,9 @@ class PackagesTab(QtWidgets.QWidget):
                 if project_id:
                     logger.info(f"Loading all image versions for project {project_id}")
                     self.image_viewer.load_project_versions(project_id)
+
+                    # Extract assets and scenes from breakdown and populate folder tree
+                    self._populate_image_viewer_folders()
 
     def clear(self):
         """Clear the package data tree."""

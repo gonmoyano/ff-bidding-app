@@ -685,59 +685,39 @@ class ImageViewerWidget(QtWidgets.QWidget):
         return dock_widget
 
     def _create_grouping_dock(self):
-        """Create the right dock with grouping options."""
+        """Create the right dock with folder tree view."""
         dock_widget = QtWidgets.QWidget()
         dock_layout = QtWidgets.QVBoxLayout(dock_widget)
         dock_layout.setContentsMargins(5, 5, 5, 5)
 
         # Header
-        title_label = QtWidgets.QLabel("Grouping & Details")
+        title_label = QtWidgets.QLabel("Assets & Scenes")
         title_font = title_label.font()
         title_font.setPointSize(12)
         title_font.setBold(True)
         title_label.setFont(title_font)
         dock_layout.addWidget(title_label)
 
-        # Grouping options
-        group_box = QtWidgets.QGroupBox("Group By")
-        group_layout = QtWidgets.QVBoxLayout(group_box)
+        # Tree widget for folder view
+        self.folder_tree = QtWidgets.QTreeWidget()
+        self.folder_tree.setHeaderHidden(True)
+        self.folder_tree.setRootIsDecorated(True)
+        self.folder_tree.itemClicked.connect(self._on_folder_clicked)
+        dock_layout.addWidget(self.folder_tree)
 
-        self.grouping_buttons = QtWidgets.QButtonGroup()
-
-        # None (no grouping)
-        none_radio = QtWidgets.QRadioButton("None")
-        none_radio.setChecked(True)
-        none_radio.toggled.connect(lambda checked: checked and self._on_grouping_changed('None'))
-        self.grouping_buttons.addButton(none_radio)
-        group_layout.addWidget(none_radio)
-
-        # Group by Asset
-        asset_radio = QtWidgets.QRadioButton("Asset Name")
-        asset_radio.toggled.connect(lambda checked: checked and self._on_grouping_changed('Asset'))
-        self.grouping_buttons.addButton(asset_radio)
-        group_layout.addWidget(asset_radio)
-
-        # Group by Scene
-        scene_radio = QtWidgets.QRadioButton("Scene")
-        scene_radio.toggled.connect(lambda checked: checked and self._on_grouping_changed('Scene'))
-        self.grouping_buttons.addButton(scene_radio)
-        group_layout.addWidget(scene_radio)
-
-        dock_layout.addWidget(group_box)
-
-        # Selected image details
-        details_box = QtWidgets.QGroupBox("Selected Image Details")
-        details_layout = QtWidgets.QVBoxLayout(details_box)
-
-        self.details_text = QtWidgets.QTextEdit()
-        self.details_text.setReadOnly(True)
-        self.details_text.setMaximumHeight(200)
-        self.details_text.setText("No image selected")
-        details_layout.addWidget(self.details_text)
-
-        dock_layout.addWidget(details_box)
-
-        dock_layout.addStretch()
+        # Set folder icon style
+        self.folder_tree.setStyleSheet("""
+            QTreeWidget {
+                background-color: #2b2b2b;
+                border: 1px solid #444;
+            }
+            QTreeWidget::item {
+                padding: 5px;
+            }
+            QTreeWidget::item:selected {
+                background-color: #4a9eff;
+            }
+        """)
 
         return dock_widget
 
@@ -746,11 +726,111 @@ class ImageViewerWidget(QtWidgets.QWidget):
         self.filter_states[filter_type] = (state == QtCore.Qt.Checked)
         self._apply_filters()
 
-    def _on_grouping_changed(self, grouping_mode):
-        """Handle grouping mode changes."""
-        self.grouping_mode = grouping_mode
-        logger.info(f"Grouping mode changed to: {grouping_mode}")
+    def _on_folder_clicked(self, item, column):
+        """Handle folder item clicked."""
+        # Get the folder type and name
+        folder_type = item.data(0, QtCore.Qt.UserRole)
+        folder_name = item.text(0)
+
+        logger.info(f"Folder clicked: {folder_type} - {folder_name}")
+
+        # Filter thumbnails based on selected folder
+        if folder_type == "assets_group" or folder_type == "scenes_group":
+            # Clicked on group header, show all
+            self.grouping_mode = 'None'
+        elif folder_type == "asset":
+            # Filter by asset
+            self.grouping_mode = 'Asset'
+            self._filter_by_asset(folder_name)
+            return
+        elif folder_type == "scene":
+            # Filter by scene
+            self.grouping_mode = 'Scene'
+            self._filter_by_scene(folder_name)
+            return
+
+        # Default: rebuild without filtering
         self._rebuild_thumbnails()
+
+    def _filter_by_asset(self, asset_name):
+        """Filter thumbnails to show only versions for a specific asset."""
+        self.filtered_versions = []
+        for version in self.all_versions:
+            # Check if passes type filter first
+            version_type = self._get_version_type(version)
+            if not self.filter_states.get(version_type, True):
+                continue
+
+            # Check asset match
+            entity = version.get('entity', {})
+            if entity:
+                version_asset = entity.get('name', '')
+                if version_asset == asset_name:
+                    self.filtered_versions.append(version)
+
+        logger.info(f"Filtered to {len(self.filtered_versions)} versions for asset: {asset_name}")
+        self._rebuild_thumbnails()
+
+    def _filter_by_scene(self, scene_name):
+        """Filter thumbnails to show only versions for a specific scene."""
+        self.filtered_versions = []
+        for version in self.all_versions:
+            # Check if passes type filter first
+            version_type = self._get_version_type(version)
+            if not self.filter_states.get(version_type, True):
+                continue
+
+            # Check scene/task match
+            task = version.get('sg_task', {})
+            if task:
+                version_scene = task.get('name', '')
+                if version_scene == scene_name:
+                    self.filtered_versions.append(version)
+
+        logger.info(f"Filtered to {len(self.filtered_versions)} versions for scene: {scene_name}")
+        self._rebuild_thumbnails()
+
+    def populate_folders(self, assets, scenes):
+        """Populate the folder tree with assets and scenes.
+
+        Args:
+            assets: List of asset names
+            scenes: List of scene/task names
+        """
+        self.folder_tree.clear()
+
+        # Get folder icon from system
+        folder_icon = self.style().standardIcon(QtWidgets.QStyle.SP_DirIcon)
+
+        # Assets group
+        assets_item = QtWidgets.QTreeWidgetItem(self.folder_tree)
+        assets_item.setText(0, "Assets")
+        assets_item.setIcon(0, folder_icon)
+        assets_item.setData(0, QtCore.Qt.UserRole, "assets_group")
+        assets_item.setExpanded(True)
+
+        # Add asset folders
+        for asset_name in sorted(set(assets)):
+            asset_item = QtWidgets.QTreeWidgetItem(assets_item)
+            asset_item.setText(0, asset_name)
+            asset_item.setIcon(0, folder_icon)
+            asset_item.setData(0, QtCore.Qt.UserRole, "asset")
+
+        # Scenes group
+        scenes_item = QtWidgets.QTreeWidgetItem(self.folder_tree)
+        scenes_item.setText(0, "Scenes")
+        scenes_item.setIcon(0, folder_icon)
+        scenes_item.setData(0, QtCore.Qt.UserRole, "scenes_group")
+        scenes_item.setExpanded(True)
+
+        # Add scene folders
+        for scene_name in sorted(set(scenes)):
+            scene_item = QtWidgets.QTreeWidgetItem(scenes_item)
+            scene_item.setText(0, scene_name)
+            scene_item.setIcon(0, folder_icon)
+            scene_item.setData(0, QtCore.Qt.UserRole, "scene")
+
+        logger.info(f"Populated folder tree with {len(assets)} assets and {len(scenes)} scenes")
 
     def _apply_filters(self):
         """Apply current filters and rebuild thumbnails."""
@@ -912,43 +992,6 @@ class ImageViewerWidget(QtWidgets.QWidget):
                 self.selected_thumbnail = thumbnail
                 break
 
-        # Update details
-        self._update_details(version_data)
-
-    def _update_details(self, version_data):
-        """Update the details panel with version information."""
-        details = f"<b>Version:</b> {version_data.get('code', 'Unknown')}<br>"
-        details += f"<b>ID:</b> {version_data.get('id', 'N/A')}<br>"
-
-        version_type = version_data.get('sg_version_type', '')
-        if isinstance(version_type, dict):
-            version_type = version_type.get('name', 'Unknown')
-        details += f"<b>Type:</b> {version_type}<br>"
-
-        status = version_data.get('sg_status_list', 'N/A')
-        details += f"<b>Status:</b> {status}<br>"
-
-        entity = version_data.get('entity', {})
-        if entity:
-            details += f"<b>Asset:</b> {entity.get('name', 'Unknown')}<br>"
-
-        task = version_data.get('sg_task', {})
-        if task:
-            details += f"<b>Task:</b> {task.get('name', 'Unknown')}<br>"
-
-        user = version_data.get('user', {})
-        if user:
-            details += f"<b>Created By:</b> {user.get('name', 'Unknown')}<br>"
-
-        created_at = version_data.get('created_at', 'N/A')
-        details += f"<b>Created:</b> {created_at}<br>"
-
-        description = version_data.get('description', '')
-        if description:
-            details += f"<br><b>Description:</b><br>{description}"
-
-        self.details_text.setHtml(details)
-
     def load_project_versions(self, project_id):
         """Load all image versions for the given project."""
         self.current_project_id = project_id
@@ -992,8 +1035,8 @@ class ImageViewerWidget(QtWidgets.QWidget):
         return any(keyword in code or keyword in task_name for keyword in image_keywords)
 
     def clear(self):
-        """Clear all thumbnails."""
+        """Clear all thumbnails and folder tree."""
         self.all_versions = []
         self.filtered_versions = []
         self._rebuild_thumbnails()
-        self.details_text.setText("No image selected")
+        self.folder_tree.clear()
