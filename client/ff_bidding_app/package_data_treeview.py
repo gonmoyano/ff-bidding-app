@@ -1144,10 +1144,10 @@ class PackageTreeView(QtWidgets.QWidget):
                 while temp_parent and depth < 10:  # Limit depth to avoid infinite loop
                     logger.info(f"DEBUG: Checking widget at depth {depth}: {type(temp_parent).__name__}")
                     logger.info(f"DEBUG: Has sg_project_combo: {hasattr(temp_parent, 'sg_project_combo')}")
-                    logger.info(f"DEBUG: Has sg_rfq_combo: {hasattr(temp_parent, 'sg_rfq_combo')}")
+                    logger.info(f"DEBUG: Has rfq_combo: {hasattr(temp_parent, 'rfq_combo')}")
 
-                    # Check if this widget has the required attributes (sg_project_combo and sg_rfq_combo)
-                    if hasattr(temp_parent, 'sg_project_combo') and hasattr(temp_parent, 'sg_rfq_combo'):
+                    # Check if this widget has the required attributes (sg_project_combo and rfq_combo)
+                    if hasattr(temp_parent, 'sg_project_combo') and hasattr(temp_parent, 'rfq_combo'):
                         parent_app = temp_parent
                         logger.info(f"Found parent app at depth {depth}: {type(temp_parent).__name__}")
                         break
@@ -1155,7 +1155,7 @@ class PackageTreeView(QtWidgets.QWidget):
                     depth += 1
 
             if not parent_app:
-                logger.error("Could not find parent app with sg_project_combo and sg_rfq_combo")
+                logger.error("Could not find parent app with sg_project_combo and rfq_combo")
                 QtWidgets.QMessageBox.warning(
                     self,
                     "Error",
