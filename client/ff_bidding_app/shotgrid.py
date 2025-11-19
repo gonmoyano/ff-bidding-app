@@ -1448,6 +1448,48 @@ class ShotgridClient:
 
         return versions
 
+    def get_all_image_versions_for_project(self, project_id):
+        """
+        Get all image versions for a project (Concept Art, Storyboard, Reference, etc.).
+
+        Args:
+            project_id: ID of the project
+
+        Returns:
+            List of version entities with image-related sg_version_type
+        """
+        # Query all versions for the project
+        versions = self.sg.find(
+            "Version",
+            [["project", "is", {"type": "Project", "id": int(project_id)}]],
+            fields=[
+                "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
+                "user", "description", "sg_task", "sg_path_to_movie", "sg_path_to_frames",
+                "sg_uploaded_movie", "sg_path_to_geometry", "sg_version_type"
+            ],
+            order=[{"field_name": "created_at", "direction": "desc"}]
+        )
+
+        # Filter for image-related versions
+        image_versions = []
+        for version in versions:
+            sg_version_type = version.get('sg_version_type')
+            if sg_version_type:
+                # Handle both string and dict formats
+                if isinstance(sg_version_type, dict):
+                    version_type = sg_version_type.get('name', '').lower()
+                else:
+                    version_type = str(sg_version_type).lower()
+
+                # Check for image-related keywords
+                if any(keyword in version_type for keyword in [
+                    'concept', 'art', 'storyboard', 'reference', 'image', 'ref', 'video', 'movie'
+                ]):
+                    image_versions.append(version)
+
+        logger.info(f"Found {len(image_versions)} image versions in project {project_id}")
+        return image_versions
+
     def get_latest_version_number(self, package_id, version_prefix):
         """
         Get the latest version number for a given prefix in a package.

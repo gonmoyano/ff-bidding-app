@@ -96,7 +96,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
     def __init__(self, sg_session, parent=None):
         super().__init__(parent)
         self.sg_session = sg_session
-        self.current_package_id = None
+        self.current_project_id = None
         self.all_versions = []
         self.filtered_versions = []
         self.thumbnail_widgets = []
@@ -454,31 +454,21 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         self.details_text.setHtml(details)
 
-    def load_package_versions(self, package_id):
-        """Load image versions for the given package."""
-        self.current_package_id = package_id
+    def load_project_versions(self, project_id):
+        """Load all image versions for the given project."""
+        self.current_project_id = project_id
 
-        if not package_id or not self.sg_session:
-            logger.info("No package ID or SG session")
+        if not project_id or not self.sg_session:
+            logger.info("No project ID or SG session")
             self.all_versions = []
             self._rebuild_thumbnails()
             return
 
-        logger.info(f"Loading image versions for package {package_id}")
+        logger.info(f"Loading image versions for project {project_id}")
 
-        # Get versions from sg_parent_packages
-        versions = self.sg_session.get_versions_by_parent_package(
-            package_id,
-            fields=[
-                "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
-                "user", "description", "sg_task", "sg_path_to_movie", "sg_path_to_frames",
-                "sg_uploaded_movie", "sg_path_to_geometry", "sg_version_type"
-            ]
-        )
-
-        # Filter for image versions only
-        self.all_versions = [v for v in versions if self._is_image_version(v)]
-        logger.info(f"Loaded {len(self.all_versions)} image versions")
+        # Get all image versions for the project
+        self.all_versions = self.sg_session.get_all_image_versions_for_project(project_id)
+        logger.info(f"Loaded {len(self.all_versions)} image versions for project")
 
         # Apply filters and rebuild
         self._apply_filters()

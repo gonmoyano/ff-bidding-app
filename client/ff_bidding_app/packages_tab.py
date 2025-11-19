@@ -459,6 +459,16 @@ class PackagesTab(QtWidgets.QWidget):
         # Load packages attached to this RFQ from ShotGrid
         self._load_packages_from_shotgrid(rfq)
 
+        # Load all image versions for the current project into the image viewer
+        if self.image_viewer and self.parent_app and hasattr(self.parent_app, 'sg_project_combo'):
+            current_project_index = self.parent_app.sg_project_combo.currentIndex()
+            sg_project = self.parent_app.sg_project_combo.itemData(current_project_index)
+            if sg_project:
+                project_id = sg_project.get("id")
+                if project_id:
+                    logger.info(f"Loading all image versions for project {project_id}")
+                    self.image_viewer.load_project_versions(project_id)
+
     def clear(self):
         """Clear the package data tree."""
         if self.package_data_tree:
@@ -1132,11 +1142,9 @@ class PackagesTab(QtWidgets.QWidget):
             self.current_package_name = None
             self.rename_package_btn.setEnabled(False)
             self.delete_package_btn.setEnabled(False)
-            # Clear the package data tree and image viewer
+            # Clear the package data tree (image viewer shows all project images)
             if self.package_data_tree:
                 self.package_data_tree.clear()
-            if self.image_viewer:
-                self.image_viewer.clear()
             logger.info("No package selected")
             return
 
@@ -1149,20 +1157,16 @@ class PackagesTab(QtWidgets.QWidget):
             package_data = self.packages[package_name]
             self._load_package_data(package_data)
 
-            # Load versions from the package into the treeview and image viewer
+            # Load versions from the package into the treeview
             sg_package_id = package_data.get("sg_package_id")
             if sg_package_id:
                 logger.info(f"Loading versions for Package ID {sg_package_id}")
                 if self.package_data_tree:
                     self.package_data_tree.load_package_versions(sg_package_id)
-                if self.image_viewer:
-                    self.image_viewer.load_package_versions(sg_package_id)
             else:
-                logger.info("No ShotGrid Package ID found, clearing tree and viewer")
+                logger.info("No ShotGrid Package ID found, clearing tree")
                 if self.package_data_tree:
                     self.package_data_tree.clear()
-                if self.image_viewer:
-                    self.image_viewer.clear()
 
             logger.info(f"Loaded package: {package_name}")
         else:
