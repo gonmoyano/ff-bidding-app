@@ -349,7 +349,7 @@ class PackageTreeView(QtWidgets.QWidget):
         self.category_visibility_prefs = {}
 
         # Define canonical order of categories
-        self.category_order = ["Bid Tracker", "Script", "Concept Art", "Storyboard"]
+        self.category_order = ["Bid Tracker", "Documents", "Images"]
 
         # Build the UI
         self._setup_ui()
@@ -519,9 +519,8 @@ class PackageTreeView(QtWidgets.QWidget):
         # Bid Tracker versions come from bid_tracker_versions list
         self.set_bid_tracker_item(bid_tracker_versions)
         # Other versions come from other_versions list
-        self.set_script_item(other_versions)
-        self.set_concept_art_item(other_versions)
-        self.set_storyboard_item(other_versions)
+        self.set_documents_item(other_versions)
+        self.set_images_item(other_versions)
 
         # Apply stored visibility preferences
         logger.info(f"Applying visibility preferences: {self.category_visibility_prefs}")
@@ -586,9 +585,8 @@ class PackageTreeView(QtWidgets.QWidget):
 
         # Build the tree with actual version data
         self.set_bid_tracker_item(versions)
-        self.set_script_item(versions)
-        self.set_concept_art_item(versions)
-        self.set_storyboard_item(versions)
+        self.set_documents_item(versions)
+        self.set_images_item(versions)
 
         # Apply stored visibility preferences
         logger.info(f"Applying visibility preferences: {self.category_visibility_prefs}")
@@ -706,26 +704,26 @@ class PackageTreeView(QtWidgets.QWidget):
             )
             no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
 
-    def set_script_item(self, versions):
-        """Build Script section with real version data."""
-        script_root = SGTreeItem(
+    def set_documents_item(self, versions):
+        """Build Documents section with real version data."""
+        documents_root = SGTreeItem(
             self.tree_widget,
-            ["Script", "Folder", "", ""],
+            ["Documents", "Folder", "", ""],
             sg_data={'type': 'folder'},
             item_type="folder"
         )
 
-        self.category_items["Script"] = script_root
-        script_root.setExpanded(True)
-        font = script_root.font(0)
+        self.category_items["Documents"] = documents_root
+        documents_root.setExpanded(True)
+        font = documents_root.font(0)
         font.setBold(True)
-        script_root.setFont(0, font)
+        documents_root.setFont(0, font)
 
-        # Filter script versions
-        script_versions = [v for v in versions if self._is_script_version(v)]
+        # Filter document versions (was script)
+        document_versions = [v for v in versions if self._is_document_version(v)]
 
-        if script_versions:
-            for version in script_versions:
+        if document_versions:
+            for version in document_versions:
                 version_code = version.get('code', 'Unknown')
                 status = version.get('sg_status_list', '')
                 status_display = status if status else 'N/A'
@@ -733,7 +731,7 @@ class PackageTreeView(QtWidgets.QWidget):
 
                 # Use helper to create version item
                 version_item = self._create_version_item(
-                    script_root,
+                    documents_root,
                     version,
                     [version_code, "Version", status_display, version_number]
                 )
@@ -745,38 +743,38 @@ class PackageTreeView(QtWidgets.QWidget):
         else:
             # Add info message if no versions found
             no_data_item = SGTreeItem(
-                script_root,
+                documents_root,
                 ["No versions found", "Info", "", ""],
                 item_type="info"
             )
             no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
 
-    def set_concept_art_item(self, versions):
-        """Build Concept Art section with real version data."""
-        concept_root = SGTreeItem(
+    def set_images_item(self, versions):
+        """Build Images section with real version data (combines Concept Art and Storyboard)."""
+        images_root = SGTreeItem(
             self.tree_widget,
-            ["Concept Art", "Folder", "", ""],
+            ["Images", "Folder", "", ""],
             sg_data={'type': 'folder'},
             item_type="folder"
         )
-        self.category_items["Concept Art"] = concept_root
-        concept_root.setExpanded(True)
-        font = concept_root.font(0)
+        self.category_items["Images"] = images_root
+        images_root.setExpanded(True)
+        font = images_root.font(0)
         font.setBold(True)
-        concept_root.setFont(0, font)
+        images_root.setFont(0, font)
 
-        # Filter concept art versions
-        concept_versions = [v for v in versions if self._is_concept_art_version(v)]
+        # Filter image versions (concept art, storyboard, reference, etc.)
+        image_versions = [v for v in versions if self._is_image_version(v)]
 
-        if concept_versions:
-            for version in concept_versions:
+        if image_versions:
+            for version in image_versions:
                 version_code = version.get('code', 'Unknown')
                 status = version.get('sg_status_list', '')
                 status_display = status if status else 'N/A'
                 version_number = version_code.split('_')[-1] if '_' in version_code else ""
 
                 version_item = self._create_version_item(
-                    concept_root,
+                    images_root,
                     version,
                     [version_code, "Version", status_display, version_number]
                 )
@@ -786,48 +784,7 @@ class PackageTreeView(QtWidgets.QWidget):
                     version_item.setBackground(2, status_colors[status_lower])
         else:
             no_data_item = SGTreeItem(
-                concept_root,
-                ["No versions found", "Info", "", ""],
-                item_type="info"
-            )
-            no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
-
-    def set_storyboard_item(self, versions):
-        """Build Storyboard section with real version data."""
-        storyboard_root = SGTreeItem(
-            self.tree_widget,
-            ["Storyboard", "Folder", "", ""],
-            sg_data={'type': 'folder'},
-            item_type="folder"
-        )
-        self.category_items["Storyboard"] = storyboard_root
-        storyboard_root.setExpanded(True)
-        font = storyboard_root.font(0)
-        font.setBold(True)
-        storyboard_root.setFont(0, font)
-
-        # Filter storyboard versions
-        storyboard_versions = [v for v in versions if self._is_storyboard_version(v)]
-
-        if storyboard_versions:
-            for version in storyboard_versions:
-                version_code = version.get('code', 'Unknown')
-                status = version.get('sg_status_list', '')
-                status_display = status if status else 'N/A'
-                version_number = version_code.split('_')[-1] if '_' in version_code else ""
-
-                version_item = self._create_version_item(
-                    storyboard_root,
-                    version,
-                    [version_code, "Version", status_display, version_number]
-                )
-
-                status_lower = status.lower() if status else ''
-                if status_lower in status_colors:
-                    version_item.setBackground(2, status_colors[status_lower])
-        else:
-            no_data_item = SGTreeItem(
-                storyboard_root,
+                images_root,
                 ["No versions found", "Info", "", ""],
                 item_type="info"
             )
@@ -861,8 +818,8 @@ class PackageTreeView(QtWidgets.QWidget):
 
         return False
 
-    def _is_script_version(self, version):
-        """Determine if a version belongs to Script category."""
+    def _is_document_version(self, version):
+        """Determine if a version belongs to Documents category (was Script)."""
         sg_version_type = version.get('sg_version_type')
 
         # If sg_version_type is set, use it
@@ -873,17 +830,17 @@ class PackageTreeView(QtWidgets.QWidget):
                 version_type = str(sg_version_type).lower()
 
             logger.debug(f"Version {version.get('code')} has type: {version_type}")
-            return 'script' in version_type
+            return 'script' in version_type or 'document' in version_type
 
         # Fallback to task/code checking
         code = version.get('code', '').lower()
         task = version.get('sg_task', {})
         task_name = task.get('name', '').lower() if task else ''
 
-        return 'script' in code or 'script' in task_name
+        return 'script' in code or 'script' in task_name or 'document' in code or 'document' in task_name
 
-    def _is_concept_art_version(self, version):
-        """Determine if a version belongs to Concept Art category."""
+    def _is_image_version(self, version):
+        """Determine if a version belongs to Images category (combines Concept Art, Storyboard, Reference)."""
         sg_version_type = version.get('sg_version_type')
 
         # If sg_version_type is set, use it
@@ -894,35 +851,19 @@ class PackageTreeView(QtWidgets.QWidget):
                 version_type = str(sg_version_type).lower()
 
             logger.debug(f"Version {version.get('code')} has type: {version_type}")
-            return 'concept' in version_type or 'art' in version_type
+            # Check for concept, storyboard, reference, art, image, etc.
+            return any(keyword in version_type for keyword in [
+                'concept', 'art', 'storyboard', 'reference', 'image', 'ref'
+            ])
 
         # Fallback to task/code checking
         code = version.get('code', '').lower()
         task = version.get('sg_task', {})
         task_name = task.get('name', '').lower() if task else ''
 
-        return 'concept' in code or 'concept' in task_name or 'art' in task_name
-
-    def _is_storyboard_version(self, version):
-        """Determine if a version belongs to Storyboard category."""
-        sg_version_type = version.get('sg_version_type')
-
-        # If sg_version_type is set, use it
-        if sg_version_type:
-            if isinstance(sg_version_type, dict):
-                version_type = sg_version_type.get('name', '').lower()
-            else:
-                version_type = str(sg_version_type).lower()
-
-            logger.debug(f"Version {version.get('code')} has type: {version_type}")
-            return 'storyboard' in version_type
-
-        # Fallback to task/code checking
-        code = version.get('code', '').lower()
-        task = version.get('sg_task', {})
-        task_name = task.get('name', '').lower() if task else ''
-
-        return 'storyboard' in code or 'storyboard' in task_name
+        # Check for various image-related keywords
+        image_keywords = ['concept', 'art', 'storyboard', 'reference', 'image', 'ref']
+        return any(keyword in code or keyword in task_name for keyword in image_keywords)
 
     def get_active_versions(self):
         """

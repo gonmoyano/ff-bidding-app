@@ -401,9 +401,8 @@ class PackagesTab(QtWidgets.QWidget):
         # Define categories that will appear in the tree view
         categories = [
             "Bid Tracker",
-            "Script",
-            "Concept Art",
-            "Storyboard"
+            "Documents",
+            "Images"
         ]
 
         # Create checkboxes dynamically
