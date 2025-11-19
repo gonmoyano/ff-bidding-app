@@ -282,18 +282,33 @@ class PackagesTab(QtWidgets.QWidget):
 
     def _populate_image_viewer_folders(self):
         """Extract assets and scenes from breakdown and populate image viewer folder tree."""
-        if not self.image_viewer or not self.breakdown_widget or not self.breakdown_widget.model:
+        logger.info("_populate_image_viewer_folders called")
+
+        if not self.image_viewer:
+            logger.warning("No image viewer available")
+            return
+
+        if not self.breakdown_widget:
+            logger.warning("No breakdown widget available")
+            return
+
+        if not self.breakdown_widget.model:
+            logger.warning("No breakdown model available")
             return
 
         assets = []
         scenes = []
 
+        logger.info(f"Breakdown model has {len(self.breakdown_widget.model.data_list)} scenes")
+
         # Extract from bidding scenes in the breakdown model
         for row_idx in range(len(self.breakdown_widget.model.data_list)):
             scene = self.breakdown_widget.model.data_list[row_idx]
+            logger.debug(f"Processing scene {row_idx}: {scene.get('code', 'Unknown')}")
 
             # Extract assets
             bid_assets = scene.get('sg_bid_assets', [])
+            logger.debug(f"  sg_bid_assets: {bid_assets}")
             if bid_assets:
                 if isinstance(bid_assets, list):
                     for asset in bid_assets:
@@ -301,11 +316,18 @@ class PackagesTab(QtWidgets.QWidget):
                             asset_name = asset.get('name', '')
                             if asset_name:
                                 assets.append(asset_name)
+                                logger.debug(f"    Added asset: {asset_name}")
 
             # Extract scene name from code
             scene_code = scene.get('code', '')
             if scene_code:
                 scenes.append(scene_code)
+                logger.debug(f"  Added scene: {scene_code}")
+
+        logger.info(f"Extracted {len(assets)} asset entries ({len(set(assets))} unique)")
+        logger.info(f"Extracted {len(scenes)} scene entries ({len(set(scenes))} unique)")
+        logger.info(f"Unique assets: {sorted(set(assets))}")
+        logger.info(f"Unique scenes: {sorted(set(scenes))}")
 
         # Populate the image viewer folder tree
         self.image_viewer.populate_folders(assets, scenes)

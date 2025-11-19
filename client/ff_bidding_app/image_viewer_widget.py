@@ -797,6 +797,10 @@ class ImageViewerWidget(QtWidgets.QWidget):
             assets: List of asset names
             scenes: List of scene/task names
         """
+        logger.info(f"populate_folders called with {len(assets)} assets and {len(scenes)} scenes")
+        logger.info(f"Assets received: {assets}")
+        logger.info(f"Scenes received: {scenes}")
+
         self.folder_tree.clear()
 
         # Get folder icon from system
@@ -808,13 +812,17 @@ class ImageViewerWidget(QtWidgets.QWidget):
         assets_item.setIcon(0, folder_icon)
         assets_item.setData(0, QtCore.Qt.UserRole, "assets_group")
         assets_item.setExpanded(True)
+        logger.info("Created Assets group")
 
         # Add asset folders
-        for asset_name in sorted(set(assets)):
+        unique_assets = sorted(set(assets))
+        logger.info(f"Adding {len(unique_assets)} unique asset folders")
+        for asset_name in unique_assets:
             asset_item = QtWidgets.QTreeWidgetItem(assets_item)
             asset_item.setText(0, asset_name)
             asset_item.setIcon(0, folder_icon)
             asset_item.setData(0, QtCore.Qt.UserRole, "asset")
+            logger.debug(f"  Added asset folder: {asset_name}")
 
         # Scenes group
         scenes_item = QtWidgets.QTreeWidgetItem(self.folder_tree)
@@ -822,15 +830,19 @@ class ImageViewerWidget(QtWidgets.QWidget):
         scenes_item.setIcon(0, folder_icon)
         scenes_item.setData(0, QtCore.Qt.UserRole, "scenes_group")
         scenes_item.setExpanded(True)
+        logger.info("Created Scenes group")
 
         # Add scene folders
-        for scene_name in sorted(set(scenes)):
+        unique_scenes = sorted(set(scenes))
+        logger.info(f"Adding {len(unique_scenes)} unique scene folders")
+        for scene_name in unique_scenes:
             scene_item = QtWidgets.QTreeWidgetItem(scenes_item)
             scene_item.setText(0, scene_name)
             scene_item.setIcon(0, folder_icon)
             scene_item.setData(0, QtCore.Qt.UserRole, "scene")
+            logger.debug(f"  Added scene folder: {scene_name}")
 
-        logger.info(f"Populated folder tree with {len(assets)} assets and {len(scenes)} scenes")
+        logger.info(f"Successfully populated folder tree with {len(unique_assets)} unique assets and {len(unique_scenes)} unique scenes")
 
     def _apply_filters(self):
         """Apply current filters and rebuild thumbnails."""
