@@ -26,8 +26,33 @@ class ImageViewerDialog(QtWidgets.QDialog):
 
     def _setup_ui(self):
         """Setup the dialog UI."""
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(5, 5, 5, 5)
+
+        # Splitter for viewer dock and details pane
+        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
+
+        # Left dock: Viewer elements
+        viewer_dock = self._create_viewer_dock()
+        self.splitter.addWidget(viewer_dock)
+
+        # Right pane: Details panel
+        self.details_pane = self._create_details_pane()
+        self.splitter.addWidget(self.details_pane)
+
+        # Set initial sizes (80% viewer, 20% details)
+        self.splitter.setSizes([960, 240])
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 0)
+
+        main_layout.addWidget(self.splitter)
+
+    def _create_viewer_dock(self):
+        """Create the left dock with all viewer elements."""
+        viewer_widget = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(viewer_widget)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         # Toolbar
         toolbar = QtWidgets.QHBoxLayout()
@@ -63,10 +88,6 @@ class ImageViewerDialog(QtWidgets.QDialog):
 
         layout.addLayout(toolbar)
 
-        # Splitter for image viewer and details pane
-        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        self.splitter.setChildrenCollapsible(False)
-
         # Graphics view for displaying image
         self.graphics_view = QtWidgets.QGraphicsView()
         self.graphics_scene = QtWidgets.QGraphicsScene()
@@ -79,18 +100,7 @@ class ImageViewerDialog(QtWidgets.QDialog):
         # Enable wheel zoom
         self.graphics_view.wheelEvent = self._wheel_event
 
-        self.splitter.addWidget(self.graphics_view)
-
-        # Right pane: Details panel
-        self.details_pane = self._create_details_pane()
-        self.splitter.addWidget(self.details_pane)
-
-        # Set initial sizes (80% image, 20% details)
-        self.splitter.setSizes([960, 240])
-        self.splitter.setStretchFactor(0, 1)
-        self.splitter.setStretchFactor(1, 0)
-
-        layout.addWidget(self.splitter)
+        layout.addWidget(self.graphics_view)
 
         # Status bar with image info
         self.status_label = QtWidgets.QLabel("Loading...")
@@ -104,6 +114,8 @@ class ImageViewerDialog(QtWidgets.QDialog):
         close_btn.clicked.connect(self.accept)
         button_layout.addWidget(close_btn)
         layout.addLayout(button_layout)
+
+        return viewer_widget
 
     def _create_details_pane(self):
         """Create the details pane."""
