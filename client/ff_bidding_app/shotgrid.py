@@ -9,6 +9,8 @@ except ImportError:
     Shotgun = None
     print("Warning: shotgun_api3 not installed. Using simulated data.")
 
+logger = logging.getLogger(__name__)
+
 
 class ShotgridClient:
     """
@@ -955,6 +957,615 @@ class ShotgridClient:
             Path to downloaded file or None if failed
         """
         return self.download_version_attachment(version_id, "sg_uploaded_movie_mp4", download_path)
+
+    def download_thumbnail(self, entity_type, entity_id, download_path=None):
+        """
+        Download a thumbnail image for an entity.
+
+        Args:
+            entity_type: Type of entity (e.g., "Version", "Asset")
+            entity_id: ID of the entity
+            download_path: Optional path to save the thumbnail. If None, returns image data.
+
+        Returns:
+            Path to downloaded file if download_path provided, otherwise bytes of image data
+        """
+        try:
+            # Get the thumbnail URL from the entity
+            entity = self.sg.find_one(
+                entity_type,
+                [["id", "is", entity_id]],
+                ["image"]
+            )
+
+            if not entity or not entity.get("image"):
+                logger.debug(f"No thumbnail found for {entity_type} {entity_id}")
+                return None
+
+            # Download the thumbnail
+            thumbnail_url = entity["image"]
+
+            if download_path:
+                # Download to file
+                downloaded_path = self.sg.download_attachment(thumbnail_url, download_path)
+                return downloaded_path
+            else:
+                # Return image data as bytes
+                import requests
+                response = requests.get(thumbnail_url)
+                if response.status_code == 200:
+                    return response.content
+                return None
+
+        except Exception as e:
+            logger.error(f"Failed to download thumbnail: {e}")
+            return None
+
+    # ------------------------------------------------------------------
+    # Package Management (CustomEntity12)
+    # ------------------------------------------------------------------
+
+    def create_package(self, package_name, project_id, description=None):
+        """
+        Create a new Package (CustomEntity12) entity in ShotGrid.
+
+        Note: Package does not directly link to RFQ. The relationship is one-way
+        via the RFQ's sg_packages field.
+
+        Args:
+            package_name: Name/code of the package
+            project_id: ID of the project
+            description: Optional description
+
+        Returns:
+            Created package entity dictionary
+        """
+        package_data = {
+            "code": package_name,
+            "project": {"type": "Project", "id": int(project_id)},
+        }
+
+        if description:
+            package_data["description"] = description
+
+        logger.info(f"Creating Package: {package_name} in project {project_id}")
+        package = self.sg.create("CustomEntity12", package_data)
+        logger.info(f"Created Package with ID: {package['id']}")
+
+        return package
+
+    def get_packages_for_rfq(self, rfq_id, fields=None):
+        """
+        Get all Packages (CustomEntity12) linked to an RFQ via its sg_packages field.
+
+        Args:
+            rfq_id: ID of the RFQ
+            fields: List of fields to return
+
+        Returns:
+            List of package dictionaries
+        """
+        if fields is None:
+            fields = ["id", "code", "description", "created_at"]
+
+        # Get the RFQ with its sg_packages field
+        rfq = self.sg.find_one(
+            "CustomEntity04",
+            [["id", "is", int(rfq_id)]],
+            ["sg_packages"]
+        )
+
+        if not rfq or not rfq.get("sg_packages"):
+            return []
+
+        # Extract package IDs
+        package_ids = [pkg["id"] for pkg in rfq["sg_packages"]]
+
+        if not package_ids:
+            return []
+
+        # Query for those packages
+        return self.sg.find(
+            "CustomEntity12",
+            [["id", "in", package_ids]],
+            fields,
+            order=[{"field_name": "created_at", "direction": "desc"}]
+        )
+
+    def link_package_to_rfq(self, package_id, rfq_id):
+        """
+        Link a Package to an RFQ's sg_packages field (multi-entity field).
+
+        Args:
+            package_id: ID of the package to link
+            rfq_id: ID of the RFQ
+
+        Returns:
+            Updated RFQ entity
+        """
+        # Get current packages linked to the RFQ
+        rfq = self.sg.find_one(
+            "CustomEntity04",
+            [["id", "is", int(rfq_id)]],
+            ["sg_packages"]
+        )
+
+        if not rfq:
+            logger.error(f"RFQ {rfq_id} not found")
+            return None
+
+        # Get existing packages (or empty list if None)
+        existing_packages = rfq.get("sg_packages") or []
+
+        # Check if package is already linked
+        package_link = {"type": "CustomEntity12", "id": int(package_id)}
+        if any(p.get("id") == int(package_id) for p in existing_packages):
+            logger.info(f"Package {package_id} already linked to RFQ {rfq_id}")
+            return rfq
+
+        # Add the new package to the list
+        updated_packages = existing_packages + [package_link]
+
+        # Update the RFQ
+        logger.info(f"Linking Package {package_id} to RFQ {rfq_id}")
+        result = self.sg.update(
+            "CustomEntity04",
+            int(rfq_id),
+            {"sg_packages": updated_packages}
+        )
+        logger.info(f"Successfully linked Package to RFQ")
+
+        return result
+
+    def update_package(self, package_id, package_name=None, description=None):
+        """
+        Update a Package (CustomEntity12) entity in ShotGrid.
+
+        Args:
+            package_id: ID of the package to update
+            package_name: New name/code for the package (optional)
+            description: New description (optional)
+
+        Returns:
+            Updated package entity dictionary
+        """
+        update_data = {}
+
+        if package_name:
+            update_data["code"] = package_name
+        if description is not None:
+            update_data["description"] = description
+
+        if not update_data:
+            logger.warning(f"No update data provided for Package {package_id}")
+            return None
+
+        logger.info(f"Updating Package {package_id}: {update_data}")
+        package = self.sg.update("CustomEntity12", int(package_id), update_data)
+        logger.info(f"Successfully updated Package {package_id}")
+
+        return package
+
+    def delete_package(self, package_id):
+        """
+        Delete a Package (CustomEntity12) entity from ShotGrid.
+
+        Args:
+            package_id: ID of the package to delete
+
+        Returns:
+            True if successful, False otherwise
+        """
+        logger.info(f"Deleting Package {package_id} from ShotGrid")
+        result = self.sg.delete("CustomEntity12", int(package_id))
+        logger.info(f"Successfully deleted Package {package_id}")
+
+        return result
+
+    def unlink_package_from_rfq(self, package_id, rfq_id):
+        """
+        Unlink a Package from an RFQ's sg_packages field.
+
+        Args:
+            package_id: ID of the package to unlink
+            rfq_id: ID of the RFQ
+
+        Returns:
+            Updated RFQ entity or None if failed
+        """
+        # Get current packages linked to the RFQ
+        rfq = self.sg.find_one(
+            "CustomEntity04",
+            [["id", "is", int(rfq_id)]],
+            ["sg_packages"]
+        )
+
+        if not rfq:
+            logger.error(f"RFQ {rfq_id} not found")
+            return None
+
+        # Get existing packages
+        existing_packages = rfq.get("sg_packages") or []
+
+        # Remove the package from the list
+        updated_packages = [
+            pkg for pkg in existing_packages
+            if pkg.get("id") != int(package_id)
+        ]
+
+        # Only update if something changed
+        if len(updated_packages) == len(existing_packages):
+            logger.info(f"Package {package_id} was not linked to RFQ {rfq_id}")
+            return rfq
+
+        # Update the RFQ
+        logger.info(f"Unlinking Package {package_id} from RFQ {rfq_id}")
+        result = self.sg.update(
+            "CustomEntity04",
+            int(rfq_id),
+            {"sg_packages": updated_packages}
+        )
+        logger.info(f"Successfully unlinked Package from RFQ")
+
+        return result
+
+    def get_package_versions(self, package_id, fields=None):
+        """
+        Get all versions linked to a Package via its sg_versions field.
+
+        Args:
+            package_id: ID of the package
+            fields: List of fields to return for versions
+
+        Returns:
+            List of version dictionaries
+        """
+        if fields is None:
+            fields = [
+                "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
+                "user", "description", "sg_task", "sg_path_to_movie", "sg_path_to_frames",
+                "sg_uploaded_movie", "sg_path_to_geometry", "sg_version_type"
+            ]
+
+        # Get the Package with its sg_versions field
+        package = self.sg.find_one(
+            "CustomEntity12",
+            [["id", "is", int(package_id)]],
+            ["sg_versions"]
+        )
+
+        if not package or not package.get("sg_versions"):
+            logger.info(f"No versions linked to Package {package_id}")
+            return []
+
+        # Extract version IDs
+        version_ids = [v["id"] for v in package["sg_versions"]]
+
+        if not version_ids:
+            return []
+
+        # Query for those versions
+        logger.info(f"Fetching {len(version_ids)} versions for Package {package_id}")
+        return self.sg.find(
+            "Version",
+            [["id", "in", version_ids]],
+            fields,
+            order=[
+                {"field_name": "entity", "direction": "asc"},  # Group by entity
+                {"field_name": "created_at", "direction": "desc"}  # Newest first within entity
+            ]
+        )
+
+    def get_versions_by_parent_package(self, package_id, fields=None):
+        """
+        Get versions where sg_parent_packages contains this package.
+        Used for Script, Concept Art, and Storyboard versions.
+
+        Args:
+            package_id: ID of the Package entity
+            fields: List of fields to return for versions
+
+        Returns:
+            List of version dictionaries
+        """
+        if fields is None:
+            fields = [
+                "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
+                "user", "description", "sg_task", "sg_path_to_movie", "sg_path_to_frames",
+                "sg_uploaded_movie", "sg_path_to_geometry", "sg_version_type"
+            ]
+
+        # Query versions where sg_parent_packages contains this package
+        logger.info(f"Fetching versions with sg_parent_packages containing Package {package_id}")
+        versions = self.sg.find(
+            "Version",
+            [["sg_parent_packages", "in", {"type": "CustomEntity12", "id": int(package_id)}]],
+            fields,
+            order=[
+                {"field_name": "entity", "direction": "asc"},  # Group by entity
+                {"field_name": "created_at", "direction": "desc"}  # Newest first within entity
+            ]
+        )
+
+        logger.info(f"Found {len(versions)} versions with sg_parent_packages containing Package {package_id}")
+        return versions
+
+    def create_version(self, version_code, project_id, description=None, sg_version_type=None):
+        """
+        Create a new Version entity in ShotGrid.
+
+        Args:
+            version_code: Code/name for the version
+            project_id: ID of the project
+            description: Optional description
+            sg_version_type: Optional version type (e.g., "Bid Tracker")
+
+        Returns:
+            Created version entity dictionary
+        """
+        version_data = {
+            "code": version_code,
+            "project": {"type": "Project", "id": int(project_id)},
+        }
+
+        if description:
+            version_data["description"] = description
+
+        if sg_version_type:
+            version_data["sg_version_type"] = sg_version_type
+
+        logger.info(f"Creating Version: {version_code} in project {project_id}")
+        version = self.sg.create("Version", version_data)
+        logger.info(f"Created Version with ID: {version['id']}")
+
+        return version
+
+    def upload_file_to_version(self, version_id, file_path, field_name="sg_uploaded_movie"):
+        """
+        Upload a file to a Version entity.
+
+        Args:
+            version_id: ID of the version
+            file_path: Path to the file to upload
+            field_name: Field to upload to (default: sg_uploaded_movie)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        logger.info(f"Uploading file {file_path} to Version {version_id} field {field_name}")
+        result = self.sg.upload(
+            "Version",
+            int(version_id),
+            file_path,
+            field_name=field_name
+        )
+        logger.info(f"Successfully uploaded file to Version {version_id}")
+        return result
+
+    def link_version_to_package(self, version_id, package_id):
+        """
+        Link a Version to a Package's sg_versions field (multi-entity field).
+
+        Args:
+            version_id: ID of the version to link
+            package_id: ID of the package
+
+        Returns:
+            Updated Package entity or None if failed
+        """
+        # Get current versions linked to the Package
+        package = self.sg.find_one(
+            "CustomEntity12",
+            [["id", "is", int(package_id)]],
+            ["sg_versions"]
+        )
+
+        if not package:
+            logger.error(f"Package {package_id} not found")
+            return None
+
+        # Get existing versions (or empty list if None)
+        existing_versions = package.get("sg_versions") or []
+
+        # Check if version is already linked
+        version_link = {"type": "Version", "id": int(version_id)}
+        if any(v.get("id") == int(version_id) for v in existing_versions):
+            logger.info(f"Version {version_id} already linked to Package {package_id}")
+            return package
+
+        # Add the new version to the list
+        updated_versions = existing_versions + [version_link]
+
+        # Update the Package
+        logger.info(f"Linking Version {version_id} to Package {package_id}")
+        result = self.sg.update(
+            "CustomEntity12",
+            int(package_id),
+            {"sg_versions": updated_versions}
+        )
+        logger.info(f"Successfully linked Version to Package")
+
+        return result
+
+    def unlink_version_from_package(self, version_id, package_id):
+        """
+        Unlink a Version from a Package's sg_versions field.
+
+        Args:
+            version_id: ID of the version to unlink
+            package_id: ID of the package
+
+        Returns:
+            Updated Package entity or None if failed
+        """
+        # Get current versions linked to the Package
+        package = self.sg.find_one(
+            "CustomEntity12",
+            [["id", "is", int(package_id)]],
+            ["sg_versions"]
+        )
+
+        if not package:
+            logger.error(f"Package {package_id} not found")
+            return None
+
+        # Get existing versions
+        existing_versions = package.get("sg_versions") or []
+
+        # Remove the version from the list
+        updated_versions = [
+            v for v in existing_versions
+            if v.get("id") != int(version_id)
+        ]
+
+        # Only update if something changed
+        if len(updated_versions) == len(existing_versions):
+            logger.info(f"Version {version_id} was not linked to Package {package_id}")
+            return package
+
+        # Update the Package
+        logger.info(f"Unlinking Version {version_id} from Package {package_id}")
+        result = self.sg.update(
+            "CustomEntity12",
+            int(package_id),
+            {"sg_versions": updated_versions}
+        )
+        logger.info(f"Successfully unlinked Version from Package")
+
+        return result
+
+    def find_bid_tracker_versions_in_package(self, package_id):
+        """
+        Find all Bid Tracker versions in a package.
+
+        Args:
+            package_id: ID of the package
+
+        Returns:
+            List of version entities with sg_version_type matching "Bid Tracker"
+        """
+        versions = self.get_package_versions(package_id, fields=["id", "code", "sg_version_type"])
+
+        bid_tracker_versions = []
+        for version in versions:
+            sg_version_type = version.get("sg_version_type")
+            if sg_version_type:
+                # Handle both string and dict formats
+                if isinstance(sg_version_type, dict):
+                    version_type = sg_version_type.get("name", "").lower()
+                else:
+                    version_type = str(sg_version_type).lower()
+
+                if "bid" in version_type or "tracker" in version_type:
+                    bid_tracker_versions.append(version)
+
+        return bid_tracker_versions
+
+    def get_all_bid_tracker_versions_for_project(self, project_id, rfq_code=None):
+        """
+        Get all Bid Tracker versions for a project, optionally filtered by RFQ code.
+
+        Args:
+            project_id: ID of the project
+            rfq_code: Optional RFQ code to filter by (searches in version code)
+
+        Returns:
+            List of version entities with sg_version_type matching "Bid Tracker"
+        """
+        filters = [
+            ["project", "is", {"type": "Project", "id": int(project_id)}],
+            ["sg_version_type", "is", "Bid Tracker"]
+        ]
+
+        # If rfq_code provided, filter by code containing the lowercase rfq_code
+        if rfq_code:
+            rfq_code_lower = rfq_code.lower().replace(" ", "")
+            filters.append(["code", "contains", rfq_code_lower])
+
+        versions = self.sg.find(
+            "Version",
+            filters,
+            fields=["id", "code", "sg_version_type", "description", "created_at", "sg_status_list"],
+            order=[{"field_name": "created_at", "direction": "desc"}]
+        )
+
+        return versions
+
+    def get_all_image_versions_for_project(self, project_id):
+        """
+        Get all image versions for a project (Concept Art, Storyboard, Reference, etc.).
+
+        Args:
+            project_id: ID of the project
+
+        Returns:
+            List of version entities with image-related sg_version_type
+        """
+        # Query all versions for the project
+        versions = self.sg.find(
+            "Version",
+            [["project", "is", {"type": "Project", "id": int(project_id)}]],
+            fields=[
+                "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
+                "user", "description", "sg_task", "sg_path_to_movie", "sg_path_to_frames",
+                "sg_uploaded_movie", "sg_path_to_geometry", "sg_version_type", "image"
+            ],
+            order=[{"field_name": "created_at", "direction": "desc"}]
+        )
+
+        # Filter for image-related versions
+        image_versions = []
+        for version in versions:
+            sg_version_type = version.get('sg_version_type')
+            if sg_version_type:
+                # Handle both string and dict formats
+                if isinstance(sg_version_type, dict):
+                    version_type = sg_version_type.get('name', '').lower()
+                else:
+                    version_type = str(sg_version_type).lower()
+
+                # Check for image-related keywords
+                if any(keyword in version_type for keyword in [
+                    'concept', 'art', 'storyboard', 'reference', 'image', 'ref', 'video', 'movie'
+                ]):
+                    image_versions.append(version)
+
+        logger.info(f"Found {len(image_versions)} image versions in project {project_id}")
+        return image_versions
+
+    def get_latest_version_number(self, package_id, version_prefix):
+        """
+        Get the latest version number for a given prefix in a package.
+
+        Args:
+            package_id: ID of the package
+            version_prefix: Prefix to search for (e.g., "bidtracker_myproject")
+
+        Returns:
+            Next available version number (int)
+        """
+        # Get versions from package
+        versions = self.get_package_versions(package_id, fields=["code"])
+
+        # Extract version numbers from matching codes
+        version_numbers = []
+        for version in versions:
+            code = version.get("code", "")
+            if code.startswith(version_prefix):
+                # Extract version number from end (e.g., "bidtracker_myproject_v001" -> 1)
+                parts = code.split("_v")
+                if len(parts) == 2:
+                    try:
+                        version_num = int(parts[1])
+                        version_numbers.append(version_num)
+                    except ValueError:
+                        continue
+
+        # Return next version number
+        if version_numbers:
+            return max(version_numbers) + 1
+        else:
+            return 1
 
     def __enter__(self):
         """Context manager entry."""

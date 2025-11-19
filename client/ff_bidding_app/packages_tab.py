@@ -10,11 +10,13 @@ try:
     from .bid_selector_widget import CollapsibleGroupBox
     from .settings import AppSettings
     from .vfx_breakdown_widget import VFXBreakdownWidget
+    from .image_viewer_widget import ImageViewerWidget
 except ImportError:
     from package_data_treeview import PackageTreeView, CustomCheckBox
     from bid_selector_widget import CollapsibleGroupBox
     from settings import AppSettings
     from vfx_breakdown_widget import VFXBreakdownWidget
+    from image_viewer_widget import ImageViewerWidget
     logger = logging.getLogger("FFPackageManager")
 
 
@@ -68,19 +70,22 @@ class PackagesTab(QtWidgets.QWidget):
         layout.setContentsMargins(5, 5, 5, 5)
 
         # Horizontal splitter for left and right panes
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.splitter.setChildrenCollapsible(False)  # Prevent collapsing panes
 
         # Left pane: Bid selector + Tabs
         left_pane = self._create_left_pane()
-        splitter.addWidget(left_pane)
+        self.splitter.addWidget(left_pane)
 
         # Right pane: Data to Fetch, Output Settings, Package Data tree
         right_pane = self._create_right_pane()
-        splitter.addWidget(right_pane)
+        self.splitter.addWidget(right_pane)
 
-        # Set initial sizes (30% left, 70% right)
-        splitter.setSizes([300, 700])
-        layout.addWidget(splitter)
+        # Set initial sizes (30% left, 70% right) and allow right pane to be freely resizable
+        self.splitter.setSizes([300, 700])
+        self.splitter.setStretchFactor(0, 0)  # Left pane doesn't stretch
+        self.splitter.setStretchFactor(1, 1)  # Right pane stretches with window
+        layout.addWidget(self.splitter)
 
         # Bottom section: Status + Create Package button
         bottom_layout = QtWidgets.QHBoxLayout()
@@ -132,41 +137,41 @@ class PackagesTab(QtWidgets.QWidget):
         if self.breakdown_widget.toolbar_widget:
             breakdown_selector_group.addWidget(self.breakdown_widget.toolbar_widget)
 
-        # Add export button
-        export_button_layout = QtWidgets.QHBoxLayout()
-        self.export_btn = QtWidgets.QPushButton("Export Selected to Excel")
-        self.export_btn.clicked.connect(self._export_to_excel)
-        export_button_layout.addWidget(self.export_btn)
-        export_button_layout.addStretch()
-        breakdown_selector_group.addLayout(export_button_layout)
-
         bid_tracker_layout.addWidget(breakdown_selector_group)
         bid_tracker_layout.addWidget(self.breakdown_widget)
 
+        # Add button bar underneath the VFX breakdown table
+        breakdown_button_layout = QtWidgets.QHBoxLayout()
+
+        self.export_btn = QtWidgets.QPushButton("Export Selected to Excel")
+        self.export_btn.clicked.connect(self._export_to_excel)
+        breakdown_button_layout.addWidget(self.export_btn)
+
+        self.create_bid_tracker_btn = QtWidgets.QPushButton("Create Bid Tracker")
+        self.create_bid_tracker_btn.clicked.connect(self._create_bid_tracker)
+        breakdown_button_layout.addWidget(self.create_bid_tracker_btn)
+
+        breakdown_button_layout.addStretch()
+        bid_tracker_layout.addLayout(breakdown_button_layout)
+
         # Placeholder tabs for other content
-        concept_tab = QtWidgets.QWidget()
-        concept_layout = QtWidgets.QVBoxLayout(concept_tab)
-        concept_label = QtWidgets.QLabel("Concept content coming soon...")
-        concept_label.setAlignment(QtCore.Qt.AlignCenter)
-        concept_layout.addWidget(concept_label)
+        documents_tab = QtWidgets.QWidget()
+        documents_layout = QtWidgets.QVBoxLayout(documents_tab)
+        documents_label = QtWidgets.QLabel("Documents content coming soon...")
+        documents_label.setAlignment(QtCore.Qt.AlignCenter)
+        documents_layout.addWidget(documents_label)
 
-        script_tab = QtWidgets.QWidget()
-        script_layout = QtWidgets.QVBoxLayout(script_tab)
-        script_label = QtWidgets.QLabel("Script content coming soon...")
-        script_label.setAlignment(QtCore.Qt.AlignCenter)
-        script_layout.addWidget(script_label)
-
-        references_tab = QtWidgets.QWidget()
-        references_layout = QtWidgets.QVBoxLayout(references_tab)
-        references_label = QtWidgets.QLabel("References content coming soon...")
-        references_label.setAlignment(QtCore.Qt.AlignCenter)
-        references_layout.addWidget(references_label)
+        # Images tab with thumbnail viewer
+        images_tab = QtWidgets.QWidget()
+        images_layout = QtWidgets.QVBoxLayout(images_tab)
+        images_layout.setContentsMargins(0, 0, 0, 0)
+        self.image_viewer = ImageViewerWidget(self.sg_session, images_tab)
+        images_layout.addWidget(self.image_viewer)
 
         # Add tabs
         self.packages_tab_widget.addTab(bid_tracker_tab, "Bid Tracker")
-        self.packages_tab_widget.addTab(concept_tab, "Concept")
-        self.packages_tab_widget.addTab(script_tab, "Script")
-        self.packages_tab_widget.addTab(references_tab, "References")
+        self.packages_tab_widget.addTab(documents_tab, "Documents")
+        self.packages_tab_widget.addTab(images_tab, "Images")
 
         left_layout.addWidget(self.packages_tab_widget, 1)  # Give it stretch factor
 
@@ -275,6 +280,71 @@ class PackagesTab(QtWidgets.QWidget):
             logger.error(f"Error loading field schema: {e}", exc_info=True)
             self.field_schema = {}
 
+    def _populate_image_viewer_folders(self):
+        """Extract assets and scenes from breakdown and populate image viewer folder tree."""
+        print("\n=== _POPULATE_IMAGE_VIEWER_FOLDERS CALLED ===")
+        logger.info("_populate_image_viewer_folders called")
+
+        if not self.image_viewer:
+            print("ERROR: No image viewer available")
+            logger.warning("No image viewer available")
+            return
+
+        if not self.breakdown_widget:
+            print("ERROR: No breakdown widget available")
+            logger.warning("No breakdown widget available")
+            return
+
+        if not self.breakdown_widget.model:
+            print("ERROR: No breakdown model available")
+            logger.warning("No breakdown model available")
+            return
+
+        assets = []
+        scenes = []
+
+        print(f"Breakdown model has {len(self.breakdown_widget.model.data_list)} scenes")
+        logger.info(f"Breakdown model has {len(self.breakdown_widget.model.data_list)} scenes")
+
+        # Extract from bidding scenes in the breakdown model
+        for row_idx in range(len(self.breakdown_widget.model.data_list)):
+            scene = self.breakdown_widget.model.data_list[row_idx]
+            logger.debug(f"Processing scene {row_idx}: {scene.get('code', 'Unknown')}")
+
+            # Extract assets
+            bid_assets = scene.get('sg_bid_assets', [])
+            logger.debug(f"  sg_bid_assets: {bid_assets}")
+            if bid_assets:
+                if isinstance(bid_assets, list):
+                    for asset in bid_assets:
+                        if isinstance(asset, dict):
+                            asset_name = asset.get('name', '')
+                            if asset_name:
+                                assets.append(asset_name)
+                                logger.debug(f"    Added asset: {asset_name}")
+
+            # Extract scene name from code
+            scene_code = scene.get('code', '')
+            if scene_code:
+                scenes.append(scene_code)
+                logger.debug(f"  Added scene: {scene_code}")
+
+        print(f"Extracted {len(assets)} asset entries ({len(set(assets))} unique)")
+        print(f"Extracted {len(scenes)} scene entries ({len(set(scenes))} unique)")
+        print(f"Unique assets: {sorted(set(assets))[:5] if len(set(assets)) > 5 else sorted(set(assets))}")
+        print(f"Unique scenes: {sorted(set(scenes))[:5] if len(set(scenes)) > 5 else sorted(set(scenes))}")
+
+        logger.info(f"Extracted {len(assets)} asset entries ({len(set(assets))} unique)")
+        logger.info(f"Extracted {len(scenes)} scene entries ({len(set(scenes))} unique)")
+        logger.info(f"Unique assets: {sorted(set(assets))}")
+        logger.info(f"Unique scenes: {sorted(set(scenes))}")
+
+        # Populate the image viewer folder tree
+        print(f"Calling image_viewer.populate_folders with {len(set(assets))} assets and {len(set(scenes))} scenes")
+        self.image_viewer.populate_folders(assets, scenes)
+        print("=== _POPULATE_IMAGE_VIEWER_FOLDERS COMPLETE ===\n")
+        logger.info(f"Populated image viewer folders with {len(set(assets))} unique assets and {len(set(scenes))} unique scenes")
+
     def _load_breakdown_for_rfq(self, rfq):
         """Load VFX Breakdown bidding scenes for the bid linked to the RFQ.
 
@@ -379,6 +449,9 @@ class PackagesTab(QtWidgets.QWidget):
             # Load into the breakdown widget
             self.breakdown_widget.load_bidding_scenes(bidding_scenes, field_schema=self.field_schema)
 
+            # Update image viewer folders after breakdown is loaded
+            self._populate_image_viewer_folders()
+
         except Exception as e:
             logger.error(f"Error loading breakdown for RFQ: {e}", exc_info=True)
             self.breakdown_widget.load_bidding_scenes([])
@@ -394,10 +467,9 @@ class PackagesTab(QtWidgets.QWidget):
 
         # Define categories that will appear in the tree view
         categories = [
-            "VFX Breakdown",
-            "Script",
-            "Concept Art",
-            "Storyboard"
+            "Bid Tracker",
+            "Documents",
+            "Images"
         ]
 
         # Create checkboxes dynamically
@@ -451,6 +523,22 @@ class PackagesTab(QtWidgets.QWidget):
 
         # Load VFX Breakdown for the bid linked to this RFQ
         self._load_breakdown_for_rfq(rfq)
+
+        # Load packages attached to this RFQ from ShotGrid
+        self._load_packages_from_shotgrid(rfq)
+
+        # Load all image versions for the current project into the image viewer
+        if self.image_viewer and self.parent_app and hasattr(self.parent_app, 'sg_project_combo'):
+            current_project_index = self.parent_app.sg_project_combo.currentIndex()
+            sg_project = self.parent_app.sg_project_combo.itemData(current_project_index)
+            if sg_project:
+                project_id = sg_project.get("id")
+                if project_id:
+                    logger.info(f"Loading all image versions for project {project_id}")
+                    self.image_viewer.load_project_versions(project_id)
+
+                    # Extract assets and scenes from breakdown and populate folder tree
+                    self._populate_image_viewer_folders()
 
     def clear(self):
         """Clear the package data tree."""
@@ -878,6 +966,236 @@ class PackagesTab(QtWidgets.QWidget):
                 f"Failed to export to Excel:\n{str(e)}"
             )
 
+    def _create_bid_tracker(self):
+        """Create a new bid tracker document, upload as version, and link to package."""
+        try:
+            import pandas as pd
+            from datetime import datetime
+            import tempfile
+            import os
+
+            # Check if a package is selected
+            if not self.current_package_name:
+                QtWidgets.QMessageBox.warning(
+                    self, "No Package Selected",
+                    "Please select a package before creating a Bid Tracker."
+                )
+                return
+
+            # Get package data and ShotGrid ID
+            package_data = self.packages.get(self.current_package_name)
+            if not package_data:
+                QtWidgets.QMessageBox.warning(
+                    self, "Error",
+                    "Package data not found."
+                )
+                return
+
+            sg_package_id = package_data.get("sg_package_id")
+            if not sg_package_id:
+                QtWidgets.QMessageBox.warning(
+                    self, "Error",
+                    "Package not linked to ShotGrid. Please ensure package was created properly."
+                )
+                return
+
+            # Check if RFQ is selected
+            if not self.current_rfq:
+                QtWidgets.QMessageBox.warning(
+                    self, "No RFQ Selected",
+                    "Please select an RFQ before creating a Bid Tracker."
+                )
+                return
+
+            # Get selected scenes from the model
+            if not self.breakdown_widget or not self.breakdown_widget.model:
+                QtWidgets.QMessageBox.warning(
+                    self, "Warning",
+                    "No VFX Breakdown data loaded."
+                )
+                return
+
+            selected_scenes = self.breakdown_widget.model.get_scenes_selected_for_export()
+
+            if not selected_scenes:
+                QtWidgets.QMessageBox.warning(
+                    self, "Warning",
+                    "No scenes selected for export. Please check the 'Export' column to select scenes."
+                )
+                return
+
+            # Generate version name using nomenclature: bidtracker_lowercase(<RFQ Name>)_v###
+            rfq_code = self.current_rfq.get("code", "rfq")
+            rfq_code_lower = rfq_code.lower().replace(" ", "")  # Make lowercase and remove spaces
+            version_prefix = f"bidtracker_{rfq_code_lower}"
+
+            # Get next version number
+            version_number = self.sg_session.get_latest_version_number(sg_package_id, version_prefix)
+            version_string = f"v{version_number:03d}"
+            version_code = f"{version_prefix}_{version_string}"
+
+            logger.info(f"Creating Bid Tracker version: {version_code}")
+
+            # Create temporary Excel file
+            temp_dir = tempfile.gettempdir()
+            file_path = os.path.join(temp_dir, f"{version_code}.xlsx")
+
+            # Get column visibility settings
+            column_visibility = self.breakdown_widget.column_visibility
+
+            # Prepare data for export (reuse logic from _export_to_excel)
+            export_data = []
+            for scene in selected_scenes:
+                row = {}
+                for field in self.breakdown_widget.model.column_fields:
+                    if field == "_export_to_excel":
+                        continue  # Skip the export checkbox column
+
+                    # Skip hidden columns
+                    if not column_visibility.get(field, True):
+                        continue
+
+                    value = scene.get(field)
+
+                    # Format the value for Excel
+                    if value is None:
+                        row[field] = ""
+                    elif isinstance(value, dict):
+                        # Handle ShotGrid entity references
+                        row[field] = value.get("name", str(value))
+                    elif isinstance(value, list):
+                        # Handle multi-entity references
+                        if value and isinstance(value[0], dict):
+                            row[field] = ", ".join([item.get("name", str(item)) for item in value])
+                        else:
+                            row[field] = ", ".join([str(item) for item in value])
+                    elif isinstance(value, bool):
+                        row[field] = "Yes" if value else "No"
+                    else:
+                        row[field] = value
+
+                export_data.append(row)
+
+            # Create DataFrame
+            df = pd.DataFrame(export_data)
+
+            # Get column headers for display (only for visible columns)
+            column_headers = {}
+            for i, field in enumerate(self.breakdown_widget.model.column_fields):
+                if field != "_export_to_excel" and column_visibility.get(field, True):
+                    column_headers[field] = self.breakdown_widget.model.column_headers[i]
+
+            # Rename columns to use display names
+            df = df.rename(columns=column_headers)
+
+            # Export to Excel
+            with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name='Bid Tracker', index=False)
+
+                # Auto-adjust column widths
+                worksheet = writer.sheets['Bid Tracker']
+                for idx, col in enumerate(df.columns):
+                    max_length = max(
+                        df[col].astype(str).map(len).max(),
+                        len(str(col))
+                    )
+                    # Add some padding
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[chr(65 + idx)].width = adjusted_width
+
+            logger.info(f"Created Excel file: {file_path}")
+
+            # Get project ID
+            if self.parent_app and hasattr(self.parent_app, 'sg_project_combo'):
+                current_project_index = self.parent_app.sg_project_combo.currentIndex()
+                sg_project = self.parent_app.sg_project_combo.itemData(current_project_index)
+                project_id = sg_project.get("id") if sg_project else None
+            else:
+                project_id = None
+
+            if not project_id:
+                QtWidgets.QMessageBox.warning(
+                    self, "Error",
+                    "No project selected."
+                )
+                return
+
+            # Create Version in ShotGrid
+            version = self.sg_session.create_version(
+                version_code=version_code,
+                project_id=project_id,
+                description=f"Bid Tracker created from VFX Breakdown with {len(selected_scenes)} scenes",
+                sg_version_type="Bid Tracker"
+            )
+
+            logger.info(f"Created Version in ShotGrid: {version['id']}")
+
+            # Upload Excel file to Version
+            self.sg_session.upload_file_to_version(
+                version_id=version["id"],
+                file_path=file_path,
+                field_name="sg_uploaded_movie"
+            )
+
+            logger.info(f"Uploaded file to Version {version['id']}")
+
+            # Find and unlink existing Bid Tracker versions from package (only one allowed)
+            existing_bid_trackers = self.sg_session.find_bid_tracker_versions_in_package(sg_package_id)
+
+            if existing_bid_trackers:
+                logger.info(f"Found {len(existing_bid_trackers)} existing Bid Tracker(s) in package")
+                for old_tracker in existing_bid_trackers:
+                    old_tracker_id = old_tracker.get("id")
+                    old_tracker_code = old_tracker.get("code", "Unknown")
+                    logger.info(f"Unlinking old Bid Tracker: {old_tracker_code} (ID: {old_tracker_id})")
+                    self.sg_session.unlink_version_from_package(old_tracker_id, sg_package_id)
+                logger.info("All existing Bid Trackers unlinked from package")
+
+            # Link new Version to Package
+            self.sg_session.link_version_to_package(version["id"], sg_package_id)
+
+            logger.info(f"Linked new Version to Package {sg_package_id}")
+
+            # Clean up temporary file
+            try:
+                os.remove(file_path)
+                logger.info(f"Removed temporary file: {file_path}")
+            except Exception as e:
+                logger.warning(f"Could not remove temporary file: {e}")
+
+            # Refresh the treeview to show the new version
+            if self.package_data_tree:
+                self.package_data_tree.load_package_versions(sg_package_id)
+
+            # Build success message
+            success_msg = f"Created Bid Tracker version: {version_code}\n"
+            success_msg += f"Exported {len(selected_scenes)} scene(s)\n"
+            if existing_bid_trackers:
+                success_msg += f"Replaced {len(existing_bid_trackers)} existing Bid Tracker(s)\n"
+            success_msg += "Uploaded to ShotGrid and linked to package."
+
+            QtWidgets.QMessageBox.information(
+                self, "Success",
+                success_msg
+            )
+
+            logger.info(f"Successfully created Bid Tracker: {version_code}")
+
+        except ImportError as e:
+            logger.error(f"Missing required library: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self, "Error",
+                f"Missing required library for Excel export.\n"
+                f"Please install pandas and openpyxl:\n"
+                f"pip install pandas openpyxl"
+            )
+        except Exception as e:
+            logger.error(f"Error creating Bid Tracker: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self, "Error",
+                f"Failed to create Bid Tracker:\n{str(e)}"
+            )
+
     def _on_entity_type_toggled(self, category, state):
         """Handle entity type checkbox toggle to show/hide tree categories."""
         # Don't rely on the state parameter - get the actual checkbox state
@@ -895,6 +1213,9 @@ class PackagesTab(QtWidgets.QWidget):
             self.current_package_name = None
             self.rename_package_btn.setEnabled(False)
             self.delete_package_btn.setEnabled(False)
+            # Clear the package data tree (image viewer shows all project images)
+            if self.package_data_tree:
+                self.package_data_tree.clear()
             logger.info("No package selected")
             return
 
@@ -906,19 +1227,146 @@ class PackagesTab(QtWidgets.QWidget):
         if package_name in self.packages:
             package_data = self.packages[package_name]
             self._load_package_data(package_data)
+
+            # Load versions from the package into the treeview
+            sg_package_id = package_data.get("sg_package_id")
+            if sg_package_id:
+                logger.info(f"Loading versions for Package ID {sg_package_id}")
+                if self.package_data_tree:
+                    self.package_data_tree.load_package_versions(sg_package_id)
+            else:
+                logger.info("No ShotGrid Package ID found, clearing tree")
+                if self.package_data_tree:
+                    self.package_data_tree.clear()
+
             logger.info(f"Loaded package: {package_name}")
         else:
             logger.warning(f"Package not found: {package_name}")
 
+    def _load_packages_from_shotgrid(self, rfq):
+        """Load packages from ShotGrid that are linked to the RFQ.
+
+        Args:
+            rfq: RFQ data dict
+        """
+        if not rfq:
+            return
+
+        try:
+            rfq_id = rfq.get("id")
+            if not rfq_id:
+                return
+
+            # Query ShotGrid for packages linked to this RFQ
+            logger.info(f"Loading packages for RFQ {rfq_id} from ShotGrid...")
+            sg_packages = self.sg_session.get_packages_for_rfq(rfq_id, fields=["id", "code", "description", "created_at"])
+
+            # Clear existing packages from dropdown (keep "(No Package)")
+            self.package_selector_dropdown.blockSignals(True)  # Prevent triggering selection events
+            while self.package_selector_dropdown.count() > 1:
+                self.package_selector_dropdown.removeItem(1)
+
+            # Add packages to dropdown and to self.packages dict
+            for sg_package in sg_packages:
+                package_name = sg_package.get("code", "Unnamed Package")
+
+                # Store basic package data (will be populated with actual state when selected)
+                # For now, we just store the ShotGrid metadata
+                if package_name not in self.packages:
+                    self.packages[package_name] = {
+                        "created_at": sg_package.get("created_at", datetime.now().isoformat()),
+                        "sg_package_id": sg_package.get("id"),
+                        "export_selections": {},
+                        "column_visibility": {},
+                    }
+
+                # Add to dropdown
+                self.package_selector_dropdown.addItem(package_name)
+
+            self.package_selector_dropdown.blockSignals(False)
+
+            logger.info(f"Loaded {len(sg_packages)} package(s) from ShotGrid")
+
+        except Exception as e:
+            logger.error(f"Error loading packages from ShotGrid: {e}")
+
+    def _get_next_package_version_for_rfq(self):
+        """Get the next available version number for a package based on current RFQ.
+
+        Returns:
+            tuple: (version_number, version_string) e.g., (1, "v001")
+        """
+        if not self.current_rfq:
+            return 1, "v001"
+
+        try:
+            # Get existing packages from ShotGrid for this RFQ
+            rfq_id = self.current_rfq.get("id")
+            existing_packages = self.sg_session.get_packages_for_rfq(rfq_id, fields=["code"])
+
+            # Also check packages in memory
+            rfq_code = self.current_rfq.get("code", "Package")
+            prefix = f"Package-{rfq_code}--v"
+
+            versions = []
+
+            # Extract version numbers from ShotGrid packages
+            for pkg in existing_packages:
+                pkg_name = pkg.get("code", "")
+                if pkg_name.startswith(prefix):
+                    version_part = pkg_name[len(prefix):]
+                    try:
+                        version_num = int(version_part)
+                        versions.append(version_num)
+                    except ValueError:
+                        continue
+
+            # Extract version numbers from in-memory packages
+            for pkg_name in self.packages.keys():
+                if pkg_name.startswith(prefix):
+                    version_part = pkg_name[len(prefix):]
+                    try:
+                        version_num = int(version_part)
+                        versions.append(version_num)
+                    except ValueError:
+                        continue
+
+            # Get next version
+            if versions:
+                next_version = max(versions) + 1
+            else:
+                next_version = 1
+
+            version_string = f"v{next_version:03d}"
+            return next_version, version_string
+
+        except Exception as e:
+            logger.error(f"Error getting next package version: {e}")
+            return 1, "v001"
+
     def _create_new_package(self):
         """Create a new package."""
-        # Prompt for package name
+        # Check if an RFQ is selected
+        if not self.current_rfq:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No RFQ Selected",
+                "Please select an RFQ before creating a package."
+            )
+            return
+
+        # Generate prefilled package name using naming convention
+        rfq_code = self.current_rfq.get("code", "Package")
+        version_num, version_string = self._get_next_package_version_for_rfq()
+        default_name = f"Package-{rfq_code}--{version_string}"
+
+        # Prompt for package name with prefilled default
         name, ok = QtWidgets.QInputDialog.getText(
             self,
             "Create Package",
             "Enter package name:",
             QtWidgets.QLineEdit.Normal,
-            ""
+            default_name
         )
 
         if not ok or not name.strip():
@@ -938,6 +1386,44 @@ class PackagesTab(QtWidgets.QWidget):
         # Create new package with current state
         package_data = self._capture_current_state()
         self.packages[name] = package_data
+
+        # Create Package entity in ShotGrid and link to RFQ
+        try:
+            rfq_id = self.current_rfq.get("id")
+
+            # Get project from parent app's combo box
+            if self.parent_app and hasattr(self.parent_app, 'sg_project_combo'):
+                current_project_index = self.parent_app.sg_project_combo.currentIndex()
+                sg_project = self.parent_app.sg_project_combo.itemData(current_project_index)
+                project_id = sg_project.get("id") if sg_project else None
+            else:
+                project_id = None
+
+            if project_id:
+                # Create the Package entity
+                sg_package = self.sg_session.create_package(
+                    package_name=name,
+                    project_id=project_id,
+                    description=f"Package created from FF Bidding App"
+                )
+
+                # Link the Package to the RFQ's sg_packages field
+                self.sg_session.link_package_to_rfq(sg_package["id"], rfq_id)
+
+                # Store the ShotGrid package ID in the package data
+                package_data["sg_package_id"] = sg_package["id"]
+
+                logger.info(f"Created Package entity in ShotGrid with ID: {sg_package['id']}")
+            else:
+                logger.warning("No project selected, package created locally only")
+
+        except Exception as e:
+            logger.error(f"Error creating Package in ShotGrid: {e}")
+            QtWidgets.QMessageBox.warning(
+                self,
+                "ShotGrid Error",
+                f"Package created locally but failed to create in ShotGrid: {str(e)}"
+            )
 
         # Add to dropdown
         self.package_selector_dropdown.addItem(name)
@@ -980,7 +1466,24 @@ class PackagesTab(QtWidgets.QWidget):
             )
             return
 
-        # Rename package
+        # Get package data to check for ShotGrid ID
+        package_data = self.packages.get(old_name, {})
+        sg_package_id = package_data.get("sg_package_id")
+
+        # Update in ShotGrid if package has a ShotGrid ID
+        if sg_package_id:
+            try:
+                self.sg_session.update_package(sg_package_id, package_name=new_name)
+                logger.info(f"Updated Package {sg_package_id} in ShotGrid with new name: {new_name}")
+            except Exception as e:
+                logger.error(f"Error updating Package in ShotGrid: {e}")
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "ShotGrid Error",
+                    f"Package renamed locally but failed to update in ShotGrid: {str(e)}"
+                )
+
+        # Rename package locally
         self.packages[new_name] = self.packages.pop(old_name)
 
         # Update dropdown
@@ -1008,6 +1511,31 @@ class PackagesTab(QtWidgets.QWidget):
             return
 
         name = self.current_package_name
+
+        # Get package data to check for ShotGrid ID
+        package_data = self.packages.get(name, {})
+        sg_package_id = package_data.get("sg_package_id")
+
+        # Delete from ShotGrid if package has a ShotGrid ID
+        if sg_package_id:
+            try:
+                # First unlink from RFQ if we have an RFQ context
+                if self.current_rfq:
+                    rfq_id = self.current_rfq.get("id")
+                    self.sg_session.unlink_package_from_rfq(sg_package_id, rfq_id)
+                    logger.info(f"Unlinked Package {sg_package_id} from RFQ {rfq_id}")
+
+                # Then delete the package entity
+                self.sg_session.delete_package(sg_package_id)
+                logger.info(f"Deleted Package {sg_package_id} from ShotGrid")
+
+            except Exception as e:
+                logger.error(f"Error deleting Package from ShotGrid: {e}")
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "ShotGrid Error",
+                    f"Package deleted locally but failed to delete from ShotGrid: {str(e)}"
+                )
 
         # Remove from packages dict
         if name in self.packages:

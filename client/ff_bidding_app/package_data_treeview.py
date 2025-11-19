@@ -237,6 +237,90 @@ class SGTreeItem(QtWidgets.QTreeWidgetItem):
         return f"SGTreeItem(type={self._item_type}, id={self.get_sg_id()}, name={self.get_entity_name()})"
 
 
+class BidTrackerVersionDialog(QtWidgets.QDialog):
+    """Dialog for selecting a Bid Tracker version to link to a package."""
+
+    def __init__(self, versions, current_version_id, parent=None):
+        """
+        Initialize the dialog.
+
+        Args:
+            versions: List of Bid Tracker version entities
+            current_version_id: ID of the currently linked version (or None)
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.versions = versions
+        self.current_version_id = current_version_id
+        self.selected_version_id = None
+
+        self.setWindowTitle("Select Bid Tracker Version")
+        self.resize(500, 150)
+
+        self._setup_ui()
+
+    def _setup_ui(self):
+        """Setup the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Description label
+        desc_label = QtWidgets.QLabel(
+            "Select a Bid Tracker version to link to this package:"
+        )
+        layout.addWidget(desc_label)
+
+        # Version dropdown
+        version_layout = QtWidgets.QHBoxLayout()
+        version_label = QtWidgets.QLabel("Version:")
+        version_layout.addWidget(version_label)
+
+        self.version_combo = QtWidgets.QComboBox()
+        self.version_combo.setMinimumWidth(300)
+
+        # Populate combo box with versions
+        current_index = -1
+        for i, version in enumerate(self.versions):
+            version_code = version.get('code', 'Unknown')
+            version_id = version.get('id')
+
+            # Add extra info if this is the current version
+            if version_id == self.current_version_id:
+                display_text = f"{version_code} (Current)"
+                current_index = i
+            else:
+                display_text = version_code
+
+            self.version_combo.addItem(display_text, version_id)
+
+        # Select current version by default
+        if current_index >= 0:
+            self.version_combo.setCurrentIndex(current_index)
+
+        version_layout.addWidget(self.version_combo)
+        version_layout.addStretch()
+        layout.addLayout(version_layout)
+
+        layout.addSpacing(20)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        ok_btn = QtWidgets.QPushButton("OK")
+        ok_btn.clicked.connect(self.accept)
+        button_layout.addWidget(ok_btn)
+
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+
+        layout.addLayout(button_layout)
+
+    def get_selected_version_id(self):
+        """Get the selected version ID."""
+        return self.version_combo.currentData()
+
+
 # Status colors (adjusted for dark theme)
 status_colors = {
     "ip": QtGui.QColor(255, 180, 60),  # In Progress - Orange
@@ -256,6 +340,7 @@ class PackageTreeView(QtWidgets.QWidget):
         # Initialize selected RFQ storage
         self.selected_rfq = None
         self.sg_session = None
+        self.current_package_id = None  # Store current package ID for version selection
 
         # Store root category items for show/hide functionality
         self.category_items = {}
@@ -264,7 +349,7 @@ class PackageTreeView(QtWidgets.QWidget):
         self.category_visibility_prefs = {}
 
         # Define canonical order of categories
-        self.category_order = ["VFX Breakdown", "Script", "Concept Art", "Storyboard"]
+        self.category_order = ["Bid Tracker", "Documents", "Images"]
 
         # Build the UI
         self._setup_ui()
@@ -310,9 +395,9 @@ class PackageTreeView(QtWidgets.QWidget):
 
         layout.addLayout(header_layout)
 
-        # Tree widget - Added "Active" column at the beginning
+        # Tree widget
         self.tree_widget = QtWidgets.QTreeWidget()
-        self.tree_widget.setHeaderLabels(["Active", "Name", "Type", "Status", "Version"])
+        self.tree_widget.setHeaderLabels(["Name", "Type", "Status", "Version"])
 
         # Get DPI scale for column widths
         try:
@@ -323,16 +408,11 @@ class PackageTreeView(QtWidgets.QWidget):
         dpi_scale = app_settings.get_dpi_scale()
 
         # Scale column widths with DPI
-        self.tree_widget.setColumnWidth(0, int(60 * dpi_scale))  # Active checkbox column
-        self.tree_widget.setColumnWidth(1, int(250 * dpi_scale))  # Name
-        self.tree_widget.setColumnWidth(2, int(80 * dpi_scale))  # Type
-        self.tree_widget.setColumnWidth(3, int(80 * dpi_scale))  # Status
+        self.tree_widget.setColumnWidth(0, int(250 * dpi_scale))  # Name
+        self.tree_widget.setColumnWidth(1, int(80 * dpi_scale))  # Type
+        self.tree_widget.setColumnWidth(2, int(80 * dpi_scale))  # Status
         self.tree_widget.setAlternatingRowColors(True)
         self.tree_widget.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-
-        # Set custom delegate for checkbox column to support DPI scaling
-        checkbox_delegate = TreeCheckBoxDelegate(self.tree_widget)
-        self.tree_widget.setItemDelegateForColumn(0, checkbox_delegate)
 
         # Enable tree item animations and proper branch indicators
         self.tree_widget.setAnimated(True)
@@ -343,9 +423,6 @@ class PackageTreeView(QtWidgets.QWidget):
         self.tree_widget.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.tree_widget.customContextMenuRequested.connect(self.show_tree_context_menu)
 
-        # Connect to handle checkbox changes
-        self.tree_widget.itemChanged.connect(self._on_item_changed)
-
         # Connect to handle expand/collapse for arrow updates
         self.tree_widget.itemExpanded.connect(self._on_item_expanded)
         self.tree_widget.itemCollapsed.connect(self._on_item_collapsed)
@@ -355,61 +432,28 @@ class PackageTreeView(QtWidgets.QWidget):
         logger.info("create_panel() completed")
         return panel
 
-    def _on_item_changed(self, item, column):
-        """Handle item changes (checkbox toggles)."""
-        # Only handle column 0 (checkbox column) and only for version items
-        if column == 0 and isinstance(item, SGTreeItem) and item.get_item_type() == "version":
-            is_checked = item.checkState(0) == QtCore.Qt.Checked
-            self._set_version_active_state(item, is_checked)
-            logger.info(f"Version '{item.get_entity_name()}' active state changed to: {is_checked}")
-
     def _on_item_expanded(self, item):
         """Update arrow when item is expanded."""
         if isinstance(item, SGTreeItem) and item.get_item_type() == "folder":
-            text = item.text(1)
+            text = item.text(0)
             if text.startswith("►"):
-                item.setText(1, text.replace("►", "▼", 1))
+                item.setText(0, text.replace("►", "▼", 1))
 
     def _on_item_collapsed(self, item):
         """Update arrow when item is collapsed."""
         if isinstance(item, SGTreeItem) and item.get_item_type() == "folder":
-            text = item.text(1)
+            text = item.text(0)
             if text.startswith("▼"):
-                item.setText(1, text.replace("▼", "►", 1))
-
-    def _set_version_active_state(self, item, is_active):
-        """Set the visual state of a version item based on its active status."""
-        if is_active:
-            # Active state - normal colors (light text for dark theme)
-            for col in range(self.tree_widget.columnCount()):
-                item.setForeground(col, QtGui.QColor(224, 224, 224))  # Light gray text
-                # Restore original font
-                font = item.font(col)
-                font.setStrikeOut(False)
-                item.setFont(col, font)
-        else:
-            # Inactive state - grayed out (darker gray for dark theme)
-            gray_color = QtGui.QColor(100, 100, 100)
-            for col in range(self.tree_widget.columnCount()):
-                item.setForeground(col, gray_color)
-                # Add strikethrough to make it more obvious
-                font = item.font(col)
-                font.setStrikeOut(True)
-                item.setFont(col, font)
+                item.setText(0, text.replace("▼", "►", 1))
 
     def _create_version_item(self, parent, version, column_data):
-        """Helper to create a version item with checkbox."""
+        """Helper to create a version item."""
         version_item = SGTreeItem(
             parent,
-            [""] + column_data,  # Add empty string for checkbox column
+            column_data,
             sg_data=version,
             item_type="version"
         )
-
-        # Make the item checkable in the first column
-        version_item.setFlags(version_item.flags() | QtCore.Qt.ItemIsUserCheckable)
-        version_item.setCheckState(0, QtCore.Qt.Checked)  # Default to checked/active
-
         return version_item
 
     def set_rfq(self, rfq_data):
@@ -423,6 +467,69 @@ class PackageTreeView(QtWidgets.QWidget):
 
         # Just load the tree - visibility will be applied from the app
         self.load_tree_data()
+
+    def load_package_versions(self, package_id):
+        """Load versions from a Package instead of from RFQ.
+
+        Args:
+            package_id: ID of the Package entity
+        """
+        logger.info(f"load_package_versions() called with Package ID: {package_id}")
+
+        # Store package ID for use in context menu
+        self.current_package_id = package_id
+
+        self.tree_widget.clear()
+        self.category_items.clear()
+
+        if not package_id or not self.sg_session:
+            logger.info("No package ID or SG session - showing empty tree")
+            return
+
+        # Get Bid Tracker versions from Package's sg_versions field
+        bid_tracker_versions = self.sg_session.get_package_versions(
+            package_id,
+            fields=[
+                "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
+                "user", "description", "sg_task", "sg_path_to_movie", "sg_path_to_frames",
+                "sg_uploaded_movie", "sg_path_to_geometry", "sg_version_type"
+            ]
+        )
+
+        logger.info(f"Found {len(bid_tracker_versions)} versions in sg_versions field")
+
+        # Get other versions (Script, Concept Art, Storyboard) from sg_parent_packages
+        other_versions = self.sg_session.get_versions_by_parent_package(
+            package_id,
+            fields=[
+                "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
+                "user", "description", "sg_task", "sg_path_to_movie", "sg_path_to_frames",
+                "sg_uploaded_movie", "sg_path_to_geometry", "sg_version_type"
+            ]
+        )
+
+        logger.info(f"Found {len(other_versions)} versions in sg_parent_packages field")
+
+        # Combine all versions (Bid Tracker uses sg_versions, others use sg_parent_packages)
+        all_versions = bid_tracker_versions + other_versions
+
+        logger.info(f"Total versions: {len(all_versions)}")
+
+        # Build the tree with actual version data
+        # Bid Tracker versions come from bid_tracker_versions list
+        self.set_bid_tracker_item(bid_tracker_versions)
+        # Other versions come from other_versions list
+        self.set_documents_item(other_versions)
+        self.set_images_item(other_versions)
+
+        # Apply stored visibility preferences
+        logger.info(f"Applying visibility preferences: {self.category_visibility_prefs}")
+        for category_name, visible in self.category_visibility_prefs.items():
+            if category_name in self.category_items:
+                self.category_items[category_name].setHidden(not visible)
+                logger.info(f"Applied pref: '{category_name}' = {visible}")
+
+        logger.info("load_package_versions() completed")
 
     def clear(self):
         """Clear the tree view."""
@@ -445,10 +552,9 @@ class PackageTreeView(QtWidgets.QWidget):
         dpi_scale = app_settings.get_dpi_scale()
 
         # Scale column widths with DPI
-        self.tree_widget.setColumnWidth(0, int(60 * dpi_scale))  # Active checkbox column
-        self.tree_widget.setColumnWidth(1, int(250 * dpi_scale))  # Name
-        self.tree_widget.setColumnWidth(2, int(80 * dpi_scale))  # Type
-        self.tree_widget.setColumnWidth(3, int(80 * dpi_scale))  # Status
+        self.tree_widget.setColumnWidth(0, int(250 * dpi_scale))  # Name
+        self.tree_widget.setColumnWidth(1, int(80 * dpi_scale))  # Type
+        self.tree_widget.setColumnWidth(2, int(80 * dpi_scale))  # Status
         logger.info(f"Updated tree column widths with DPI scale: {dpi_scale}")
 
     def load_tree_data(self):
@@ -478,10 +584,9 @@ class PackageTreeView(QtWidgets.QWidget):
         logger.info(f"Found {len(versions)} versions linked to RFQ ID {rfq_id}")
 
         # Build the tree with actual version data
-        self.set_vfx_breakdown_item(versions)
-        self.set_script_item(versions)
-        self.set_concept_art_item(versions)
-        self.set_storyboard_item(versions)
+        self.set_bid_tracker_item(versions)
+        self.set_documents_item(versions)
+        self.set_images_item(versions)
 
         # Apply stored visibility preferences
         logger.info(f"Applying visibility preferences: {self.category_visibility_prefs}")
@@ -497,7 +602,7 @@ class PackageTreeView(QtWidgets.QWidget):
         Show or hide a category in the tree.
 
         Args:
-            category_name: Name of the category (e.g., "VFX Breakdown", "Script")
+            category_name: Name of the category (e.g., "Bid Tracker", "Script")
             visible: True to show, False to hide
         """
         # Store the preference
@@ -558,81 +663,75 @@ class PackageTreeView(QtWidgets.QWidget):
         for category_name, visible in visibility_states.items():
             self.set_category_visibility(category_name, visible)
 
-    def set_vfx_breakdown_item(self, versions):
-        """Build VFX Breakdown section with VFX Breakdown entity (no versions underneath)."""
-        # Get VFX Breakdown from the RFQ
-        vfx_breakdown = self.selected_rfq.get('sg_vfx_breakdown')
-
+    def set_bid_tracker_item(self, versions):
+        """Build Bid Tracker section with real version data."""
         # Create root folder with arrow
-        vfx_breakdown_root = SGTreeItem(
+        bid_tracker_root = SGTreeItem(
             self.tree_widget,
-            ["", "VFX Breakdown", "Folder", "", ""],
+            ["Bid Tracker", "Folder", "", ""],
             sg_data={'type': 'folder'},
             item_type="folder"
         )
 
-        self.category_items["VFX Breakdown"] = vfx_breakdown_root
-        vfx_breakdown_root.setExpanded(True)
-        font = vfx_breakdown_root.font(1)
+        self.category_items["Bid Tracker"] = bid_tracker_root
+        bid_tracker_root.setExpanded(True)
+        font = bid_tracker_root.font(0)
         font.setBold(True)
-        vfx_breakdown_root.setFont(1, font)
+        bid_tracker_root.setFont(0, font)
 
-        # Add VFX Breakdown entity if it exists (no versions underneath)
-        if vfx_breakdown:
-            logger.info(f"VFX Breakdown field: {vfx_breakdown}")
+        # Filter bid tracker versions
+        bid_tracker_versions = [v for v in versions if self._is_bid_tracker_version(v)]
 
-            # Handle if it's a list or a single entity
-            breakdown_entities = vfx_breakdown if isinstance(vfx_breakdown, list) else [vfx_breakdown]
-
-            for breakdown in breakdown_entities:
-                if isinstance(breakdown, dict):
-                    breakdown_name = breakdown.get('name', 'Unknown VFX Breakdown')
-                    breakdown_id = breakdown.get('id', 'N/A')
-
-                    # Create VFX Breakdown entity item (no children)
-                    breakdown_item = SGTreeItem(
-                        vfx_breakdown_root,
-                        ["", breakdown_name, "VFX Breakdown", "", f"ID: {breakdown_id}"],
-                        sg_data=breakdown,
-                        item_type="entity"
-                    )
-        else:
-            # No VFX Breakdown entity in RFQ
-            no_data_item = SGTreeItem(
-                vfx_breakdown_root,
-                ["", "No VFX Breakdown linked", "Info", "", ""],
-                item_type="info"
-            )
-            no_data_item.setForeground(1, QtGui.QColor(120, 120, 120))
-
-    def set_script_item(self, versions):
-        """Build Script section with real version data."""
-        script_root = SGTreeItem(
-            self.tree_widget,
-            ["", "Script", "Folder", "", ""],
-            sg_data={'type': 'folder'},
-            item_type="folder"
-        )
-
-        self.category_items["Script"] = script_root
-        script_root.setExpanded(True)
-        font = script_root.font(1)
-        font.setBold(True)
-        script_root.setFont(1, font)
-
-        # Filter script versions
-        script_versions = [v for v in versions if self._is_script_version(v)]
-
-        if script_versions:
-            for version in script_versions:
+        if bid_tracker_versions:
+            for version in bid_tracker_versions:
                 version_code = version.get('code', 'Unknown')
                 status = version.get('sg_status_list', '')
                 status_display = status if status else 'N/A'
                 version_number = version_code.split('_')[-1] if '_' in version_code else ""
 
-                # Use helper to create version item with checkbox
+                # Use helper to create version item
                 version_item = self._create_version_item(
-                    script_root,
+                    bid_tracker_root,
+                    version,
+                    [version_code, "Version", status_display, version_number]
+                )
+        else:
+            # No bid tracker versions found
+            no_data_item = SGTreeItem(
+                bid_tracker_root,
+                ["No Bid Tracker attached", "Info", "", ""],
+                item_type="info"
+            )
+            no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
+
+    def set_documents_item(self, versions):
+        """Build Documents section with real version data."""
+        documents_root = SGTreeItem(
+            self.tree_widget,
+            ["Documents", "Folder", "", ""],
+            sg_data={'type': 'folder'},
+            item_type="folder"
+        )
+
+        self.category_items["Documents"] = documents_root
+        documents_root.setExpanded(True)
+        font = documents_root.font(0)
+        font.setBold(True)
+        documents_root.setFont(0, font)
+
+        # Filter document versions (was script)
+        document_versions = [v for v in versions if self._is_document_version(v)]
+
+        if document_versions:
+            for version in document_versions:
+                version_code = version.get('code', 'Unknown')
+                status = version.get('sg_status_list', '')
+                status_display = status if status else 'N/A'
+                version_number = version_code.split('_')[-1] if '_' in version_code else ""
+
+                # Use helper to create version item
+                version_item = self._create_version_item(
+                    documents_root,
                     version,
                     [version_code, "Version", status_display, version_number]
                 )
@@ -640,100 +739,59 @@ class PackageTreeView(QtWidgets.QWidget):
                 # Set status color if it matches our color scheme (check lowercase)
                 status_lower = status.lower() if status else ''
                 if status_lower in status_colors:
-                    version_item.setBackground(3, status_colors[status_lower])
+                    version_item.setBackground(2, status_colors[status_lower])
         else:
             # Add info message if no versions found
             no_data_item = SGTreeItem(
-                script_root,
-                ["", "No versions found", "Info", "", ""],
+                documents_root,
+                ["No versions found", "Info", "", ""],
                 item_type="info"
             )
-            no_data_item.setForeground(1, QtGui.QColor(120, 120, 120))
+            no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
 
-    def set_concept_art_item(self, versions):
-        """Build Concept Art section with real version data."""
-        concept_root = SGTreeItem(
+    def set_images_item(self, versions):
+        """Build Images section with real version data (combines Concept Art and Storyboard)."""
+        images_root = SGTreeItem(
             self.tree_widget,
-            ["", "Concept Art", "Folder", "", ""],
+            ["Images", "Folder", "", ""],
             sg_data={'type': 'folder'},
             item_type="folder"
         )
-        self.category_items["Concept Art"] = concept_root
-        concept_root.setExpanded(True)
-        font = concept_root.font(1)
+        self.category_items["Images"] = images_root
+        images_root.setExpanded(True)
+        font = images_root.font(0)
         font.setBold(True)
-        concept_root.setFont(1, font)
+        images_root.setFont(0, font)
 
-        # Filter concept art versions
-        concept_versions = [v for v in versions if self._is_concept_art_version(v)]
+        # Filter image versions (concept art, storyboard, reference, etc.)
+        image_versions = [v for v in versions if self._is_image_version(v)]
 
-        if concept_versions:
-            for version in concept_versions:
+        if image_versions:
+            for version in image_versions:
                 version_code = version.get('code', 'Unknown')
                 status = version.get('sg_status_list', '')
                 status_display = status if status else 'N/A'
                 version_number = version_code.split('_')[-1] if '_' in version_code else ""
 
                 version_item = self._create_version_item(
-                    concept_root,
+                    images_root,
                     version,
                     [version_code, "Version", status_display, version_number]
                 )
 
                 status_lower = status.lower() if status else ''
                 if status_lower in status_colors:
-                    version_item.setBackground(3, status_colors[status_lower])
+                    version_item.setBackground(2, status_colors[status_lower])
         else:
             no_data_item = SGTreeItem(
-                concept_root,
-                ["", "No versions found", "Info", "", ""],
+                images_root,
+                ["No versions found", "Info", "", ""],
                 item_type="info"
             )
-            no_data_item.setForeground(1, QtGui.QColor(120, 120, 120))
+            no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
 
-    def set_storyboard_item(self, versions):
-        """Build Storyboard section with real version data."""
-        storyboard_root = SGTreeItem(
-            self.tree_widget,
-            ["", "Storyboard", "Folder", "", ""],
-            sg_data={'type': 'folder'},
-            item_type="folder"
-        )
-        self.category_items["Storyboard"] = storyboard_root
-        storyboard_root.setExpanded(True)
-        font = storyboard_root.font(1)
-        font.setBold(True)
-        storyboard_root.setFont(1, font)
-
-        # Filter storyboard versions
-        storyboard_versions = [v for v in versions if self._is_storyboard_version(v)]
-
-        if storyboard_versions:
-            for version in storyboard_versions:
-                version_code = version.get('code', 'Unknown')
-                status = version.get('sg_status_list', '')
-                status_display = status if status else 'N/A'
-                version_number = version_code.split('_')[-1] if '_' in version_code else ""
-
-                version_item = self._create_version_item(
-                    storyboard_root,
-                    version,
-                    [version_code, "Version", status_display, version_number]
-                )
-
-                status_lower = status.lower() if status else ''
-                if status_lower in status_colors:
-                    version_item.setBackground(3, status_colors[status_lower])
-        else:
-            no_data_item = SGTreeItem(
-                storyboard_root,
-                ["", "No versions found", "Info", "", ""],
-                item_type="info"
-            )
-            no_data_item.setForeground(1, QtGui.QColor(120, 120, 120))
-
-    def _is_vfx_breakdown_version(self, version):
-        """Determine if a version belongs to VFX Breakdown category."""
+    def _is_bid_tracker_version(self, version):
+        """Determine if a version belongs to Bid Tracker category."""
         sg_version_type = version.get('sg_version_type')
 
         # If sg_version_type is set, use it
@@ -745,23 +803,23 @@ class PackageTreeView(QtWidgets.QWidget):
                 version_type = str(sg_version_type).lower()
 
             logger.debug(f"Version {version.get('code')} has type: {version_type}")
-            return 'vfx' in version_type or 'breakdown' in version_type
+            return 'bid' in version_type or 'tracker' in version_type
 
         # Fallback to task/code checking if sg_version_type is not set
         task = version.get('sg_task', {})
         if task:
             task_name = task.get('name', '').lower()
-            if 'vfx' in task_name or 'breakdown' in task_name:
+            if 'bid' in task_name or 'tracker' in task_name:
                 return True
 
         code = version.get('code', '').lower()
-        if 'vfx' in code or 'breakdown' in code:
+        if 'bid' in code or 'tracker' in code:
             return True
 
         return False
 
-    def _is_script_version(self, version):
-        """Determine if a version belongs to Script category."""
+    def _is_document_version(self, version):
+        """Determine if a version belongs to Documents category (was Script)."""
         sg_version_type = version.get('sg_version_type')
 
         # If sg_version_type is set, use it
@@ -772,17 +830,17 @@ class PackageTreeView(QtWidgets.QWidget):
                 version_type = str(sg_version_type).lower()
 
             logger.debug(f"Version {version.get('code')} has type: {version_type}")
-            return 'script' in version_type
+            return 'script' in version_type or 'document' in version_type
 
         # Fallback to task/code checking
         code = version.get('code', '').lower()
         task = version.get('sg_task', {})
         task_name = task.get('name', '').lower() if task else ''
 
-        return 'script' in code or 'script' in task_name
+        return 'script' in code or 'script' in task_name or 'document' in code or 'document' in task_name
 
-    def _is_concept_art_version(self, version):
-        """Determine if a version belongs to Concept Art category."""
+    def _is_image_version(self, version):
+        """Determine if a version belongs to Images category (combines Concept Art, Storyboard, Reference)."""
         sg_version_type = version.get('sg_version_type')
 
         # If sg_version_type is set, use it
@@ -793,44 +851,28 @@ class PackageTreeView(QtWidgets.QWidget):
                 version_type = str(sg_version_type).lower()
 
             logger.debug(f"Version {version.get('code')} has type: {version_type}")
-            return 'concept' in version_type or 'art' in version_type
+            # Check for concept, storyboard, reference, art, image, etc.
+            return any(keyword in version_type for keyword in [
+                'concept', 'art', 'storyboard', 'reference', 'image', 'ref'
+            ])
 
         # Fallback to task/code checking
         code = version.get('code', '').lower()
         task = version.get('sg_task', {})
         task_name = task.get('name', '').lower() if task else ''
 
-        return 'concept' in code or 'concept' in task_name or 'art' in task_name
-
-    def _is_storyboard_version(self, version):
-        """Determine if a version belongs to Storyboard category."""
-        sg_version_type = version.get('sg_version_type')
-
-        # If sg_version_type is set, use it
-        if sg_version_type:
-            if isinstance(sg_version_type, dict):
-                version_type = sg_version_type.get('name', '').lower()
-            else:
-                version_type = str(sg_version_type).lower()
-
-            logger.debug(f"Version {version.get('code')} has type: {version_type}")
-            return 'storyboard' in version_type
-
-        # Fallback to task/code checking
-        code = version.get('code', '').lower()
-        task = version.get('sg_task', {})
-        task_name = task.get('name', '').lower() if task else ''
-
-        return 'storyboard' in code or 'storyboard' in task_name
+        # Check for various image-related keywords
+        image_keywords = ['concept', 'art', 'storyboard', 'reference', 'image', 'ref']
+        return any(keyword in code or keyword in task_name for keyword in image_keywords)
 
     def get_active_versions(self):
         """
-        Get list of all active (checked) version items.
+        Get list of all version items.
 
         Returns:
-            List of SGTreeItem objects that are versions and are checked
+            List of SGTreeItem objects that are versions
         """
-        active_versions = []
+        versions = []
 
         # Iterate through all top-level items (categories)
         for i in range(self.tree_widget.topLevelItemCount()):
@@ -841,30 +883,29 @@ class PackageTreeView(QtWidgets.QWidget):
                 child = category_item.child(j)
 
                 if isinstance(child, SGTreeItem) and child.get_item_type() == "version":
-                    if child.checkState(0) == QtCore.Qt.Checked:
-                        active_versions.append(child)
+                    versions.append(child)
 
-        return active_versions
+        return versions
 
     def get_active_version_ids(self):
         """
-        Get list of Shotgrid IDs for all active versions.
+        Get list of Shotgrid IDs for all versions.
 
         Returns:
             List of version IDs (integers)
         """
-        active_versions = self.get_active_versions()
-        return [v.get_sg_id() for v in active_versions if v.get_sg_id()]
+        versions = self.get_active_versions()
+        return [v.get_sg_id() for v in versions if v.get_sg_id()]
 
     def get_active_version_data(self):
         """
-        Get full Shotgrid data for all active versions.
+        Get full Shotgrid data for all versions.
 
         Returns:
             List of dictionaries containing version data
         """
-        active_versions = self.get_active_versions()
-        return [v.get_sg_data() for v in active_versions]
+        versions = self.get_active_versions()
+        return [v.get_sg_data() for v in versions]
 
     def get_selected_version_data(self):
         """
@@ -896,6 +937,16 @@ class PackageTreeView(QtWidgets.QWidget):
             item_type = item.get_item_type()
 
             if item_type == "version":
+                # Check if this is a Bid Tracker version
+                if self._is_bid_tracker_version(item.get_sg_data()) and self.current_package_id:
+                    select_version_action = menu.addAction("Select Version")
+                    select_version_action.triggered.connect(lambda: self._select_bid_tracker_version())
+
+                    remove_action = menu.addAction("Remove from Package")
+                    remove_action.triggered.connect(lambda: self._remove_bid_tracker_from_package(item))
+
+                    menu.addSeparator()
+
                 view_action = menu.addAction("View Details")
                 view_action.triggered.connect(lambda: self._show_version_details(item))
 
@@ -910,6 +961,13 @@ class PackageTreeView(QtWidgets.QWidget):
             elif item_type == "entity":
                 expand_action = menu.addAction("Expand All")
                 expand_action.triggered.connect(lambda: item.setExpanded(True))
+
+            elif item_type == "info":
+                # Check if this is the "No Bid Tracker attached" item
+                item_text = item.text(0)
+                if item_text == "No Bid Tracker attached" and self.current_package_id:
+                    select_version_action = menu.addAction("Select Version")
+                    select_version_action.triggered.connect(lambda: self._select_bid_tracker_version())
 
             else:  # folder
                 expand_action = menu.addAction("Expand All")
@@ -1008,6 +1066,196 @@ class PackageTreeView(QtWidgets.QWidget):
         layout.addWidget(close_btn)
 
         dialog.exec_()
+
+    def _select_bid_tracker_version(self):
+        """Show dialog to select a Bid Tracker version for the current package."""
+        if not self.current_package_id or not self.sg_session:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Package Selected",
+                "No package is currently selected."
+            )
+            return
+
+        try:
+            # Get project and RFQ info for querying available versions
+            # Walk up the widget hierarchy to find the parent app
+            parent_app = None
+            parent_widget = self.parent()
+
+            logger.info(f"DEBUG: Initial parent_widget = {parent_widget}")
+            logger.info(f"DEBUG: parent_widget type = {type(parent_widget).__name__ if parent_widget else 'None'}")
+
+            if parent_widget:
+                logger.info(f"DEBUG: hasattr parent_app = {hasattr(parent_widget, 'parent_app')}")
+                if hasattr(parent_widget, 'parent_app'):
+                    logger.info(f"DEBUG: parent_widget.parent_app = {parent_widget.parent_app}")
+                    logger.info(f"DEBUG: parent_widget.parent_app type = {type(parent_widget.parent_app).__name__ if parent_widget.parent_app else 'None'}")
+
+            # First check if the immediate parent has a parent_app attribute (e.g., PackagesTab)
+            if parent_widget and hasattr(parent_widget, 'parent_app') and parent_widget.parent_app is not None:
+                parent_app = parent_widget.parent_app
+                logger.info(f"Found parent_app via parent_widget.parent_app: {type(parent_app).__name__}")
+            else:
+                # Otherwise walk up the hierarchy looking for the combo boxes
+                logger.info("Walking up widget hierarchy to find parent app")
+                temp_parent = parent_widget
+                depth = 0
+                while temp_parent and depth < 10:  # Limit depth to avoid infinite loop
+                    logger.info(f"DEBUG: Checking widget at depth {depth}: {type(temp_parent).__name__}")
+                    logger.info(f"DEBUG: Has sg_project_combo: {hasattr(temp_parent, 'sg_project_combo')}")
+                    logger.info(f"DEBUG: Has rfq_combo: {hasattr(temp_parent, 'rfq_combo')}")
+
+                    # Check if this widget has the required attributes (sg_project_combo and rfq_combo)
+                    if hasattr(temp_parent, 'sg_project_combo') and hasattr(temp_parent, 'rfq_combo'):
+                        parent_app = temp_parent
+                        logger.info(f"Found parent app at depth {depth}: {type(temp_parent).__name__}")
+                        break
+                    temp_parent = temp_parent.parent()
+                    depth += 1
+
+            if not parent_app:
+                logger.error("Could not find parent app with sg_project_combo and rfq_combo")
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Error",
+                    "Could not find parent application. Please try again."
+                )
+                return
+
+            # Get project ID
+            current_project_index = parent_app.sg_project_combo.currentIndex()
+            sg_project = parent_app.sg_project_combo.itemData(current_project_index)
+            project_id = sg_project.get("id") if sg_project else None
+
+            if not project_id:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "No Project Selected",
+                    "No project is currently selected."
+                )
+                return
+
+            # Get all available Bid Tracker versions for this project (not filtered by RFQ)
+            logger.info(f"Fetching all Bid Tracker versions for project {project_id}")
+            all_versions = self.sg_session.get_all_bid_tracker_versions_for_project(
+                project_id=project_id,
+                rfq_code=None  # Don't filter by RFQ - show all versions for the project
+            )
+
+            if not all_versions:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "No Versions Available",
+                    "No Bid Tracker versions found for this project."
+                )
+                return
+
+            logger.info(f"Found {len(all_versions)} Bid Tracker versions")
+
+            # Get currently linked versions for this package
+            package_versions = self.sg_session.get_package_versions(
+                self.current_package_id,
+                fields=["id", "code", "sg_version_type"]
+            )
+
+            # Find the current Bid Tracker version (if any)
+            current_version_id = None
+            for version in package_versions:
+                if self._is_bid_tracker_version(version):
+                    current_version_id = version.get('id')
+                    break
+
+            # Show dialog
+            dialog = BidTrackerVersionDialog(
+                versions=all_versions,
+                current_version_id=current_version_id,
+                parent=self
+            )
+
+            if dialog.exec_() == QtWidgets.QDialog.Accepted:
+                selected_version_id = dialog.get_selected_version_id()
+
+                if selected_version_id and selected_version_id != current_version_id:
+                    # Unlink the old version if there is one
+                    if current_version_id:
+                        self.sg_session.unlink_version_from_package(
+                            current_version_id,
+                            self.current_package_id
+                        )
+                        logger.info(f"Unlinked version {current_version_id} from package {self.current_package_id}")
+
+                    # Link the new version
+                    self.sg_session.link_version_to_package(
+                        selected_version_id,
+                        self.current_package_id
+                    )
+                    logger.info(f"Linked version {selected_version_id} to package {self.current_package_id}")
+
+                    # Reload the tree to show the new version
+                    self.load_package_versions(self.current_package_id)
+
+                    QtWidgets.QMessageBox.information(
+                        self,
+                        "Version Updated",
+                        "Bid Tracker version has been updated successfully."
+                    )
+
+        except Exception as e:
+            logger.error(f"Error selecting Bid Tracker version: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to select version: {str(e)}"
+            )
+
+    def _remove_bid_tracker_from_package(self, item):
+        """Remove the Bid Tracker version from the package (but don't delete from ShotGrid)."""
+        if not isinstance(item, SGTreeItem) or not self.current_package_id:
+            return
+
+        version_id = item.get_sg_id()
+        version_code = item.get_entity_name()
+
+        if not version_id:
+            return
+
+        # Confirm the removal
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Remove Bid Tracker",
+            f"Remove '{version_code}' from this package?\n\n"
+            f"The version will not be deleted from ShotGrid,\n"
+            f"only unlinked from this package.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+
+        if reply == QtWidgets.QMessageBox.Yes:
+            try:
+                # Unlink the version from the package
+                self.sg_session.unlink_version_from_package(
+                    version_id,
+                    self.current_package_id
+                )
+                logger.info(f"Removed Bid Tracker version {version_id} from package {self.current_package_id}")
+
+                # Reload the tree to show "No Bid Tracker attached"
+                self.load_package_versions(self.current_package_id)
+
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Bid Tracker Removed",
+                    f"'{version_code}' has been removed from the package."
+                )
+
+            except Exception as e:
+                logger.error(f"Error removing Bid Tracker: {e}", exc_info=True)
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to remove Bid Tracker: {str(e)}"
+                )
 
     def _expand_all(self, item):
         """Recursively expand all children."""
