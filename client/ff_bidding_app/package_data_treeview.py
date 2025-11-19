@@ -1122,12 +1122,18 @@ class PackageTreeView(QtWidgets.QWidget):
             # Walk up the widget hierarchy to find the parent app
             parent_app = None
             parent_widget = self.parent()
-            while parent_widget:
-                # Check if this widget has the required attributes (sg_project_combo and sg_rfq_combo)
-                if hasattr(parent_widget, 'sg_project_combo') and hasattr(parent_widget, 'sg_rfq_combo'):
-                    parent_app = parent_widget
-                    break
-                parent_widget = parent_widget.parent()
+
+            # First check if the immediate parent has a parent_app attribute (e.g., PackagesTab)
+            if hasattr(parent_widget, 'parent_app'):
+                parent_app = parent_widget.parent_app
+            else:
+                # Otherwise walk up the hierarchy looking for the combo boxes
+                while parent_widget:
+                    # Check if this widget has the required attributes (sg_project_combo and sg_rfq_combo)
+                    if hasattr(parent_widget, 'sg_project_combo') and hasattr(parent_widget, 'sg_rfq_combo'):
+                        parent_app = parent_widget
+                        break
+                    parent_widget = parent_widget.parent()
 
             if not parent_app:
                 logger.error("Could not find parent app with sg_project_combo and sg_rfq_combo")
