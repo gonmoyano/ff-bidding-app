@@ -1310,6 +1310,80 @@ class ShotgridClient:
 
         return result
 
+    def unlink_version_from_package(self, version_id, package_id):
+        """
+        Unlink a Version from a Package's sg_versions field.
+
+        Args:
+            version_id: ID of the version to unlink
+            package_id: ID of the package
+
+        Returns:
+            Updated Package entity or None if failed
+        """
+        # Get current versions linked to the Package
+        package = self.sg.find_one(
+            "CustomEntity12",
+            [["id", "is", int(package_id)]],
+            ["sg_versions"]
+        )
+
+        if not package:
+            logger.error(f"Package {package_id} not found")
+            return None
+
+        # Get existing versions
+        existing_versions = package.get("sg_versions") or []
+
+        # Remove the version from the list
+        updated_versions = [
+            v for v in existing_versions
+            if v.get("id") != int(version_id)
+        ]
+
+        # Only update if something changed
+        if len(updated_versions) == len(existing_versions):
+            logger.info(f"Version {version_id} was not linked to Package {package_id}")
+            return package
+
+        # Update the Package
+        logger.info(f"Unlinking Version {version_id} from Package {package_id}")
+        result = self.sg.update(
+            "CustomEntity12",
+            int(package_id),
+            {"sg_versions": updated_versions}
+        )
+        logger.info(f"Successfully unlinked Version from Package")
+
+        return result
+
+    def find_bid_tracker_versions_in_package(self, package_id):
+        """
+        Find all Bid Tracker versions in a package.
+
+        Args:
+            package_id: ID of the package
+
+        Returns:
+            List of version entities with sg_version_type matching "Bid Tracker"
+        """
+        versions = self.get_package_versions(package_id, fields=["id", "code", "sg_version_type"])
+
+        bid_tracker_versions = []
+        for version in versions:
+            sg_version_type = version.get("sg_version_type")
+            if sg_version_type:
+                # Handle both string and dict formats
+                if isinstance(sg_version_type, dict):
+                    version_type = sg_version_type.get("name", "").lower()
+                else:
+                    version_type = str(sg_version_type).lower()
+
+                if "bid" in version_type or "tracker" in version_type:
+                    bid_tracker_versions.append(version)
+
+        return bid_tracker_versions
+
     def get_latest_version_number(self, package_id, version_prefix):
         """
         Get the latest version number for a given prefix in a package.

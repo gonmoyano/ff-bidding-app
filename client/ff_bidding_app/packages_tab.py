@@ -1060,10 +1060,22 @@ class PackagesTab(QtWidgets.QWidget):
 
             logger.info(f"Uploaded file to Version {version['id']}")
 
-            # Link Version to Package
+            # Find and unlink existing Bid Tracker versions from package (only one allowed)
+            existing_bid_trackers = self.sg_session.find_bid_tracker_versions_in_package(sg_package_id)
+
+            if existing_bid_trackers:
+                logger.info(f"Found {len(existing_bid_trackers)} existing Bid Tracker(s) in package")
+                for old_tracker in existing_bid_trackers:
+                    old_tracker_id = old_tracker.get("id")
+                    old_tracker_code = old_tracker.get("code", "Unknown")
+                    logger.info(f"Unlinking old Bid Tracker: {old_tracker_code} (ID: {old_tracker_id})")
+                    self.sg_session.unlink_version_from_package(old_tracker_id, sg_package_id)
+                logger.info("All existing Bid Trackers unlinked from package")
+
+            # Link new Version to Package
             self.sg_session.link_version_to_package(version["id"], sg_package_id)
 
-            logger.info(f"Linked Version to Package {sg_package_id}")
+            logger.info(f"Linked new Version to Package {sg_package_id}")
 
             # Clean up temporary file
             try:
@@ -1076,11 +1088,16 @@ class PackagesTab(QtWidgets.QWidget):
             if self.package_data_tree:
                 self.package_data_tree.load_package_versions(sg_package_id)
 
+            # Build success message
+            success_msg = f"Created Bid Tracker version: {version_code}\n"
+            success_msg += f"Exported {len(selected_scenes)} scene(s)\n"
+            if existing_bid_trackers:
+                success_msg += f"Replaced {len(existing_bid_trackers)} existing Bid Tracker(s)\n"
+            success_msg += "Uploaded to ShotGrid and linked to package."
+
             QtWidgets.QMessageBox.information(
                 self, "Success",
-                f"Created Bid Tracker version: {version_code}\n"
-                f"Exported {len(selected_scenes)} scene(s)\n"
-                f"Uploaded to ShotGrid and linked to package."
+                success_msg
             )
 
             logger.info(f"Successfully created Bid Tracker: {version_code}")
