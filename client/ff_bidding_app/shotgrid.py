@@ -958,6 +958,49 @@ class ShotgridClient:
         """
         return self.download_version_attachment(version_id, "sg_uploaded_movie_mp4", download_path)
 
+    def download_thumbnail(self, entity_type, entity_id, download_path=None):
+        """
+        Download a thumbnail image for an entity.
+
+        Args:
+            entity_type: Type of entity (e.g., "Version", "Asset")
+            entity_id: ID of the entity
+            download_path: Optional path to save the thumbnail. If None, returns image data.
+
+        Returns:
+            Path to downloaded file if download_path provided, otherwise bytes of image data
+        """
+        try:
+            # Get the thumbnail URL from the entity
+            entity = self.sg.find_one(
+                entity_type,
+                [["id", "is", entity_id]],
+                ["image"]
+            )
+
+            if not entity or not entity.get("image"):
+                logger.debug(f"No thumbnail found for {entity_type} {entity_id}")
+                return None
+
+            # Download the thumbnail
+            thumbnail_url = entity["image"]
+
+            if download_path:
+                # Download to file
+                downloaded_path = self.sg.download_attachment(thumbnail_url, download_path)
+                return downloaded_path
+            else:
+                # Return image data as bytes
+                import requests
+                response = requests.get(thumbnail_url)
+                if response.status_code == 200:
+                    return response.content
+                return None
+
+        except Exception as e:
+            logger.error(f"Failed to download thumbnail: {e}")
+            return None
+
     # ------------------------------------------------------------------
     # Package Management (CustomEntity12)
     # ------------------------------------------------------------------
@@ -1465,7 +1508,7 @@ class ShotgridClient:
             fields=[
                 "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
                 "user", "description", "sg_task", "sg_path_to_movie", "sg_path_to_frames",
-                "sg_uploaded_movie", "sg_path_to_geometry", "sg_version_type"
+                "sg_uploaded_movie", "sg_path_to_geometry", "sg_version_type", "image"
             ],
             order=[{"field_name": "created_at", "direction": "desc"}]
         )

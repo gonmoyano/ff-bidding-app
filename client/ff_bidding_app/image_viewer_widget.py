@@ -12,15 +12,17 @@ class ThumbnailWidget(QtWidgets.QWidget):
 
     clicked = QtCore.Signal(dict)  # Emits version data when clicked
 
-    def __init__(self, version_data, parent=None):
+    def __init__(self, version_data, sg_session=None, parent=None):
         super().__init__(parent)
         self.version_data = version_data
+        self.sg_session = sg_session
         self.selected = False
 
         self.setFixedSize(180, 200)
         self.setCursor(QtCore.Qt.PointingHandCursor)
 
         self._setup_ui()
+        self._load_thumbnail()
 
     def _setup_ui(self):
         """Setup the thumbnail UI."""
@@ -41,7 +43,7 @@ class ThumbnailWidget(QtWidgets.QWidget):
         """)
 
         # Set placeholder or load thumbnail
-        self.thumbnail_label.setText("No Preview")
+        self.thumbnail_label.setText("Loading...")
         self.thumbnail_label.setStyleSheet(self.thumbnail_label.styleSheet() + "color: #888;")
 
         layout.addWidget(self.thumbnail_label)
@@ -63,6 +65,103 @@ class ThumbnailWidget(QtWidgets.QWidget):
         type_label.setAlignment(QtCore.Qt.AlignCenter)
         type_label.setStyleSheet("font-size: 9px; color: #888;")
         layout.addWidget(type_label)
+
+    def _load_thumbnail(self):
+        """Load thumbnail from ShotGrid."""
+        try:
+            # Check if version has an image thumbnail
+            image_data = self.version_data.get('image')
+
+            if not image_data:
+                self.thumbnail_label.setText("No Preview")
+                return
+
+            # If image_data is a URL string, download it
+            if isinstance(image_data, str):
+                thumbnail_url = image_data
+            elif isinstance(image_data, dict):
+                # Get URL from the dict
+                thumbnail_url = image_data.get('url') or image_data.get('link_type')
+            else:
+                self.thumbnail_label.setText("No Preview")
+                return
+
+            if not thumbnail_url:
+                self.thumbnail_label.setText("No Preview")
+                return
+
+            # Download thumbnail in a separate thread to avoid blocking UI
+            from PySide6.QtCore import QThread, QObject, Signal
+            import requests
+
+            class ThumbnailLoader(QObject):
+                finished = Signal(bytes)
+                error = Signal()
+
+                def __init__(self, url):
+                    super().__init__()
+                    self.url = url
+
+                def run(self):
+                    try:
+                        response = requests.get(self.url, timeout=10)
+                        if response.status_code == 200:
+                            self.finished.emit(response.content)
+                        else:
+                            self.error.emit()
+                    except Exception as e:
+                        logger.error(f"Failed to download thumbnail: {e}")
+                        self.error.emit()
+
+            # Load thumbnail in background
+            self.loader = ThumbnailLoader(thumbnail_url)
+            self.loader_thread = QThread()
+            self.loader.moveToThread(self.loader_thread)
+            self.loader_thread.started.connect(self.loader.run)
+            self.loader.finished.connect(self._on_thumbnail_loaded)
+            self.loader.error.connect(self._on_thumbnail_error)
+            self.loader_thread.start()
+
+        except Exception as e:
+            logger.error(f"Error loading thumbnail: {e}")
+            self.thumbnail_label.setText("No Preview")
+
+    def _on_thumbnail_loaded(self, image_data):
+        """Handle thumbnail loaded."""
+        try:
+            # Create pixmap from image data
+            pixmap = QtGui.QPixmap()
+            pixmap.loadFromData(image_data)
+
+            if not pixmap.isNull():
+                # Scale to fit label while maintaining aspect ratio
+                scaled_pixmap = pixmap.scaled(
+                    170, 140,
+                    QtCore.Qt.KeepAspectRatio,
+                    QtCore.Qt.SmoothTransformation
+                )
+                self.thumbnail_label.setPixmap(scaled_pixmap)
+                self.thumbnail_label.setText("")
+            else:
+                self.thumbnail_label.setText("No Preview")
+
+            # Clean up thread
+            if hasattr(self, 'loader_thread'):
+                self.loader_thread.quit()
+                self.loader_thread.wait()
+
+        except Exception as e:
+            logger.error(f"Error displaying thumbnail: {e}")
+            self.thumbnail_label.setText("No Preview")
+
+    def _on_thumbnail_error(self):
+        """Handle thumbnail load error."""
+        self.thumbnail_label.setText("No Preview")
+
+        # Clean up thread
+        if hasattr(self, 'loader_thread'):
+            self.loader_thread.quit()
+            self.loader_thread.wait()
 
     def mousePressEvent(self, event):
         """Handle mouse press to select thumbnail."""
@@ -321,7 +420,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
             row = idx // columns
             col = idx % columns
 
-            thumbnail = ThumbnailWidget(version, self)
+            thumbnail = ThumbnailWidget(version, self.sg_session, self)
             thumbnail.clicked.connect(self._on_thumbnail_clicked)
             self.thumbnail_layout.addWidget(thumbnail, row, col)
             self.thumbnail_widgets.append(thumbnail)
@@ -357,7 +456,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
                 if col == 0 and idx > 0:
                     current_row += 1
 
-                thumbnail = ThumbnailWidget(version, self)
+                thumbnail = ThumbnailWidget(version, self.sg_session, self)
                 thumbnail.clicked.connect(self._on_thumbnail_clicked)
                 self.thumbnail_layout.addWidget(thumbnail, current_row, col)
                 self.thumbnail_widgets.append(thumbnail)
@@ -395,7 +494,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
                 if col == 0 and idx > 0:
                     current_row += 1
 
-                thumbnail = ThumbnailWidget(version, self)
+                thumbnail = ThumbnailWidget(version, self.sg_session, self)
                 thumbnail.clicked.connect(self._on_thumbnail_clicked)
                 self.thumbnail_layout.addWidget(thumbnail, current_row, col)
                 self.thumbnail_widgets.append(thumbnail)
