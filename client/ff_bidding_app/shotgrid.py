@@ -1213,6 +1213,40 @@ class ShotgridClient:
             ]
         )
 
+    def get_versions_by_parent_package(self, package_id, fields=None):
+        """
+        Get versions where sg_parent_packages contains this package.
+        Used for Script, Concept Art, and Storyboard versions.
+
+        Args:
+            package_id: ID of the Package entity
+            fields: List of fields to return for versions
+
+        Returns:
+            List of version dictionaries
+        """
+        if fields is None:
+            fields = [
+                "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
+                "user", "description", "sg_task", "sg_path_to_movie", "sg_path_to_frames",
+                "sg_uploaded_movie", "sg_path_to_geometry", "sg_version_type"
+            ]
+
+        # Query versions where sg_parent_packages contains this package
+        logger.info(f"Fetching versions with sg_parent_packages containing Package {package_id}")
+        versions = self.sg.find(
+            "Version",
+            [["sg_parent_packages", "in", {"type": "CustomEntity12", "id": int(package_id)}]],
+            fields,
+            order=[
+                {"field_name": "entity", "direction": "asc"},  # Group by entity
+                {"field_name": "created_at", "direction": "desc"}  # Newest first within entity
+            ]
+        )
+
+        logger.info(f"Found {len(versions)} versions with sg_parent_packages containing Package {package_id}")
+        return versions
+
     def create_version(self, version_code, project_id, description=None, sg_version_type=None):
         """
         Create a new Version entity in ShotGrid.

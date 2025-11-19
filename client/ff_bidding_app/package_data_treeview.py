@@ -486,8 +486,8 @@ class PackageTreeView(QtWidgets.QWidget):
             logger.info("No package ID or SG session - showing empty tree")
             return
 
-        # Get versions linked to this package
-        versions = self.sg_session.get_package_versions(
+        # Get Bid Tracker versions from Package's sg_versions field
+        bid_tracker_versions = self.sg_session.get_package_versions(
             package_id,
             fields=[
                 "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
@@ -496,13 +496,32 @@ class PackageTreeView(QtWidgets.QWidget):
             ]
         )
 
-        logger.info(f"Found {len(versions)} versions linked to Package ID {package_id}")
+        logger.info(f"Found {len(bid_tracker_versions)} versions in sg_versions field")
+
+        # Get other versions (Script, Concept Art, Storyboard) from sg_parent_packages
+        other_versions = self.sg_session.get_versions_by_parent_package(
+            package_id,
+            fields=[
+                "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
+                "user", "description", "sg_task", "sg_path_to_movie", "sg_path_to_frames",
+                "sg_uploaded_movie", "sg_path_to_geometry", "sg_version_type"
+            ]
+        )
+
+        logger.info(f"Found {len(other_versions)} versions in sg_parent_packages field")
+
+        # Combine all versions (Bid Tracker uses sg_versions, others use sg_parent_packages)
+        all_versions = bid_tracker_versions + other_versions
+
+        logger.info(f"Total versions: {len(all_versions)}")
 
         # Build the tree with actual version data
-        self.set_bid_tracker_item(versions)
-        self.set_script_item(versions)
-        self.set_concept_art_item(versions)
-        self.set_storyboard_item(versions)
+        # Bid Tracker versions come from bid_tracker_versions list
+        self.set_bid_tracker_item(bid_tracker_versions)
+        # Other versions come from other_versions list
+        self.set_script_item(other_versions)
+        self.set_concept_art_item(other_versions)
+        self.set_storyboard_item(other_versions)
 
         # Apply stored visibility preferences
         logger.info(f"Applying visibility preferences: {self.category_visibility_prefs}")
