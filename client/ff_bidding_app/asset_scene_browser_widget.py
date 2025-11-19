@@ -329,14 +329,22 @@ class AssetBrowserWidget(QtWidgets.QWidget):
     item_selected = QtCore.Signal(str, dict)  # Emits category and item data
     item_opened = QtCore.Signal(str, dict)  # Emits category and item data
 
-    def __init__(self, parent=None):
-        """Initialize the asset browser widget."""
+    def __init__(self, parent=None, load_sample_data=False):
+        """Initialize the asset browser widget.
+
+        Args:
+            parent: Parent widget
+            load_sample_data: If True, load sample data for demonstration
+        """
         super().__init__(parent)
         self.categories = {}
         self.category_sections = {}
 
         self._setup_ui()
-        self._load_sample_data()
+
+        # Only load sample data if explicitly requested
+        if load_sample_data:
+            self._load_sample_data()
 
     def _setup_ui(self):
         """Setup the main browser UI."""
