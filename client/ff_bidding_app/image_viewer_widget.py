@@ -3,8 +3,10 @@ import logging
 
 try:
     from .logger import logger
+    from .asset_scene_browser_widget import AssetBrowserWidget
 except (ImportError, ValueError, SystemError):
     logger = logging.getLogger("FFPackageManager")
+    from asset_scene_browser_widget import AssetBrowserWidget
 
 
 class ImageViewerDialog(QtWidgets.QDialog):
@@ -685,111 +687,51 @@ class ImageViewerWidget(QtWidgets.QWidget):
         return dock_widget
 
     def _create_grouping_dock(self):
-        """Create the right dock with folder tree view."""
+        """Create the right dock with asset browser widget."""
         dock_widget = QtWidgets.QWidget()
         dock_layout = QtWidgets.QVBoxLayout(dock_widget)
-        dock_layout.setContentsMargins(5, 5, 5, 5)
+        dock_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Header
-        title_label = QtWidgets.QLabel("Assets & Scenes")
-        title_font = title_label.font()
-        title_font.setPointSize(12)
-        title_font.setBold(True)
-        title_label.setFont(title_font)
-        dock_layout.addWidget(title_label)
+        # Create the asset browser widget
+        self.asset_browser = AssetBrowserWidget(dock_widget)
 
-        # Test button to manually populate with dummy data
-        test_btn = QtWidgets.QPushButton("Test: Load Sample Data")
-        test_btn.clicked.connect(self._test_populate_folders)
-        dock_layout.addWidget(test_btn)
+        # Connect signals
+        self.asset_browser.item_selected.connect(self._on_browser_item_selected)
+        self.asset_browser.item_opened.connect(self._on_browser_item_opened)
 
-        # Tree widget for folder view
-        self.folder_tree = QtWidgets.QTreeWidget()
-        self.folder_tree.setHeaderHidden(True)
-        self.folder_tree.setRootIsDecorated(True)
-        self.folder_tree.itemClicked.connect(self._on_folder_clicked)
-        dock_layout.addWidget(self.folder_tree)
-
-        # Set folder icon style
-        self.folder_tree.setStyleSheet("""
-            QTreeWidget {
-                background-color: #2b2b2b;
-                border: 1px solid #444;
-            }
-            QTreeWidget::item {
-                padding: 5px;
-            }
-            QTreeWidget::item:selected {
-                background-color: #4a9eff;
-            }
-        """)
-
-        # Initialize with empty groups to show the structure
-        self._initialize_empty_tree()
+        dock_layout.addWidget(self.asset_browser)
 
         return dock_widget
 
-    def _initialize_empty_tree(self):
-        """Initialize the tree with empty groups."""
-        logger.info("Initializing empty folder tree")
-        self.folder_tree.clear()
+    def _on_browser_item_selected(self, category, item_data):
+        """Handle item selection from the browser widget.
 
-        folder_icon = self.style().standardIcon(QtWidgets.QStyle.SP_DirIcon)
+        Args:
+            category: Category name ("Assets" or "Scenes")
+            item_data: Dictionary with item information
+        """
+        logger.info(f"Browser item selected: {category} - {item_data.get('name')}")
 
-        # Assets group (empty initially)
-        assets_item = QtWidgets.QTreeWidgetItem(self.folder_tree)
-        assets_item.setText(0, "Assets (empty)")
-        assets_item.setIcon(0, folder_icon)
-        assets_item.setData(0, QtCore.Qt.UserRole, "assets_group")
-        assets_item.setExpanded(True)
+        # Filter thumbnails based on selected item
+        if category == "Assets":
+            self._filter_by_asset(item_data.get('name', ''))
+        elif category == "Scenes":
+            self._filter_by_scene(item_data.get('name', ''))
 
-        # Scenes group (empty initially)
-        scenes_item = QtWidgets.QTreeWidgetItem(self.folder_tree)
-        scenes_item.setText(0, "Scenes (empty)")
-        scenes_item.setIcon(0, folder_icon)
-        scenes_item.setData(0, QtCore.Qt.UserRole, "scenes_group")
-        scenes_item.setExpanded(True)
+    def _on_browser_item_opened(self, category, item_data):
+        """Handle item double-click from the browser widget.
 
-    def _test_populate_folders(self):
-        """Test method to populate with sample data."""
-        logger.info("TEST: Populating with sample data")
-        print("TEST: Populating with sample data")
-
-        sample_assets = ["Asset_A", "Asset_B", "Asset_C"]
-        sample_scenes = ["Scene_010", "Scene_020", "Scene_030"]
-
-        self.populate_folders(sample_assets, sample_scenes)
+        Args:
+            category: Category name ("Assets" or "Scenes")
+            item_data: Dictionary with item information
+        """
+        logger.info(f"Browser item opened: {category} - {item_data.get('name')}")
+        # Could implement navigation or other actions here
 
     def _on_filter_changed(self, filter_type, state):
         """Handle filter checkbox changes."""
         self.filter_states[filter_type] = (state == QtCore.Qt.Checked)
         self._apply_filters()
-
-    def _on_folder_clicked(self, item, column):
-        """Handle folder item clicked."""
-        # Get the folder type and name
-        folder_type = item.data(0, QtCore.Qt.UserRole)
-        folder_name = item.text(0)
-
-        logger.info(f"Folder clicked: {folder_type} - {folder_name}")
-
-        # Filter thumbnails based on selected folder
-        if folder_type == "assets_group" or folder_type == "scenes_group":
-            # Clicked on group header, show all
-            self.grouping_mode = 'None'
-        elif folder_type == "asset":
-            # Filter by asset
-            self.grouping_mode = 'Asset'
-            self._filter_by_asset(folder_name)
-            return
-        elif folder_type == "scene":
-            # Filter by scene
-            self.grouping_mode = 'Scene'
-            self._filter_by_scene(folder_name)
-            return
-
-        # Default: rebuild without filtering
-        self._rebuild_thumbnails()
 
     def _filter_by_asset(self, asset_name):
         """Filter thumbnails to show only versions for a specific asset."""
@@ -830,7 +772,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
         self._rebuild_thumbnails()
 
     def populate_folders(self, assets, scenes):
-        """Populate the folder tree with assets and scenes.
+        """Populate the asset browser with assets and scenes.
 
         Args:
             assets: List of asset names
@@ -843,58 +785,31 @@ class ImageViewerWidget(QtWidgets.QWidget):
         print(f"Scenes: {scenes[:5] if len(scenes) > 5 else scenes}")
 
         logger.info(f"populate_folders called with {len(assets)} assets and {len(scenes)} scenes")
-        logger.info(f"Assets received: {assets}")
-        logger.info(f"Scenes received: {scenes}")
 
-        self.folder_tree.clear()
-
-        # Get folder icon from system
-        folder_icon = self.style().standardIcon(QtWidgets.QStyle.SP_DirIcon)
-
-        # Assets group
-        assets_item = QtWidgets.QTreeWidgetItem(self.folder_tree)
-        assets_item.setText(0, f"Assets ({len(set(assets))})")
-        assets_item.setIcon(0, folder_icon)
-        assets_item.setData(0, QtCore.Qt.UserRole, "assets_group")
-        assets_item.setExpanded(True)
-        logger.info("Created Assets group")
-        print("Created Assets group")
-
-        # Add asset folders
+        # Convert asset and scene names to item dictionaries
         unique_assets = sorted(set(assets))
-        logger.info(f"Adding {len(unique_assets)} unique asset folders")
-        print(f"Adding {len(unique_assets)} unique asset folders")
-        for asset_name in unique_assets:
-            asset_item = QtWidgets.QTreeWidgetItem(assets_item)
-            asset_item.setText(0, asset_name)
-            asset_item.setIcon(0, folder_icon)
-            asset_item.setData(0, QtCore.Qt.UserRole, "asset")
-            logger.debug(f"  Added asset folder: {asset_name}")
-            print(f"  - Added asset: {asset_name}")
-
-        # Scenes group
-        scenes_item = QtWidgets.QTreeWidgetItem(self.folder_tree)
-        scenes_item.setText(0, f"Scenes ({len(set(scenes))})")
-        scenes_item.setIcon(0, folder_icon)
-        scenes_item.setData(0, QtCore.Qt.UserRole, "scenes_group")
-        scenes_item.setExpanded(True)
-        logger.info("Created Scenes group")
-        print("Created Scenes group")
-
-        # Add scene folders
         unique_scenes = sorted(set(scenes))
-        logger.info(f"Adding {len(unique_scenes)} unique scene folders")
-        print(f"Adding {len(unique_scenes)} unique scene folders")
-        for scene_name in unique_scenes:
-            scene_item = QtWidgets.QTreeWidgetItem(scenes_item)
-            scene_item.setText(0, scene_name)
-            scene_item.setIcon(0, folder_icon)
-            scene_item.setData(0, QtCore.Qt.UserRole, "scene")
-            logger.debug(f"  Added scene folder: {scene_name}")
-            print(f"  - Added scene: {scene_name}")
 
-        logger.info(f"Successfully populated folder tree with {len(unique_assets)} unique assets and {len(unique_scenes)} unique scenes")
-        print(f"=== FOLDER TREE POPULATED: {len(unique_assets)} assets, {len(unique_scenes)} scenes ===\n")
+        asset_items = [
+            {'name': asset_name, 'path': f'/assets/{asset_name}'}
+            for asset_name in unique_assets
+        ]
+
+        scene_items = [
+            {'name': scene_name, 'path': f'/scenes/{scene_name}'}
+            for scene_name in unique_scenes
+        ]
+
+        # Populate the asset browser widget
+        data = {
+            'Assets': asset_items,
+            'Scenes': scene_items
+        }
+
+        self.asset_browser.populate_from_data(data)
+
+        logger.info(f"Successfully populated asset browser with {len(unique_assets)} assets and {len(unique_scenes)} scenes")
+        print(f"=== ASSET BROWSER POPULATED: {len(unique_assets)} assets, {len(unique_scenes)} scenes ===\n")
 
     def _apply_filters(self):
         """Apply current filters and rebuild thumbnails."""
@@ -1099,8 +1014,8 @@ class ImageViewerWidget(QtWidgets.QWidget):
         return any(keyword in code or keyword in task_name for keyword in image_keywords)
 
     def clear(self):
-        """Clear all thumbnails and folder tree."""
+        """Clear all thumbnails and asset browser."""
         self.all_versions = []
         self.filtered_versions = []
         self._rebuild_thumbnails()
-        self.folder_tree.clear()
+        self.asset_browser.clear_all()
