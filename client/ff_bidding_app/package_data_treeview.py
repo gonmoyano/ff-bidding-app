@@ -237,6 +237,90 @@ class SGTreeItem(QtWidgets.QTreeWidgetItem):
         return f"SGTreeItem(type={self._item_type}, id={self.get_sg_id()}, name={self.get_entity_name()})"
 
 
+class BidTrackerVersionDialog(QtWidgets.QDialog):
+    """Dialog for selecting a Bid Tracker version to link to a package."""
+
+    def __init__(self, versions, current_version_id, parent=None):
+        """
+        Initialize the dialog.
+
+        Args:
+            versions: List of Bid Tracker version entities
+            current_version_id: ID of the currently linked version (or None)
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.versions = versions
+        self.current_version_id = current_version_id
+        self.selected_version_id = None
+
+        self.setWindowTitle("Select Bid Tracker Version")
+        self.resize(500, 150)
+
+        self._setup_ui()
+
+    def _setup_ui(self):
+        """Setup the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Description label
+        desc_label = QtWidgets.QLabel(
+            "Select a Bid Tracker version to link to this package:"
+        )
+        layout.addWidget(desc_label)
+
+        # Version dropdown
+        version_layout = QtWidgets.QHBoxLayout()
+        version_label = QtWidgets.QLabel("Version:")
+        version_layout.addWidget(version_label)
+
+        self.version_combo = QtWidgets.QComboBox()
+        self.version_combo.setMinimumWidth(300)
+
+        # Populate combo box with versions
+        current_index = -1
+        for i, version in enumerate(self.versions):
+            version_code = version.get('code', 'Unknown')
+            version_id = version.get('id')
+
+            # Add extra info if this is the current version
+            if version_id == self.current_version_id:
+                display_text = f"{version_code} (Current)"
+                current_index = i
+            else:
+                display_text = version_code
+
+            self.version_combo.addItem(display_text, version_id)
+
+        # Select current version by default
+        if current_index >= 0:
+            self.version_combo.setCurrentIndex(current_index)
+
+        version_layout.addWidget(self.version_combo)
+        version_layout.addStretch()
+        layout.addLayout(version_layout)
+
+        layout.addSpacing(20)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        ok_btn = QtWidgets.QPushButton("OK")
+        ok_btn.clicked.connect(self.accept)
+        button_layout.addWidget(ok_btn)
+
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+
+        layout.addLayout(button_layout)
+
+    def get_selected_version_id(self):
+        """Get the selected version ID."""
+        return self.version_combo.currentData()
+
+
 # Status colors (adjusted for dark theme)
 status_colors = {
     "ip": QtGui.QColor(255, 180, 60),  # In Progress - Orange
@@ -256,6 +340,7 @@ class PackageTreeView(QtWidgets.QWidget):
         # Initialize selected RFQ storage
         self.selected_rfq = None
         self.sg_session = None
+        self.current_package_id = None  # Store current package ID for version selection
 
         # Store root category items for show/hide functionality
         self.category_items = {}
@@ -431,6 +516,9 @@ class PackageTreeView(QtWidgets.QWidget):
             package_id: ID of the Package entity
         """
         logger.info(f"load_package_versions() called with Package ID: {package_id}")
+
+        # Store package ID for use in context menu
+        self.current_package_id = package_id
 
         self.tree_widget.clear()
         self.category_items.clear()
@@ -948,6 +1036,13 @@ class PackageTreeView(QtWidgets.QWidget):
                 expand_action.triggered.connect(lambda: item.setExpanded(True))
 
             else:  # folder
+                # Check if this is the Bid Tracker folder
+                item_text = item.text(1)  # Get name from column 1
+                if item_text == "Bid Tracker" and self.current_package_id:
+                    select_version_action = menu.addAction("Select Version")
+                    select_version_action.triggered.connect(lambda: self._select_bid_tracker_version())
+                    menu.addSeparator()
+
                 expand_action = menu.addAction("Expand All")
                 expand_action.triggered.connect(lambda: self._expand_all(item))
 
@@ -1044,6 +1139,119 @@ class PackageTreeView(QtWidgets.QWidget):
         layout.addWidget(close_btn)
 
         dialog.exec_()
+
+    def _select_bid_tracker_version(self):
+        """Show dialog to select a Bid Tracker version for the current package."""
+        if not self.current_package_id or not self.sg_session:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Package Selected",
+                "No package is currently selected."
+            )
+            return
+
+        try:
+            # Get project and RFQ info for querying available versions
+            from .app import PackageManagerApp
+            parent_app = None
+            parent_widget = self.parent()
+            while parent_widget:
+                if isinstance(parent_widget, PackageManagerApp):
+                    parent_app = parent_widget
+                    break
+                parent_widget = parent_widget.parent()
+
+            if not parent_app:
+                logger.error("Could not find parent PackageManagerApp")
+                return
+
+            # Get project ID
+            current_project_index = parent_app.sg_project_combo.currentIndex()
+            sg_project = parent_app.sg_project_combo.itemData(current_project_index)
+            project_id = sg_project.get("id") if sg_project else None
+
+            # Get RFQ code for filtering
+            current_rfq_index = parent_app.sg_rfq_combo.currentIndex()
+            sg_rfq = parent_app.sg_rfq_combo.itemData(current_rfq_index)
+            rfq_code = sg_rfq.get("code") if sg_rfq else None
+
+            if not project_id:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "No Project Selected",
+                    "No project is currently selected."
+                )
+                return
+
+            # Get all available Bid Tracker versions for this project/RFQ
+            all_versions = self.sg_session.get_all_bid_tracker_versions_for_project(
+                project_id=project_id,
+                rfq_code=rfq_code
+            )
+
+            if not all_versions:
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "No Versions Available",
+                    "No Bid Tracker versions found for this project/RFQ."
+                )
+                return
+
+            # Get currently linked versions for this package
+            package_versions = self.sg_session.get_package_versions(
+                self.current_package_id,
+                fields=["id", "code", "sg_version_type"]
+            )
+
+            # Find the current Bid Tracker version (if any)
+            current_version_id = None
+            for version in package_versions:
+                if self._is_bid_tracker_version(version):
+                    current_version_id = version.get('id')
+                    break
+
+            # Show dialog
+            dialog = BidTrackerVersionDialog(
+                versions=all_versions,
+                current_version_id=current_version_id,
+                parent=self
+            )
+
+            if dialog.exec_() == QtWidgets.QDialog.Accepted:
+                selected_version_id = dialog.get_selected_version_id()
+
+                if selected_version_id and selected_version_id != current_version_id:
+                    # Unlink the old version if there is one
+                    if current_version_id:
+                        self.sg_session.unlink_version_from_package(
+                            current_version_id,
+                            self.current_package_id
+                        )
+                        logger.info(f"Unlinked version {current_version_id} from package {self.current_package_id}")
+
+                    # Link the new version
+                    self.sg_session.link_version_to_package(
+                        selected_version_id,
+                        self.current_package_id
+                    )
+                    logger.info(f"Linked version {selected_version_id} to package {self.current_package_id}")
+
+                    # Reload the tree to show the new version
+                    self.load_package_versions(self.current_package_id)
+
+                    QtWidgets.QMessageBox.information(
+                        self,
+                        "Version Updated",
+                        "Bid Tracker version has been updated successfully."
+                    )
+
+        except Exception as e:
+            logger.error(f"Error selecting Bid Tracker version: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to select version: {str(e)}"
+            )
 
     def _expand_all(self, item):
         """Recursively expand all children."""

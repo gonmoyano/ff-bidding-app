@@ -1384,6 +1384,36 @@ class ShotgridClient:
 
         return bid_tracker_versions
 
+    def get_all_bid_tracker_versions_for_project(self, project_id, rfq_code=None):
+        """
+        Get all Bid Tracker versions for a project, optionally filtered by RFQ code.
+
+        Args:
+            project_id: ID of the project
+            rfq_code: Optional RFQ code to filter by (searches in version code)
+
+        Returns:
+            List of version entities with sg_version_type matching "Bid Tracker"
+        """
+        filters = [
+            ["project", "is", {"type": "Project", "id": int(project_id)}],
+            ["sg_version_type", "is", "Bid Tracker"]
+        ]
+
+        # If rfq_code provided, filter by code containing the lowercase rfq_code
+        if rfq_code:
+            rfq_code_lower = rfq_code.lower().replace(" ", "")
+            filters.append(["code", "contains", rfq_code_lower])
+
+        versions = self.sg.find(
+            "Version",
+            filters,
+            fields=["id", "code", "sg_version_type", "description", "created_at", "sg_status_list"],
+            order=[{"field_name": "created_at", "direction": "desc"}]
+        )
+
+        return versions
+
     def get_latest_version_number(self, package_id, version_prefix):
         """
         Get the latest version number for a given prefix in a package.
