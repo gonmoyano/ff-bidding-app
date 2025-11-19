@@ -10,11 +10,13 @@ try:
     from .bid_selector_widget import CollapsibleGroupBox
     from .settings import AppSettings
     from .vfx_breakdown_widget import VFXBreakdownWidget
+    from .image_viewer_widget import ImageViewerWidget
 except ImportError:
     from package_data_treeview import PackageTreeView, CustomCheckBox
     from bid_selector_widget import CollapsibleGroupBox
     from settings import AppSettings
     from vfx_breakdown_widget import VFXBreakdownWidget
+    from image_viewer_widget import ImageViewerWidget
     logger = logging.getLogger("FFPackageManager")
 
 
@@ -159,11 +161,12 @@ class PackagesTab(QtWidgets.QWidget):
         documents_label.setAlignment(QtCore.Qt.AlignCenter)
         documents_layout.addWidget(documents_label)
 
+        # Images tab with thumbnail viewer
         images_tab = QtWidgets.QWidget()
         images_layout = QtWidgets.QVBoxLayout(images_tab)
-        images_label = QtWidgets.QLabel("Images content coming soon...")
-        images_label.setAlignment(QtCore.Qt.AlignCenter)
-        images_layout.addWidget(images_label)
+        images_layout.setContentsMargins(0, 0, 0, 0)
+        self.image_viewer = ImageViewerWidget(self.sg_session, images_tab)
+        images_layout.addWidget(self.image_viewer)
 
         # Add tabs
         self.packages_tab_widget.addTab(bid_tracker_tab, "Bid Tracker")
@@ -1129,9 +1132,11 @@ class PackagesTab(QtWidgets.QWidget):
             self.current_package_name = None
             self.rename_package_btn.setEnabled(False)
             self.delete_package_btn.setEnabled(False)
-            # Clear the package data tree
+            # Clear the package data tree and image viewer
             if self.package_data_tree:
                 self.package_data_tree.clear()
+            if self.image_viewer:
+                self.image_viewer.clear()
             logger.info("No package selected")
             return
 
@@ -1144,15 +1149,20 @@ class PackagesTab(QtWidgets.QWidget):
             package_data = self.packages[package_name]
             self._load_package_data(package_data)
 
-            # Load versions from the package into the treeview
+            # Load versions from the package into the treeview and image viewer
             sg_package_id = package_data.get("sg_package_id")
-            if sg_package_id and self.package_data_tree:
+            if sg_package_id:
                 logger.info(f"Loading versions for Package ID {sg_package_id}")
-                self.package_data_tree.load_package_versions(sg_package_id)
+                if self.package_data_tree:
+                    self.package_data_tree.load_package_versions(sg_package_id)
+                if self.image_viewer:
+                    self.image_viewer.load_package_versions(sg_package_id)
             else:
-                logger.info("No ShotGrid Package ID found, clearing tree")
+                logger.info("No ShotGrid Package ID found, clearing tree and viewer")
                 if self.package_data_tree:
                     self.package_data_tree.clear()
+                if self.image_viewer:
+                    self.image_viewer.clear()
 
             logger.info(f"Loaded package: {package_name}")
         else:
