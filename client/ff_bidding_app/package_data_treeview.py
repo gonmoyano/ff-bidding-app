@@ -1124,30 +1124,33 @@ class PackageTreeView(QtWidgets.QWidget):
             parent_widget = self.parent()
 
             # First check if the immediate parent has a parent_app attribute (e.g., PackagesTab)
-            if hasattr(parent_widget, 'parent_app'):
+            if hasattr(parent_widget, 'parent_app') and parent_widget.parent_app is not None:
                 parent_app = parent_widget.parent_app
+                logger.info(f"Found parent_app via parent_widget.parent_app")
             else:
                 # Otherwise walk up the hierarchy looking for the combo boxes
+                logger.info("Walking up widget hierarchy to find parent app")
                 while parent_widget:
                     # Check if this widget has the required attributes (sg_project_combo and sg_rfq_combo)
                     if hasattr(parent_widget, 'sg_project_combo') and hasattr(parent_widget, 'sg_rfq_combo'):
                         parent_app = parent_widget
+                        logger.info(f"Found parent app: {type(parent_widget).__name__}")
                         break
                     parent_widget = parent_widget.parent()
 
             if not parent_app:
                 logger.error("Could not find parent app with sg_project_combo and sg_rfq_combo")
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Error",
+                    "Could not find parent application. Please try again."
+                )
                 return
 
             # Get project ID
             current_project_index = parent_app.sg_project_combo.currentIndex()
             sg_project = parent_app.sg_project_combo.itemData(current_project_index)
             project_id = sg_project.get("id") if sg_project else None
-
-            # Get RFQ code for filtering
-            current_rfq_index = parent_app.sg_rfq_combo.currentIndex()
-            sg_rfq = parent_app.sg_rfq_combo.itemData(current_rfq_index)
-            rfq_code = sg_rfq.get("code") if sg_rfq else None
 
             if not project_id:
                 QtWidgets.QMessageBox.warning(
@@ -1157,19 +1160,22 @@ class PackageTreeView(QtWidgets.QWidget):
                 )
                 return
 
-            # Get all available Bid Tracker versions for this project/RFQ
+            # Get all available Bid Tracker versions for this project (not filtered by RFQ)
+            logger.info(f"Fetching all Bid Tracker versions for project {project_id}")
             all_versions = self.sg_session.get_all_bid_tracker_versions_for_project(
                 project_id=project_id,
-                rfq_code=rfq_code
+                rfq_code=None  # Don't filter by RFQ - show all versions for the project
             )
 
             if not all_versions:
                 QtWidgets.QMessageBox.information(
                     self,
                     "No Versions Available",
-                    "No Bid Tracker versions found for this project/RFQ."
+                    "No Bid Tracker versions found for this project."
                 )
                 return
+
+            logger.info(f"Found {len(all_versions)} Bid Tracker versions")
 
             # Get currently linked versions for this package
             package_versions = self.sg_session.get_package_versions(
