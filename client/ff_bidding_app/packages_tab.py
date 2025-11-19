@@ -888,14 +888,217 @@ class PackagesTab(QtWidgets.QWidget):
             )
 
     def _create_bid_tracker(self):
-        """Create a new bid tracker document."""
-        QtWidgets.QMessageBox.information(
-            self,
-            "Create Bid Tracker",
-            "This feature is coming soon.\n\n"
-            "This will create a bid tracker document with the selected VFX breakdown data."
-        )
-        logger.info("Create Bid Tracker button clicked")
+        """Create a new bid tracker document, upload as version, and link to package."""
+        try:
+            import pandas as pd
+            from datetime import datetime
+            import tempfile
+            import os
+
+            # Check if a package is selected
+            if not self.current_package_name:
+                QtWidgets.QMessageBox.warning(
+                    self, "No Package Selected",
+                    "Please select a package before creating a Bid Tracker."
+                )
+                return
+
+            # Get package data and ShotGrid ID
+            package_data = self.packages.get(self.current_package_name)
+            if not package_data:
+                QtWidgets.QMessageBox.warning(
+                    self, "Error",
+                    "Package data not found."
+                )
+                return
+
+            sg_package_id = package_data.get("sg_package_id")
+            if not sg_package_id:
+                QtWidgets.QMessageBox.warning(
+                    self, "Error",
+                    "Package not linked to ShotGrid. Please ensure package was created properly."
+                )
+                return
+
+            # Check if RFQ is selected
+            if not self.current_rfq:
+                QtWidgets.QMessageBox.warning(
+                    self, "No RFQ Selected",
+                    "Please select an RFQ before creating a Bid Tracker."
+                )
+                return
+
+            # Get selected scenes from the model
+            if not self.breakdown_widget or not self.breakdown_widget.model:
+                QtWidgets.QMessageBox.warning(
+                    self, "Warning",
+                    "No VFX Breakdown data loaded."
+                )
+                return
+
+            selected_scenes = self.breakdown_widget.model.get_scenes_selected_for_export()
+
+            if not selected_scenes:
+                QtWidgets.QMessageBox.warning(
+                    self, "Warning",
+                    "No scenes selected for export. Please check the 'Export' column to select scenes."
+                )
+                return
+
+            # Generate version name using nomenclature: bidtracker_lowercase(<RFQ Name>)_v###
+            rfq_code = self.current_rfq.get("code", "rfq")
+            rfq_code_lower = rfq_code.lower().replace(" ", "")  # Make lowercase and remove spaces
+            version_prefix = f"bidtracker_{rfq_code_lower}"
+
+            # Get next version number
+            version_number = self.sg_session.get_latest_version_number(sg_package_id, version_prefix)
+            version_string = f"v{version_number:03d}"
+            version_code = f"{version_prefix}_{version_string}"
+
+            logger.info(f"Creating Bid Tracker version: {version_code}")
+
+            # Create temporary Excel file
+            temp_dir = tempfile.gettempdir()
+            file_path = os.path.join(temp_dir, f"{version_code}.xlsx")
+
+            # Get column visibility settings
+            column_visibility = self.breakdown_widget.column_visibility
+
+            # Prepare data for export (reuse logic from _export_to_excel)
+            export_data = []
+            for scene in selected_scenes:
+                row = {}
+                for field in self.breakdown_widget.model.column_fields:
+                    if field == "_export_to_excel":
+                        continue  # Skip the export checkbox column
+
+                    # Skip hidden columns
+                    if not column_visibility.get(field, True):
+                        continue
+
+                    value = scene.get(field)
+
+                    # Format the value for Excel
+                    if value is None:
+                        row[field] = ""
+                    elif isinstance(value, dict):
+                        # Handle ShotGrid entity references
+                        row[field] = value.get("name", str(value))
+                    elif isinstance(value, list):
+                        # Handle multi-entity references
+                        if value and isinstance(value[0], dict):
+                            row[field] = ", ".join([item.get("name", str(item)) for item in value])
+                        else:
+                            row[field] = ", ".join([str(item) for item in value])
+                    elif isinstance(value, bool):
+                        row[field] = "Yes" if value else "No"
+                    else:
+                        row[field] = value
+
+                export_data.append(row)
+
+            # Create DataFrame
+            df = pd.DataFrame(export_data)
+
+            # Get column headers for display (only for visible columns)
+            column_headers = {}
+            for i, field in enumerate(self.breakdown_widget.model.column_fields):
+                if field != "_export_to_excel" and column_visibility.get(field, True):
+                    column_headers[field] = self.breakdown_widget.model.column_headers[i]
+
+            # Rename columns to use display names
+            df = df.rename(columns=column_headers)
+
+            # Export to Excel
+            with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name='Bid Tracker', index=False)
+
+                # Auto-adjust column widths
+                worksheet = writer.sheets['Bid Tracker']
+                for idx, col in enumerate(df.columns):
+                    max_length = max(
+                        df[col].astype(str).map(len).max(),
+                        len(str(col))
+                    )
+                    # Add some padding
+                    adjusted_width = min(max_length + 2, 50)
+                    worksheet.column_dimensions[chr(65 + idx)].width = adjusted_width
+
+            logger.info(f"Created Excel file: {file_path}")
+
+            # Get project ID
+            if self.parent_app and hasattr(self.parent_app, 'sg_project_combo'):
+                current_project_index = self.parent_app.sg_project_combo.currentIndex()
+                sg_project = self.parent_app.sg_project_combo.itemData(current_project_index)
+                project_id = sg_project.get("id") if sg_project else None
+            else:
+                project_id = None
+
+            if not project_id:
+                QtWidgets.QMessageBox.warning(
+                    self, "Error",
+                    "No project selected."
+                )
+                return
+
+            # Create Version in ShotGrid
+            version = self.sg_session.create_version(
+                version_code=version_code,
+                project_id=project_id,
+                description=f"Bid Tracker created from VFX Breakdown with {len(selected_scenes)} scenes",
+                sg_version_type="Bid Tracker"
+            )
+
+            logger.info(f"Created Version in ShotGrid: {version['id']}")
+
+            # Upload Excel file to Version
+            self.sg_session.upload_file_to_version(
+                version_id=version["id"],
+                file_path=file_path,
+                field_name="sg_uploaded_movie"
+            )
+
+            logger.info(f"Uploaded file to Version {version['id']}")
+
+            # Link Version to Package
+            self.sg_session.link_version_to_package(version["id"], sg_package_id)
+
+            logger.info(f"Linked Version to Package {sg_package_id}")
+
+            # Clean up temporary file
+            try:
+                os.remove(file_path)
+                logger.info(f"Removed temporary file: {file_path}")
+            except Exception as e:
+                logger.warning(f"Could not remove temporary file: {e}")
+
+            # Refresh the treeview to show the new version
+            if self.package_data_tree:
+                self.package_data_tree.load_package_versions(sg_package_id)
+
+            QtWidgets.QMessageBox.information(
+                self, "Success",
+                f"Created Bid Tracker version: {version_code}\n"
+                f"Exported {len(selected_scenes)} scene(s)\n"
+                f"Uploaded to ShotGrid and linked to package."
+            )
+
+            logger.info(f"Successfully created Bid Tracker: {version_code}")
+
+        except ImportError as e:
+            logger.error(f"Missing required library: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self, "Error",
+                f"Missing required library for Excel export.\n"
+                f"Please install pandas and openpyxl:\n"
+                f"pip install pandas openpyxl"
+            )
+        except Exception as e:
+            logger.error(f"Error creating Bid Tracker: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self, "Error",
+                f"Failed to create Bid Tracker:\n{str(e)}"
+            )
 
     def _on_entity_type_toggled(self, category, state):
         """Handle entity type checkbox toggle to show/hide tree categories."""

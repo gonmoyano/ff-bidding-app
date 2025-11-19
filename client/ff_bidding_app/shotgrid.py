@@ -1213,6 +1213,137 @@ class ShotgridClient:
             ]
         )
 
+    def create_version(self, version_code, project_id, description=None, sg_version_type=None):
+        """
+        Create a new Version entity in ShotGrid.
+
+        Args:
+            version_code: Code/name for the version
+            project_id: ID of the project
+            description: Optional description
+            sg_version_type: Optional version type (e.g., "Bid Tracker")
+
+        Returns:
+            Created version entity dictionary
+        """
+        version_data = {
+            "code": version_code,
+            "project": {"type": "Project", "id": int(project_id)},
+        }
+
+        if description:
+            version_data["description"] = description
+
+        if sg_version_type:
+            version_data["sg_version_type"] = sg_version_type
+
+        logger.info(f"Creating Version: {version_code} in project {project_id}")
+        version = self.sg.create("Version", version_data)
+        logger.info(f"Created Version with ID: {version['id']}")
+
+        return version
+
+    def upload_file_to_version(self, version_id, file_path, field_name="sg_uploaded_movie"):
+        """
+        Upload a file to a Version entity.
+
+        Args:
+            version_id: ID of the version
+            file_path: Path to the file to upload
+            field_name: Field to upload to (default: sg_uploaded_movie)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        logger.info(f"Uploading file {file_path} to Version {version_id} field {field_name}")
+        result = self.sg.upload(
+            "Version",
+            int(version_id),
+            file_path,
+            field_name=field_name
+        )
+        logger.info(f"Successfully uploaded file to Version {version_id}")
+        return result
+
+    def link_version_to_package(self, version_id, package_id):
+        """
+        Link a Version to a Package's sg_versions field (multi-entity field).
+
+        Args:
+            version_id: ID of the version to link
+            package_id: ID of the package
+
+        Returns:
+            Updated Package entity or None if failed
+        """
+        # Get current versions linked to the Package
+        package = self.sg.find_one(
+            "CustomEntity12",
+            [["id", "is", int(package_id)]],
+            ["sg_versions"]
+        )
+
+        if not package:
+            logger.error(f"Package {package_id} not found")
+            return None
+
+        # Get existing versions (or empty list if None)
+        existing_versions = package.get("sg_versions") or []
+
+        # Check if version is already linked
+        version_link = {"type": "Version", "id": int(version_id)}
+        if any(v.get("id") == int(version_id) for v in existing_versions):
+            logger.info(f"Version {version_id} already linked to Package {package_id}")
+            return package
+
+        # Add the new version to the list
+        updated_versions = existing_versions + [version_link]
+
+        # Update the Package
+        logger.info(f"Linking Version {version_id} to Package {package_id}")
+        result = self.sg.update(
+            "CustomEntity12",
+            int(package_id),
+            {"sg_versions": updated_versions}
+        )
+        logger.info(f"Successfully linked Version to Package")
+
+        return result
+
+    def get_latest_version_number(self, package_id, version_prefix):
+        """
+        Get the latest version number for a given prefix in a package.
+
+        Args:
+            package_id: ID of the package
+            version_prefix: Prefix to search for (e.g., "bidtracker_myproject")
+
+        Returns:
+            Next available version number (int)
+        """
+        # Get versions from package
+        versions = self.get_package_versions(package_id, fields=["code"])
+
+        # Extract version numbers from matching codes
+        version_numbers = []
+        for version in versions:
+            code = version.get("code", "")
+            if code.startswith(version_prefix):
+                # Extract version number from end (e.g., "bidtracker_myproject_v001" -> 1)
+                parts = code.split("_v")
+                if len(parts) == 2:
+                    try:
+                        version_num = int(parts[1])
+                        version_numbers.append(version_num)
+                    except ValueError:
+                        continue
+
+        # Return next version number
+        if version_numbers:
+            return max(version_numbers) + 1
+        else:
+            return 1
+
     def __enter__(self):
         """Context manager entry."""
         self.connect()
