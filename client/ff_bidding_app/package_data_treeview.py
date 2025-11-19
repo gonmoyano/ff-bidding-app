@@ -1123,20 +1123,36 @@ class PackageTreeView(QtWidgets.QWidget):
             parent_app = None
             parent_widget = self.parent()
 
+            logger.info(f"DEBUG: Initial parent_widget = {parent_widget}")
+            logger.info(f"DEBUG: parent_widget type = {type(parent_widget).__name__ if parent_widget else 'None'}")
+
+            if parent_widget:
+                logger.info(f"DEBUG: hasattr parent_app = {hasattr(parent_widget, 'parent_app')}")
+                if hasattr(parent_widget, 'parent_app'):
+                    logger.info(f"DEBUG: parent_widget.parent_app = {parent_widget.parent_app}")
+                    logger.info(f"DEBUG: parent_widget.parent_app type = {type(parent_widget.parent_app).__name__ if parent_widget.parent_app else 'None'}")
+
             # First check if the immediate parent has a parent_app attribute (e.g., PackagesTab)
-            if hasattr(parent_widget, 'parent_app') and parent_widget.parent_app is not None:
+            if parent_widget and hasattr(parent_widget, 'parent_app') and parent_widget.parent_app is not None:
                 parent_app = parent_widget.parent_app
-                logger.info(f"Found parent_app via parent_widget.parent_app")
+                logger.info(f"Found parent_app via parent_widget.parent_app: {type(parent_app).__name__}")
             else:
                 # Otherwise walk up the hierarchy looking for the combo boxes
                 logger.info("Walking up widget hierarchy to find parent app")
-                while parent_widget:
+                temp_parent = parent_widget
+                depth = 0
+                while temp_parent and depth < 10:  # Limit depth to avoid infinite loop
+                    logger.info(f"DEBUG: Checking widget at depth {depth}: {type(temp_parent).__name__}")
+                    logger.info(f"DEBUG: Has sg_project_combo: {hasattr(temp_parent, 'sg_project_combo')}")
+                    logger.info(f"DEBUG: Has sg_rfq_combo: {hasattr(temp_parent, 'sg_rfq_combo')}")
+
                     # Check if this widget has the required attributes (sg_project_combo and sg_rfq_combo)
-                    if hasattr(parent_widget, 'sg_project_combo') and hasattr(parent_widget, 'sg_rfq_combo'):
-                        parent_app = parent_widget
-                        logger.info(f"Found parent app: {type(parent_widget).__name__}")
+                    if hasattr(temp_parent, 'sg_project_combo') and hasattr(temp_parent, 'sg_rfq_combo'):
+                        parent_app = temp_parent
+                        logger.info(f"Found parent app at depth {depth}: {type(temp_parent).__name__}")
                         break
-                    parent_widget = parent_widget.parent()
+                    temp_parent = temp_parent.parent()
+                    depth += 1
 
             if not parent_app:
                 logger.error("Could not find parent app with sg_project_combo and sg_rfq_combo")
