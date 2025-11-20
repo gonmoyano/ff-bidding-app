@@ -672,11 +672,13 @@ class ImageViewerWidget(QtWidgets.QWidget):
         """Handle splitter moved to adjust thumbnail grid."""
         # Use debounced timer to avoid rebuilding during drag
         self.resize_timer.stop()
-        self.resize_timer.start(150)  # Wait 150ms after last move
+        self.resize_timer.start(300)  # Wait 300ms after last move
 
     def _rebuild_thumbnails_delayed(self):
         """Rebuild thumbnails after resize timer expires."""
-        self._rebuild_thumbnails()
+        # Only rebuild if we actually have thumbnails
+        if self.thumbnail_widgets:
+            self._rebuild_thumbnails()
 
     def _create_thumbnail_dock(self):
         """Create the thumbnail view with filters."""
@@ -772,28 +774,31 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
     def _rebuild_thumbnails(self):
         """Rebuild the thumbnail grid."""
-        # Disconnect signals before clearing to prevent issues
-        for thumbnail in self.thumbnail_widgets:
-            try:
-                thumbnail.clicked.disconnect()
-            except:
-                pass
-            thumbnail.deleteLater()
-        self.thumbnail_widgets.clear()
+        try:
+            # Disconnect signals before clearing to prevent issues
+            for thumbnail in self.thumbnail_widgets:
+                try:
+                    thumbnail.clicked.disconnect()
+                except:
+                    pass
+                thumbnail.deleteLater()
+            self.thumbnail_widgets.clear()
 
-        # Clear layout
-        while self.thumbnail_layout.count():
-            item = self.thumbnail_layout.takeAt(0)
-            if item.widget():
-                widget = item.widget()
-                widget.setParent(None)
-                widget.deleteLater()
+            # Clear layout
+            while self.thumbnail_layout.count():
+                item = self.thumbnail_layout.takeAt(0)
+                if item.widget():
+                    widget = item.widget()
+                    widget.setParent(None)
+                    widget.deleteLater()
 
-        # Process pending delete events
-        QtCore.QCoreApplication.processEvents()
+            # Process pending delete events
+            QtCore.QCoreApplication.processEvents()
 
-        # Add thumbnails in flat layout
-        self._add_thumbnails_flat()
+            # Add thumbnails in flat layout
+            self._add_thumbnails_flat()
+        except Exception as e:
+            logger.error(f"Error rebuilding thumbnails: {e}", exc_info=True)
 
     def _add_thumbnails_flat(self):
         """Add thumbnails in a flat grid (no grouping)."""
