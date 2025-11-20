@@ -123,6 +123,8 @@ class BiddingTab(QtWidgets.QWidget):
         Args:
             rfq_data: Dictionary containing RFQ information
         """
+        logger.info(f"BiddingTab.set_rfq() called with RFQ: {rfq_data.get('code') if rfq_data else None}")
+
         # Store RFQ data for use in nested tabs
         self.current_rfq = rfq_data
 
@@ -130,10 +132,17 @@ class BiddingTab(QtWidgets.QWidget):
         if self.parent_app and hasattr(self.parent_app, 'sg_project_combo'):
             proj = self.parent_app.sg_project_combo.itemData(self.parent_app.sg_project_combo.currentIndex())
             self.current_project_id = proj.get('id') if proj else None
+            logger.info(f"Got project_id from parent: {self.current_project_id}")
+        else:
+            logger.warning(f"Cannot get project_id: parent_app={self.parent_app}, has combo={hasattr(self.parent_app, 'sg_project_combo') if self.parent_app else False}")
 
         # Populate bid selector with bids for the project
+        logger.info(f"Checking bid_selector: has_attr={hasattr(self, 'bid_selector')}, project_id={self.current_project_id}")
         if hasattr(self, 'bid_selector') and self.current_project_id:
+            logger.info(f"Calling populate_bids with project_id={self.current_project_id}, rfq={rfq_data.get('code') if rfq_data else None}")
             self.bid_selector.populate_bids(rfq_data, self.current_project_id, auto_select=True)
+        else:
+            logger.warning(f"Skipping populate_bids: has_bid_selector={hasattr(self, 'bid_selector')}, project_id={self.current_project_id}")
 
     def _on_bid_changed(self, bid_data):
         """Handle bid selection change.

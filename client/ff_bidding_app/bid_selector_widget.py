@@ -2099,19 +2099,29 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 if not linked_bid:
                     linked_bid = rfq.get("sg_turnover_bid")
 
+                logger.info(f"Auto-select logic: rfq={rfq.get('code') if rfq else None}, linked_bid={linked_bid}")
+
                 linked_bid_id = None
                 if isinstance(linked_bid, dict):
                     linked_bid_id = linked_bid.get("id")
+                    logger.info(f"Linked bid is dict, id={linked_bid_id}")
                 elif isinstance(linked_bid, list) and linked_bid:
                     linked_bid_id = linked_bid[0].get("id") if linked_bid[0] else None
+                    logger.info(f"Linked bid is list, id={linked_bid_id}")
+                else:
+                    logger.info(f"Linked bid type: {type(linked_bid)}, value: {linked_bid}")
 
                 if linked_bid_id:
                     # Try to select the linked bid
+                    logger.info(f"Attempting to select bid by id: {linked_bid_id}")
                     if self._select_bid_by_id(linked_bid_id):
                         bid_was_selected = True
+                        logger.info(f"Successfully selected bid {linked_bid_id}")
                     else:
                         # Linked bid not found in list, don't auto-select anything
                         logger.warning(f"Linked bid {linked_bid_id} not found in project bids")
+                else:
+                    logger.info(f"No linked_bid_id found, linked_bid={linked_bid}")
 
             # If no bid was selected (either no linked bid or linked bid not found),
             # manually trigger bidChanged with None to reset downstream components

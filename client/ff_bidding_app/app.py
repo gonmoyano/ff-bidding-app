@@ -1381,6 +1381,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
     def _on_rfq_changed(self, index):
         """Handle RFQ selection: update labels, tree, and default-select its linked Breakdown."""
         rfq = self.rfq_combo.itemData(index)
+        logger.info(f"_on_rfq_changed() called: index={index}, rfq={rfq.get('code') if rfq else None}")
 
         if rfq:
             # Show currently linked Bid under the RFQ selector
@@ -1388,6 +1389,8 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             linked_bid = rfq.get("sg_early_bid")
             if not linked_bid:
                 linked_bid = rfq.get("sg_turnover_bid")
+            logger.info(f"RFQ linked bid info: sg_early_bid={rfq.get('sg_early_bid')}, sg_turnover_bid={rfq.get('sg_turnover_bid')}")
+            logger.info(f"Selected linked_bid: {linked_bid}")
 
             if linked_bid:
                 if isinstance(linked_bid, dict):
