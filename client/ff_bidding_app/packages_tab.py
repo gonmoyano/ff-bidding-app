@@ -11,12 +11,14 @@ try:
     from .settings import AppSettings
     from .vfx_breakdown_widget import VFXBreakdownWidget
     from .image_viewer_widget import ImageViewerWidget
+    from .sliding_overlay_panel import SlidingOverlayPanelWithBackground
 except ImportError:
     from package_data_treeview import PackageTreeView, CustomCheckBox
     from bid_selector_widget import CollapsibleGroupBox
     from settings import AppSettings
     from vfx_breakdown_widget import VFXBreakdownWidget
     from image_viewer_widget import ImageViewerWidget
+    from sliding_overlay_panel import SlidingOverlayPanelWithBackground
     logger = logging.getLogger("FFPackageManager")
 
 
@@ -69,23 +71,37 @@ class PackagesTab(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
 
-        # Horizontal splitter for left and right panes
-        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        self.splitter.setChildrenCollapsible(False)  # Prevent collapsing panes
+        # Top bar with toggle button for Package Manager panel
+        top_bar_layout = QtWidgets.QHBoxLayout()
 
-        # Left pane: Bid selector + Tabs
+        # Toggle button for Package Manager panel
+        self.toggle_panel_btn = QtWidgets.QPushButton("Package Manager ▶")
+        self.toggle_panel_btn.setToolTip("Show/Hide Package Manager Panel")
+        self.toggle_panel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4a9eff;
+                color: white;
+                font-weight: bold;
+                padding: 6px 12px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #5eb3ff;
+            }
+            QPushButton:pressed {
+                background-color: #3a8eef;
+            }
+        """)
+        self.toggle_panel_btn.clicked.connect(self._toggle_package_manager_panel)
+        top_bar_layout.addWidget(self.toggle_panel_btn)
+
+        top_bar_layout.addStretch()
+
+        layout.addLayout(top_bar_layout)
+
+        # Main content area: Left pane (Bid Tracker, Documents, Images tabs)
         left_pane = self._create_left_pane()
-        self.splitter.addWidget(left_pane)
-
-        # Right pane: Data to Fetch, Output Settings, Package Data tree
-        right_pane = self._create_right_pane()
-        self.splitter.addWidget(right_pane)
-
-        # Set initial sizes (30% left, 70% right) and allow right pane to be freely resizable
-        self.splitter.setSizes([300, 700])
-        self.splitter.setStretchFactor(0, 0)  # Left pane doesn't stretch
-        self.splitter.setStretchFactor(1, 1)  # Right pane stretches with window
-        layout.addWidget(self.splitter)
+        layout.addWidget(left_pane, 1)  # Give it stretch factor
 
         # Bottom section: Status + Create Package button
         bottom_layout = QtWidgets.QHBoxLayout()
@@ -100,6 +116,24 @@ class PackagesTab(QtWidgets.QWidget):
         bottom_layout.addWidget(create_package_btn)
 
         layout.addLayout(bottom_layout)
+
+        # Create the sliding overlay panel for Package Manager (right pane)
+        right_pane = self._create_right_pane()
+
+        # Create overlay panel with background
+        self.overlay_panel = SlidingOverlayPanelWithBackground(
+            parent=self,
+            panel_width=450,
+            animation_duration=300,
+            background_opacity=0.3,
+            close_on_background_click=True
+        )
+        self.overlay_panel.set_title("Package Manager")
+        self.overlay_panel.set_content(right_pane)
+
+        # Connect panel signals to update toggle button
+        self.overlay_panel.panel_shown.connect(self._on_panel_shown)
+        self.overlay_panel.panel_hidden.connect(self._on_panel_hidden)
 
         # Restore last selected tab
         last_tab = self.app_settings.get("packagesTab/lastSelectedTab", 0)
@@ -246,6 +280,18 @@ class PackagesTab(QtWidgets.QWidget):
     def _on_tab_changed(self, index):
         """Handle tab change to save the selection."""
         self.app_settings.set("packagesTab/lastSelectedTab", index)
+
+    def _toggle_package_manager_panel(self):
+        """Toggle the Package Manager panel visibility."""
+        self.overlay_panel.toggle()
+
+    def _on_panel_shown(self):
+        """Handle panel shown event - update toggle button."""
+        self.toggle_panel_btn.setText("Package Manager ◀")
+
+    def _on_panel_hidden(self):
+        """Handle panel hidden event - update toggle button."""
+        self.toggle_panel_btn.setText("Package Manager ▶")
 
     def _load_field_schema(self):
         """Load field schema for CustomEntity02 (Bidding Scenes)."""
