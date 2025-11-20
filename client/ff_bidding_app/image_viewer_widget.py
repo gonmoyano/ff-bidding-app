@@ -3,8 +3,10 @@ import logging
 
 try:
     from .logger import logger
+    from .folder_pane_widget import FolderPaneWidget
 except (ImportError, ValueError, SystemError):
     logger = logging.getLogger("FFPackageManager")
+    from folder_pane_widget import FolderPaneWidget
 
 
 class ImageViewerDialog(QtWidgets.QDialog):
@@ -395,6 +397,9 @@ class ThumbnailWidget(QtWidgets.QWidget):
         self.setFixedSize(180, 200)
         self.setCursor(QtCore.Qt.PointingHandCursor)
 
+        # Enable drag
+        self.drag_start_position = None
+
         self._setup_ui()
         self._load_thumbnail()
 
@@ -540,7 +545,42 @@ class ThumbnailWidget(QtWidgets.QWidget):
     def mousePressEvent(self, event):
         """Handle mouse press to select thumbnail."""
         if event.button() == QtCore.Qt.LeftButton:
+            self.drag_start_position = event.pos()
             self.clicked.emit(self.version_data)
+
+    def mouseMoveEvent(self, event):
+        """Handle mouse move to start drag operation."""
+        if not (event.buttons() & QtCore.Qt.LeftButton):
+            return
+        if not self.drag_start_position:
+            return
+
+        # Check if we've moved far enough to start a drag
+        if (event.pos() - self.drag_start_position).manhattanLength() < QtWidgets.QApplication.startDragDistance():
+            return
+
+        # Start drag operation
+        drag = QtGui.QDrag(self)
+        mime_data = QtCore.QMimeData()
+
+        # Store the version ID in mime data
+        version_id = self.version_data.get('id')
+        if version_id:
+            mime_data.setData("application/x-image-version-id", str(version_id).encode())
+            drag.setMimeData(mime_data)
+
+            # Set drag pixmap (use thumbnail if available)
+            if self.thumbnail_label.pixmap():
+                pixmap = self.thumbnail_label.pixmap().scaled(
+                    80, 80,
+                    QtCore.Qt.KeepAspectRatio,
+                    QtCore.Qt.SmoothTransformation
+                )
+                drag.setPixmap(pixmap)
+                drag.setHotSpot(pixmap.rect().center())
+
+            # Execute drag
+            drag.exec(QtCore.Qt.CopyAction)
 
     def mouseDoubleClickEvent(self, event):
         """Handle double-click to open enlarged view."""
@@ -576,9 +616,10 @@ class ThumbnailWidget(QtWidgets.QWidget):
 class ImageViewerWidget(QtWidgets.QWidget):
     """Widget for viewing image versions with thumbnails."""
 
-    def __init__(self, sg_session, parent=None):
+    def __init__(self, sg_session, parent=None, packages_tab=None):
         super().__init__(parent)
         self.sg_session = sg_session
+        self.packages_tab = packages_tab  # Reference to PackagesTab
         self.current_project_id = None
         self.all_versions = []
         self.filtered_versions = []
@@ -600,9 +641,24 @@ class ImageViewerWidget(QtWidgets.QWidget):
         main_layout = QtWidgets.QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Thumbnails with filters
+        # Create splitter for thumbnails and folder pane
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        splitter.setChildrenCollapsible(False)
+
+        # Left: Thumbnails with filters
         thumbnail_dock = self._create_thumbnail_dock()
-        main_layout.addWidget(thumbnail_dock)
+        splitter.addWidget(thumbnail_dock)
+
+        # Right: Folder pane
+        self.folder_pane = FolderPaneWidget(self)
+        splitter.addWidget(self.folder_pane)
+
+        # Set initial sizes (70% thumbnails, 30% folder pane)
+        splitter.setSizes([700, 300])
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 0)
+
+        main_layout.addWidget(splitter)
 
     def _create_thumbnail_dock(self):
         """Create the thumbnail view with filters."""
@@ -789,3 +845,101 @@ class ImageViewerWidget(QtWidgets.QWidget):
         self.all_versions = []
         self.filtered_versions = []
         self._rebuild_thumbnails()
+
+    def update_folder_pane(self):
+        """Update the folder pane with assets and scenes from VFX Breakdown."""
+        if not self.packages_tab:
+            logger.info("No packages_tab reference, skipping folder pane update")
+            return
+
+        # Get breakdown widget from packages_tab
+        breakdown_widget = getattr(self.packages_tab, 'breakdown_widget', None)
+        if not breakdown_widget:
+            logger.info("No breakdown_widget found")
+            return
+
+        # Get breakdown model
+        model = getattr(breakdown_widget, 'model', None)
+        if not model:
+            logger.info("No model found in breakdown_widget")
+            return
+
+        # Get all bidding scenes data
+        all_scenes = getattr(model, 'all_bidding_scenes_data', [])
+        if not all_scenes:
+            logger.info("No bidding scenes data available")
+            return
+
+        # Extract unique assets and scenes
+        unique_assets = set()
+        unique_scenes = set()
+
+        for scene in all_scenes:
+            # Extract assets from sg_bid_assets
+            bid_assets = scene.get('sg_bid_assets', [])
+            if bid_assets:
+                if isinstance(bid_assets, list):
+                    for asset in bid_assets:
+                        if isinstance(asset, dict):
+                            asset_name = asset.get('name')
+                            if asset_name:
+                                unique_assets.add(asset_name)
+                        elif isinstance(asset, str):
+                            unique_assets.add(asset)
+
+            # Extract scene code from sg_sequence_code
+            scene_code = scene.get('sg_sequence_code')
+            if scene_code:
+                if isinstance(scene_code, str):
+                    unique_scenes.add(scene_code)
+                elif isinstance(scene_code, dict):
+                    scene_name = scene_code.get('name')
+                    if scene_name:
+                        unique_scenes.add(scene_name)
+
+        logger.info(f"Found {len(unique_assets)} unique assets and {len(unique_scenes)} unique scenes")
+
+        # Update folder pane
+        self.folder_pane.set_assets(list(unique_assets))
+        self.folder_pane.set_scenes(list(unique_scenes))
+
+        # Load saved mappings if available
+        self._load_folder_mappings()
+
+    def _load_folder_mappings(self):
+        """Load saved image-to-folder mappings from settings."""
+        if not self.packages_tab:
+            return
+
+        # Try to get mappings from current package
+        current_package = getattr(self.packages_tab, 'current_package_name', None)
+        if not current_package:
+            return
+
+        packages = getattr(self.packages_tab, 'packages', {})
+        package_data = packages.get(current_package, {})
+        folder_mappings = package_data.get('folder_mappings', None)
+
+        if folder_mappings:
+            self.folder_pane.load_folder_mappings(folder_mappings)
+            logger.info("Loaded folder mappings from package")
+
+    def save_folder_mappings(self):
+        """Save image-to-folder mappings to current package."""
+        if not self.packages_tab:
+            return
+
+        current_package = getattr(self.packages_tab, 'current_package_name', None)
+        if not current_package:
+            return
+
+        packages = getattr(self.packages_tab, 'packages', {})
+        if current_package not in packages:
+            return
+
+        # Get mappings from folder pane
+        mappings = self.folder_pane.get_folder_mappings()
+
+        # Save to package data
+        packages[current_package]['folder_mappings'] = mappings
+        logger.info("Saved folder mappings to package")
