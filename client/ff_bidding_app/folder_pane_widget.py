@@ -1,5 +1,7 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 import logging
+import urllib.request
+from threading import Thread
 
 try:
     from .logger import logger
@@ -7,6 +9,103 @@ try:
 except (ImportError, ValueError, SystemError):
     logger = logging.getLogger("FFPackageManager")
     from bid_selector_widget import CollapsibleGroupBox
+
+
+class ImageLoader(QtCore.QObject):
+    """Asynchronous image loader using QThread."""
+
+    imageLoaded = QtCore.Signal(str, QtGui.QPixmap)  # (cache_key, pixmap)
+    loadFailed = QtCore.Signal(str)  # (cache_key)
+
+    def __init__(self, parent=None, max_concurrent=5):
+        super().__init__(parent)
+        self.load_queue = []
+        self.active_loads = 0
+        self.max_concurrent = max_concurrent  # Allow multiple concurrent loads
+        self.loading_keys = set()  # Track what's currently loading
+
+    def load_image(self, url, cache_key, width, height):
+        """Queue an image for loading.
+
+        Args:
+            url: URL to load image from
+            cache_key: Unique key for caching
+            width: Target width for scaling
+            height: Target height for scaling
+        """
+        # Skip if already loading or queued
+        if cache_key in self.loading_keys:
+            return
+
+        self.loading_keys.add(cache_key)
+        self.load_queue.append((url, cache_key, width, height))
+        self._process_queue()
+
+    def _process_queue(self):
+        """Process the next items in the queue up to max_concurrent."""
+        while self.load_queue and self.active_loads < self.max_concurrent:
+            self.active_loads += 1
+            url, cache_key, width, height = self.load_queue.pop(0)
+
+            # Load in background thread
+            thread = Thread(target=self._load_in_thread, args=(url, cache_key, width, height))
+            thread.daemon = True
+            thread.start()
+
+    def _load_in_thread(self, url, cache_key, width, height):
+        """Load image in background thread."""
+        try:
+            with urllib.request.urlopen(url, timeout=5) as response:
+                image_bytes = response.read()
+                pixmap = QtGui.QPixmap()
+                pixmap.loadFromData(image_bytes)
+
+                if not pixmap.isNull():
+                    # Scale to fit
+                    scaled_pixmap = pixmap.scaled(
+                        width, height,
+                        QtCore.Qt.KeepAspectRatio,
+                        QtCore.Qt.SmoothTransformation
+                    )
+                    # Emit signal on main thread
+                    QtCore.QMetaObject.invokeMethod(
+                        self,
+                        "_emit_loaded",
+                        QtCore.Qt.QueuedConnection,
+                        QtCore.Q_ARG(str, cache_key),
+                        QtCore.Q_ARG(QtGui.QPixmap, scaled_pixmap)
+                    )
+                else:
+                    QtCore.QMetaObject.invokeMethod(
+                        self,
+                        "_emit_failed",
+                        QtCore.Qt.QueuedConnection,
+                        QtCore.Q_ARG(str, cache_key)
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to load image from {url}: {e}")
+            QtCore.QMetaObject.invokeMethod(
+                self,
+                "_emit_failed",
+                QtCore.Qt.QueuedConnection,
+                QtCore.Q_ARG(str, cache_key)
+            )
+
+    @QtCore.Slot(str, QtGui.QPixmap)
+    def _emit_loaded(self, cache_key, pixmap):
+        """Emit loaded signal on main thread."""
+        self.imageLoaded.emit(cache_key, pixmap)
+        self.active_loads -= 1
+        self.loading_keys.discard(cache_key)
+        self._process_queue()
+
+    @QtCore.Slot(str)
+    def _emit_failed(self, cache_key):
+        """Emit failed signal on main thread."""
+        self.loadFailed.emit(cache_key)
+        self.active_loads -= 1
+        self.loading_keys.discard(cache_key)
+        self._process_queue()
 
 
 class FolderWidget(QtWidgets.QWidget):
@@ -222,13 +321,27 @@ class FolderDetailView(QtWidgets.QWidget):
     imageEnlarged = QtCore.Signal(dict)  # Signal when image should be enlarged (version_data)
     imageDroppedToGroup = QtCore.Signal(int, str, str, str)  # (image_id, target_type, folder_name, folder_type)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, shared_cache=None, shared_loader=None):
         super().__init__(parent)
         self.folder_name = None
         self.folder_type = None
         self.image_versions = []  # List of image version data
         self.sg_session = None  # ShotGrid session for loading images
         self.thumbnail_size = 170  # Default thumbnail size
+
+        # Image cache for loaded thumbnails (use shared if provided)
+        self.image_cache = shared_cache if shared_cache is not None else {}
+        self.label_cache = {}  # cache_key -> list of QLabel widgets
+
+        # Async image loader (use shared if provided)
+        if shared_loader is not None:
+            self.image_loader = shared_loader
+        else:
+            self.image_loader = ImageLoader(self)
+
+        self.image_loader.imageLoaded.connect(self._on_image_loaded)
+        self.image_loader.loadFailed.connect(self._on_image_load_failed)
+
         self._setup_ui()
 
     def _setup_ui(self):
@@ -322,6 +435,9 @@ class FolderDetailView(QtWidgets.QWidget):
         # Group by type and display
         self._populate_groups()
 
+        # Preload images in background for faster display
+        self._preload_images()
+
     def _populate_groups(self):
         """Populate the type groups with thumbnails."""
         # Group images by type
@@ -401,26 +517,28 @@ class FolderDetailView(QtWidgets.QWidget):
         image_label.setCursor(QtCore.Qt.PointingHandCursor)
         image_label.mouseDoubleClickEvent = lambda event: self.imageEnlarged.emit(version)
 
-        # Remove icon overlay (crossed circle in bottom-right corner)
+        # Remove icon overlay (circular outline with X in bottom-right corner)
         remove_icon = QtWidgets.QPushButton(image_container)
-        remove_icon.setFixedSize(24, 24)
-        remove_icon.move(thumb_width - 30, thumb_height - 30)  # Position in bottom-right corner
+        remove_icon.setFixedSize(28, 28)
+        remove_icon.move(thumb_width - 34, thumb_height - 34)  # Position in bottom-right corner
         remove_icon.setCursor(QtCore.Qt.PointingHandCursor)
         remove_icon.clicked.connect(lambda: self._remove_image(version.get('id')))
 
-        # Use a circle with X icon
+        # Circular outline style with X
         remove_icon.setStyleSheet("""
             QPushButton {
-                background-color: rgba(204, 51, 51, 180);
-                border: 2px solid white;
-                border-radius: 12px;
-                color: white;
+                background-color: transparent;
+                border: 3px solid rgba(255, 255, 255, 200);
+                border-radius: 14px;
+                color: rgba(255, 255, 255, 200);
                 font-weight: bold;
-                font-size: 16px;
+                font-size: 20px;
                 padding: 0px;
             }
             QPushButton:hover {
-                background-color: rgba(221, 68, 68, 220);
+                border: 3px solid rgba(255, 80, 80, 255);
+                color: rgba(255, 80, 80, 255);
+                background-color: rgba(255, 255, 255, 30);
             }
         """)
         remove_icon.setText("×")
@@ -456,55 +574,78 @@ class FolderDetailView(QtWidgets.QWidget):
                 label.setStyleSheet(label.styleSheet() + "color: #888;")
                 return
 
-            # If image_data is a URL string, try to download it
+            # Get URL for the image
+            url = None
             if isinstance(image_data, str):
-                import urllib.request
-                try:
-                    with urllib.request.urlopen(image_data, timeout=5) as response:
-                        image_bytes = response.read()
-                        pixmap = QtGui.QPixmap()
-                        pixmap.loadFromData(image_bytes)
-                        if not pixmap.isNull():
-                            # Scale to fit label
-                            scaled_pixmap = pixmap.scaled(
-                                width, height,
-                                QtCore.Qt.KeepAspectRatio,
-                                QtCore.Qt.SmoothTransformation
-                            )
-                            label.setPixmap(scaled_pixmap)
-                            return
-                except Exception as e:
-                    logger.warning(f"Failed to load thumbnail from URL: {e}")
+                url = image_data
+            elif isinstance(image_data, dict):
+                url = image_data.get('url') or image_data.get('local_path')
 
-            # Try using ShotGrid session if available
-            if self.sg_session and isinstance(image_data, dict):
-                thumbnail_path = image_data.get('url') or image_data.get('local_path')
-                if thumbnail_path:
-                    import urllib.request
-                    try:
-                        with urllib.request.urlopen(thumbnail_path, timeout=5) as response:
-                            image_bytes = response.read()
-                            pixmap = QtGui.QPixmap()
-                            pixmap.loadFromData(image_bytes)
-                            if not pixmap.isNull():
-                                scaled_pixmap = pixmap.scaled(
-                                    width, height,
-                                    QtCore.Qt.KeepAspectRatio,
-                                    QtCore.Qt.SmoothTransformation
-                                )
-                                label.setPixmap(scaled_pixmap)
-                                return
-                    except Exception as e:
-                        logger.warning(f"Failed to load thumbnail: {e}")
+            if not url:
+                label.setText(version.get('code', 'No Image')[:20])
+                label.setStyleSheet(label.styleSheet() + "color: #888; font-size: 10px;")
+                return
 
-            # Fallback to showing version code
-            label.setText(version.get('code', 'No Image')[:20])
+            # Create cache key from URL and size
+            cache_key = f"{url}_{width}x{height}"
+
+            # Check if already cached
+            if cache_key in self.image_cache:
+                label.setPixmap(self.image_cache[cache_key])
+                return
+
+            # Show loading text
+            label.setText("Loading...")
             label.setStyleSheet(label.styleSheet() + "color: #888; font-size: 10px;")
+
+            # Register label for this cache key
+            if cache_key not in self.label_cache:
+                self.label_cache[cache_key] = []
+            self.label_cache[cache_key].append(label)
+
+            # Queue for async loading
+            self.image_loader.load_image(url, cache_key, width, height)
 
         except Exception as e:
             logger.error(f"Error loading thumbnail: {e}", exc_info=True)
             label.setText("Error")
             label.setStyleSheet(label.styleSheet() + "color: #cc3333;")
+
+    @QtCore.Slot(str, QtGui.QPixmap)
+    def _on_image_loaded(self, cache_key, pixmap):
+        """Handle successful image load.
+
+        Args:
+            cache_key: Cache key for the image
+            pixmap: Loaded pixmap
+        """
+        # Cache the pixmap
+        self.image_cache[cache_key] = pixmap
+
+        # Update all labels waiting for this image
+        if cache_key in self.label_cache:
+            for label in self.label_cache[cache_key]:
+                if label and not label.isHidden():
+                    label.setPixmap(pixmap)
+                    label.setStyleSheet("")  # Clear loading style
+            # Clear label cache for this key
+            del self.label_cache[cache_key]
+
+    @QtCore.Slot(str)
+    def _on_image_load_failed(self, cache_key):
+        """Handle failed image load.
+
+        Args:
+            cache_key: Cache key for the image
+        """
+        # Update all labels waiting for this image
+        if cache_key in self.label_cache:
+            for label in self.label_cache[cache_key]:
+                if label and not label.isHidden():
+                    label.setText("Failed")
+                    label.setStyleSheet("color: #cc3333; font-size: 10px;")
+            # Clear label cache for this key
+            del self.label_cache[cache_key]
 
     def _remove_image(self, image_id):
         """Remove an image from the folder."""
@@ -531,6 +672,37 @@ class FolderDetailView(QtWidgets.QWidget):
         self.thumbnail_size = size
         # Refresh the groups with new size
         self._populate_groups()
+
+    def _preload_images(self):
+        """Preload all images in background for faster display."""
+        # Calculate dimensions based on current thumbnail size
+        thumb_width = self.thumbnail_size
+        thumb_height = int(thumb_width * 0.82)
+
+        for version in self.image_versions:
+            image_data = version.get('image')
+            if not image_data:
+                continue
+
+            # Get URL
+            url = None
+            if isinstance(image_data, str):
+                url = image_data
+            elif isinstance(image_data, dict):
+                url = image_data.get('url') or image_data.get('local_path')
+
+            if not url:
+                continue
+
+            # Create cache key
+            cache_key = f"{url}_{thumb_width - 4}x{thumb_height - 4}"
+
+            # Skip if already cached
+            if cache_key in self.image_cache:
+                continue
+
+            # Queue for background loading
+            self.image_loader.load_image(url, cache_key, thumb_width - 4, thumb_height - 4)
 
     def _get_version_type(self, version):
         """Get the type category for a version."""
@@ -569,6 +741,10 @@ class FolderPaneWidget(QtWidgets.QWidget):
         self.settings = QSettings("FFBiddingApp", "FolderPane")
         self.current_icon_size = self.settings.value("folder_icon_size", 64, type=int)
         self.detail_thumbnail_size = self.settings.value("detail_thumbnail_size", 170, type=int)
+
+        # Shared image cache for all views
+        self.shared_image_cache = {}  # cache_key -> QPixmap
+        self.shared_image_loader = ImageLoader(self)
 
         # Reference to image viewer widget (set later)
         self.image_viewer = None
@@ -657,8 +833,12 @@ class FolderPaneWidget(QtWidgets.QWidget):
 
         self.view_stack.addWidget(folder_grid_view)  # Index 0
 
-        # View 1: Folder detail view
-        self.detail_view = FolderDetailView(self)
+        # View 1: Folder detail view with shared cache
+        self.detail_view = FolderDetailView(
+            self,
+            shared_cache=self.shared_image_cache,
+            shared_loader=self.shared_image_loader
+        )
         self.detail_view.backClicked.connect(self._show_folder_grid)
         self.detail_view.imageRemoved.connect(self._handle_image_removed)
         self.detail_view.imageEnlarged.connect(self._handle_image_enlarged)
