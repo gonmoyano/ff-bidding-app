@@ -393,12 +393,18 @@ class ThumbnailWidget(QtWidgets.QWidget):
         self.version_data = version_data
         self.sg_session = sg_session
         self.selected = False
+        self.folders_containing_this = []  # List of folder names containing this image
 
         self.setFixedSize(180, 200)
         self.setCursor(QtCore.Qt.PointingHandCursor)
 
         # Enable drag
         self.drag_start_position = None
+
+        # Tooltip timer for hover delay
+        self.tooltip_timer = QtCore.QTimer()
+        self.tooltip_timer.setSingleShot(True)
+        self.tooltip_timer.timeout.connect(self._show_tooltip)
 
         self._setup_ui()
         self._load_thumbnail()
@@ -595,22 +601,59 @@ class ThumbnailWidget(QtWidgets.QWidget):
     def set_selected(self, selected):
         """Set the selected state."""
         self.selected = selected
-        if selected:
-            self.thumbnail_label.setStyleSheet("""
-                QLabel {
-                    background-color: #2b2b2b;
-                    border: 2px solid #4a9eff;
-                    border-radius: 4px;
-                }
-            """)
+        self._update_border()
+
+    def set_folders_containing(self, folder_names):
+        """Set which folders contain this image.
+
+        Args:
+            folder_names: List of folder names that contain this image
+        """
+        self.folders_containing_this = folder_names
+        self._update_border()
+
+    def _update_border(self):
+        """Update the border based on selection and folder states."""
+        # Priority: selected > in folders > default
+        if self.selected:
+            # Blue border for selection
+            border_color = "#4a9eff"
+        elif len(self.folders_containing_this) >= 2:
+            # Orange border for 2+ folders
+            border_color = "#ff8c00"
+        elif len(self.folders_containing_this) == 1:
+            # Green border for 1 folder
+            border_color = "#00cc00"
         else:
-            self.thumbnail_label.setStyleSheet("""
-                QLabel {
-                    background-color: #2b2b2b;
-                    border: 2px solid #444;
-                    border-radius: 4px;
-                }
-            """)
+            # Default border
+            border_color = "#444"
+
+        self.thumbnail_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: #2b2b2b;
+                border: 2px solid {border_color};
+                border-radius: 4px;
+            }}
+        """)
+
+    def _show_tooltip(self):
+        """Show tooltip with folder information."""
+        if self.folders_containing_this:
+            folder_list = "\n".join([f"  • {name}" for name in self.folders_containing_this])
+            tooltip_text = f"Dropped to {len(self.folders_containing_this)} folder(s):\n{folder_list}"
+            QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), tooltip_text, self)
+
+    def enterEvent(self, event):
+        """Handle mouse enter to show tooltip after delay."""
+        super().enterEvent(event)
+        if self.folders_containing_this:
+            self.tooltip_timer.start(1000)  # 1 second delay
+
+    def leaveEvent(self, event):
+        """Handle mouse leave to cancel tooltip."""
+        super().leaveEvent(event)
+        self.tooltip_timer.stop()
+        QtWidgets.QToolTip.hideText()
 
 
 class ImageViewerWidget(QtWidgets.QWidget):
@@ -661,6 +704,9 @@ class ImageViewerWidget(QtWidgets.QWidget):
         # Right: Folder pane
         self.folder_pane = FolderPaneWidget(self)
         self.splitter.addWidget(self.folder_pane)
+
+        # Connect folder drop signal to update thumbnail states
+        self.folder_pane.imageDropped.connect(self.update_thumbnail_states)
 
         # Set initial sizes (70% thumbnails, 30% folder pane)
         self.splitter.setSizes([700, 300])
@@ -1027,6 +1073,8 @@ class ImageViewerWidget(QtWidgets.QWidget):
         if folder_mappings:
             self.folder_pane.load_folder_mappings(folder_mappings)
             logger.info("Loaded folder mappings from package")
+            # Update thumbnail states to reflect loaded mappings
+            self.update_thumbnail_states()
 
     def save_folder_mappings(self):
         """Save image-to-folder mappings to current package."""
@@ -1047,3 +1095,34 @@ class ImageViewerWidget(QtWidgets.QWidget):
         # Save to package data
         packages[current_package]['folder_mappings'] = mappings
         logger.info("Saved folder mappings to package")
+
+    def update_thumbnail_states(self):
+        """Update all thumbnail border states based on folder mappings."""
+        if not self.folder_pane:
+            return
+
+        # Get current mappings
+        mappings = self.folder_pane.get_folder_mappings()
+
+        # Build reverse mapping: image_id -> list of folder names
+        image_to_folders = {}
+
+        # Check assets
+        for asset_name, image_ids in mappings.get('assets', {}).items():
+            for image_id in image_ids:
+                if image_id not in image_to_folders:
+                    image_to_folders[image_id] = []
+                image_to_folders[image_id].append(f"Asset: {asset_name}")
+
+        # Check scenes
+        for scene_code, image_ids in mappings.get('scenes', {}).items():
+            for image_id in image_ids:
+                if image_id not in image_to_folders:
+                    image_to_folders[image_id] = []
+                image_to_folders[image_id].append(f"Scene: {scene_code}")
+
+        # Update all thumbnails
+        for thumbnail in self.thumbnail_widgets:
+            image_id = thumbnail.version_data.get('id')
+            folders = image_to_folders.get(image_id, [])
+            thumbnail.set_folders_containing(folders)

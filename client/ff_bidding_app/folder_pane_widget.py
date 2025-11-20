@@ -12,6 +12,8 @@ except (ImportError, ValueError, SystemError):
 class FolderWidget(QtWidgets.QWidget):
     """Widget representing a folder that can accept image drops."""
 
+    imageDropped = QtCore.Signal()  # Signal emitted when an image is dropped
+
     def __init__(self, folder_name, folder_type, parent=None, icon_size=64):
         """Initialize folder widget.
 
@@ -129,6 +131,9 @@ class FolderWidget(QtWidgets.QWidget):
             event.acceptProposedAction()
             logger.info(f"Dropped image {image_id} into folder {self.folder_name}")
 
+            # Emit signal to notify parent
+            self.imageDropped.emit()
+
             # Remove highlight
             self.dragLeaveEvent(event)
         else:
@@ -161,6 +166,8 @@ class FolderWidget(QtWidgets.QWidget):
 
 class FolderPaneWidget(QtWidgets.QWidget):
     """Widget displaying folders for Assets and Scenes."""
+
+    imageDropped = QtCore.Signal()  # Signal emitted when an image is dropped to any folder
 
     def __init__(self, parent=None):
         """Initialize folder pane widget."""
@@ -375,6 +382,8 @@ class FolderPaneWidget(QtWidgets.QWidget):
         # Add new asset folders
         for asset_name in sorted(asset_names):
             folder = FolderWidget(asset_name, 'asset', self, icon_size=self.current_icon_size)
+            # Connect drop signal to propagate up
+            folder.imageDropped.connect(self.imageDropped.emit)
             self.asset_folders[asset_name] = folder
 
         # Update group title with count
@@ -403,6 +412,8 @@ class FolderPaneWidget(QtWidgets.QWidget):
         # Add new scene folders
         for scene_code in sorted(scene_codes):
             folder = FolderWidget(scene_code, 'scene', self, icon_size=self.current_icon_size)
+            # Connect drop signal to propagate up
+            folder.imageDropped.connect(self.imageDropped.emit)
             self.scene_folders[scene_code] = folder
 
         # Update group title with count
