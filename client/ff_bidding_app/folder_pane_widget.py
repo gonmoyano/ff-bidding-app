@@ -169,6 +169,11 @@ class FolderPaneWidget(QtWidgets.QWidget):
         self.scene_folders = {}  # scene_code -> FolderWidget
         self.current_icon_size = 64  # Default icon size
 
+        # Debounce timer for resize events
+        self.resize_timer = QtCore.QTimer()
+        self.resize_timer.setSingleShot(True)
+        self.resize_timer.timeout.connect(self._relayout_folders_delayed)
+
         self._setup_ui()
 
     def _setup_ui(self):
@@ -251,8 +256,12 @@ class FolderPaneWidget(QtWidgets.QWidget):
 
     def _relayout_folders(self):
         """Re-layout folders in grid based on current pane width."""
-        # Calculate columns based on pane width and icon size
+        # Safety check for width
         pane_width = self.width()
+        if pane_width <= 0:
+            pane_width = 250  # Use minimum width as default
+
+        # Calculate columns based on pane width and icon size
         folder_width = self.current_icon_size + 40  # Icon + padding
         columns = max(1, pane_width // folder_width)
 
@@ -262,6 +271,10 @@ class FolderPaneWidget(QtWidgets.QWidget):
         # Re-layout scenes
         self._layout_folders_in_grid(self.scene_folders, self.scenes_layout, columns)
 
+    def _relayout_folders_delayed(self):
+        """Re-layout folders after resize timer expires."""
+        self._relayout_folders()
+
     def _layout_folders_in_grid(self, folders_dict, grid_layout, columns):
         """Layout folders in a grid.
 
@@ -270,26 +283,33 @@ class FolderPaneWidget(QtWidgets.QWidget):
             grid_layout: QGridLayout to place folders in
             columns: Number of columns in the grid
         """
-        # Get sorted folder names
-        folder_names = sorted(folders_dict.keys())
+        try:
+            # Get sorted folder names
+            folder_names = sorted(folders_dict.keys())
 
-        # Clear existing layout
-        while grid_layout.count():
-            item = grid_layout.takeAt(0)
-            if item.widget():
-                item.widget().setParent(None)
+            # Clear existing layout
+            while grid_layout.count():
+                item = grid_layout.takeAt(0)
+                if item.widget():
+                    widget = item.widget()
+                    widget.setParent(None)
 
-        # Add folders to grid
-        for idx, folder_name in enumerate(folder_names):
-            folder = folders_dict[folder_name]
-            row = idx // columns
-            col = idx % columns
-            grid_layout.addWidget(folder, row, col)
+            # Add folders to grid
+            for idx, folder_name in enumerate(folder_names):
+                folder = folders_dict.get(folder_name)
+                if folder and not folder.isHidden():
+                    row = idx // columns
+                    col = idx % columns
+                    grid_layout.addWidget(folder, row, col)
+        except Exception as e:
+            logger.error(f"Error laying out folders in grid: {e}")
 
     def resizeEvent(self, event):
         """Handle resize event to re-layout folders."""
         super().resizeEvent(event)
-        self._relayout_folders()
+        # Use debounced timer to avoid excessive relayout during resize
+        self.resize_timer.stop()
+        self.resize_timer.start(150)  # Wait 150ms after last resize
 
     def set_assets(self, asset_names):
         """Set the asset folders.
