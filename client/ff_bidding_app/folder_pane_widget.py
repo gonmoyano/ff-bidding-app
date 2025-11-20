@@ -171,12 +171,56 @@ class FolderWidget(QtWidgets.QWidget):
         super().mouseDoubleClickEvent(event)
 
 
+class DroppableGroupContainer(QtWidgets.QWidget):
+    """Container widget that accepts image drops for a specific type group."""
+
+    imageDropped = QtCore.Signal(int, str)  # (image_id, target_type)
+
+    def __init__(self, image_type, parent=None):
+        super().__init__(parent)
+        self.image_type = image_type
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        """Handle drag enter event."""
+        if event.mimeData().hasFormat("application/x-image-version-id"):
+            event.acceptProposedAction()
+            # Highlight on drag over
+            self.setStyleSheet("background-color: rgba(74, 159, 255, 50);")
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event):
+        """Handle drag leave event."""
+        # Remove highlight
+        self.setStyleSheet("")
+
+    def dropEvent(self, event):
+        """Handle drop event."""
+        if event.mimeData().hasFormat("application/x-image-version-id"):
+            # Get the dropped image version ID
+            image_id_bytes = event.mimeData().data("application/x-image-version-id")
+            image_id = int(bytes(image_id_bytes).decode())
+
+            event.acceptProposedAction()
+            logger.info(f"Dropped image {image_id} into {self.image_type} group")
+
+            # Emit signal with image ID and target type
+            self.imageDropped.emit(image_id, self.image_type)
+
+            # Remove highlight
+            self.dragLeaveEvent(event)
+        else:
+            event.ignore()
+
+
 class FolderDetailView(QtWidgets.QWidget):
     """Widget for viewing contents of a specific folder grouped by type."""
 
     backClicked = QtCore.Signal()  # Signal when back button is clicked
     imageRemoved = QtCore.Signal(int, str, str)  # Signal when image removed (image_id, folder_name, folder_type)
     imageEnlarged = QtCore.Signal(dict)  # Signal when image should be enlarged (version_data)
+    imageDroppedToGroup = QtCore.Signal(int, str, str, str)  # (image_id, target_type, folder_name, folder_type)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -184,6 +228,7 @@ class FolderDetailView(QtWidgets.QWidget):
         self.folder_type = None
         self.image_versions = []  # List of image version data
         self.sg_session = None  # ShotGrid session for loading images
+        self.thumbnail_size = 170  # Default thumbnail size
         self._setup_ui()
 
     def _setup_ui(self):
@@ -235,7 +280,8 @@ class FolderDetailView(QtWidgets.QWidget):
         self.type_groups = {}
         for image_type in ['Concept Art', 'Storyboard', 'Reference', 'Video']:
             group = CollapsibleGroupBox(f"{image_type} (0 items)")
-            group_container = QtWidgets.QWidget()
+            group_container = DroppableGroupContainer(image_type)
+            group_container.imageDropped.connect(self._on_image_dropped_to_group)
             group_layout = QtWidgets.QGridLayout(group_container)
             group_layout.setSpacing(10)
             group_layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
@@ -307,27 +353,38 @@ class FolderDetailView(QtWidgets.QWidget):
             count = len(versions)
             group.setTitle(f"{image_type} ({count} item{'s' if count != 1 else ''})")
 
-            # Add thumbnails (import from image_viewer_widget)
-            # For now, add placeholder labels - we'll need to import ThumbnailWidget
-            columns = max(1, self.width() // 190)  # 180px + 10px spacing
+            # Add thumbnails
+            # Calculate columns based on thumbnail size
+            item_width = self.thumbnail_size + 10  # thumbnail + spacing
+            columns = max(1, self.width() // item_width)
             for idx, version in enumerate(versions):
                 row = idx // columns
                 col = idx % columns
 
-                # Create a simple widget with version code and remove button
+                # Create thumbnail item widget
                 item_widget = self._create_thumbnail_item(version)
                 layout.addWidget(item_widget, row, col)
 
     def _create_thumbnail_item(self, version):
         """Create a thumbnail item widget with image loading and controls."""
+        # Calculate dimensions based on thumbnail size
+        thumb_width = self.thumbnail_size
+        thumb_height = int(thumb_width * 0.82)  # Maintain aspect ratio
+        container_width = thumb_width + 10
+        container_height = thumb_height + 50  # Extra space for label
+
         container = QtWidgets.QWidget()
         container_layout = QtWidgets.QVBoxLayout(container)
         container_layout.setContentsMargins(5, 5, 5, 5)
         container_layout.setSpacing(5)
 
+        # Image container with overlay for remove icon
+        image_container = QtWidgets.QWidget()
+        image_container.setFixedSize(thumb_width, thumb_height)
+
         # Image label with thumbnail
-        image_label = QtWidgets.QLabel()
-        image_label.setFixedSize(170, 140)
+        image_label = QtWidgets.QLabel(image_container)
+        image_label.setFixedSize(thumb_width, thumb_height)
         image_label.setAlignment(QtCore.Qt.AlignCenter)
         image_label.setStyleSheet("""
             QLabel {
@@ -338,45 +395,59 @@ class FolderDetailView(QtWidgets.QWidget):
         """)
 
         # Load thumbnail
-        self._load_thumbnail_for_label(image_label, version)
+        self._load_thumbnail_for_label(image_label, version, thumb_width - 4, thumb_height - 4)
 
         # Make label clickable for enlargement
         image_label.setCursor(QtCore.Qt.PointingHandCursor)
         image_label.mouseDoubleClickEvent = lambda event: self.imageEnlarged.emit(version)
 
-        container_layout.addWidget(image_label)
+        # Remove icon overlay (crossed circle in bottom-right corner)
+        remove_icon = QtWidgets.QPushButton(image_container)
+        remove_icon.setFixedSize(24, 24)
+        remove_icon.move(thumb_width - 30, thumb_height - 30)  # Position in bottom-right corner
+        remove_icon.setCursor(QtCore.Qt.PointingHandCursor)
+        remove_icon.clicked.connect(lambda: self._remove_image(version.get('id')))
+
+        # Use a circle with X icon
+        remove_icon.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(204, 51, 51, 180);
+                border: 2px solid white;
+                border-radius: 12px;
+                color: white;
+                font-weight: bold;
+                font-size: 16px;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: rgba(221, 68, 68, 220);
+            }
+        """)
+        remove_icon.setText("×")
+
+        container_layout.addWidget(image_container)
 
         # Version code
         version_code = version.get('code', 'Unknown')
         code_label = QtWidgets.QLabel(version_code)
         code_label.setWordWrap(True)
-        code_label.setMaximumWidth(170)
+        code_label.setMaximumWidth(thumb_width)
         code_label.setAlignment(QtCore.Qt.AlignCenter)
         code_label.setStyleSheet("font-size: 11px; color: #ddd;")
         container_layout.addWidget(code_label)
 
-        # Remove button
-        remove_btn = QtWidgets.QPushButton("Remove")
-        remove_btn.clicked.connect(lambda: self._remove_image(version.get('id')))
-        remove_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #cc3333;
-                color: white;
-                padding: 3px;
-                font-size: 9px;
-                border-radius: 2px;
-            }
-            QPushButton:hover {
-                background-color: #dd4444;
-            }
-        """)
-        container_layout.addWidget(remove_btn)
-
-        container.setFixedSize(180, 230)
+        container.setFixedSize(container_width, container_height)
         return container
 
-    def _load_thumbnail_for_label(self, label, version):
-        """Load thumbnail image for a label from version data."""
+    def _load_thumbnail_for_label(self, label, version, width=166, height=136):
+        """Load thumbnail image for a label from version data.
+
+        Args:
+            label: QLabel to display the image
+            version: Version data dictionary
+            width: Target width for scaling
+            height: Target height for scaling
+        """
         try:
             image_data = version.get('image')
 
@@ -396,7 +467,7 @@ class FolderDetailView(QtWidgets.QWidget):
                         if not pixmap.isNull():
                             # Scale to fit label
                             scaled_pixmap = pixmap.scaled(
-                                166, 136,
+                                width, height,
                                 QtCore.Qt.KeepAspectRatio,
                                 QtCore.Qt.SmoothTransformation
                             )
@@ -417,7 +488,7 @@ class FolderDetailView(QtWidgets.QWidget):
                             pixmap.loadFromData(image_bytes)
                             if not pixmap.isNull():
                                 scaled_pixmap = pixmap.scaled(
-                                    166, 136,
+                                    width, height,
                                     QtCore.Qt.KeepAspectRatio,
                                     QtCore.Qt.SmoothTransformation
                                 )
@@ -439,6 +510,27 @@ class FolderDetailView(QtWidgets.QWidget):
         """Remove an image from the folder."""
         if image_id and self.folder_name and self.folder_type:
             self.imageRemoved.emit(image_id, self.folder_name, self.folder_type)
+
+    def _on_image_dropped_to_group(self, image_id, target_type):
+        """Handle image dropped into a type group.
+
+        Args:
+            image_id: ID of the dropped image
+            target_type: Type group it was dropped into (e.g., 'Concept Art')
+        """
+        if self.folder_name and self.folder_type:
+            # Emit signal to notify parent (FolderPaneWidget)
+            self.imageDroppedToGroup.emit(image_id, target_type, self.folder_name, self.folder_type)
+
+    def set_thumbnail_size(self, size):
+        """Set the thumbnail size and refresh the view.
+
+        Args:
+            size: New thumbnail size in pixels
+        """
+        self.thumbnail_size = size
+        # Refresh the groups with new size
+        self._populate_groups()
 
     def _get_version_type(self, version):
         """Get the type category for a version."""
@@ -471,7 +563,12 @@ class FolderPaneWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self.asset_folders = {}  # asset_name -> FolderWidget
         self.scene_folders = {}  # scene_code -> FolderWidget
-        self.current_icon_size = 64  # Default icon size
+
+        # Load saved sizes from settings
+        from PySide6.QtCore import QSettings
+        self.settings = QSettings("FFBiddingApp", "FolderPane")
+        self.current_icon_size = self.settings.value("folder_icon_size", 64, type=int)
+        self.detail_thumbnail_size = self.settings.value("detail_thumbnail_size", 170, type=int)
 
         # Reference to image viewer widget (set later)
         self.image_viewer = None
@@ -494,21 +591,24 @@ class FolderPaneWidget(QtWidgets.QWidget):
 
         # Icon size slider
         slider_layout = QtWidgets.QHBoxLayout()
-        slider_layout.addWidget(QtWidgets.QLabel("Icon Size:"))
+        self.slider_label = QtWidgets.QLabel("Icon Size:")
+        slider_layout.addWidget(self.slider_label)
 
         self.icon_size_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.icon_size_slider.setMinimum(32)
         self.icon_size_slider.setMaximum(128)
-        self.icon_size_slider.setValue(64)
-        self.icon_size_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
-        self.icon_size_slider.setTickInterval(16)
-        self.icon_size_slider.valueChanged.connect(self._on_icon_size_changed)
-        slider_layout.addWidget(self.icon_size_slider, 1)
+        self.icon_size_slider.setValue(self.current_icon_size)
+        self.icon_size_slider.setTickPosition(QtWidgets.QSlider.NoTicks)  # Remove tick marks
+        self.icon_size_slider.setFixedWidth(150)  # Fixed width
+        self.icon_size_slider.valueChanged.connect(self._on_size_changed)
+        slider_layout.addWidget(self.icon_size_slider)
 
-        self.icon_size_label = QtWidgets.QLabel("64")
+        self.icon_size_label = QtWidgets.QLabel(str(self.current_icon_size))
         self.icon_size_label.setFixedWidth(30)
         self.icon_size_label.setAlignment(QtCore.Qt.AlignRight)
         slider_layout.addWidget(self.icon_size_label)
+
+        slider_layout.addStretch()  # Push everything to the left
 
         main_layout.addLayout(slider_layout)
 
@@ -562,26 +662,68 @@ class FolderPaneWidget(QtWidgets.QWidget):
         self.detail_view.backClicked.connect(self._show_folder_grid)
         self.detail_view.imageRemoved.connect(self._handle_image_removed)
         self.detail_view.imageEnlarged.connect(self._handle_image_enlarged)
+        self.detail_view.imageDroppedToGroup.connect(self._handle_image_dropped_to_group)
         self.view_stack.addWidget(self.detail_view)  # Index 1
+
+        # Connect view stack index change to update slider
+        self.view_stack.currentChanged.connect(self._on_view_changed)
 
         main_layout.addWidget(self.view_stack)
 
         # Set minimum width
         self.setMinimumWidth(250)
 
-    def _on_icon_size_changed(self, value):
-        """Handle icon size slider change."""
-        self.current_icon_size = value
-        self.icon_size_label.setText(str(value))
+    def _on_size_changed(self, value):
+        """Handle size slider change."""
+        current_view = self.view_stack.currentIndex()
 
-        # Update all existing folder icons
-        for folder in self.asset_folders.values():
-            folder.set_icon_size(value)
-        for folder in self.scene_folders.values():
-            folder.set_icon_size(value)
+        if current_view == 0:
+            # Grid view - update folder icon size
+            self.current_icon_size = value
+            self.icon_size_label.setText(str(value))
 
-        # Re-layout folders
-        self._relayout_folders()
+            # Save to settings
+            self.settings.setValue("folder_icon_size", value)
+
+            # Update all existing folder icons
+            for folder in self.asset_folders.values():
+                folder.set_icon_size(value)
+            for folder in self.scene_folders.values():
+                folder.set_icon_size(value)
+
+            # Re-layout folders
+            self._relayout_folders()
+        else:
+            # Detail view - update thumbnail size
+            self.detail_thumbnail_size = value
+            self.icon_size_label.setText(str(value))
+
+            # Save to settings
+            self.settings.setValue("detail_thumbnail_size", value)
+
+            # Refresh detail view with new size
+            self.detail_view.set_thumbnail_size(value)
+
+    def _on_view_changed(self, index):
+        """Handle view stack index change to update slider."""
+        if index == 0:
+            # Grid view - show folder icon size
+            self.slider_label.setText("Icon Size:")
+            self.icon_size_slider.blockSignals(True)
+            self.icon_size_slider.setMinimum(32)
+            self.icon_size_slider.setMaximum(128)
+            self.icon_size_slider.setValue(self.current_icon_size)
+            self.icon_size_label.setText(str(self.current_icon_size))
+            self.icon_size_slider.blockSignals(False)
+        else:
+            # Detail view - show thumbnail size
+            self.slider_label.setText("Thumb Size:")
+            self.icon_size_slider.blockSignals(True)
+            self.icon_size_slider.setMinimum(120)
+            self.icon_size_slider.setMaximum(250)
+            self.icon_size_slider.setValue(self.detail_thumbnail_size)
+            self.icon_size_label.setText(str(self.detail_thumbnail_size))
+            self.icon_size_slider.blockSignals(False)
 
     def _relayout_folders(self):
         """Re-layout folders in grid based on current pane width."""
@@ -884,3 +1026,36 @@ class FolderPaneWidget(QtWidgets.QWidget):
         from .image_viewer_widget import ImageViewerDialog
         dialog = ImageViewerDialog(version_data, self.image_viewer.sg_session, self)
         dialog.exec()
+
+    def _handle_image_dropped_to_group(self, image_id, target_type, folder_name, folder_type):
+        """Handle image dropped into a type group in detail view.
+
+        Args:
+            image_id: ID of the dropped image
+            target_type: Type group it was dropped into (e.g., 'Concept Art')
+            folder_name: Name of the folder
+            folder_type: Type of folder ('asset' or 'scene')
+        """
+        # Get the folder widget
+        if folder_type == 'asset':
+            folder = self.asset_folders.get(folder_name)
+        else:
+            folder = self.scene_folders.get(folder_name)
+
+        if not folder:
+            logger.error(f"Folder {folder_name} ({folder_type}) not found")
+            return
+
+        # Add image to folder
+        folder.add_image(image_id)
+        logger.info(f"Added image {image_id} to folder {folder_name} via detail view drop")
+
+        # Update thumbnail states in image viewer
+        if self.image_viewer:
+            self.image_viewer.update_thumbnail_states()
+
+        # Refresh the detail view to show the new image
+        if self.image_viewer:
+            all_versions = self.image_viewer.all_versions
+            sg_session = self.image_viewer.sg_session
+            self.detail_view.set_folder(folder_name, folder_type, folder.get_image_ids(), all_versions, sg_session)
