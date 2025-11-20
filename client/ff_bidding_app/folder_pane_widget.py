@@ -12,51 +12,50 @@ except (ImportError, ValueError, SystemError):
 class FolderWidget(QtWidgets.QWidget):
     """Widget representing a folder that can accept image drops."""
 
-    def __init__(self, folder_name, folder_type, parent=None):
+    def __init__(self, folder_name, folder_type, parent=None, icon_size=64):
         """Initialize folder widget.
 
         Args:
             folder_name: Name of the folder (asset name or scene code)
             folder_type: Type of folder ('asset' or 'scene')
             parent: Parent widget
+            icon_size: Size of the folder icon in pixels
         """
         super().__init__(parent)
         self.folder_name = folder_name
         self.folder_type = folder_type
         self.image_ids = set()  # Set of image version IDs in this folder
+        self.icon_size = icon_size
 
         self.setAcceptDrops(True)
-        self.setFixedHeight(70)
 
         self._setup_ui()
 
     def _setup_ui(self):
         """Setup the folder UI."""
-        layout = QtWidgets.QHBoxLayout(self)
+        layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
+        layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignCenter)
 
         # Folder icon
-        icon_label = QtWidgets.QLabel()
-        icon_label.setPixmap(self.style().standardIcon(
-            QtWidgets.QStyle.SP_DirIcon
-        ).pixmap(32, 32))
-        layout.addWidget(icon_label)
-
-        # Folder info (name and count)
-        info_layout = QtWidgets.QVBoxLayout()
-        info_layout.setSpacing(2)
+        self.icon_label = QtWidgets.QLabel()
+        self.icon_label.setAlignment(QtCore.Qt.AlignCenter)
+        self._update_icon()
+        layout.addWidget(self.icon_label)
 
         # Folder name
         self.name_label = QtWidgets.QLabel(self.folder_name)
-        self.name_label.setStyleSheet("font-weight: bold; font-size: 12px;")
-        info_layout.addWidget(self.name_label)
+        self.name_label.setStyleSheet("font-weight: bold; font-size: 11px;")
+        self.name_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.name_label.setWordWrap(True)
+        layout.addWidget(self.name_label)
 
         # Image count
         self.count_label = QtWidgets.QLabel("0 images")
         self.count_label.setStyleSheet("color: #888; font-size: 10px;")
-        info_layout.addWidget(self.count_label)
-
-        layout.addLayout(info_layout, 1)
+        self.count_label.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(self.count_label)
 
         # Style for hover effect
         self.setStyleSheet("""
@@ -70,6 +69,21 @@ class FolderWidget(QtWidgets.QWidget):
                 border: 1px solid #555;
             }
         """)
+
+    def _update_icon(self):
+        """Update the folder icon with current size."""
+        self.icon_label.setPixmap(self.style().standardIcon(
+            QtWidgets.QStyle.SP_DirIcon
+        ).pixmap(self.icon_size, self.icon_size))
+
+    def set_icon_size(self, size):
+        """Set the icon size.
+
+        Args:
+            size: Icon size in pixels
+        """
+        self.icon_size = size
+        self._update_icon()
 
     def dragEnterEvent(self, event):
         """Handle drag enter event."""
@@ -153,21 +167,35 @@ class FolderPaneWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self.asset_folders = {}  # asset_name -> FolderWidget
         self.scene_folders = {}  # scene_code -> FolderWidget
+        self.current_icon_size = 64  # Default icon size
 
         self._setup_ui()
 
     def _setup_ui(self):
         """Setup the folder pane UI."""
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
 
-        # Title
-        title_label = QtWidgets.QLabel("Organize Images")
-        title_font = title_label.font()
-        title_font.setPointSize(12)
-        title_font.setBold(True)
-        title_label.setFont(title_font)
-        layout.addWidget(title_label)
+        # Icon size slider
+        slider_layout = QtWidgets.QHBoxLayout()
+        slider_layout.addWidget(QtWidgets.QLabel("Icon Size:"))
+
+        self.icon_size_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.icon_size_slider.setMinimum(32)
+        self.icon_size_slider.setMaximum(128)
+        self.icon_size_slider.setValue(64)
+        self.icon_size_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self.icon_size_slider.setTickInterval(16)
+        self.icon_size_slider.valueChanged.connect(self._on_icon_size_changed)
+        slider_layout.addWidget(self.icon_size_slider, 1)
+
+        self.icon_size_label = QtWidgets.QLabel("64")
+        self.icon_size_label.setFixedWidth(30)
+        self.icon_size_label.setAlignment(QtCore.Qt.AlignRight)
+        slider_layout.addWidget(self.icon_size_label)
+
+        layout.addLayout(slider_layout)
 
         # Scroll area for folders
         scroll_area = QtWidgets.QScrollArea()
@@ -183,16 +211,20 @@ class FolderPaneWidget(QtWidgets.QWidget):
 
         # Assets group
         self.assets_group = CollapsibleGroupBox("Assets")
-        self.assets_layout = QtWidgets.QVBoxLayout()
-        self.assets_layout.setSpacing(5)
-        self.assets_group.addLayout(self.assets_layout)
+        self.assets_container = QtWidgets.QWidget()
+        self.assets_layout = QtWidgets.QGridLayout(self.assets_container)
+        self.assets_layout.setSpacing(10)
+        self.assets_layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
+        self.assets_group.addWidget(self.assets_container)
         self.container_layout.addWidget(self.assets_group)
 
         # Scenes group
         self.scenes_group = CollapsibleGroupBox("Scenes")
-        self.scenes_layout = QtWidgets.QVBoxLayout()
-        self.scenes_layout.setSpacing(5)
-        self.scenes_group.addLayout(self.scenes_layout)
+        self.scenes_container = QtWidgets.QWidget()
+        self.scenes_layout = QtWidgets.QGridLayout(self.scenes_container)
+        self.scenes_layout.setSpacing(10)
+        self.scenes_layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
+        self.scenes_group.addWidget(self.scenes_container)
         self.container_layout.addWidget(self.scenes_group)
 
         self.container_layout.addStretch()
@@ -202,6 +234,62 @@ class FolderPaneWidget(QtWidgets.QWidget):
 
         # Set minimum width
         self.setMinimumWidth(250)
+
+    def _on_icon_size_changed(self, value):
+        """Handle icon size slider change."""
+        self.current_icon_size = value
+        self.icon_size_label.setText(str(value))
+
+        # Update all existing folder icons
+        for folder in self.asset_folders.values():
+            folder.set_icon_size(value)
+        for folder in self.scene_folders.values():
+            folder.set_icon_size(value)
+
+        # Re-layout folders
+        self._relayout_folders()
+
+    def _relayout_folders(self):
+        """Re-layout folders in grid based on current pane width."""
+        # Calculate columns based on pane width and icon size
+        pane_width = self.width()
+        folder_width = self.current_icon_size + 40  # Icon + padding
+        columns = max(1, pane_width // folder_width)
+
+        # Re-layout assets
+        self._layout_folders_in_grid(self.asset_folders, self.assets_layout, columns)
+
+        # Re-layout scenes
+        self._layout_folders_in_grid(self.scene_folders, self.scenes_layout, columns)
+
+    def _layout_folders_in_grid(self, folders_dict, grid_layout, columns):
+        """Layout folders in a grid.
+
+        Args:
+            folders_dict: Dictionary of folder_name -> FolderWidget
+            grid_layout: QGridLayout to place folders in
+            columns: Number of columns in the grid
+        """
+        # Get sorted folder names
+        folder_names = sorted(folders_dict.keys())
+
+        # Clear existing layout
+        while grid_layout.count():
+            item = grid_layout.takeAt(0)
+            if item.widget():
+                item.widget().setParent(None)
+
+        # Add folders to grid
+        for idx, folder_name in enumerate(folder_names):
+            folder = folders_dict[folder_name]
+            row = idx // columns
+            col = idx % columns
+            grid_layout.addWidget(folder, row, col)
+
+    def resizeEvent(self, event):
+        """Handle resize event to re-layout folders."""
+        super().resizeEvent(event)
+        self._relayout_folders()
 
     def set_assets(self, asset_names):
         """Set the asset folders.
@@ -214,20 +302,16 @@ class FolderPaneWidget(QtWidgets.QWidget):
             folder_widget.deleteLater()
         self.asset_folders.clear()
 
-        # Clear layout
-        while self.assets_layout.count():
-            item = self.assets_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
         # Add new asset folders
         for asset_name in sorted(asset_names):
-            folder = FolderWidget(asset_name, 'asset', self)
-            self.assets_layout.addWidget(folder)
+            folder = FolderWidget(asset_name, 'asset', self, icon_size=self.current_icon_size)
             self.asset_folders[asset_name] = folder
 
         # Update group title with count
         self.assets_group.setTitle(f"Assets ({len(asset_names)})")
+
+        # Re-layout in grid
+        self._relayout_folders()
 
     def set_scenes(self, scene_codes):
         """Set the scene folders.
@@ -240,20 +324,16 @@ class FolderPaneWidget(QtWidgets.QWidget):
             folder_widget.deleteLater()
         self.scene_folders.clear()
 
-        # Clear layout
-        while self.scenes_layout.count():
-            item = self.scenes_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
         # Add new scene folders
         for scene_code in sorted(scene_codes):
-            folder = FolderWidget(scene_code, 'scene', self)
-            self.scenes_layout.addWidget(folder)
+            folder = FolderWidget(scene_code, 'scene', self, icon_size=self.current_icon_size)
             self.scene_folders[scene_code] = folder
 
         # Update group title with count
         self.scenes_group.setTitle(f"Scenes ({len(scene_codes)})")
+
+        # Re-layout in grid
+        self._relayout_folders()
 
     def get_folder_mappings(self):
         """Get all image-to-folder mappings.

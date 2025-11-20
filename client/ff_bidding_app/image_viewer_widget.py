@@ -642,23 +642,30 @@ class ImageViewerWidget(QtWidgets.QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
 
         # Create splitter for thumbnails and folder pane
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        splitter.setChildrenCollapsible(False)
+        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
 
         # Left: Thumbnails with filters
-        thumbnail_dock = self._create_thumbnail_dock()
-        splitter.addWidget(thumbnail_dock)
+        self.thumbnail_dock = self._create_thumbnail_dock()
+        self.splitter.addWidget(self.thumbnail_dock)
 
         # Right: Folder pane
         self.folder_pane = FolderPaneWidget(self)
-        splitter.addWidget(self.folder_pane)
+        self.splitter.addWidget(self.folder_pane)
 
         # Set initial sizes (70% thumbnails, 30% folder pane)
-        splitter.setSizes([700, 300])
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 0)
+        self.splitter.setSizes([700, 300])
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 0)
 
-        main_layout.addWidget(splitter)
+        # Connect splitter moved signal to adjust thumbnail columns
+        self.splitter.splitterMoved.connect(self._on_splitter_moved)
+
+        main_layout.addWidget(self.splitter)
+
+    def _on_splitter_moved(self, pos, index):
+        """Handle splitter moved to adjust thumbnail grid."""
+        self._rebuild_thumbnails()
 
     def _create_thumbnail_dock(self):
         """Create the thumbnail view with filters."""
@@ -770,7 +777,17 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
     def _add_thumbnails_flat(self):
         """Add thumbnails in a flat grid (no grouping)."""
-        columns = 4  # Number of thumbnails per row
+        # Calculate columns based on available width
+        # Each thumbnail is 180px wide + 10px spacing
+        thumbnail_width = 180 + 10
+        available_width = self.thumbnail_container.width()
+
+        # Calculate columns dynamically, minimum 1, maximum reasonable number
+        columns = max(1, available_width // thumbnail_width)
+
+        # If columns is 0 or container width is too small, use a default
+        if columns == 0 or available_width < thumbnail_width:
+            columns = 2  # Default fallback
 
         for idx, version in enumerate(self.filtered_versions):
             row = idx // columns
