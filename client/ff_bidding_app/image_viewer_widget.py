@@ -703,10 +703,12 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         # Right: Folder pane
         self.folder_pane = FolderPaneWidget(self)
+        self.folder_pane.image_viewer = self  # Set reference for detail view access
         self.splitter.addWidget(self.folder_pane)
 
-        # Connect folder drop signal to update thumbnail states
+        # Connect folder drop signal to update thumbnail states and deselect
         self.folder_pane.imageDropped.connect(self.update_thumbnail_states)
+        self.folder_pane.imageDropped.connect(self._deselect_current_thumbnail)
 
         # Set initial sizes (70% thumbnails, 30% folder pane)
         self.splitter.setSizes([700, 300])
@@ -946,6 +948,12 @@ class ImageViewerWidget(QtWidgets.QWidget):
                 thumbnail.set_selected(True)
                 self.selected_thumbnail = thumbnail
                 break
+
+    def _deselect_current_thumbnail(self):
+        """Deselect the currently selected thumbnail."""
+        if self.selected_thumbnail:
+            self.selected_thumbnail.set_selected(False)
+            self.selected_thumbnail = None
 
 
     def load_project_versions(self, project_id):

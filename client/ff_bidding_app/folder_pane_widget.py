@@ -13,6 +13,7 @@ class FolderWidget(QtWidgets.QWidget):
     """Widget representing a folder that can accept image drops."""
 
     imageDropped = QtCore.Signal()  # Signal emitted when an image is dropped
+    doubleClicked = QtCore.Signal(str, str)  # Signal emitted when folder is double-clicked (folder_name, folder_type)
 
     def __init__(self, folder_name, folder_type, parent=None, icon_size=64):
         """Initialize folder widget.
@@ -163,6 +164,302 @@ class FolderWidget(QtWidgets.QWidget):
         self.image_ids = set(image_ids)
         self._update_count()
 
+    def mouseDoubleClickEvent(self, event):
+        """Handle double-click to view folder contents."""
+        if event.button() == QtCore.Qt.LeftButton:
+            self.doubleClicked.emit(self.folder_name, self.folder_type)
+        super().mouseDoubleClickEvent(event)
+
+
+class FolderDetailView(QtWidgets.QWidget):
+    """Widget for viewing contents of a specific folder grouped by type."""
+
+    backClicked = QtCore.Signal()  # Signal when back button is clicked
+    imageRemoved = QtCore.Signal(int, str, str)  # Signal when image removed (image_id, folder_name, folder_type)
+    imageEnlarged = QtCore.Signal(dict)  # Signal when image should be enlarged (version_data)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.folder_name = None
+        self.folder_type = None
+        self.image_versions = []  # List of image version data
+        self.sg_session = None  # ShotGrid session for loading images
+        self._setup_ui()
+
+    def _setup_ui(self):
+        """Setup the detail view UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(10)
+
+        # Header with breadcrumb and back button
+        header_layout = QtWidgets.QHBoxLayout()
+
+        back_btn = QtWidgets.QPushButton("← Back")
+        back_btn.clicked.connect(self.backClicked.emit)
+        back_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4a9eff;
+                color: white;
+                font-weight: bold;
+                padding: 5px 10px;
+                border-radius: 3px;
+            }
+            QPushButton:hover {
+                background-color: #5eb3ff;
+            }
+        """)
+        header_layout.addWidget(back_btn)
+
+        self.breadcrumb_label = QtWidgets.QLabel()
+        self.breadcrumb_label.setStyleSheet("font-size: 12px; font-weight: bold; color: #ddd;")
+        header_layout.addWidget(self.breadcrumb_label)
+
+        header_layout.addStretch()
+
+        layout.addLayout(header_layout)
+
+        # Scroll area for grouped thumbnails
+        scroll_area = QtWidgets.QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+
+        # Container for groups
+        container = QtWidgets.QWidget()
+        self.groups_layout = QtWidgets.QVBoxLayout(container)
+        self.groups_layout.setContentsMargins(5, 5, 5, 5)
+        self.groups_layout.setSpacing(10)
+
+        # Create collapsible groups for each type
+        self.type_groups = {}
+        for image_type in ['Concept Art', 'Storyboard', 'Reference', 'Video']:
+            group = CollapsibleGroupBox(f"{image_type} (0 items)")
+            group_container = QtWidgets.QWidget()
+            group_layout = QtWidgets.QGridLayout(group_container)
+            group_layout.setSpacing(10)
+            group_layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
+            group.addWidget(group_container)
+            self.groups_layout.addWidget(group)
+            self.type_groups[image_type] = {
+                'group': group,
+                'layout': group_layout,
+                'container': group_container
+            }
+
+        self.groups_layout.addStretch()
+
+        scroll_area.setWidget(container)
+        layout.addWidget(scroll_area)
+
+    def set_folder(self, folder_name, folder_type, image_ids, all_versions, sg_session=None):
+        """Set the folder to display.
+
+        Args:
+            folder_name: Name of the folder
+            folder_type: Type ('asset' or 'scene')
+            image_ids: Set of image version IDs in this folder
+            all_versions: All image versions available
+            sg_session: ShotGrid session for loading images
+        """
+        self.folder_name = folder_name
+        self.folder_type = folder_type
+        self.sg_session = sg_session
+
+        # Update breadcrumb
+        type_label = "Asset" if folder_type == "asset" else "Scene"
+        self.breadcrumb_label.setText(f"Current folder: {type_label}: {folder_name}")
+
+        # Filter versions to only those in this folder
+        self.image_versions = [v for v in all_versions if v.get('id') in image_ids]
+
+        # Group by type and display
+        self._populate_groups()
+
+    def _populate_groups(self):
+        """Populate the type groups with thumbnails."""
+        # Group images by type
+        grouped_images = {
+            'Concept Art': [],
+            'Storyboard': [],
+            'Reference': [],
+            'Video': []
+        }
+
+        for version in self.image_versions:
+            image_type = self._get_version_type(version)
+            if image_type in grouped_images:
+                grouped_images[image_type].append(version)
+
+        # Populate each group
+        for image_type, versions in grouped_images.items():
+            group_data = self.type_groups[image_type]
+            group = group_data['group']
+            layout = group_data['layout']
+
+            # Clear existing widgets
+            while layout.count():
+                item = layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+
+            # Update title with count
+            count = len(versions)
+            group.setTitle(f"{image_type} ({count} item{'s' if count != 1 else ''})")
+
+            # Add thumbnails (import from image_viewer_widget)
+            # For now, add placeholder labels - we'll need to import ThumbnailWidget
+            columns = max(1, self.width() // 190)  # 180px + 10px spacing
+            for idx, version in enumerate(versions):
+                row = idx // columns
+                col = idx % columns
+
+                # Create a simple widget with version code and remove button
+                item_widget = self._create_thumbnail_item(version)
+                layout.addWidget(item_widget, row, col)
+
+    def _create_thumbnail_item(self, version):
+        """Create a thumbnail item widget with image loading and controls."""
+        container = QtWidgets.QWidget()
+        container_layout = QtWidgets.QVBoxLayout(container)
+        container_layout.setContentsMargins(5, 5, 5, 5)
+        container_layout.setSpacing(5)
+
+        # Image label with thumbnail
+        image_label = QtWidgets.QLabel()
+        image_label.setFixedSize(170, 140)
+        image_label.setAlignment(QtCore.Qt.AlignCenter)
+        image_label.setStyleSheet("""
+            QLabel {
+                background-color: #2b2b2b;
+                border: 2px solid #444;
+                border-radius: 4px;
+            }
+        """)
+
+        # Load thumbnail
+        self._load_thumbnail_for_label(image_label, version)
+
+        # Make label clickable for enlargement
+        image_label.setCursor(QtCore.Qt.PointingHandCursor)
+        image_label.mouseDoubleClickEvent = lambda event: self.imageEnlarged.emit(version)
+
+        container_layout.addWidget(image_label)
+
+        # Version code
+        version_code = version.get('code', 'Unknown')
+        code_label = QtWidgets.QLabel(version_code)
+        code_label.setWordWrap(True)
+        code_label.setMaximumWidth(170)
+        code_label.setAlignment(QtCore.Qt.AlignCenter)
+        code_label.setStyleSheet("font-size: 11px; color: #ddd;")
+        container_layout.addWidget(code_label)
+
+        # Remove button
+        remove_btn = QtWidgets.QPushButton("Remove")
+        remove_btn.clicked.connect(lambda: self._remove_image(version.get('id')))
+        remove_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #cc3333;
+                color: white;
+                padding: 3px;
+                font-size: 9px;
+                border-radius: 2px;
+            }
+            QPushButton:hover {
+                background-color: #dd4444;
+            }
+        """)
+        container_layout.addWidget(remove_btn)
+
+        container.setFixedSize(180, 230)
+        return container
+
+    def _load_thumbnail_for_label(self, label, version):
+        """Load thumbnail image for a label from version data."""
+        try:
+            image_data = version.get('image')
+
+            if not image_data:
+                label.setText("No Preview")
+                label.setStyleSheet(label.styleSheet() + "color: #888;")
+                return
+
+            # If image_data is a URL string, try to download it
+            if isinstance(image_data, str):
+                import urllib.request
+                try:
+                    with urllib.request.urlopen(image_data, timeout=5) as response:
+                        image_bytes = response.read()
+                        pixmap = QtGui.QPixmap()
+                        pixmap.loadFromData(image_bytes)
+                        if not pixmap.isNull():
+                            # Scale to fit label
+                            scaled_pixmap = pixmap.scaled(
+                                166, 136,
+                                QtCore.Qt.KeepAspectRatio,
+                                QtCore.Qt.SmoothTransformation
+                            )
+                            label.setPixmap(scaled_pixmap)
+                            return
+                except Exception as e:
+                    logger.warning(f"Failed to load thumbnail from URL: {e}")
+
+            # Try using ShotGrid session if available
+            if self.sg_session and isinstance(image_data, dict):
+                thumbnail_path = image_data.get('url') or image_data.get('local_path')
+                if thumbnail_path:
+                    import urllib.request
+                    try:
+                        with urllib.request.urlopen(thumbnail_path, timeout=5) as response:
+                            image_bytes = response.read()
+                            pixmap = QtGui.QPixmap()
+                            pixmap.loadFromData(image_bytes)
+                            if not pixmap.isNull():
+                                scaled_pixmap = pixmap.scaled(
+                                    166, 136,
+                                    QtCore.Qt.KeepAspectRatio,
+                                    QtCore.Qt.SmoothTransformation
+                                )
+                                label.setPixmap(scaled_pixmap)
+                                return
+                    except Exception as e:
+                        logger.warning(f"Failed to load thumbnail: {e}")
+
+            # Fallback to showing version code
+            label.setText(version.get('code', 'No Image')[:20])
+            label.setStyleSheet(label.styleSheet() + "color: #888; font-size: 10px;")
+
+        except Exception as e:
+            logger.error(f"Error loading thumbnail: {e}", exc_info=True)
+            label.setText("Error")
+            label.setStyleSheet(label.styleSheet() + "color: #cc3333;")
+
+    def _remove_image(self, image_id):
+        """Remove an image from the folder."""
+        if image_id and self.folder_name and self.folder_type:
+            self.imageRemoved.emit(image_id, self.folder_name, self.folder_type)
+
+    def _get_version_type(self, version):
+        """Get the type category for a version."""
+        sg_version_type = version.get('sg_version_type', '')
+        if isinstance(sg_version_type, dict):
+            version_type = sg_version_type.get('name', '').lower()
+        else:
+            version_type = str(sg_version_type).lower()
+
+        # Map to filter categories
+        if 'concept' in version_type or 'art' in version_type:
+            return 'Concept Art'
+        elif 'storyboard' in version_type:
+            return 'Storyboard'
+        elif 'reference' in version_type or 'ref' in version_type:
+            return 'Reference'
+        elif 'video' in version_type or 'movie' in version_type:
+            return 'Video'
+        else:
+            return 'Concept Art'  # Default
+
 
 class FolderPaneWidget(QtWidgets.QWidget):
     """Widget displaying folders for Assets and Scenes."""
@@ -176,6 +473,9 @@ class FolderPaneWidget(QtWidgets.QWidget):
         self.scene_folders = {}  # scene_code -> FolderWidget
         self.current_icon_size = 64  # Default icon size
 
+        # Reference to image viewer widget (set later)
+        self.image_viewer = None
+
         # Flag to prevent concurrent operations
         self._is_relayouting = False
 
@@ -188,9 +488,9 @@ class FolderPaneWidget(QtWidgets.QWidget):
 
     def _setup_ui(self):
         """Setup the folder pane UI."""
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(5)
+        main_layout = QtWidgets.QVBoxLayout(self)
+        main_layout.setContentsMargins(5, 5, 5, 5)
+        main_layout.setSpacing(5)
 
         # Icon size slider
         slider_layout = QtWidgets.QHBoxLayout()
@@ -210,7 +510,15 @@ class FolderPaneWidget(QtWidgets.QWidget):
         self.icon_size_label.setAlignment(QtCore.Qt.AlignRight)
         slider_layout.addWidget(self.icon_size_label)
 
-        layout.addLayout(slider_layout)
+        main_layout.addLayout(slider_layout)
+
+        # Stacked widget for switching between views
+        self.view_stack = QtWidgets.QStackedWidget()
+
+        # View 0: Folder grid view
+        folder_grid_view = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(folder_grid_view)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         # Scroll area for folders
         scroll_area = QtWidgets.QScrollArea()
@@ -246,6 +554,17 @@ class FolderPaneWidget(QtWidgets.QWidget):
 
         scroll_area.setWidget(container)
         layout.addWidget(scroll_area)
+
+        self.view_stack.addWidget(folder_grid_view)  # Index 0
+
+        # View 1: Folder detail view
+        self.detail_view = FolderDetailView(self)
+        self.detail_view.backClicked.connect(self._show_folder_grid)
+        self.detail_view.imageRemoved.connect(self._handle_image_removed)
+        self.detail_view.imageEnlarged.connect(self._handle_image_enlarged)
+        self.view_stack.addWidget(self.detail_view)  # Index 1
+
+        main_layout.addWidget(self.view_stack)
 
         # Set minimum width
         self.setMinimumWidth(250)
@@ -384,6 +703,8 @@ class FolderPaneWidget(QtWidgets.QWidget):
             folder = FolderWidget(asset_name, 'asset', self, icon_size=self.current_icon_size)
             # Connect drop signal to propagate up
             folder.imageDropped.connect(self.imageDropped.emit)
+            # Connect double-click to show detail view
+            folder.doubleClicked.connect(self._show_folder_detail)
             self.asset_folders[asset_name] = folder
 
         # Update group title with count
@@ -414,6 +735,8 @@ class FolderPaneWidget(QtWidgets.QWidget):
             folder = FolderWidget(scene_code, 'scene', self, icon_size=self.current_icon_size)
             # Connect drop signal to propagate up
             folder.imageDropped.connect(self.imageDropped.emit)
+            # Connect double-click to show detail view
+            folder.doubleClicked.connect(self._show_folder_detail)
             self.scene_folders[scene_code] = folder
 
         # Update group title with count
@@ -471,3 +794,93 @@ class FolderPaneWidget(QtWidgets.QWidget):
         for scene_code, image_ids in scene_mappings.items():
             if scene_code in self.scene_folders:
                 self.scene_folders[scene_code].set_image_ids(image_ids)
+
+    def _show_folder_detail(self, folder_name, folder_type):
+        """Show detail view for a specific folder.
+
+        Args:
+            folder_name: Name of the folder
+            folder_type: Type of folder ('asset' or 'scene')
+        """
+        # Get the folder widget
+        if folder_type == 'asset':
+            folder = self.asset_folders.get(folder_name)
+        else:
+            folder = self.scene_folders.get(folder_name)
+
+        if not folder:
+            logger.error(f"Folder {folder_name} ({folder_type}) not found")
+            return
+
+        # Get image IDs in this folder
+        image_ids = folder.get_image_ids()
+        if not image_ids:
+            logger.info(f"Folder {folder_name} is empty")
+            # Still show the detail view, just with empty groups
+            image_ids = set()
+
+        # Get all versions from image viewer
+        if not self.image_viewer:
+            logger.error("Image viewer reference not set")
+            return
+
+        all_versions = self.image_viewer.all_versions
+        sg_session = self.image_viewer.sg_session
+
+        # Set folder detail view
+        self.detail_view.set_folder(folder_name, folder_type, image_ids, all_versions, sg_session)
+
+        # Switch to detail view
+        self.view_stack.setCurrentIndex(1)
+
+    def _show_folder_grid(self):
+        """Return to folder grid view."""
+        self.view_stack.setCurrentIndex(0)
+
+    def _handle_image_removed(self, image_id, folder_name, folder_type):
+        """Handle image removal from folder.
+
+        Args:
+            image_id: ID of the image version to remove
+            folder_name: Name of the folder
+            folder_type: Type of folder ('asset' or 'scene')
+        """
+        # Get the folder widget
+        if folder_type == 'asset':
+            folder = self.asset_folders.get(folder_name)
+        else:
+            folder = self.scene_folders.get(folder_name)
+
+        if not folder:
+            logger.error(f"Folder {folder_name} ({folder_type}) not found")
+            return
+
+        # Remove image from folder
+        folder.remove_image(image_id)
+        logger.info(f"Removed image {image_id} from folder {folder_name}")
+
+        # Update thumbnail states in image viewer
+        if self.image_viewer:
+            self.image_viewer.update_thumbnail_states()
+
+        # Refresh the detail view to reflect the removal
+        if self.image_viewer:
+            all_versions = self.image_viewer.all_versions
+            sg_session = self.image_viewer.sg_session
+            self.detail_view.set_folder(folder_name, folder_type, folder.get_image_ids(), all_versions, sg_session)
+
+    def _handle_image_enlarged(self, version_data):
+        """Handle request to enlarge an image.
+
+        Args:
+            version_data: Version data dictionary for the image to enlarge
+        """
+        if not self.image_viewer:
+            logger.error("Image viewer reference not set")
+            return
+
+        # Use the image viewer's method to show enlarged image
+        # ImageViewerDialog is defined in image_viewer_widget module
+        from .image_viewer_widget import ImageViewerDialog
+        dialog = ImageViewerDialog(version_data, self.image_viewer.sg_session, self)
+        dialog.exec()
