@@ -169,6 +169,9 @@ class FolderPaneWidget(QtWidgets.QWidget):
         self.scene_folders = {}  # scene_code -> FolderWidget
         self.current_icon_size = 64  # Default icon size
 
+        # Flag to prevent concurrent operations
+        self._is_relayouting = False
+
         # Debounce timer for resize events
         self.resize_timer = QtCore.QTimer()
         self.resize_timer.setSingleShot(True)
@@ -256,26 +259,36 @@ class FolderPaneWidget(QtWidgets.QWidget):
 
     def _relayout_folders(self):
         """Re-layout folders in grid based on current pane width."""
+        # Prevent concurrent operations
+        if self._is_relayouting:
+            return
+
         # Safety check - don't relayout if being destroyed
         if not self.isVisible():
             return
 
-        # Safety check for width
-        pane_width = self.width()
-        if pane_width <= 0:
-            pane_width = 250  # Use minimum width as default
+        try:
+            self._is_relayouting = True
 
-        # Calculate columns based on pane width and icon size
-        folder_width = self.current_icon_size + 40  # Icon + padding
-        columns = max(1, pane_width // folder_width)
+            # Safety check for width
+            pane_width = self.width()
+            if pane_width <= 0:
+                pane_width = 250  # Use minimum width as default
 
-        # Re-layout assets
-        if self.asset_folders:
-            self._layout_folders_in_grid(self.asset_folders, self.assets_layout, columns)
+            # Calculate columns based on pane width and icon size
+            folder_width = self.current_icon_size + 40  # Icon + padding
+            columns = max(1, pane_width // folder_width)
 
-        # Re-layout scenes
-        if self.scene_folders:
-            self._layout_folders_in_grid(self.scene_folders, self.scenes_layout, columns)
+            # Re-layout assets
+            if self.asset_folders:
+                self._layout_folders_in_grid(self.asset_folders, self.assets_layout, columns)
+
+            # Re-layout scenes
+            if self.scene_folders:
+                self._layout_folders_in_grid(self.scene_folders, self.scenes_layout, columns)
+
+        finally:
+            self._is_relayouting = False
 
     def _relayout_folders_delayed(self):
         """Re-layout folders after resize timer expires."""
@@ -340,7 +353,7 @@ class FolderPaneWidget(QtWidgets.QWidget):
         if self.asset_folders or self.scene_folders:
             # Use debounced timer to avoid excessive relayout during resize
             self.resize_timer.stop()
-            self.resize_timer.start(200)  # Wait 200ms after last resize
+            self.resize_timer.start(400)  # Wait 400ms after last resize
 
     def set_assets(self, asset_names):
         """Set the asset folders.

@@ -634,6 +634,10 @@ class ImageViewerWidget(QtWidgets.QWidget):
             'Video': True
         }
 
+        # Flags to prevent concurrent operations
+        self._is_rebuilding = False
+        self._is_rearranging = False
+
         # Debounce timer for resize events
         self.resize_timer = QtCore.QTimer()
         self.resize_timer.setSingleShot(True)
@@ -672,13 +676,13 @@ class ImageViewerWidget(QtWidgets.QWidget):
         """Handle splitter moved to adjust thumbnail grid."""
         # Use debounced timer to avoid rebuilding during drag
         self.resize_timer.stop()
-        self.resize_timer.start(300)  # Wait 300ms after last move
+        self.resize_timer.start(500)  # Wait 500ms after last move
 
     def _rebuild_thumbnails_delayed(self):
-        """Rebuild thumbnails after resize timer expires."""
-        # Only rebuild if we actually have thumbnails
+        """Rearrange thumbnails after resize timer expires."""
+        # Only rearrange if we actually have thumbnails
         if self.thumbnail_widgets:
-            self._rebuild_thumbnails()
+            self._rearrange_thumbnails()
 
     def _create_thumbnail_dock(self):
         """Create the thumbnail view with filters."""
@@ -772,9 +776,56 @@ class ImageViewerWidget(QtWidgets.QWidget):
             # Default to Concept Art if unknown
             return 'Concept Art'
 
-    def _rebuild_thumbnails(self):
-        """Rebuild the thumbnail grid."""
+    def _rearrange_thumbnails(self):
+        """Rearrange existing thumbnails in grid without recreating them."""
+        # Prevent concurrent operations
+        if self._is_rearranging or self._is_rebuilding:
+            return
+
         try:
+            self._is_rearranging = True
+
+            if not hasattr(self, 'thumbnail_container') or not self.thumbnail_container:
+                return
+
+            if not self.thumbnail_widgets:
+                return
+
+            # Calculate new column count
+            thumbnail_width = 180 + 10
+            available_width = self.thumbnail_container.width()
+
+            if available_width <= 0:
+                available_width = 800
+
+            columns = max(1, available_width // thumbnail_width)
+
+            if columns == 0:
+                columns = 2
+
+            # Rearrange existing widgets in layout
+            for idx, thumbnail in enumerate(self.thumbnail_widgets):
+                row = idx // columns
+                col = idx % columns
+
+                # Remove from current position and add to new position
+                self.thumbnail_layout.removeWidget(thumbnail)
+                self.thumbnail_layout.addWidget(thumbnail, row, col)
+
+        except Exception as e:
+            logger.error(f"Error rearranging thumbnails: {e}", exc_info=True)
+        finally:
+            self._is_rearranging = False
+
+    def _rebuild_thumbnails(self):
+        """Rebuild the thumbnail grid (only for filter/content changes)."""
+        # Prevent concurrent operations
+        if self._is_rebuilding or self._is_rearranging:
+            return
+
+        try:
+            self._is_rebuilding = True
+
             # Disconnect signals before clearing to prevent issues
             for thumbnail in self.thumbnail_widgets:
                 try:
@@ -799,6 +850,8 @@ class ImageViewerWidget(QtWidgets.QWidget):
             self._add_thumbnails_flat()
         except Exception as e:
             logger.error(f"Error rebuilding thumbnails: {e}", exc_info=True)
+        finally:
+            self._is_rebuilding = False
 
     def _add_thumbnails_flat(self):
         """Add thumbnails in a flat grid (no grouping)."""
