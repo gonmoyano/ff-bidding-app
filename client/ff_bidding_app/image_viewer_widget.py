@@ -305,52 +305,43 @@ class ThumbnailPoller(QtCore.QObject):
 
     thumbnailReady = QtCore.Signal(int, dict)  # (version_id, updated_version_data)
 
-    def __init__(self, sg_session, parent=None):
+    def __init__(self, sg_session, viewer_widget, parent=None):
         super().__init__(parent)
         self.sg_session = sg_session
-        self.pending_versions = {}  # version_id -> (thumbnail_widget, attempt_count)
+        self.viewer_widget = viewer_widget  # Reference to ImageViewerWidget
+        self.pending_versions = {}  # version_id -> attempt_count
         self.poll_timer = QtCore.QTimer(self)
         self.poll_timer.timeout.connect(self._check_pending_thumbnails)
         self.poll_timer.setInterval(2000)  # Check every 2 seconds
 
-    def add_version_to_poll(self, version_id, thumbnail_widget):
+    def add_version_to_poll(self, version_id):
         """Add a version to poll for thumbnail availability.
 
         Args:
             version_id: The version ID to poll
-            thumbnail_widget: The ThumbnailWidget to update when ready
         """
         logger.info(f"Adding version {version_id} to polling queue")
-        self.pending_versions[version_id] = (thumbnail_widget, 0)
+        self.pending_versions[version_id] = 0
 
         # Start timer if not already running
         if not self.poll_timer.isActive():
+            logger.info("Starting poller timer")
             self.poll_timer.start()
 
     def _check_pending_thumbnails(self):
         """Check all pending versions for thumbnail availability."""
         if not self.pending_versions:
+            logger.debug("No pending versions, stopping poller")
             self.poll_timer.stop()
             return
 
+        logger.info(f"Polling {len(self.pending_versions)} versions for thumbnail availability")
         versions_to_remove = []
 
-        for version_id, (thumbnail_widget, attempt_count) in list(self.pending_versions.items()):
+        for version_id, attempt_count in list(self.pending_versions.items()):
             # Max 30 attempts (60 seconds total)
             if attempt_count >= 30:
                 logger.warning(f"Giving up on thumbnail for version {version_id} after 30 attempts")
-                versions_to_remove.append(version_id)
-                continue
-
-            # Check if widget still exists
-            try:
-                if not thumbnail_widget or thumbnail_widget.isHidden():
-                    logger.debug(f"Widget for version {version_id} no longer exists, removing from poll")
-                    versions_to_remove.append(version_id)
-                    continue
-            except RuntimeError:
-                # Widget was deleted
-                logger.debug(f"Widget for version {version_id} was deleted, removing from poll")
                 versions_to_remove.append(version_id)
                 continue
 
@@ -361,6 +352,8 @@ class ThumbnailPoller(QtCore.QObject):
                     [['id', 'is', version_id]],
                     ['code', 'image', 'sg_version_type', 'created_at', 'project']
                 )
+
+                logger.debug(f"Version {version_id} query result: {version_data}")
 
                 if version_data:
                     image_data = version_data.get('image')
@@ -373,18 +366,20 @@ class ThumbnailPoller(QtCore.QObject):
 
                     if has_url:
                         logger.info(f"Thumbnail ready for version {version_id} after {attempt_count + 1} attempts")
-                        # Update the thumbnail widget
-                        thumbnail_widget.refresh_thumbnail(version_data)
+                        # Find and update the thumbnail widget
+                        thumbnail_widget = self.viewer_widget.find_thumbnail_by_version_id(version_id)
+                        if thumbnail_widget:
+                            thumbnail_widget.refresh_thumbnail(version_data)
                         # Emit signal for other listeners
                         self.thumbnailReady.emit(version_id, version_data)
                         versions_to_remove.append(version_id)
                     else:
-                        logger.debug(f"Attempt {attempt_count + 1}/30: Thumbnail not ready for version {version_id}")
-                        self.pending_versions[version_id] = (thumbnail_widget, attempt_count + 1)
+                        logger.debug(f"Attempt {attempt_count + 1}/30: Thumbnail not ready for version {version_id}, image_data={image_data}")
+                        self.pending_versions[version_id] = attempt_count + 1
 
             except Exception as e:
-                logger.error(f"Error checking thumbnail for version {version_id}: {e}")
-                self.pending_versions[version_id] = (thumbnail_widget, attempt_count + 1)
+                logger.error(f"Error checking thumbnail for version {version_id}: {e}", exc_info=True)
+                self.pending_versions[version_id] = attempt_count + 1
 
         # Remove completed versions
         for version_id in versions_to_remove:
@@ -392,6 +387,7 @@ class ThumbnailPoller(QtCore.QObject):
 
         # Stop timer if no more pending versions
         if not self.pending_versions:
+            logger.info("All thumbnails processed, stopping poller")
             self.poll_timer.stop()
 
 
@@ -1087,7 +1083,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
         self.resize_timer.timeout.connect(self._rebuild_thumbnails_delayed)
 
         # Thumbnail poller for checking ShotGrid for newly uploaded images
-        self.thumbnail_poller = ThumbnailPoller(sg_session, self)
+        self.thumbnail_poller = ThumbnailPoller(sg_session, self, self)
         self.thumbnail_poller.thumbnailReady.connect(self._on_thumbnail_ready)
 
         self._setup_ui()
@@ -1364,8 +1360,22 @@ class ImageViewerWidget(QtWidgets.QWidget):
             if not has_url:
                 # Add to poller to check for thumbnail availability
                 logger.info(f"Adding version {version.get('id')} to poller (no thumbnail URL yet)")
-                self.thumbnail_poller.add_version_to_poll(version.get('id'), thumbnail)
+                self.thumbnail_poller.add_version_to_poll(version.get('id'))
 
+
+    def find_thumbnail_by_version_id(self, version_id):
+        """Find a thumbnail widget by version ID.
+
+        Args:
+            version_id: The version ID to find
+
+        Returns:
+            ThumbnailWidget or None if not found
+        """
+        for thumbnail in self.thumbnail_widgets:
+            if thumbnail.version_data.get('id') == version_id:
+                return thumbnail
+        return None
 
     def _on_thumbnail_clicked(self, version_data):
         """Handle thumbnail click."""
