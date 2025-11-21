@@ -445,6 +445,13 @@ class FolderDetailView(QtWidgets.QWidget):
 
     def _populate_groups(self):
         """Populate the type groups with thumbnails."""
+        # Disconnect signals temporarily to prevent callbacks during widget destruction
+        try:
+            self.image_loader.imageLoaded.disconnect(self._on_image_loaded)
+            self.image_loader.loadFailed.disconnect(self._on_image_load_failed)
+        except:
+            pass  # Signals might not be connected yet
+
         # Clear label cache for previous widgets to prevent callbacks on destroyed labels
         self.label_cache.clear()
 
@@ -488,6 +495,13 @@ class FolderDetailView(QtWidgets.QWidget):
                 # Create thumbnail item widget
                 item_widget = self._create_thumbnail_item(version)
                 layout.addWidget(item_widget, row, col)
+
+        # Reconnect signals after population is complete
+        try:
+            self.image_loader.imageLoaded.connect(self._on_image_loaded)
+            self.image_loader.loadFailed.connect(self._on_image_load_failed)
+        except:
+            pass  # Signals might already be connected
 
     def _create_thumbnail_item(self, version):
         """Create a thumbnail item widget with image loading and controls."""
@@ -635,11 +649,11 @@ class FolderDetailView(QtWidgets.QWidget):
             for label in self.label_cache[cache_key]:
                 # Check if label still exists and is valid (not destroyed)
                 try:
-                    if label and not label.isHidden() and not label.isHidden():
+                    if label and not label.isHidden():
                         label.setPixmap(pixmap)
                         label.setStyleSheet("")  # Clear loading style
-                except RuntimeError:
-                    # Label was deleted, skip it
+                except (RuntimeError, AttributeError):
+                    # Label was deleted or parent was destroyed, skip it
                     pass
             # Clear label cache for this key
             del self.label_cache[cache_key]

@@ -1282,10 +1282,21 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
     def _rebuild_after_upload(self):
         """Rebuild UI after image upload with proper cleanup."""
+        # Check if there are still active image loads
+        if hasattr(self, 'folder_pane') and self.folder_pane:
+            if hasattr(self.folder_pane, 'shared_image_loader'):
+                loader = self.folder_pane.shared_image_loader
+                # If there are still active loads, wait longer
+                if loader.active_loads > 0:
+                    logger.info(f"Still {loader.active_loads} active image loads, waiting...")
+                    # Check again after 300ms
+                    QtCore.QTimer.singleShot(300, self._rebuild_after_upload)
+                    return
+
         # Process any pending events multiple times to ensure cleanup
-        for _ in range(3):
+        for _ in range(5):
             QtCore.QCoreApplication.processEvents()
-            QtCore.QThread.msleep(50)  # Give threads time to finish
+            QtCore.QThread.msleep(30)  # Give threads time to finish
 
         # Rebuild thumbnails to show the new image
         self._rebuild_thumbnails()
