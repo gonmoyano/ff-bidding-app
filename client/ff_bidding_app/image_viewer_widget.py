@@ -269,12 +269,12 @@ class UploadThumbnailWidget(QtWidgets.QWidget):
                 file_path
             )
 
-            # Wait for ShotGrid to process the thumbnail (retry up to 5 times)
+            # Wait for ShotGrid to process the thumbnail (retry up to 10 times)
             version_id = version['id']
             version_with_image = None
-            for attempt in range(5):
+            for attempt in range(10):
                 # Small delay to allow ShotGrid to process the thumbnail
-                QtCore.QThread.msleep(500)
+                QtCore.QThread.msleep(1000)  # Increased to 1 second
                 QtCore.QCoreApplication.processEvents()
 
                 # Get the full version data with image
@@ -284,17 +284,31 @@ class UploadThumbnailWidget(QtWidgets.QWidget):
                     ['code', 'image', 'sg_version_type', 'created_at', 'project']
                 )
 
-                # Check if thumbnail is available
-                if version_with_image and version_with_image.get('image'):
-                    logger.info(f"Thumbnail ready after {attempt + 1} attempt(s)")
-                    break
+                logger.info(f"Attempt {attempt + 1}/10 - Version data: {version_with_image}")
 
-                logger.info(f"Waiting for thumbnail to be processed (attempt {attempt + 1}/5)...")
+                # Check if thumbnail is available - verify the image dict has a URL
+                if version_with_image:
+                    image_data = version_with_image.get('image')
+                    logger.info(f"Image data: {image_data}")
+
+                    if image_data:
+                        # Check if image_data is a dict with a URL
+                        if isinstance(image_data, dict):
+                            image_url = image_data.get('url') or image_data.get('link_type')
+                            if image_url:
+                                logger.info(f"Thumbnail URL ready after {attempt + 1} attempt(s): {image_url[:100]}")
+                                break
+                        elif isinstance(image_data, str):
+                            logger.info(f"Thumbnail URL ready after {attempt + 1} attempt(s): {image_data[:100]}")
+                            break
+
+                logger.info(f"Waiting for thumbnail URL to be available (attempt {attempt + 1}/10)...")
 
             if not version_with_image:
                 raise Exception("Failed to fetch version data after upload")
 
             version = version_with_image
+            logger.info(f"Final version data being emitted: {version}")
 
             progress.close()
 
