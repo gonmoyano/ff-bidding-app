@@ -1187,6 +1187,12 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         header_layout.addStretch()
 
+        # Add Image button
+        add_image_btn = QtWidgets.QPushButton("Add Image")
+        add_image_btn.setToolTip("Browse for an image to upload to ShotGrid")
+        add_image_btn.clicked.connect(self._browse_for_image)
+        header_layout.addWidget(add_image_btn)
+
         # Refresh button
         refresh_btn = QtWidgets.QPushButton("Refresh")
         refresh_btn.setToolTip("Reload all images from ShotGrid")
@@ -1214,20 +1220,27 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         dock_layout.addLayout(header_layout)
 
-        # Thumbnail scroll area
-        scroll_area = QtWidgets.QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        # Thumbnail scroll area with drop support
+        self.scroll_area = QtWidgets.QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.scroll_area.setAcceptDrops(True)
 
-        # Container for thumbnails
+        # Container for thumbnails - also accepts drops
         self.thumbnail_container = QtWidgets.QWidget()
+        self.thumbnail_container.setAcceptDrops(True)
         self.thumbnail_layout = QtWidgets.QGridLayout(self.thumbnail_container)
         self.thumbnail_layout.setSpacing(10)
         self.thumbnail_layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
 
-        scroll_area.setWidget(self.thumbnail_container)
-        dock_layout.addWidget(scroll_area)
+        # Install event filter to handle drops on container
+        self.thumbnail_container.dragEnterEvent = self._container_drag_enter
+        self.thumbnail_container.dragLeaveEvent = self._container_drag_leave
+        self.thumbnail_container.dropEvent = self._container_drop
+
+        self.scroll_area.setWidget(self.thumbnail_container)
+        dock_layout.addWidget(self.scroll_area)
 
         return dock_widget
 
@@ -1385,21 +1398,9 @@ class ImageViewerWidget(QtWidgets.QWidget):
         if columns == 0 or available_width < thumbnail_width:
             columns = 2  # Default fallback
 
-        # Add upload widget as first item (position 0,0)
-        if self.current_project_id and self.sg_session:
-            upload_widget = UploadThumbnailWidget(self.sg_session, self.current_project_id, self)
-            upload_widget.imageUploaded.connect(self._on_image_uploaded)
-            self.thumbnail_layout.addWidget(upload_widget, 0, 0)
-
-            # Start adding thumbnails from position 1
-            start_idx = 1
-        else:
-            start_idx = 0
-
         for idx, version in enumerate(self.filtered_versions):
-            grid_idx = idx + start_idx
-            row = grid_idx // columns
-            col = grid_idx % columns
+            row = idx // columns
+            col = idx % columns
 
             thumbnail = ThumbnailWidget(version, self.sg_session, self)
             thumbnail.clicked.connect(self._on_thumbnail_clicked)
@@ -1696,6 +1697,172 @@ class ImageViewerWidget(QtWidgets.QWidget):
                 self,
                 "Refresh Failed",
                 f"Failed to refresh images from ShotGrid:\n{str(e)}"
+            )
+
+    def _browse_for_image(self):
+        """Open file browser to select an image to upload."""
+        if not self.current_project_id or not self.sg_session:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Project Selected",
+                "Please select a project before uploading images."
+            )
+            return
+
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Select Image to Upload",
+            "",
+            "Images (*.png *.jpg *.jpeg *.gif *.bmp *.tiff *.tif);;All Files (*)"
+        )
+
+        if file_path:
+            self._upload_image(file_path)
+
+    def _container_drag_enter(self, event):
+        """Handle drag enter on the thumbnail container."""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            # Highlight the container
+            self.thumbnail_container.setStyleSheet("background-color: rgba(74, 159, 255, 30);")
+        else:
+            event.ignore()
+
+    def _container_drag_leave(self, event):
+        """Handle drag leave on the thumbnail container."""
+        self.thumbnail_container.setStyleSheet("")
+
+    def _container_drop(self, event):
+        """Handle drop on the thumbnail container."""
+        self.thumbnail_container.setStyleSheet("")
+
+        if not self.current_project_id or not self.sg_session:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Project Selected",
+                "Please select a project before uploading images."
+            )
+            event.ignore()
+            return
+
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                file_path = urls[0].toLocalFile()
+                if self._is_valid_image_file(file_path):
+                    event.acceptProposedAction()
+                    self._upload_image(file_path)
+                else:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Invalid File",
+                        "Please drop a valid image file (PNG, JPG, JPEG, GIF, BMP, TIFF)"
+                    )
+        else:
+            event.ignore()
+
+    def _is_valid_image_file(self, file_path):
+        """Check if the file is a valid image."""
+        valid_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif']
+        _, ext = os.path.splitext(file_path.lower())
+        return ext in valid_extensions
+
+    def _upload_image(self, file_path):
+        """Upload an image to ShotGrid.
+
+        Args:
+            file_path: Path to the image file to upload
+        """
+        # Show type selection dialog
+        dialog = UploadTypeDialog(self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+
+        selected_type = dialog.get_selected_type()
+        if not selected_type:
+            return
+
+        # Show progress dialog
+        progress = QtWidgets.QProgressDialog(
+            "Uploading image to ShotGrid...",
+            "Cancel",
+            0, 0,
+            self
+        )
+        progress.setWindowModality(QtCore.Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        try:
+            # Map type to ShotGrid version type
+            type_mapping = {
+                'concept_art': 'Concept Art',
+                'storyboard': 'Storyboard',
+                'reference': 'Reference',
+                'video': 'Video'
+            }
+            sg_version_type = type_mapping.get(selected_type, 'Concept Art')
+
+            # Get filename for version code
+            filename = os.path.basename(file_path)
+            version_code = os.path.splitext(filename)[0]
+
+            # Create version in ShotGrid
+            version_data = {
+                'project': {'type': 'Project', 'id': self.current_project_id},
+                'code': version_code,
+                'sg_version_type': sg_version_type,
+                'description': f'Uploaded via FF Bidding App'
+            }
+
+            logger.info(f"Creating version in ShotGrid: {version_code}")
+            version = self.sg_session.sg.create('Version', version_data)
+
+            # Upload the image file
+            logger.info(f"Uploading file: {file_path}")
+            self.sg_session.sg.upload(
+                'Version',
+                version['id'],
+                file_path,
+                field_name='sg_uploaded_movie'
+            )
+
+            # Upload as thumbnail too
+            self.sg_session.sg.upload_thumbnail(
+                'Version',
+                version['id'],
+                file_path
+            )
+
+            # Get the version data (thumbnail might not be ready yet)
+            version = self.sg_session.sg.find_one(
+                'Version',
+                [['id', 'is', version['id']]],
+                ['code', 'image', 'sg_version_type', 'created_at', 'project']
+            )
+
+            logger.info(f"Version created: {version.get('code')}, image data: {version.get('image')}")
+            print(f"[UPLOAD DEBUG] Version created: {version.get('code')}, image data: {version.get('image')}")
+
+            progress.close()
+
+            # Show success message
+            QtWidgets.QMessageBox.information(
+                self,
+                "Upload Successful",
+                f"Image uploaded successfully as '{version_code}'"
+            )
+
+            # Handle the uploaded image
+            self._on_image_uploaded(version)
+
+        except Exception as e:
+            progress.close()
+            logger.error(f"Failed to upload image: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Upload Failed",
+                f"Failed to upload image to ShotGrid:\n{str(e)}"
             )
 
     def _is_image_version(self, version):
