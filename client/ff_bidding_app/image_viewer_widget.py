@@ -1272,12 +1272,9 @@ class ImageViewerWidget(QtWidgets.QWidget):
         if version_data not in self.all_versions:
             self.all_versions.append(version_data)
 
-        # Apply filters to update filtered_versions
-        self._apply_filters()
-
+        # Don't call _apply_filters() here as it immediately rebuilds and starts threads
+        # Instead, let _rebuild_after_upload handle everything after checking for thread completion
         # Use a delay before rebuilding to allow pending operations to complete
-        # This prevents crashes from background threads still processing
-        # 500ms should be enough for most image loads to complete
         QtCore.QTimer.singleShot(500, self._rebuild_after_upload)
 
     def _rebuild_after_upload(self):
@@ -1300,6 +1297,13 @@ class ImageViewerWidget(QtWidgets.QWidget):
         for _ in range(5):
             QtCore.QCoreApplication.processEvents()
             QtCore.QThread.msleep(30)  # Give threads time to finish
+
+        # Update filtered_versions based on current filter states
+        self.filtered_versions = []
+        for version in self.all_versions:
+            version_type = self._get_version_type(version)
+            if self.filter_states.get(version_type, True):
+                self.filtered_versions.append(version)
 
         # Rebuild thumbnails to show the new image
         self._rebuild_thumbnails()
