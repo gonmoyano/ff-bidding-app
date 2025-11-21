@@ -1178,6 +1178,18 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         header_layout.addStretch()
 
+        # Refresh button
+        refresh_btn = QtWidgets.QPushButton("Refresh")
+        refresh_btn.setToolTip("Reload all images from ShotGrid")
+        refresh_btn.clicked.connect(self._refresh_images)
+        header_layout.addWidget(refresh_btn)
+
+        # Separator
+        separator = QtWidgets.QFrame()
+        separator.setFrameShape(QtWidgets.QFrame.VLine)
+        separator.setFrameShadow(QtWidgets.QFrame.Sunken)
+        header_layout.addWidget(separator)
+
         # Filter label
         filter_label = QtWidgets.QLabel("Filter:")
         header_layout.addWidget(filter_label)
@@ -1606,6 +1618,48 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         # Apply filters and rebuild
         self._apply_filters()
+
+    def _refresh_images(self):
+        """Refresh all images by reloading from ShotGrid."""
+        if not self.current_project_id:
+            logger.info("No project selected, cannot refresh")
+            return
+
+        logger.info(f"Refreshing images for project {self.current_project_id}")
+        print(f"[REFRESH DEBUG] Refreshing images for project {self.current_project_id}")
+
+        try:
+            # Show loading cursor
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+
+            # Clear existing data
+            self.all_versions = []
+            self.filtered_versions = []
+
+            # Reload from ShotGrid
+            self.all_versions = self.sg_session.get_all_image_versions_for_project(self.current_project_id)
+            logger.info(f"Refreshed: loaded {len(self.all_versions)} image versions")
+            print(f"[REFRESH DEBUG] Loaded {len(self.all_versions)} image versions")
+
+            # Apply filters and rebuild thumbnails
+            self._apply_filters()
+
+            # Update folder pane
+            self.update_folder_pane()
+
+            # Update thumbnail states
+            self.update_thumbnail_states()
+
+            QtWidgets.QApplication.restoreOverrideCursor()
+
+        except Exception as e:
+            QtWidgets.QApplication.restoreOverrideCursor()
+            logger.error(f"Failed to refresh images: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Refresh Failed",
+                f"Failed to refresh images from ShotGrid:\n{str(e)}"
+            )
 
     def _is_image_version(self, version):
         """Check if version is an image type."""
