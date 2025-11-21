@@ -1275,6 +1275,15 @@ class ImageViewerWidget(QtWidgets.QWidget):
         # Apply filters to update filtered_versions
         self._apply_filters()
 
+        # Use a small delay before rebuilding to allow pending operations to complete
+        # This prevents crashes from background threads still processing
+        QtCore.QTimer.singleShot(100, self._rebuild_after_upload)
+
+    def _rebuild_after_upload(self):
+        """Rebuild UI after image upload with proper cleanup."""
+        # Process any pending events first
+        QtCore.QCoreApplication.processEvents()
+
         # Rebuild thumbnails to show the new image
         self._rebuild_thumbnails()
 

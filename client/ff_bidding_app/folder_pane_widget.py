@@ -24,6 +24,11 @@ class ImageLoader(QtCore.QObject):
         self.max_concurrent = max_concurrent  # Allow multiple concurrent loads
         self.loading_keys = set()  # Track what's currently loading
 
+    def clear_queue(self):
+        """Clear the loading queue and reset loading keys."""
+        self.load_queue.clear()
+        # Don't clear loading_keys for active loads, they'll clear themselves
+
     def load_image(self, url, cache_key, width, height):
         """Queue an image for loading.
 
@@ -625,9 +630,14 @@ class FolderDetailView(QtWidgets.QWidget):
         # Update all labels waiting for this image
         if cache_key in self.label_cache:
             for label in self.label_cache[cache_key]:
-                if label and not label.isHidden():
-                    label.setPixmap(pixmap)
-                    label.setStyleSheet("")  # Clear loading style
+                # Check if label still exists and is valid (not destroyed)
+                try:
+                    if label and not label.isHidden() and not label.isHidden():
+                        label.setPixmap(pixmap)
+                        label.setStyleSheet("")  # Clear loading style
+                except RuntimeError:
+                    # Label was deleted, skip it
+                    pass
             # Clear label cache for this key
             del self.label_cache[cache_key]
 
@@ -641,9 +651,14 @@ class FolderDetailView(QtWidgets.QWidget):
         # Update all labels waiting for this image
         if cache_key in self.label_cache:
             for label in self.label_cache[cache_key]:
-                if label and not label.isHidden():
-                    label.setText("Failed")
-                    label.setStyleSheet("color: #cc3333; font-size: 10px;")
+                # Check if label still exists and is valid (not destroyed)
+                try:
+                    if label and not label.isHidden():
+                        label.setText("Failed")
+                        label.setStyleSheet("color: #cc3333; font-size: 10px;")
+                except RuntimeError:
+                    # Label was deleted, skip it
+                    pass
             # Clear label cache for this key
             del self.label_cache[cache_key]
 
