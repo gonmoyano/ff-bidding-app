@@ -360,9 +360,10 @@ class ThumbnailPoller(QtCore.QObject):
                     has_url = False
 
                     if isinstance(image_data, dict):
-                        has_url = bool(image_data.get('url') or image_data.get('link_type'))
+                        # Only consider it ready if there's an actual URL, not just link_type
+                        has_url = bool(image_data.get('url'))
                     elif isinstance(image_data, str):
-                        has_url = True
+                        has_url = bool(image_data)  # Non-empty string URL
 
                     if has_url:
                         logger.info(f"Thumbnail ready for version {version_id} after {attempt_count + 1} attempts")
@@ -1350,12 +1351,17 @@ class ImageViewerWidget(QtWidgets.QWidget):
             self.thumbnail_widgets.append(thumbnail)
 
             # Check if thumbnail needs polling (no image URL available yet)
+            # Note: link_type being present (e.g., 'upload') doesn't mean the URL is ready
+            # We need to check for the actual 'url' field which contains the accessible thumbnail URL
             image_data = version.get('image')
             has_url = False
             if isinstance(image_data, dict):
-                has_url = bool(image_data.get('url') or image_data.get('link_type'))
+                # Only consider it ready if there's an actual URL, not just link_type
+                has_url = bool(image_data.get('url'))
             elif isinstance(image_data, str):
-                has_url = True
+                has_url = bool(image_data)  # Non-empty string URL
+
+            logger.info(f"Checking version {version.get('id')} ({version.get('code')}): image_data={image_data}, has_url={has_url}")
 
             if not has_url:
                 # Add to poller to check for thumbnail availability
