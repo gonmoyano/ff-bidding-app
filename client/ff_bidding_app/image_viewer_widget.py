@@ -5,9 +5,11 @@ import os
 try:
     from .logger import logger
     from .folder_pane_widget import FolderPaneWidget
+    from .sliding_overlay_panel import SlidingOverlayPanel
 except (ImportError, ValueError, SystemError):
     logger = logging.getLogger("FFPackageManager")
     from folder_pane_widget import FolderPaneWidget
+    from sliding_overlay_panel import SlidingOverlayPanel
 
 
 class UploadTypeDialog(QtWidgets.QDialog):
@@ -442,21 +444,23 @@ class ImageViewerDialog(QtWidgets.QDialog):
 
         toolbar.addStretch()
 
-        # Toggle details pane button
-        self.toggle_details_btn = QtWidgets.QPushButton("Hide Details")
-        self.toggle_details_btn.clicked.connect(self._toggle_details_pane)
-        toolbar.addWidget(self.toggle_details_btn)
-
         # Zoom level label
         self.zoom_label = QtWidgets.QLabel("100%")
         self.zoom_label.setStyleSheet("font-weight: bold;")
         toolbar.addWidget(self.zoom_label)
 
+        # Toggle details pane button
+        self.toggle_details_btn = QtWidgets.QPushButton("Details ▶")
+        self.toggle_details_btn.setToolTip("Show/Hide Details Panel")
+        self.toggle_details_btn.clicked.connect(self._toggle_details_pane)
+        toolbar.addWidget(self.toggle_details_btn)
+
         layout.addLayout(toolbar)
 
-        # Splitter for image viewer and details pane
-        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        self.splitter.setChildrenCollapsible(False)
+        # Container widget for image view (to overlay the sliding panel)
+        self.view_container = QtWidgets.QWidget()
+        view_container_layout = QtWidgets.QVBoxLayout(self.view_container)
+        view_container_layout.setContentsMargins(0, 0, 0, 0)
 
         # Graphics view for displaying image
         self.graphics_view = QtWidgets.QGraphicsView()
@@ -470,18 +474,24 @@ class ImageViewerDialog(QtWidgets.QDialog):
         # Enable wheel zoom
         self.graphics_view.wheelEvent = self._wheel_event
 
-        self.splitter.addWidget(self.graphics_view)
+        view_container_layout.addWidget(self.graphics_view)
+        layout.addWidget(self.view_container)
 
-        # Right pane: Details panel
-        self.details_pane = self._create_details_pane()
-        self.splitter.addWidget(self.details_pane)
+        # Create sliding overlay panel for details
+        self.details_panel = SlidingOverlayPanel(
+            parent=self.view_container,
+            panel_width=350,
+            animation_duration=250
+        )
+        self.details_panel.set_title("Image Details")
 
-        # Set initial sizes (80% image, 20% details)
-        self.splitter.setSizes([960, 240])
-        self.splitter.setStretchFactor(0, 1)
-        self.splitter.setStretchFactor(1, 0)
+        # Create details content widget
+        details_content = self._create_details_content()
+        self.details_panel.set_content(details_content)
 
-        layout.addWidget(self.splitter)
+        # Connect panel signals to update toggle button
+        self.details_panel.panel_shown.connect(self._on_details_shown)
+        self.details_panel.panel_hidden.connect(self._on_details_hidden)
 
         # Status bar with image info
         self.status_label = QtWidgets.QLabel("Loading...")
@@ -496,27 +506,23 @@ class ImageViewerDialog(QtWidgets.QDialog):
         button_layout.addWidget(close_btn)
         layout.addLayout(button_layout)
 
-    def _create_details_pane(self):
-        """Create the details pane."""
+    def _create_details_content(self):
+        """Create the details content for the sliding panel."""
         details_widget = QtWidgets.QWidget()
         details_layout = QtWidgets.QVBoxLayout(details_widget)
-        details_layout.setContentsMargins(5, 5, 5, 5)
-
-        # Title
-        title_label = QtWidgets.QLabel("Selected Image Details")
-        title_font = title_label.font()
-        title_font.setPointSize(12)
-        title_font.setBold(True)
-        title_label.setFont(title_font)
-        details_layout.addWidget(title_label)
+        details_layout.setContentsMargins(0, 0, 0, 0)
 
         # Details text area
         self.details_text = QtWidgets.QTextEdit()
         self.details_text.setReadOnly(True)
+        self.details_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #2b2b2b;
+                border: none;
+                color: #ddd;
+            }
+        """)
         details_layout.addWidget(self.details_text)
-
-        # Set minimum width for details pane
-        details_widget.setMinimumWidth(250)
 
         # Populate with version data
         self._update_details()
@@ -525,12 +531,15 @@ class ImageViewerDialog(QtWidgets.QDialog):
 
     def _toggle_details_pane(self):
         """Toggle the visibility of the details pane."""
-        if self.details_pane.isVisible():
-            self.details_pane.hide()
-            self.toggle_details_btn.setText("Show Details")
-        else:
-            self.details_pane.show()
-            self.toggle_details_btn.setText("Hide Details")
+        self.details_panel.toggle()
+
+    def _on_details_shown(self):
+        """Handle details panel shown event."""
+        self.toggle_details_btn.setText("Details ◀")
+
+    def _on_details_hidden(self):
+        """Handle details panel hidden event."""
+        self.toggle_details_btn.setText("Details ▶")
 
     def _update_details(self):
         """Update the details panel with version information."""
