@@ -269,12 +269,32 @@ class UploadThumbnailWidget(QtWidgets.QWidget):
                 file_path
             )
 
-            # Get the full version data with image
-            version = self.sg_session.sg.find_one(
-                'Version',
-                [['id', 'is', version['id']]],
-                ['code', 'image', 'sg_version_type', 'created_at', 'project']
-            )
+            # Wait for ShotGrid to process the thumbnail (retry up to 5 times)
+            version_id = version['id']
+            version_with_image = None
+            for attempt in range(5):
+                # Small delay to allow ShotGrid to process the thumbnail
+                QtCore.QThread.msleep(500)
+                QtCore.QCoreApplication.processEvents()
+
+                # Get the full version data with image
+                version_with_image = self.sg_session.sg.find_one(
+                    'Version',
+                    [['id', 'is', version_id]],
+                    ['code', 'image', 'sg_version_type', 'created_at', 'project']
+                )
+
+                # Check if thumbnail is available
+                if version_with_image and version_with_image.get('image'):
+                    logger.info(f"Thumbnail ready after {attempt + 1} attempt(s)")
+                    break
+
+                logger.info(f"Waiting for thumbnail to be processed (attempt {attempt + 1}/5)...")
+
+            if not version_with_image:
+                raise Exception("Failed to fetch version data after upload")
+
+            version = version_with_image
 
             progress.close()
 
@@ -747,6 +767,7 @@ class ThumbnailWidget(QtWidgets.QWidget):
             image_data = self.version_data.get('image')
 
             if not image_data:
+                logger.debug(f"No image data for version {self.version_data.get('code')}")
                 self.thumbnail_label.setText("No Preview")
                 return
 
@@ -761,8 +782,11 @@ class ThumbnailWidget(QtWidgets.QWidget):
                 return
 
             if not thumbnail_url:
+                logger.debug(f"No thumbnail URL for version {self.version_data.get('code')}")
                 self.thumbnail_label.setText("No Preview")
                 return
+
+            logger.debug(f"Loading thumbnail for {self.version_data.get('code')} from {thumbnail_url[:50]}...")
 
             # Download thumbnail in a separate thread to avoid blocking UI
             from PySide6.QtCore import QThread, QObject, Signal
