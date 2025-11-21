@@ -1318,10 +1318,14 @@ class ImageViewerWidget(QtWidgets.QWidget):
         try:
             self._is_rebuilding = True
 
+            # Clear selected thumbnail reference BEFORE deleting widgets
+            self.selected_thumbnail = None
+
             # Disconnect signals before clearing to prevent issues
             for thumbnail in self.thumbnail_widgets:
                 try:
                     thumbnail.clicked.disconnect()
+                    thumbnail.deleteRequested.disconnect()
                 except:
                     pass
                 thumbnail.deleteLater()
@@ -1429,9 +1433,16 @@ class ImageViewerWidget(QtWidgets.QWidget):
         """Handle thumbnail click."""
         logger.info(f"Thumbnail clicked: {version_data.get('code')}")
 
-        # Deselect previous
+        # Deselect previous (with safety check for deleted widgets)
         if self.selected_thumbnail:
-            self.selected_thumbnail.set_selected(False)
+            try:
+                # Check if widget is still in our list (not deleted)
+                if self.selected_thumbnail in self.thumbnail_widgets:
+                    self.selected_thumbnail.set_selected(False)
+            except RuntimeError:
+                # Widget was deleted, just clear the reference
+                pass
+            self.selected_thumbnail = None
 
         # Select new
         for thumbnail in self.thumbnail_widgets:
@@ -1443,7 +1454,11 @@ class ImageViewerWidget(QtWidgets.QWidget):
     def _deselect_current_thumbnail(self):
         """Deselect the currently selected thumbnail."""
         if self.selected_thumbnail:
-            self.selected_thumbnail.set_selected(False)
+            try:
+                if self.selected_thumbnail in self.thumbnail_widgets:
+                    self.selected_thumbnail.set_selected(False)
+            except RuntimeError:
+                pass
             self.selected_thumbnail = None
 
     def _on_delete_requested(self, version_data):
