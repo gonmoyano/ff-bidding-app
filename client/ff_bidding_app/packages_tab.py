@@ -204,7 +204,7 @@ class PackagesTab(QtWidgets.QWidget):
         images_view = QtWidgets.QWidget()
         images_layout = QtWidgets.QVBoxLayout(images_view)
         images_layout.setContentsMargins(0, 0, 0, 0)
-        self.image_viewer = ImageViewerWidget(self.sg_session, images_view)
+        self.image_viewer = ImageViewerWidget(self.sg_session, images_view, packages_tab=self)
         images_layout.addWidget(self.image_viewer)
 
         # Add views to stacked widget
@@ -433,6 +433,10 @@ class PackagesTab(QtWidgets.QWidget):
 
             # Load into the breakdown widget
             self.breakdown_widget.load_bidding_scenes(bidding_scenes, field_schema=self.field_schema)
+
+            # Update folder pane in image viewer
+            if self.image_viewer:
+                self.image_viewer.update_folder_pane()
 
         except Exception as e:
             logger.error(f"Error loading breakdown for RFQ: {e}", exc_info=True)

@@ -1,10 +1,394 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 import logging
+import os
 
 try:
     from .logger import logger
+    from .folder_pane_widget import FolderPaneWidget
 except (ImportError, ValueError, SystemError):
     logger = logging.getLogger("FFPackageManager")
+    from folder_pane_widget import FolderPaneWidget
+
+
+class UploadTypeDialog(QtWidgets.QDialog):
+    """Dialog for selecting the type of image to upload."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.selected_type = None
+        self.setWindowTitle("Select Image Type")
+        self.setModal(True)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        """Setup the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(10)
+
+        # Title
+        title_label = QtWidgets.QLabel("Select the type of image you're uploading:")
+        title_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+        layout.addWidget(title_label)
+
+        # Type buttons
+        button_layout = QtWidgets.QVBoxLayout()
+        button_layout.setSpacing(5)
+
+        types = [
+            ("Concept Art", "concept_art"),
+            ("Storyboard", "storyboard"),
+            ("Reference", "reference"),
+            ("Video", "video")
+        ]
+
+        for label, type_value in types:
+            btn = QtWidgets.QPushButton(label)
+            btn.setMinimumHeight(40)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #3a3a3a;
+                    color: white;
+                    border: 1px solid #555;
+                    border-radius: 4px;
+                    padding: 8px;
+                    font-size: 11px;
+                }
+                QPushButton:hover {
+                    background-color: #4a9eff;
+                    border: 1px solid #5eb3ff;
+                }
+            """)
+            btn.clicked.connect(lambda checked, t=type_value: self._on_type_selected(t))
+            button_layout.addWidget(btn)
+
+        layout.addLayout(button_layout)
+
+        # Cancel button
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #555;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px;
+            }
+            QPushButton:hover {
+                background-color: #666;
+            }
+        """)
+        layout.addWidget(cancel_btn)
+
+        self.setMinimumWidth(300)
+
+    def _on_type_selected(self, type_value):
+        """Handle type selection."""
+        self.selected_type = type_value
+        self.accept()
+
+    def get_selected_type(self):
+        """Get the selected type."""
+        return self.selected_type
+
+
+class UploadThumbnailWidget(QtWidgets.QWidget):
+    """Widget for uploading new images to ShotGrid."""
+
+    imageUploaded = QtCore.Signal(dict)  # Emits new version data when uploaded
+
+    def __init__(self, sg_session, project_id, parent=None):
+        super().__init__(parent)
+        self.sg_session = sg_session
+        self.project_id = project_id
+        self.setFixedSize(180, 200)
+        self.setAcceptDrops(True)
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        """Setup the upload widget UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
+
+        # Upload area
+        upload_area = QtWidgets.QLabel()
+        upload_area.setFixedSize(170, 140)
+        upload_area.setAlignment(QtCore.Qt.AlignCenter)
+        upload_area.setStyleSheet("""
+            QLabel {
+                background-color: #2b2b2b;
+                border: 2px dashed #4a9eff;
+                border-radius: 4px;
+                color: #888;
+                font-size: 11px;
+            }
+        """)
+        upload_area.setText("Drag and drop\nor click to\nupload image")
+        upload_area.setWordWrap(True)
+        layout.addWidget(upload_area)
+
+        # Upload icon (optional - using text for now)
+        icon_label = QtWidgets.QLabel("⬆")
+        icon_label.setAlignment(QtCore.Qt.AlignCenter)
+        icon_label.setStyleSheet("color: #4a9eff; font-size: 24px;")
+
+        # Add icon to upload area
+        icon_layout = QtWidgets.QVBoxLayout(upload_area)
+        icon_layout.setContentsMargins(0, 20, 0, 0)
+        icon_layout.addWidget(icon_label)
+        icon_layout.addStretch()
+
+        # Label
+        label = QtWidgets.QLabel("Upload New Image")
+        label.setAlignment(QtCore.Qt.AlignCenter)
+        label.setStyleSheet("font-size: 10px; color: #aaa;")
+        layout.addWidget(label)
+
+    def mousePressEvent(self, event):
+        """Handle mouse press to open file browser."""
+        if event.button() == QtCore.Qt.LeftButton:
+            self._browse_for_file()
+        super().mousePressEvent(event)
+
+    def dragEnterEvent(self, event):
+        """Handle drag enter event."""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            self.setStyleSheet("background-color: rgba(74, 159, 255, 50);")
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event):
+        """Handle drag leave event."""
+        self.setStyleSheet("")
+
+    def dropEvent(self, event):
+        """Handle drop event."""
+        self.setStyleSheet("")
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                file_path = urls[0].toLocalFile()
+                if self._is_valid_image(file_path):
+                    event.acceptProposedAction()
+                    self._upload_image(file_path)
+                else:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Invalid File",
+                        "Please drop a valid image file (PNG, JPG, JPEG, GIF, BMP, TIFF)"
+                    )
+        else:
+            event.ignore()
+
+    def _browse_for_file(self):
+        """Open file browser to select an image."""
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Select Image to Upload",
+            "",
+            "Images (*.png *.jpg *.jpeg *.gif *.bmp *.tiff *.tif);;All Files (*)"
+        )
+
+        if file_path:
+            self._upload_image(file_path)
+
+    def _is_valid_image(self, file_path):
+        """Check if the file is a valid image."""
+        valid_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif']
+        _, ext = os.path.splitext(file_path.lower())
+        return ext in valid_extensions
+
+    def _upload_image(self, file_path):
+        """Upload the image to ShotGrid.
+
+        Args:
+            file_path: Path to the image file to upload
+        """
+        # Show type selection dialog
+        dialog = UploadTypeDialog(self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+
+        selected_type = dialog.get_selected_type()
+        if not selected_type:
+            return
+
+        # Show progress dialog
+        progress = QtWidgets.QProgressDialog(
+            "Uploading image to ShotGrid...",
+            "Cancel",
+            0, 0,
+            self
+        )
+        progress.setWindowModality(QtCore.Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        try:
+            # Map type to ShotGrid version type
+            type_mapping = {
+                'concept_art': 'Concept Art',
+                'storyboard': 'Storyboard',
+                'reference': 'Reference',
+                'video': 'Video'
+            }
+            sg_version_type = type_mapping.get(selected_type, 'Concept Art')
+
+            # Get filename for version code
+            filename = os.path.basename(file_path)
+            version_code = os.path.splitext(filename)[0]
+
+            # Create version in ShotGrid
+            version_data = {
+                'project': {'type': 'Project', 'id': self.project_id},
+                'code': version_code,
+                'sg_version_type': sg_version_type,
+                'description': f'Uploaded via FF Bidding App'
+            }
+
+            logger.info(f"Creating version in ShotGrid: {version_code}")
+            version = self.sg_session.sg.create('Version', version_data)
+
+            # Upload the image file
+            logger.info(f"Uploading file: {file_path}")
+            self.sg_session.sg.upload(
+                'Version',
+                version['id'],
+                file_path,
+                field_name='sg_uploaded_movie'
+            )
+
+            # Upload as thumbnail too
+            self.sg_session.sg.upload_thumbnail(
+                'Version',
+                version['id'],
+                file_path
+            )
+
+            # Get the version data (thumbnail might not be ready yet)
+            version = self.sg_session.sg.find_one(
+                'Version',
+                [['id', 'is', version['id']]],
+                ['code', 'image', 'sg_version_type', 'created_at', 'project']
+            )
+
+            logger.info(f"Version created: {version.get('code')}, image data: {version.get('image')}")
+
+            progress.close()
+
+            # Show success message
+            QtWidgets.QMessageBox.information(
+                self,
+                "Upload Successful",
+                f"Image uploaded successfully as '{version_code}'"
+            )
+
+            # Emit signal with new version data
+            self.imageUploaded.emit(version)
+
+        except Exception as e:
+            progress.close()
+            logger.error(f"Failed to upload image: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Upload Failed",
+                f"Failed to upload image to ShotGrid:\n{str(e)}"
+            )
+
+
+class ThumbnailPoller(QtCore.QObject):
+    """Background poller that checks ShotGrid for thumbnail availability and updates widgets."""
+
+    thumbnailReady = QtCore.Signal(int, dict)  # (version_id, updated_version_data)
+
+    def __init__(self, sg_session, viewer_widget, parent=None):
+        super().__init__(parent)
+        self.sg_session = sg_session
+        self.viewer_widget = viewer_widget  # Reference to ImageViewerWidget
+        self.pending_versions = {}  # version_id -> attempt_count
+        self.poll_timer = QtCore.QTimer(self)
+        self.poll_timer.timeout.connect(self._check_pending_thumbnails)
+        self.poll_timer.setInterval(2000)  # Check every 2 seconds
+
+    def add_version_to_poll(self, version_id):
+        """Add a version to poll for thumbnail availability.
+
+        Args:
+            version_id: The version ID to poll
+        """
+        logger.info(f"Adding version {version_id} to polling queue")
+        self.pending_versions[version_id] = 0
+
+        # Start timer if not already running
+        if not self.poll_timer.isActive():
+            logger.info("Starting poller timer")
+            self.poll_timer.start()
+
+    def _check_pending_thumbnails(self):
+        """Check all pending versions for thumbnail availability."""
+        if not self.pending_versions:
+            logger.debug("No pending versions, stopping poller")
+            self.poll_timer.stop()
+            return
+
+        logger.info(f"Polling {len(self.pending_versions)} versions for thumbnail availability")
+        versions_to_remove = []
+
+        for version_id, attempt_count in list(self.pending_versions.items()):
+            # Max 30 attempts (60 seconds total)
+            if attempt_count >= 30:
+                logger.warning(f"Giving up on thumbnail for version {version_id} after 30 attempts")
+                versions_to_remove.append(version_id)
+                continue
+
+            # Query ShotGrid for updated version data
+            try:
+                version_data = self.sg_session.sg.find_one(
+                    'Version',
+                    [['id', 'is', version_id]],
+                    ['code', 'image', 'sg_version_type', 'created_at', 'project']
+                )
+
+                logger.debug(f"Version {version_id} query result: {version_data}")
+
+                if version_data:
+                    image_data = version_data.get('image')
+                    has_url = False
+
+                    if isinstance(image_data, dict):
+                        has_url = bool(image_data.get('url') or image_data.get('link_type'))
+                    elif isinstance(image_data, str):
+                        has_url = True
+
+                    if has_url:
+                        logger.info(f"Thumbnail ready for version {version_id} after {attempt_count + 1} attempts")
+                        # Find and update the thumbnail widget
+                        thumbnail_widget = self.viewer_widget.find_thumbnail_by_version_id(version_id)
+                        if thumbnail_widget:
+                            thumbnail_widget.refresh_thumbnail(version_data)
+                        # Emit signal for other listeners
+                        self.thumbnailReady.emit(version_id, version_data)
+                        versions_to_remove.append(version_id)
+                    else:
+                        logger.debug(f"Attempt {attempt_count + 1}/30: Thumbnail not ready for version {version_id}, image_data={image_data}")
+                        self.pending_versions[version_id] = attempt_count + 1
+
+            except Exception as e:
+                logger.error(f"Error checking thumbnail for version {version_id}: {e}", exc_info=True)
+                self.pending_versions[version_id] = attempt_count + 1
+
+        # Remove completed versions
+        for version_id in versions_to_remove:
+            self.pending_versions.pop(version_id, None)
+
+        # Stop timer if no more pending versions
+        if not self.pending_versions:
+            logger.info("All thumbnails processed, stopping poller")
+            self.poll_timer.stop()
 
 
 class ImageViewerDialog(QtWidgets.QDialog):
@@ -391,9 +775,18 @@ class ThumbnailWidget(QtWidgets.QWidget):
         self.version_data = version_data
         self.sg_session = sg_session
         self.selected = False
+        self.folders_containing_this = []  # List of folder names containing this image
 
         self.setFixedSize(180, 200)
         self.setCursor(QtCore.Qt.PointingHandCursor)
+
+        # Enable drag
+        self.drag_start_position = None
+
+        # Tooltip timer for hover delay
+        self.tooltip_timer = QtCore.QTimer()
+        self.tooltip_timer.setSingleShot(True)
+        self.tooltip_timer.timeout.connect(self._show_tooltip)
 
         self._setup_ui()
         self._load_thumbnail()
@@ -447,7 +840,8 @@ class ThumbnailWidget(QtWidgets.QWidget):
             image_data = self.version_data.get('image')
 
             if not image_data:
-                self.thumbnail_label.setText("No Preview")
+                logger.debug(f"No image data for version {self.version_data.get('code')}")
+                self.thumbnail_label.setText("Processing...")
                 return
 
             # If image_data is a URL string, download it
@@ -457,12 +851,15 @@ class ThumbnailWidget(QtWidgets.QWidget):
                 # Get URL from the dict
                 thumbnail_url = image_data.get('url') or image_data.get('link_type')
             else:
-                self.thumbnail_label.setText("No Preview")
+                self.thumbnail_label.setText("Processing...")
                 return
 
             if not thumbnail_url:
-                self.thumbnail_label.setText("No Preview")
+                logger.debug(f"No thumbnail URL for version {self.version_data.get('code')}")
+                self.thumbnail_label.setText("Processing...")
                 return
+
+            logger.debug(f"Loading thumbnail for {self.version_data.get('code')} from {thumbnail_url[:50]}...")
 
             # Download thumbnail in a separate thread to avoid blocking UI
             from PySide6.QtCore import QThread, QObject, Signal
@@ -498,7 +895,17 @@ class ThumbnailWidget(QtWidgets.QWidget):
 
         except Exception as e:
             logger.error(f"Error loading thumbnail: {e}")
-            self.thumbnail_label.setText("No Preview")
+            self.thumbnail_label.setText("Processing...")
+
+    def refresh_thumbnail(self, updated_version_data):
+        """Refresh thumbnail with updated version data.
+
+        Args:
+            updated_version_data: Updated version data from ShotGrid with image URL
+        """
+        logger.info(f"Refreshing thumbnail for {self.version_data.get('code')}")
+        self.version_data = updated_version_data
+        self._load_thumbnail()
 
     def _on_thumbnail_loaded(self, image_data):
         """Handle thumbnail loaded."""
@@ -540,7 +947,42 @@ class ThumbnailWidget(QtWidgets.QWidget):
     def mousePressEvent(self, event):
         """Handle mouse press to select thumbnail."""
         if event.button() == QtCore.Qt.LeftButton:
+            self.drag_start_position = event.pos()
             self.clicked.emit(self.version_data)
+
+    def mouseMoveEvent(self, event):
+        """Handle mouse move to start drag operation."""
+        if not (event.buttons() & QtCore.Qt.LeftButton):
+            return
+        if not self.drag_start_position:
+            return
+
+        # Check if we've moved far enough to start a drag
+        if (event.pos() - self.drag_start_position).manhattanLength() < QtWidgets.QApplication.startDragDistance():
+            return
+
+        # Start drag operation
+        drag = QtGui.QDrag(self)
+        mime_data = QtCore.QMimeData()
+
+        # Store the version ID in mime data
+        version_id = self.version_data.get('id')
+        if version_id:
+            mime_data.setData("application/x-image-version-id", str(version_id).encode())
+            drag.setMimeData(mime_data)
+
+            # Set drag pixmap (use thumbnail if available)
+            if self.thumbnail_label.pixmap():
+                pixmap = self.thumbnail_label.pixmap().scaled(
+                    80, 80,
+                    QtCore.Qt.KeepAspectRatio,
+                    QtCore.Qt.SmoothTransformation
+                )
+                drag.setPixmap(pixmap)
+                drag.setHotSpot(pixmap.rect().center())
+
+            # Execute drag
+            drag.exec(QtCore.Qt.CopyAction)
 
     def mouseDoubleClickEvent(self, event):
         """Handle double-click to open enlarged view."""
@@ -555,30 +997,68 @@ class ThumbnailWidget(QtWidgets.QWidget):
     def set_selected(self, selected):
         """Set the selected state."""
         self.selected = selected
-        if selected:
-            self.thumbnail_label.setStyleSheet("""
-                QLabel {
-                    background-color: #2b2b2b;
-                    border: 2px solid #4a9eff;
-                    border-radius: 4px;
-                }
-            """)
+        self._update_border()
+
+    def set_folders_containing(self, folder_names):
+        """Set which folders contain this image.
+
+        Args:
+            folder_names: List of folder names that contain this image
+        """
+        self.folders_containing_this = folder_names
+        self._update_border()
+
+    def _update_border(self):
+        """Update the border based on selection and folder states."""
+        # Priority: selected > in folders > default
+        if self.selected:
+            # Blue border for selection
+            border_color = "#4a9eff"
+        elif len(self.folders_containing_this) >= 2:
+            # Orange border for 2+ folders
+            border_color = "#ff8c00"
+        elif len(self.folders_containing_this) == 1:
+            # Green border for 1 folder
+            border_color = "#00cc00"
         else:
-            self.thumbnail_label.setStyleSheet("""
-                QLabel {
-                    background-color: #2b2b2b;
-                    border: 2px solid #444;
-                    border-radius: 4px;
-                }
-            """)
+            # Default border
+            border_color = "#444"
+
+        self.thumbnail_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: #2b2b2b;
+                border: 2px solid {border_color};
+                border-radius: 4px;
+            }}
+        """)
+
+    def _show_tooltip(self):
+        """Show tooltip with folder information."""
+        if self.folders_containing_this:
+            folder_list = "\n".join([f"  • {name}" for name in self.folders_containing_this])
+            tooltip_text = f"Dropped to {len(self.folders_containing_this)} folder(s):\n{folder_list}"
+            QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), tooltip_text, self)
+
+    def enterEvent(self, event):
+        """Handle mouse enter to show tooltip after delay."""
+        super().enterEvent(event)
+        if self.folders_containing_this:
+            self.tooltip_timer.start(1000)  # 1 second delay
+
+    def leaveEvent(self, event):
+        """Handle mouse leave to cancel tooltip."""
+        super().leaveEvent(event)
+        self.tooltip_timer.stop()
+        QtWidgets.QToolTip.hideText()
 
 
 class ImageViewerWidget(QtWidgets.QWidget):
     """Widget for viewing image versions with thumbnails."""
 
-    def __init__(self, sg_session, parent=None):
+    def __init__(self, sg_session, parent=None, packages_tab=None):
         super().__init__(parent)
         self.sg_session = sg_session
+        self.packages_tab = packages_tab  # Reference to PackagesTab
         self.current_project_id = None
         self.all_versions = []
         self.filtered_versions = []
@@ -593,6 +1073,19 @@ class ImageViewerWidget(QtWidgets.QWidget):
             'Video': True
         }
 
+        # Flags to prevent concurrent operations
+        self._is_rebuilding = False
+        self._is_rearranging = False
+
+        # Debounce timer for resize events
+        self.resize_timer = QtCore.QTimer()
+        self.resize_timer.setSingleShot(True)
+        self.resize_timer.timeout.connect(self._rebuild_thumbnails_delayed)
+
+        # Thumbnail poller for checking ShotGrid for newly uploaded images
+        self.thumbnail_poller = ThumbnailPoller(sg_session, self, self)
+        self.thumbnail_poller.thumbnailReady.connect(self._on_thumbnail_ready)
+
         self._setup_ui()
 
     def _setup_ui(self):
@@ -600,9 +1093,44 @@ class ImageViewerWidget(QtWidgets.QWidget):
         main_layout = QtWidgets.QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
 
-        # Thumbnails with filters
-        thumbnail_dock = self._create_thumbnail_dock()
-        main_layout.addWidget(thumbnail_dock)
+        # Create splitter for thumbnails and folder pane
+        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.splitter.setChildrenCollapsible(False)
+
+        # Left: Thumbnails with filters
+        self.thumbnail_dock = self._create_thumbnail_dock()
+        self.splitter.addWidget(self.thumbnail_dock)
+
+        # Right: Folder pane
+        self.folder_pane = FolderPaneWidget(self)
+        self.folder_pane.image_viewer = self  # Set reference for detail view access
+        self.splitter.addWidget(self.folder_pane)
+
+        # Connect folder drop signal to update thumbnail states and deselect
+        self.folder_pane.imageDropped.connect(self.update_thumbnail_states)
+        self.folder_pane.imageDropped.connect(self._deselect_current_thumbnail)
+
+        # Set initial sizes (70% thumbnails, 30% folder pane)
+        self.splitter.setSizes([700, 300])
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 0)
+
+        # Connect splitter moved signal to adjust thumbnail columns
+        self.splitter.splitterMoved.connect(self._on_splitter_moved)
+
+        main_layout.addWidget(self.splitter)
+
+    def _on_splitter_moved(self, pos, index):
+        """Handle splitter moved to adjust thumbnail grid."""
+        # Use debounced timer to avoid rebuilding during drag
+        self.resize_timer.stop()
+        self.resize_timer.start(500)  # Wait 500ms after last move
+
+    def _rebuild_thumbnails_delayed(self):
+        """Rearrange thumbnails after resize timer expires."""
+        # Only rearrange if we actually have thumbnails
+        if self.thumbnail_widgets:
+            self._rearrange_thumbnails()
 
     def _create_thumbnail_dock(self):
         """Create the thumbnail view with filters."""
@@ -696,35 +1224,158 @@ class ImageViewerWidget(QtWidgets.QWidget):
             # Default to Concept Art if unknown
             return 'Concept Art'
 
+    def _rearrange_thumbnails(self):
+        """Rearrange existing thumbnails in grid without recreating them."""
+        # Prevent concurrent operations
+        if self._is_rearranging or self._is_rebuilding:
+            return
+
+        try:
+            self._is_rearranging = True
+
+            if not hasattr(self, 'thumbnail_container') or not self.thumbnail_container:
+                return
+
+            if not self.thumbnail_widgets:
+                return
+
+            # Calculate new column count
+            thumbnail_width = 180 + 10
+            available_width = self.thumbnail_container.width()
+
+            if available_width <= 0:
+                available_width = 800
+
+            columns = max(1, available_width // thumbnail_width)
+
+            if columns == 0:
+                columns = 2
+
+            # Account for upload widget at position 0
+            start_idx = 1 if self.current_project_id and self.sg_session else 0
+
+            # Rearrange existing widgets in layout
+            for idx, thumbnail in enumerate(self.thumbnail_widgets):
+                grid_idx = idx + start_idx
+                row = grid_idx // columns
+                col = grid_idx % columns
+
+                # Remove from current position and add to new position
+                self.thumbnail_layout.removeWidget(thumbnail)
+                self.thumbnail_layout.addWidget(thumbnail, row, col)
+
+        except Exception as e:
+            logger.error(f"Error rearranging thumbnails: {e}", exc_info=True)
+        finally:
+            self._is_rearranging = False
+
     def _rebuild_thumbnails(self):
-        """Rebuild the thumbnail grid."""
-        # Clear existing thumbnails
-        for thumbnail in self.thumbnail_widgets:
-            thumbnail.deleteLater()
-        self.thumbnail_widgets.clear()
+        """Rebuild the thumbnail grid (only for filter/content changes)."""
+        # Prevent concurrent operations
+        if self._is_rebuilding or self._is_rearranging:
+            return
 
-        # Clear layout
-        while self.thumbnail_layout.count():
-            item = self.thumbnail_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        try:
+            self._is_rebuilding = True
 
-        # Add thumbnails in flat layout
-        self._add_thumbnails_flat()
+            # Disconnect signals before clearing to prevent issues
+            for thumbnail in self.thumbnail_widgets:
+                try:
+                    thumbnail.clicked.disconnect()
+                except:
+                    pass
+                thumbnail.deleteLater()
+            self.thumbnail_widgets.clear()
+
+            # Clear layout
+            while self.thumbnail_layout.count():
+                item = self.thumbnail_layout.takeAt(0)
+                if item.widget():
+                    widget = item.widget()
+                    widget.setParent(None)
+                    widget.deleteLater()
+
+            # Process pending delete events
+            QtCore.QCoreApplication.processEvents()
+
+            # Add thumbnails in flat layout
+            self._add_thumbnails_flat()
+        except Exception as e:
+            logger.error(f"Error rebuilding thumbnails: {e}", exc_info=True)
+        finally:
+            self._is_rebuilding = False
 
     def _add_thumbnails_flat(self):
         """Add thumbnails in a flat grid (no grouping)."""
-        columns = 4  # Number of thumbnails per row
+        # Safety check
+        if not hasattr(self, 'thumbnail_container') or not self.thumbnail_container:
+            logger.warning("Thumbnail container not available")
+            return
+
+        # Calculate columns based on available width
+        # Each thumbnail is 180px wide + 10px spacing
+        thumbnail_width = 180 + 10
+        available_width = self.thumbnail_container.width()
+
+        # Safety check for width
+        if available_width <= 0:
+            available_width = 800  # Reasonable default
+
+        # Calculate columns dynamically, minimum 1, maximum reasonable number
+        columns = max(1, available_width // thumbnail_width)
+
+        # If columns is 0 or container width is too small, use a default
+        if columns == 0 or available_width < thumbnail_width:
+            columns = 2  # Default fallback
+
+        # Add upload widget as first item (position 0,0)
+        if self.current_project_id and self.sg_session:
+            upload_widget = UploadThumbnailWidget(self.sg_session, self.current_project_id, self)
+            upload_widget.imageUploaded.connect(self._on_image_uploaded)
+            self.thumbnail_layout.addWidget(upload_widget, 0, 0)
+
+            # Start adding thumbnails from position 1
+            start_idx = 1
+        else:
+            start_idx = 0
 
         for idx, version in enumerate(self.filtered_versions):
-            row = idx // columns
-            col = idx % columns
+            grid_idx = idx + start_idx
+            row = grid_idx // columns
+            col = grid_idx % columns
 
             thumbnail = ThumbnailWidget(version, self.sg_session, self)
             thumbnail.clicked.connect(self._on_thumbnail_clicked)
             self.thumbnail_layout.addWidget(thumbnail, row, col)
             self.thumbnail_widgets.append(thumbnail)
 
+            # Check if thumbnail needs polling (no image URL available yet)
+            image_data = version.get('image')
+            has_url = False
+            if isinstance(image_data, dict):
+                has_url = bool(image_data.get('url') or image_data.get('link_type'))
+            elif isinstance(image_data, str):
+                has_url = True
+
+            if not has_url:
+                # Add to poller to check for thumbnail availability
+                logger.info(f"Adding version {version.get('id')} to poller (no thumbnail URL yet)")
+                self.thumbnail_poller.add_version_to_poll(version.get('id'))
+
+
+    def find_thumbnail_by_version_id(self, version_id):
+        """Find a thumbnail widget by version ID.
+
+        Args:
+            version_id: The version ID to find
+
+        Returns:
+            ThumbnailWidget or None if not found
+        """
+        for thumbnail in self.thumbnail_widgets:
+            if thumbnail.version_data.get('id') == version_id:
+                return thumbnail
+        return None
 
     def _on_thumbnail_clicked(self, version_data):
         """Handle thumbnail click."""
@@ -740,6 +1391,89 @@ class ImageViewerWidget(QtWidgets.QWidget):
                 thumbnail.set_selected(True)
                 self.selected_thumbnail = thumbnail
                 break
+
+    def _deselect_current_thumbnail(self):
+        """Deselect the currently selected thumbnail."""
+        if self.selected_thumbnail:
+            self.selected_thumbnail.set_selected(False)
+            self.selected_thumbnail = None
+
+    def _on_thumbnail_ready(self, version_id, updated_version_data):
+        """Handle thumbnail becoming ready from the poller.
+
+        Args:
+            version_id: The version ID that now has a thumbnail
+            updated_version_data: The updated version data with image URL
+        """
+        logger.info(f"Thumbnail ready for version {version_id}, updating all_versions")
+
+        # Update the version data in all_versions list
+        for i, version in enumerate(self.all_versions):
+            if version.get('id') == version_id:
+                self.all_versions[i] = updated_version_data
+                logger.info(f"Updated version data in all_versions for {updated_version_data.get('code')}")
+                break
+
+        # Also update in filtered_versions if present
+        for i, version in enumerate(self.filtered_versions):
+            if version.get('id') == version_id:
+                self.filtered_versions[i] = updated_version_data
+                logger.info(f"Updated version data in filtered_versions for {updated_version_data.get('code')}")
+                break
+
+    def _on_image_uploaded(self, version_data):
+        """Handle successful image upload.
+
+        Args:
+            version_data: The newly created version data from ShotGrid
+        """
+        logger.info(f"Image uploaded successfully: {version_data.get('code')}")
+
+        # Add new version to all_versions list
+        if version_data not in self.all_versions:
+            self.all_versions.append(version_data)
+
+        # Don't call _apply_filters() here as it immediately rebuilds and starts threads
+        # Instead, let _rebuild_after_upload handle everything after checking for thread completion
+        # Use a delay before rebuilding to allow pending operations to complete
+        QtCore.QTimer.singleShot(500, self._rebuild_after_upload)
+
+    def _rebuild_after_upload(self):
+        """Rebuild UI after image upload with proper cleanup."""
+        # Check if there are still active image loading threads
+        if hasattr(self, 'folder_pane') and self.folder_pane:
+            if hasattr(self.folder_pane, 'shared_image_loader'):
+                loader = self.folder_pane.shared_image_loader
+
+                # Check for alive threads (not just active_loads counter)
+                alive_threads = [t for t in loader.active_threads if t.is_alive()]
+
+                if alive_threads or loader.active_loads > 0:
+                    logger.info(f"Still {len(alive_threads)} threads alive and {loader.active_loads} active loads, waiting...")
+                    # Check again after 300ms
+                    QtCore.QTimer.singleShot(300, self._rebuild_after_upload)
+                    return
+
+        # Process any pending events multiple times to ensure cleanup
+        for _ in range(5):
+            QtCore.QCoreApplication.processEvents()
+            QtCore.QThread.msleep(30)  # Give threads time to finish
+
+        # Update filtered_versions based on current filter states
+        self.filtered_versions = []
+        for version in self.all_versions:
+            version_type = self._get_version_type(version)
+            if self.filter_states.get(version_type, True):
+                self.filtered_versions.append(version)
+
+        # Rebuild thumbnails to show the new image
+        self._rebuild_thumbnails()
+
+        # Update folder pane
+        self.update_folder_pane()
+
+        # Update thumbnail states (for border colors)
+        self.update_thumbnail_states()
 
 
     def load_project_versions(self, project_id):
@@ -789,3 +1523,134 @@ class ImageViewerWidget(QtWidgets.QWidget):
         self.all_versions = []
         self.filtered_versions = []
         self._rebuild_thumbnails()
+
+    def update_folder_pane(self):
+        """Update the folder pane with assets and scenes from VFX Breakdown."""
+        if not self.packages_tab:
+            logger.info("No packages_tab reference, skipping folder pane update")
+            return
+
+        # Get breakdown widget from packages_tab
+        breakdown_widget = getattr(self.packages_tab, 'breakdown_widget', None)
+        if not breakdown_widget:
+            logger.info("No breakdown_widget found")
+            return
+
+        # Get breakdown model
+        model = getattr(breakdown_widget, 'model', None)
+        if not model:
+            logger.info("No model found in breakdown_widget")
+            return
+
+        # Get all bidding scenes data
+        all_scenes = getattr(model, 'all_bidding_scenes_data', [])
+        if not all_scenes:
+            logger.info("No bidding scenes data available")
+            return
+
+        # Extract unique assets and scenes
+        unique_assets = set()
+        unique_scenes = set()
+
+        for scene in all_scenes:
+            # Extract assets from sg_bid_assets
+            bid_assets = scene.get('sg_bid_assets', [])
+            if bid_assets:
+                if isinstance(bid_assets, list):
+                    for asset in bid_assets:
+                        if isinstance(asset, dict):
+                            asset_name = asset.get('name')
+                            if asset_name:
+                                unique_assets.add(asset_name)
+                        elif isinstance(asset, str):
+                            unique_assets.add(asset)
+
+            # Extract scene code from sg_sequence_code
+            scene_code = scene.get('sg_sequence_code')
+            if scene_code:
+                if isinstance(scene_code, str):
+                    unique_scenes.add(scene_code)
+                elif isinstance(scene_code, dict):
+                    scene_name = scene_code.get('name')
+                    if scene_name:
+                        unique_scenes.add(scene_name)
+
+        logger.info(f"Found {len(unique_assets)} unique assets and {len(unique_scenes)} unique scenes")
+
+        # Update folder pane
+        self.folder_pane.set_assets(list(unique_assets))
+        self.folder_pane.set_scenes(list(unique_scenes))
+
+        # Load saved mappings if available
+        self._load_folder_mappings()
+
+    def _load_folder_mappings(self):
+        """Load saved image-to-folder mappings from settings."""
+        if not self.packages_tab:
+            return
+
+        # Try to get mappings from current package
+        current_package = getattr(self.packages_tab, 'current_package_name', None)
+        if not current_package:
+            return
+
+        packages = getattr(self.packages_tab, 'packages', {})
+        package_data = packages.get(current_package, {})
+        folder_mappings = package_data.get('folder_mappings', None)
+
+        if folder_mappings:
+            self.folder_pane.load_folder_mappings(folder_mappings)
+            logger.info("Loaded folder mappings from package")
+            # Update thumbnail states to reflect loaded mappings
+            self.update_thumbnail_states()
+
+    def save_folder_mappings(self):
+        """Save image-to-folder mappings to current package."""
+        if not self.packages_tab:
+            return
+
+        current_package = getattr(self.packages_tab, 'current_package_name', None)
+        if not current_package:
+            return
+
+        packages = getattr(self.packages_tab, 'packages', {})
+        if current_package not in packages:
+            return
+
+        # Get mappings from folder pane
+        mappings = self.folder_pane.get_folder_mappings()
+
+        # Save to package data
+        packages[current_package]['folder_mappings'] = mappings
+        logger.info("Saved folder mappings to package")
+
+    def update_thumbnail_states(self):
+        """Update all thumbnail border states based on folder mappings."""
+        if not self.folder_pane:
+            return
+
+        # Get current mappings
+        mappings = self.folder_pane.get_folder_mappings()
+
+        # Build reverse mapping: image_id -> list of folder names
+        image_to_folders = {}
+
+        # Check assets
+        for asset_name, image_ids in mappings.get('assets', {}).items():
+            for image_id in image_ids:
+                if image_id not in image_to_folders:
+                    image_to_folders[image_id] = []
+                image_to_folders[image_id].append(f"Asset: {asset_name}")
+
+        # Check scenes
+        for scene_code, image_ids in mappings.get('scenes', {}).items():
+            for image_id in image_ids:
+                if image_id not in image_to_folders:
+                    image_to_folders[image_id] = []
+                image_to_folders[image_id].append(f"Scene: {scene_code}")
+
+        # Update all thumbnails
+        for thumbnail in self.thumbnail_widgets:
+            image_id = thumbnail.version_data.get('id')
+            folders = image_to_folders.get(image_id, [])
+            thumbnail.set_folders_containing(folders)
