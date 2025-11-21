@@ -277,6 +277,7 @@ class UploadThumbnailWidget(QtWidgets.QWidget):
             )
 
             logger.info(f"Version created: {version.get('code')}, image data: {version.get('image')}")
+            print(f"[UPLOAD DEBUG] Version created: {version.get('code')}, image data: {version.get('image')}")
 
             progress.close()
 
@@ -321,21 +322,26 @@ class ThumbnailPoller(QtCore.QObject):
             version_id: The version ID to poll
         """
         logger.info(f"Adding version {version_id} to polling queue")
+        print(f"[POLLER DEBUG] add_version_to_poll called for version {version_id}")
         self.pending_versions[version_id] = 0
 
         # Start timer if not already running
         if not self.poll_timer.isActive():
             logger.info("Starting poller timer")
+            print("[POLLER DEBUG] Starting poller timer (2 second interval)")
             self.poll_timer.start()
 
     def _check_pending_thumbnails(self):
         """Check all pending versions for thumbnail availability."""
+        print(f"[POLLER DEBUG] _check_pending_thumbnails called, pending_versions={list(self.pending_versions.keys())}")
         if not self.pending_versions:
             logger.debug("No pending versions, stopping poller")
+            print("[POLLER DEBUG] No pending versions, stopping poller")
             self.poll_timer.stop()
             return
 
         logger.info(f"Polling {len(self.pending_versions)} versions for thumbnail availability")
+        print(f"[POLLER DEBUG] Polling {len(self.pending_versions)} versions for thumbnail availability")
         versions_to_remove = []
 
         for version_id, attempt_count in list(self.pending_versions.items()):
@@ -1384,10 +1390,12 @@ class ImageViewerWidget(QtWidgets.QWidget):
                 has_url = bool(image_data)  # Non-empty string URL
 
             logger.info(f"Checking version {version.get('id')} ({version.get('code')}): image_data={image_data}, has_url={has_url}")
+            print(f"[POLLING DEBUG] Checking version {version.get('id')} ({version.get('code')}): image_data={image_data}, has_url={has_url}")
 
             if not has_url:
                 # Add to poller to check for thumbnail availability
                 logger.info(f"Adding version {version.get('id')} to poller (no thumbnail URL yet)")
+                print(f"[POLLING DEBUG] Adding version {version.get('id')} to poller (no thumbnail URL yet)")
                 self.thumbnail_poller.add_version_to_poll(version.get('id'))
 
 
@@ -1526,18 +1534,22 @@ class ImageViewerWidget(QtWidgets.QWidget):
             version_data: The newly created version data from ShotGrid
         """
         logger.info(f"Image uploaded successfully: {version_data.get('code')}")
+        print(f"[UPLOAD DEBUG] _on_image_uploaded called with: {version_data.get('code')}, image={version_data.get('image')}")
 
         # Add new version to all_versions list
         if version_data not in self.all_versions:
             self.all_versions.append(version_data)
+            print(f"[UPLOAD DEBUG] Added to all_versions, now has {len(self.all_versions)} versions")
 
         # Don't call _apply_filters() here as it immediately rebuilds and starts threads
         # Instead, let _rebuild_after_upload handle everything after checking for thread completion
         # Use a delay before rebuilding to allow pending operations to complete
+        print("[UPLOAD DEBUG] Scheduling _rebuild_after_upload in 500ms")
         QtCore.QTimer.singleShot(500, self._rebuild_after_upload)
 
     def _rebuild_after_upload(self):
         """Rebuild UI after image upload with proper cleanup."""
+        print("[UPLOAD DEBUG] _rebuild_after_upload called")
         # Check if there are still active image loading threads
         if hasattr(self, 'folder_pane') and self.folder_pane:
             if hasattr(self.folder_pane, 'shared_image_loader'):
@@ -1548,6 +1560,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
                 if alive_threads or loader.active_loads > 0:
                     logger.info(f"Still {len(alive_threads)} threads alive and {loader.active_loads} active loads, waiting...")
+                    print(f"[UPLOAD DEBUG] Waiting for threads: {len(alive_threads)} alive, {loader.active_loads} active")
                     # Check again after 300ms
                     QtCore.QTimer.singleShot(300, self._rebuild_after_upload)
                     return
@@ -1564,6 +1577,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
             if self.filter_states.get(version_type, True):
                 self.filtered_versions.append(version)
 
+        print(f"[UPLOAD DEBUG] filtered_versions now has {len(self.filtered_versions)} versions, calling _rebuild_thumbnails")
         # Rebuild thumbnails to show the new image
         self._rebuild_thumbnails()
 
