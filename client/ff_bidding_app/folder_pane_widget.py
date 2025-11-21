@@ -23,6 +23,7 @@ class ImageLoader(QtCore.QObject):
         self.active_loads = 0
         self.max_concurrent = max_concurrent  # Allow multiple concurrent loads
         self.loading_keys = set()  # Track what's currently loading
+        self.active_threads = []  # Track active Thread objects
 
     def clear_queue(self):
         """Clear the loading queue and reset loading keys."""
@@ -56,6 +57,12 @@ class ImageLoader(QtCore.QObject):
             thread = Thread(target=self._load_in_thread, args=(url, cache_key, width, height))
             thread.daemon = True
             thread.start()
+
+            # Track thread for cleanup
+            self.active_threads.append(thread)
+
+            # Clean up dead threads periodically
+            self.active_threads = [t for t in self.active_threads if t.is_alive()]
 
     def _load_in_thread(self, url, cache_key, width, height):
         """Load image in background thread."""
