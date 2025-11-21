@@ -1330,6 +1330,10 @@ class ImageViewerWidget(QtWidgets.QWidget):
             # Clear selected thumbnail reference BEFORE deleting widgets
             self.selected_thumbnail = None
 
+            # Clear folder highlights
+            if self.folder_pane:
+                self.folder_pane.highlight_folders_for_image(None)
+
             # Disconnect signals before clearing to prevent issues
             for thumbnail in self.thumbnail_widgets:
                 try:
@@ -1460,6 +1464,11 @@ class ImageViewerWidget(QtWidgets.QWidget):
                 self.selected_thumbnail = thumbnail
                 break
 
+        # Highlight folders containing this image
+        if self.folder_pane:
+            image_id = version_data.get('id')
+            self.folder_pane.highlight_folders_for_image(image_id)
+
     def _deselect_current_thumbnail(self):
         """Deselect the currently selected thumbnail."""
         if self.selected_thumbnail:
@@ -1469,6 +1478,10 @@ class ImageViewerWidget(QtWidgets.QWidget):
             except RuntimeError:
                 pass
             self.selected_thumbnail = None
+
+        # Clear folder highlights
+        if self.folder_pane:
+            self.folder_pane.highlight_folders_for_image(None)
 
     def _on_delete_requested(self, version_data):
         """Handle delete request from thumbnail context menu.

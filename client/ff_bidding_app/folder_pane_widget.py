@@ -140,6 +140,8 @@ class FolderWidget(QtWidgets.QWidget):
         self.folder_type = folder_type
         self.image_ids = set()  # Set of image version IDs in this folder
         self.icon_size = icon_size
+        self._contains_selected = False  # Whether this folder contains the currently selected image
+        self._is_drag_over = False  # Whether a drag is currently over this folder
 
         self.setAcceptDrops(True)
 
@@ -171,18 +173,56 @@ class FolderWidget(QtWidgets.QWidget):
         self.count_label.setAlignment(QtCore.Qt.AlignCenter)
         layout.addWidget(self.count_label)
 
-        # Style for hover effect
-        self.setStyleSheet("""
-            FolderWidget {
-                background-color: #2b2b2b;
-                border: 1px solid #444;
-                border-radius: 4px;
-            }
-            FolderWidget:hover {
-                background-color: #353535;
-                border: 1px solid #555;
-            }
-        """)
+        # Apply initial style
+        self._update_style()
+
+    def _update_style(self):
+        """Update the folder styling based on current state."""
+        if self._is_drag_over:
+            # Drag over state - bright blue highlight
+            self.setStyleSheet("""
+                FolderWidget {
+                    background-color: #3a5f8f;
+                    border: 2px solid #4a9eff;
+                    border-radius: 4px;
+                }
+            """)
+        elif self._contains_selected:
+            # Contains selected image - blue border
+            self.setStyleSheet("""
+                FolderWidget {
+                    background-color: #2b3a4a;
+                    border: 2px solid #4a9eff;
+                    border-radius: 4px;
+                }
+                FolderWidget:hover {
+                    background-color: #354555;
+                    border: 2px solid #5aafff;
+                }
+            """)
+        else:
+            # Default state
+            self.setStyleSheet("""
+                FolderWidget {
+                    background-color: #2b2b2b;
+                    border: 1px solid #444;
+                    border-radius: 4px;
+                }
+                FolderWidget:hover {
+                    background-color: #353535;
+                    border: 1px solid #555;
+                }
+            """)
+
+    def set_contains_selected(self, contains_selected):
+        """Set whether this folder contains the currently selected image.
+
+        Args:
+            contains_selected: True if folder contains the selected image
+        """
+        if self._contains_selected != contains_selected:
+            self._contains_selected = contains_selected
+            self._update_style()
 
     def _update_icon(self):
         """Update the folder icon with current size."""
@@ -204,30 +244,16 @@ class FolderWidget(QtWidgets.QWidget):
         if event.mimeData().hasFormat("application/x-image-version-id"):
             event.acceptProposedAction()
             # Highlight on drag over
-            self.setStyleSheet("""
-                FolderWidget {
-                    background-color: #3a5f8f;
-                    border: 2px solid #4a9eff;
-                    border-radius: 4px;
-                }
-            """)
+            self._is_drag_over = True
+            self._update_style()
         else:
             event.ignore()
 
     def dragLeaveEvent(self, event):
         """Handle drag leave event."""
         # Remove highlight
-        self.setStyleSheet("""
-            FolderWidget {
-                background-color: #2b2b2b;
-                border: 1px solid #444;
-                border-radius: 4px;
-            }
-            FolderWidget:hover {
-                background-color: #353535;
-                border: 1px solid #555;
-            }
-        """)
+        self._is_drag_over = False
+        self._update_style()
 
     def dropEvent(self, event):
         """Handle drop event."""
@@ -1131,6 +1157,26 @@ class FolderPaneWidget(QtWidgets.QWidget):
                 mappings['scenes'][scene_code] = image_ids
 
         return mappings
+
+    def highlight_folders_for_image(self, image_id):
+        """Highlight all folders that contain the specified image.
+
+        Args:
+            image_id: The image version ID to highlight folders for, or None to clear all highlights
+        """
+        # Update all asset folders
+        for folder in self.asset_folders.values():
+            if image_id is not None and image_id in folder.image_ids:
+                folder.set_contains_selected(True)
+            else:
+                folder.set_contains_selected(False)
+
+        # Update all scene folders
+        for folder in self.scene_folders.values():
+            if image_id is not None and image_id in folder.image_ids:
+                folder.set_contains_selected(True)
+            else:
+                folder.set_contains_selected(False)
 
     def load_folder_mappings(self, mappings):
         """Load image-to-folder mappings.
