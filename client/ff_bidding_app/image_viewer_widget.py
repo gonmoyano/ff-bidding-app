@@ -770,6 +770,7 @@ class ThumbnailWidget(QtWidgets.QWidget):
     """Widget for displaying a single image thumbnail."""
 
     clicked = QtCore.Signal(dict)  # Emits version data when clicked
+    deleteRequested = QtCore.Signal(dict)  # Emits version data when delete is requested
 
     def __init__(self, version_data, sg_session=None, parent=None):
         super().__init__(parent)
@@ -849,8 +850,8 @@ class ThumbnailWidget(QtWidgets.QWidget):
             if isinstance(image_data, str):
                 thumbnail_url = image_data
             elif isinstance(image_data, dict):
-                # Get URL from the dict
-                thumbnail_url = image_data.get('url') or image_data.get('link_type')
+                # Get URL from the dict - only use 'url', not 'link_type' which is just metadata
+                thumbnail_url = image_data.get('url')
             else:
                 self.thumbnail_label.setText("Processing...")
                 return
@@ -989,6 +990,26 @@ class ThumbnailWidget(QtWidgets.QWidget):
         """Handle double-click to open enlarged view."""
         if event.button() == QtCore.Qt.LeftButton:
             self._open_enlarged_view()
+
+    def contextMenuEvent(self, event):
+        """Handle right-click context menu."""
+        menu = QtWidgets.QMenu(self)
+
+        # View action
+        view_action = menu.addAction("View Enlarged")
+        view_action.triggered.connect(self._open_enlarged_view)
+
+        menu.addSeparator()
+
+        # Delete action
+        delete_action = menu.addAction("Delete from ShotGrid")
+        delete_action.triggered.connect(self._request_delete)
+
+        menu.exec(event.globalPos())
+
+    def _request_delete(self):
+        """Request deletion of this version."""
+        self.deleteRequested.emit(self.version_data)
 
     def _open_enlarged_view(self):
         """Open an enlarged view dialog for this image."""
@@ -1347,6 +1368,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
             thumbnail = ThumbnailWidget(version, self.sg_session, self)
             thumbnail.clicked.connect(self._on_thumbnail_clicked)
+            thumbnail.deleteRequested.connect(self._on_delete_requested)
             self.thumbnail_layout.addWidget(thumbnail, row, col)
             self.thumbnail_widgets.append(thumbnail)
 
@@ -1403,6 +1425,76 @@ class ImageViewerWidget(QtWidgets.QWidget):
         if self.selected_thumbnail:
             self.selected_thumbnail.set_selected(False)
             self.selected_thumbnail = None
+
+    def _on_delete_requested(self, version_data):
+        """Handle delete request from thumbnail context menu.
+
+        Args:
+            version_data: The version data to delete
+        """
+        version_code = version_data.get('code', 'Unknown')
+        version_id = version_data.get('id')
+
+        if not version_id:
+            logger.error("Cannot delete version: no ID found")
+            return
+
+        # Confirm deletion
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete '{version_code}' from ShotGrid?\n\n"
+            "This action cannot be undone.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        # Delete from ShotGrid
+        try:
+            logger.info(f"Deleting version {version_id} ({version_code}) from ShotGrid")
+
+            # Show progress
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+
+            # Delete the version from ShotGrid
+            self.sg_session.sg.delete('Version', version_id)
+
+            logger.info(f"Successfully deleted version {version_id} from ShotGrid")
+
+            # Remove from local lists
+            self.all_versions = [v for v in self.all_versions if v.get('id') != version_id]
+            self.filtered_versions = [v for v in self.filtered_versions if v.get('id') != version_id]
+
+            # Clear selection if this was selected
+            if self.selected_thumbnail and self.selected_thumbnail.version_data.get('id') == version_id:
+                self.selected_thumbnail = None
+
+            # Remove from poller if pending
+            if version_id in self.thumbnail_poller.pending_versions:
+                self.thumbnail_poller.pending_versions.pop(version_id, None)
+
+            # Rebuild thumbnails
+            self._rebuild_thumbnails()
+
+            QtWidgets.QApplication.restoreOverrideCursor()
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Deleted",
+                f"'{version_code}' has been deleted from ShotGrid."
+            )
+
+        except Exception as e:
+            QtWidgets.QApplication.restoreOverrideCursor()
+            logger.error(f"Failed to delete version {version_id}: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Delete Failed",
+                f"Failed to delete '{version_code}' from ShotGrid:\n{str(e)}"
+            )
 
     def _on_thumbnail_ready(self, version_id, updated_version_data):
         """Handle thumbnail becoming ready from the poller.
