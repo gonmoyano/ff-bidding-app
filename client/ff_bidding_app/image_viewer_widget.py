@@ -1,5 +1,6 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 import logging
+import os
 
 try:
     from .logger import logger
@@ -7,6 +8,294 @@ try:
 except (ImportError, ValueError, SystemError):
     logger = logging.getLogger("FFPackageManager")
     from folder_pane_widget import FolderPaneWidget
+
+
+class UploadTypeDialog(QtWidgets.QDialog):
+    """Dialog for selecting the type of image to upload."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.selected_type = None
+        self.setWindowTitle("Select Image Type")
+        self.setModal(True)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        """Setup the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(10)
+
+        # Title
+        title_label = QtWidgets.QLabel("Select the type of image you're uploading:")
+        title_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+        layout.addWidget(title_label)
+
+        # Type buttons
+        button_layout = QtWidgets.QVBoxLayout()
+        button_layout.setSpacing(5)
+
+        types = [
+            ("Concept Art", "concept_art"),
+            ("Storyboard", "storyboard"),
+            ("Reference", "reference"),
+            ("Video", "video")
+        ]
+
+        for label, type_value in types:
+            btn = QtWidgets.QPushButton(label)
+            btn.setMinimumHeight(40)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #3a3a3a;
+                    color: white;
+                    border: 1px solid #555;
+                    border-radius: 4px;
+                    padding: 8px;
+                    font-size: 11px;
+                }
+                QPushButton:hover {
+                    background-color: #4a9eff;
+                    border: 1px solid #5eb3ff;
+                }
+            """)
+            btn.clicked.connect(lambda checked, t=type_value: self._on_type_selected(t))
+            button_layout.addWidget(btn)
+
+        layout.addLayout(button_layout)
+
+        # Cancel button
+        cancel_btn = QtWidgets.QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #555;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px;
+            }
+            QPushButton:hover {
+                background-color: #666;
+            }
+        """)
+        layout.addWidget(cancel_btn)
+
+        self.setMinimumWidth(300)
+
+    def _on_type_selected(self, type_value):
+        """Handle type selection."""
+        self.selected_type = type_value
+        self.accept()
+
+    def get_selected_type(self):
+        """Get the selected type."""
+        return self.selected_type
+
+
+class UploadThumbnailWidget(QtWidgets.QWidget):
+    """Widget for uploading new images to ShotGrid."""
+
+    imageUploaded = QtCore.Signal(dict)  # Emits new version data when uploaded
+
+    def __init__(self, sg_session, project_id, parent=None):
+        super().__init__(parent)
+        self.sg_session = sg_session
+        self.project_id = project_id
+        self.setFixedSize(180, 200)
+        self.setAcceptDrops(True)
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        """Setup the upload widget UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
+
+        # Upload area
+        upload_area = QtWidgets.QLabel()
+        upload_area.setFixedSize(170, 140)
+        upload_area.setAlignment(QtCore.Qt.AlignCenter)
+        upload_area.setStyleSheet("""
+            QLabel {
+                background-color: #2b2b2b;
+                border: 2px dashed #4a9eff;
+                border-radius: 4px;
+                color: #888;
+                font-size: 11px;
+            }
+        """)
+        upload_area.setText("Drag and drop\nor click to\nupload image")
+        upload_area.setWordWrap(True)
+        layout.addWidget(upload_area)
+
+        # Upload icon (optional - using text for now)
+        icon_label = QtWidgets.QLabel("⬆")
+        icon_label.setAlignment(QtCore.Qt.AlignCenter)
+        icon_label.setStyleSheet("color: #4a9eff; font-size: 24px;")
+
+        # Add icon to upload area
+        icon_layout = QtWidgets.QVBoxLayout(upload_area)
+        icon_layout.setContentsMargins(0, 20, 0, 0)
+        icon_layout.addWidget(icon_label)
+        icon_layout.addStretch()
+
+        # Label
+        label = QtWidgets.QLabel("Upload New Image")
+        label.setAlignment(QtCore.Qt.AlignCenter)
+        label.setStyleSheet("font-size: 10px; color: #aaa;")
+        layout.addWidget(label)
+
+    def mousePressEvent(self, event):
+        """Handle mouse press to open file browser."""
+        if event.button() == QtCore.Qt.LeftButton:
+            self._browse_for_file()
+        super().mousePressEvent(event)
+
+    def dragEnterEvent(self, event):
+        """Handle drag enter event."""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            self.setStyleSheet("background-color: rgba(74, 159, 255, 50);")
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event):
+        """Handle drag leave event."""
+        self.setStyleSheet("")
+
+    def dropEvent(self, event):
+        """Handle drop event."""
+        self.setStyleSheet("")
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                file_path = urls[0].toLocalFile()
+                if self._is_valid_image(file_path):
+                    event.acceptProposedAction()
+                    self._upload_image(file_path)
+                else:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Invalid File",
+                        "Please drop a valid image file (PNG, JPG, JPEG, GIF, BMP, TIFF)"
+                    )
+        else:
+            event.ignore()
+
+    def _browse_for_file(self):
+        """Open file browser to select an image."""
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Select Image to Upload",
+            "",
+            "Images (*.png *.jpg *.jpeg *.gif *.bmp *.tiff *.tif);;All Files (*)"
+        )
+
+        if file_path:
+            self._upload_image(file_path)
+
+    def _is_valid_image(self, file_path):
+        """Check if the file is a valid image."""
+        valid_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif']
+        _, ext = os.path.splitext(file_path.lower())
+        return ext in valid_extensions
+
+    def _upload_image(self, file_path):
+        """Upload the image to ShotGrid.
+
+        Args:
+            file_path: Path to the image file to upload
+        """
+        # Show type selection dialog
+        dialog = UploadTypeDialog(self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+
+        selected_type = dialog.get_selected_type()
+        if not selected_type:
+            return
+
+        # Show progress dialog
+        progress = QtWidgets.QProgressDialog(
+            "Uploading image to ShotGrid...",
+            "Cancel",
+            0, 0,
+            self
+        )
+        progress.setWindowModality(QtCore.Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        try:
+            # Map type to ShotGrid version type
+            type_mapping = {
+                'concept_art': 'Concept Art',
+                'storyboard': 'Storyboard',
+                'reference': 'Reference',
+                'video': 'Video'
+            }
+            sg_version_type = type_mapping.get(selected_type, 'Concept Art')
+
+            # Get filename for version code
+            filename = os.path.basename(file_path)
+            version_code = os.path.splitext(filename)[0]
+
+            # Create version in ShotGrid
+            version_data = {
+                'project': {'type': 'Project', 'id': self.project_id},
+                'code': version_code,
+                'sg_version_type': sg_version_type,
+                'description': f'Uploaded via FF Bidding App'
+            }
+
+            logger.info(f"Creating version in ShotGrid: {version_code}")
+            version = self.sg_session.create('Version', version_data)
+
+            # Upload the image file
+            logger.info(f"Uploading file: {file_path}")
+            self.sg_session.upload(
+                'Version',
+                version['id'],
+                file_path,
+                field_name='sg_uploaded_movie'
+            )
+
+            # Upload as thumbnail too
+            self.sg_session.upload_thumbnail(
+                'Version',
+                version['id'],
+                file_path
+            )
+
+            # Get the full version data with image
+            version = self.sg_session.find_one(
+                'Version',
+                [['id', 'is', version['id']]],
+                ['code', 'image', 'sg_version_type', 'created_at', 'project']
+            )
+
+            progress.close()
+
+            # Show success message
+            QtWidgets.QMessageBox.information(
+                self,
+                "Upload Successful",
+                f"Image uploaded successfully as '{version_code}'"
+            )
+
+            # Emit signal with new version data
+            self.imageUploaded.emit(version)
+
+        except Exception as e:
+            progress.close()
+            logger.error(f"Failed to upload image: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Upload Failed",
+                f"Failed to upload image to ShotGrid:\n{str(e)}"
+            )
 
 
 class ImageViewerDialog(QtWidgets.QDialog):
@@ -851,10 +1140,14 @@ class ImageViewerWidget(QtWidgets.QWidget):
             if columns == 0:
                 columns = 2
 
+            # Account for upload widget at position 0
+            start_idx = 1 if self.current_project_id and self.sg_session else 0
+
             # Rearrange existing widgets in layout
             for idx, thumbnail in enumerate(self.thumbnail_widgets):
-                row = idx // columns
-                col = idx % columns
+                grid_idx = idx + start_idx
+                row = grid_idx // columns
+                col = grid_idx % columns
 
                 # Remove from current position and add to new position
                 self.thumbnail_layout.removeWidget(thumbnail)
@@ -924,9 +1217,21 @@ class ImageViewerWidget(QtWidgets.QWidget):
         if columns == 0 or available_width < thumbnail_width:
             columns = 2  # Default fallback
 
+        # Add upload widget as first item (position 0,0)
+        if self.current_project_id and self.sg_session:
+            upload_widget = UploadThumbnailWidget(self.sg_session, self.current_project_id, self)
+            upload_widget.imageUploaded.connect(self._on_image_uploaded)
+            self.thumbnail_layout.addWidget(upload_widget, 0, 0)
+
+            # Start adding thumbnails from position 1
+            start_idx = 1
+        else:
+            start_idx = 0
+
         for idx, version in enumerate(self.filtered_versions):
-            row = idx // columns
-            col = idx % columns
+            grid_idx = idx + start_idx
+            row = grid_idx // columns
+            col = grid_idx % columns
 
             thumbnail = ThumbnailWidget(version, self.sg_session, self)
             thumbnail.clicked.connect(self._on_thumbnail_clicked)
@@ -954,6 +1259,30 @@ class ImageViewerWidget(QtWidgets.QWidget):
         if self.selected_thumbnail:
             self.selected_thumbnail.set_selected(False)
             self.selected_thumbnail = None
+
+    def _on_image_uploaded(self, version_data):
+        """Handle successful image upload.
+
+        Args:
+            version_data: The newly created version data from ShotGrid
+        """
+        logger.info(f"Image uploaded successfully: {version_data.get('code')}")
+
+        # Add new version to all_versions list
+        if version_data not in self.all_versions:
+            self.all_versions.append(version_data)
+
+        # Apply filters to update filtered_versions
+        self._apply_filters()
+
+        # Rebuild thumbnails to show the new image
+        self._rebuild_thumbnails()
+
+        # Update folder pane
+        self.update_folder_pane()
+
+        # Update thumbnail states (for border colors)
+        self.update_thumbnail_states()
 
 
     def load_project_versions(self, project_id):
