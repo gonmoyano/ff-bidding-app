@@ -251,11 +251,11 @@ class UploadThumbnailWidget(QtWidgets.QWidget):
             }
 
             logger.info(f"Creating version in ShotGrid: {version_code}")
-            version = self.sg_session.create('Version', version_data)
+            version = self.sg_session.sg.create('Version', version_data)
 
             # Upload the image file
             logger.info(f"Uploading file: {file_path}")
-            self.sg_session.upload(
+            self.sg_session.sg.upload(
                 'Version',
                 version['id'],
                 file_path,
@@ -263,14 +263,14 @@ class UploadThumbnailWidget(QtWidgets.QWidget):
             )
 
             # Upload as thumbnail too
-            self.sg_session.upload_thumbnail(
+            self.sg_session.sg.upload_thumbnail(
                 'Version',
                 version['id'],
                 file_path
             )
 
             # Get the full version data with image
-            version = self.sg_session.find_one(
+            version = self.sg_session.sg.find_one(
                 'Version',
                 [['id', 'is', version['id']]],
                 ['code', 'image', 'sg_version_type', 'created_at', 'project']
