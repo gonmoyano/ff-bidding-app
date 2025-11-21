@@ -445,6 +445,9 @@ class FolderDetailView(QtWidgets.QWidget):
 
     def _populate_groups(self):
         """Populate the type groups with thumbnails."""
+        # Clear label cache for previous widgets to prevent callbacks on destroyed labels
+        self.label_cache.clear()
+
         # Group images by type
         grouped_images = {
             'Concept Art': [],
