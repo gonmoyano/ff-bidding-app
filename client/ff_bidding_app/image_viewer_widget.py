@@ -5,9 +5,11 @@ import os
 try:
     from .logger import logger
     from .folder_pane_widget import FolderPaneWidget
+    from .sliding_overlay_panel import SlidingOverlayPanel
 except (ImportError, ValueError, SystemError):
     logger = logging.getLogger("FFPackageManager")
     from folder_pane_widget import FolderPaneWidget
+    from sliding_overlay_panel import SlidingOverlayPanel
 
 
 class UploadTypeDialog(QtWidgets.QDialog):
@@ -277,6 +279,7 @@ class UploadThumbnailWidget(QtWidgets.QWidget):
             )
 
             logger.info(f"Version created: {version.get('code')}, image data: {version.get('image')}")
+            print(f"[UPLOAD DEBUG] Version created: {version.get('code')}, image data: {version.get('image')}")
 
             progress.close()
 
@@ -321,21 +324,26 @@ class ThumbnailPoller(QtCore.QObject):
             version_id: The version ID to poll
         """
         logger.info(f"Adding version {version_id} to polling queue")
+        print(f"[POLLER DEBUG] add_version_to_poll called for version {version_id}")
         self.pending_versions[version_id] = 0
 
         # Start timer if not already running
         if not self.poll_timer.isActive():
             logger.info("Starting poller timer")
+            print("[POLLER DEBUG] Starting poller timer (2 second interval)")
             self.poll_timer.start()
 
     def _check_pending_thumbnails(self):
         """Check all pending versions for thumbnail availability."""
+        print(f"[POLLER DEBUG] _check_pending_thumbnails called, pending_versions={list(self.pending_versions.keys())}")
         if not self.pending_versions:
             logger.debug("No pending versions, stopping poller")
+            print("[POLLER DEBUG] No pending versions, stopping poller")
             self.poll_timer.stop()
             return
 
         logger.info(f"Polling {len(self.pending_versions)} versions for thumbnail availability")
+        print(f"[POLLER DEBUG] Polling {len(self.pending_versions)} versions for thumbnail availability")
         versions_to_remove = []
 
         for version_id, attempt_count in list(self.pending_versions.items()):
@@ -360,9 +368,10 @@ class ThumbnailPoller(QtCore.QObject):
                     has_url = False
 
                     if isinstance(image_data, dict):
-                        has_url = bool(image_data.get('url') or image_data.get('link_type'))
+                        # Only consider it ready if there's an actual URL, not just link_type
+                        has_url = bool(image_data.get('url'))
                     elif isinstance(image_data, str):
-                        has_url = True
+                        has_url = bool(image_data)  # Non-empty string URL
 
                     if has_url:
                         logger.info(f"Thumbnail ready for version {version_id} after {attempt_count + 1} attempts")
@@ -435,21 +444,23 @@ class ImageViewerDialog(QtWidgets.QDialog):
 
         toolbar.addStretch()
 
-        # Toggle details pane button
-        self.toggle_details_btn = QtWidgets.QPushButton("Hide Details")
-        self.toggle_details_btn.clicked.connect(self._toggle_details_pane)
-        toolbar.addWidget(self.toggle_details_btn)
-
         # Zoom level label
         self.zoom_label = QtWidgets.QLabel("100%")
         self.zoom_label.setStyleSheet("font-weight: bold;")
         toolbar.addWidget(self.zoom_label)
 
+        # Toggle details pane button
+        self.toggle_details_btn = QtWidgets.QPushButton("Details ▶")
+        self.toggle_details_btn.setToolTip("Show/Hide Details Panel")
+        self.toggle_details_btn.clicked.connect(self._toggle_details_pane)
+        toolbar.addWidget(self.toggle_details_btn)
+
         layout.addLayout(toolbar)
 
-        # Splitter for image viewer and details pane
-        self.splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        self.splitter.setChildrenCollapsible(False)
+        # Container widget for image view (to overlay the sliding panel)
+        self.view_container = QtWidgets.QWidget()
+        view_container_layout = QtWidgets.QVBoxLayout(self.view_container)
+        view_container_layout.setContentsMargins(0, 0, 0, 0)
 
         # Graphics view for displaying image
         self.graphics_view = QtWidgets.QGraphicsView()
@@ -463,18 +474,24 @@ class ImageViewerDialog(QtWidgets.QDialog):
         # Enable wheel zoom
         self.graphics_view.wheelEvent = self._wheel_event
 
-        self.splitter.addWidget(self.graphics_view)
+        view_container_layout.addWidget(self.graphics_view)
+        layout.addWidget(self.view_container)
 
-        # Right pane: Details panel
-        self.details_pane = self._create_details_pane()
-        self.splitter.addWidget(self.details_pane)
+        # Create sliding overlay panel for details
+        self.details_panel = SlidingOverlayPanel(
+            parent=self.view_container,
+            panel_width=350,
+            animation_duration=250
+        )
+        self.details_panel.set_title("Image Details")
 
-        # Set initial sizes (80% image, 20% details)
-        self.splitter.setSizes([960, 240])
-        self.splitter.setStretchFactor(0, 1)
-        self.splitter.setStretchFactor(1, 0)
+        # Create details content widget
+        details_content = self._create_details_content()
+        self.details_panel.set_content(details_content)
 
-        layout.addWidget(self.splitter)
+        # Connect panel signals to update toggle button
+        self.details_panel.panel_shown.connect(self._on_details_shown)
+        self.details_panel.panel_hidden.connect(self._on_details_hidden)
 
         # Status bar with image info
         self.status_label = QtWidgets.QLabel("Loading...")
@@ -489,27 +506,23 @@ class ImageViewerDialog(QtWidgets.QDialog):
         button_layout.addWidget(close_btn)
         layout.addLayout(button_layout)
 
-    def _create_details_pane(self):
-        """Create the details pane."""
+    def _create_details_content(self):
+        """Create the details content for the sliding panel."""
         details_widget = QtWidgets.QWidget()
         details_layout = QtWidgets.QVBoxLayout(details_widget)
-        details_layout.setContentsMargins(5, 5, 5, 5)
-
-        # Title
-        title_label = QtWidgets.QLabel("Selected Image Details")
-        title_font = title_label.font()
-        title_font.setPointSize(12)
-        title_font.setBold(True)
-        title_label.setFont(title_font)
-        details_layout.addWidget(title_label)
+        details_layout.setContentsMargins(0, 0, 0, 0)
 
         # Details text area
         self.details_text = QtWidgets.QTextEdit()
         self.details_text.setReadOnly(True)
+        self.details_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #2b2b2b;
+                border: none;
+                color: #ddd;
+            }
+        """)
         details_layout.addWidget(self.details_text)
-
-        # Set minimum width for details pane
-        details_widget.setMinimumWidth(250)
 
         # Populate with version data
         self._update_details()
@@ -518,12 +531,15 @@ class ImageViewerDialog(QtWidgets.QDialog):
 
     def _toggle_details_pane(self):
         """Toggle the visibility of the details pane."""
-        if self.details_pane.isVisible():
-            self.details_pane.hide()
-            self.toggle_details_btn.setText("Show Details")
-        else:
-            self.details_pane.show()
-            self.toggle_details_btn.setText("Hide Details")
+        self.details_panel.toggle()
+
+    def _on_details_shown(self):
+        """Handle details panel shown event."""
+        self.toggle_details_btn.setText("Details ◀")
+
+    def _on_details_hidden(self):
+        """Handle details panel hidden event."""
+        self.toggle_details_btn.setText("Details ▶")
 
     def _update_details(self):
         """Update the details panel with version information."""
@@ -769,6 +785,7 @@ class ThumbnailWidget(QtWidgets.QWidget):
     """Widget for displaying a single image thumbnail."""
 
     clicked = QtCore.Signal(dict)  # Emits version data when clicked
+    deleteRequested = QtCore.Signal(dict)  # Emits version data when delete is requested
 
     def __init__(self, version_data, sg_session=None, parent=None):
         super().__init__(parent)
@@ -848,8 +865,8 @@ class ThumbnailWidget(QtWidgets.QWidget):
             if isinstance(image_data, str):
                 thumbnail_url = image_data
             elif isinstance(image_data, dict):
-                # Get URL from the dict
-                thumbnail_url = image_data.get('url') or image_data.get('link_type')
+                # Get URL from the dict - only use 'url', not 'link_type' which is just metadata
+                thumbnail_url = image_data.get('url')
             else:
                 self.thumbnail_label.setText("Processing...")
                 return
@@ -988,6 +1005,26 @@ class ThumbnailWidget(QtWidgets.QWidget):
         """Handle double-click to open enlarged view."""
         if event.button() == QtCore.Qt.LeftButton:
             self._open_enlarged_view()
+
+    def contextMenuEvent(self, event):
+        """Handle right-click context menu."""
+        menu = QtWidgets.QMenu(self)
+
+        # View action
+        view_action = menu.addAction("View Enlarged")
+        view_action.triggered.connect(self._open_enlarged_view)
+
+        menu.addSeparator()
+
+        # Delete action
+        delete_action = menu.addAction("Delete from ShotGrid")
+        delete_action.triggered.connect(self._request_delete)
+
+        menu.exec(event.globalPos())
+
+    def _request_delete(self):
+        """Request deletion of this version."""
+        self.deleteRequested.emit(self.version_data)
 
     def _open_enlarged_view(self):
         """Open an enlarged view dialog for this image."""
@@ -1150,6 +1187,24 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         header_layout.addStretch()
 
+        # Add Image button
+        add_image_btn = QtWidgets.QPushButton("Add Image")
+        add_image_btn.setToolTip("Browse for an image to upload to ShotGrid")
+        add_image_btn.clicked.connect(self._browse_for_image)
+        header_layout.addWidget(add_image_btn)
+
+        # Refresh button
+        refresh_btn = QtWidgets.QPushButton("Refresh")
+        refresh_btn.setToolTip("Reload all images from ShotGrid")
+        refresh_btn.clicked.connect(self._refresh_images)
+        header_layout.addWidget(refresh_btn)
+
+        # Separator
+        separator = QtWidgets.QFrame()
+        separator.setFrameShape(QtWidgets.QFrame.VLine)
+        separator.setFrameShadow(QtWidgets.QFrame.Sunken)
+        header_layout.addWidget(separator)
+
         # Filter label
         filter_label = QtWidgets.QLabel("Filter:")
         header_layout.addWidget(filter_label)
@@ -1165,20 +1220,27 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         dock_layout.addLayout(header_layout)
 
-        # Thumbnail scroll area
-        scroll_area = QtWidgets.QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        # Thumbnail scroll area with drop support
+        self.scroll_area = QtWidgets.QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self.scroll_area.setAcceptDrops(True)
 
-        # Container for thumbnails
+        # Container for thumbnails - also accepts drops
         self.thumbnail_container = QtWidgets.QWidget()
+        self.thumbnail_container.setAcceptDrops(True)
         self.thumbnail_layout = QtWidgets.QGridLayout(self.thumbnail_container)
         self.thumbnail_layout.setSpacing(10)
         self.thumbnail_layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
 
-        scroll_area.setWidget(self.thumbnail_container)
-        dock_layout.addWidget(scroll_area)
+        # Install event filter to handle drops on container
+        self.thumbnail_container.dragEnterEvent = self._container_drag_enter
+        self.thumbnail_container.dragLeaveEvent = self._container_drag_leave
+        self.thumbnail_container.dropEvent = self._container_drop
+
+        self.scroll_area.setWidget(self.thumbnail_container)
+        dock_layout.addWidget(self.scroll_area)
 
         return dock_widget
 
@@ -1278,10 +1340,18 @@ class ImageViewerWidget(QtWidgets.QWidget):
         try:
             self._is_rebuilding = True
 
+            # Clear selected thumbnail reference BEFORE deleting widgets
+            self.selected_thumbnail = None
+
+            # Clear folder highlights
+            if self.folder_pane:
+                self.folder_pane.highlight_folders_for_image(None)
+
             # Disconnect signals before clearing to prevent issues
             for thumbnail in self.thumbnail_widgets:
                 try:
                     thumbnail.clicked.disconnect()
+                    thumbnail.deleteRequested.disconnect()
                 except:
                     pass
                 thumbnail.deleteLater()
@@ -1328,38 +1398,34 @@ class ImageViewerWidget(QtWidgets.QWidget):
         if columns == 0 or available_width < thumbnail_width:
             columns = 2  # Default fallback
 
-        # Add upload widget as first item (position 0,0)
-        if self.current_project_id and self.sg_session:
-            upload_widget = UploadThumbnailWidget(self.sg_session, self.current_project_id, self)
-            upload_widget.imageUploaded.connect(self._on_image_uploaded)
-            self.thumbnail_layout.addWidget(upload_widget, 0, 0)
-
-            # Start adding thumbnails from position 1
-            start_idx = 1
-        else:
-            start_idx = 0
-
         for idx, version in enumerate(self.filtered_versions):
-            grid_idx = idx + start_idx
-            row = grid_idx // columns
-            col = grid_idx % columns
+            row = idx // columns
+            col = idx % columns
 
             thumbnail = ThumbnailWidget(version, self.sg_session, self)
             thumbnail.clicked.connect(self._on_thumbnail_clicked)
+            thumbnail.deleteRequested.connect(self._on_delete_requested)
             self.thumbnail_layout.addWidget(thumbnail, row, col)
             self.thumbnail_widgets.append(thumbnail)
 
             # Check if thumbnail needs polling (no image URL available yet)
+            # Note: link_type being present (e.g., 'upload') doesn't mean the URL is ready
+            # We need to check for the actual 'url' field which contains the accessible thumbnail URL
             image_data = version.get('image')
             has_url = False
             if isinstance(image_data, dict):
-                has_url = bool(image_data.get('url') or image_data.get('link_type'))
+                # Only consider it ready if there's an actual URL, not just link_type
+                has_url = bool(image_data.get('url'))
             elif isinstance(image_data, str):
-                has_url = True
+                has_url = bool(image_data)  # Non-empty string URL
+
+            logger.info(f"Checking version {version.get('id')} ({version.get('code')}): image_data={image_data}, has_url={has_url}")
+            print(f"[POLLING DEBUG] Checking version {version.get('id')} ({version.get('code')}): image_data={image_data}, has_url={has_url}")
 
             if not has_url:
                 # Add to poller to check for thumbnail availability
                 logger.info(f"Adding version {version.get('id')} to poller (no thumbnail URL yet)")
+                print(f"[POLLING DEBUG] Adding version {version.get('id')} to poller (no thumbnail URL yet)")
                 self.thumbnail_poller.add_version_to_poll(version.get('id'))
 
 
@@ -1381,9 +1447,16 @@ class ImageViewerWidget(QtWidgets.QWidget):
         """Handle thumbnail click."""
         logger.info(f"Thumbnail clicked: {version_data.get('code')}")
 
-        # Deselect previous
+        # Deselect previous (with safety check for deleted widgets)
         if self.selected_thumbnail:
-            self.selected_thumbnail.set_selected(False)
+            try:
+                # Check if widget is still in our list (not deleted)
+                if self.selected_thumbnail in self.thumbnail_widgets:
+                    self.selected_thumbnail.set_selected(False)
+            except RuntimeError:
+                # Widget was deleted, just clear the reference
+                pass
+            self.selected_thumbnail = None
 
         # Select new
         for thumbnail in self.thumbnail_widgets:
@@ -1392,11 +1465,94 @@ class ImageViewerWidget(QtWidgets.QWidget):
                 self.selected_thumbnail = thumbnail
                 break
 
+        # Highlight folders containing this image
+        if self.folder_pane:
+            image_id = version_data.get('id')
+            self.folder_pane.highlight_folders_for_image(image_id)
+
     def _deselect_current_thumbnail(self):
         """Deselect the currently selected thumbnail."""
         if self.selected_thumbnail:
-            self.selected_thumbnail.set_selected(False)
+            try:
+                if self.selected_thumbnail in self.thumbnail_widgets:
+                    self.selected_thumbnail.set_selected(False)
+            except RuntimeError:
+                pass
             self.selected_thumbnail = None
+
+        # Clear folder highlights
+        if self.folder_pane:
+            self.folder_pane.highlight_folders_for_image(None)
+
+    def _on_delete_requested(self, version_data):
+        """Handle delete request from thumbnail context menu.
+
+        Args:
+            version_data: The version data to delete
+        """
+        version_code = version_data.get('code', 'Unknown')
+        version_id = version_data.get('id')
+
+        if not version_id:
+            logger.error("Cannot delete version: no ID found")
+            return
+
+        # Confirm deletion
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete '{version_code}' from ShotGrid?\n\n"
+            "This action cannot be undone.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        # Delete from ShotGrid
+        try:
+            logger.info(f"Deleting version {version_id} ({version_code}) from ShotGrid")
+
+            # Show progress
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+
+            # Delete the version from ShotGrid
+            self.sg_session.sg.delete('Version', version_id)
+
+            logger.info(f"Successfully deleted version {version_id} from ShotGrid")
+
+            # Remove from local lists
+            self.all_versions = [v for v in self.all_versions if v.get('id') != version_id]
+            self.filtered_versions = [v for v in self.filtered_versions if v.get('id') != version_id]
+
+            # Clear selection if this was selected
+            if self.selected_thumbnail and self.selected_thumbnail.version_data.get('id') == version_id:
+                self.selected_thumbnail = None
+
+            # Remove from poller if pending
+            if version_id in self.thumbnail_poller.pending_versions:
+                self.thumbnail_poller.pending_versions.pop(version_id, None)
+
+            # Rebuild thumbnails
+            self._rebuild_thumbnails()
+
+            QtWidgets.QApplication.restoreOverrideCursor()
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Deleted",
+                f"'{version_code}' has been deleted from ShotGrid."
+            )
+
+        except Exception as e:
+            QtWidgets.QApplication.restoreOverrideCursor()
+            logger.error(f"Failed to delete version {version_id}: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Delete Failed",
+                f"Failed to delete '{version_code}' from ShotGrid:\n{str(e)}"
+            )
 
     def _on_thumbnail_ready(self, version_id, updated_version_data):
         """Handle thumbnail becoming ready from the poller.
@@ -1428,18 +1584,22 @@ class ImageViewerWidget(QtWidgets.QWidget):
             version_data: The newly created version data from ShotGrid
         """
         logger.info(f"Image uploaded successfully: {version_data.get('code')}")
+        print(f"[UPLOAD DEBUG] _on_image_uploaded called with: {version_data.get('code')}, image={version_data.get('image')}")
 
         # Add new version to all_versions list
         if version_data not in self.all_versions:
             self.all_versions.append(version_data)
+            print(f"[UPLOAD DEBUG] Added to all_versions, now has {len(self.all_versions)} versions")
 
         # Don't call _apply_filters() here as it immediately rebuilds and starts threads
         # Instead, let _rebuild_after_upload handle everything after checking for thread completion
         # Use a delay before rebuilding to allow pending operations to complete
+        print("[UPLOAD DEBUG] Scheduling _rebuild_after_upload in 500ms")
         QtCore.QTimer.singleShot(500, self._rebuild_after_upload)
 
     def _rebuild_after_upload(self):
         """Rebuild UI after image upload with proper cleanup."""
+        print("[UPLOAD DEBUG] _rebuild_after_upload called")
         # Check if there are still active image loading threads
         if hasattr(self, 'folder_pane') and self.folder_pane:
             if hasattr(self.folder_pane, 'shared_image_loader'):
@@ -1450,6 +1610,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
                 if alive_threads or loader.active_loads > 0:
                     logger.info(f"Still {len(alive_threads)} threads alive and {loader.active_loads} active loads, waiting...")
+                    print(f"[UPLOAD DEBUG] Waiting for threads: {len(alive_threads)} alive, {loader.active_loads} active")
                     # Check again after 300ms
                     QtCore.QTimer.singleShot(300, self._rebuild_after_upload)
                     return
@@ -1466,6 +1627,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
             if self.filter_states.get(version_type, True):
                 self.filtered_versions.append(version)
 
+        print(f"[UPLOAD DEBUG] filtered_versions now has {len(self.filtered_versions)} versions, calling _rebuild_thumbnails")
         # Rebuild thumbnails to show the new image
         self._rebuild_thumbnails()
 
@@ -1494,6 +1656,214 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         # Apply filters and rebuild
         self._apply_filters()
+
+    def _refresh_images(self):
+        """Refresh all images by reloading from ShotGrid."""
+        if not self.current_project_id:
+            logger.info("No project selected, cannot refresh")
+            return
+
+        logger.info(f"Refreshing images for project {self.current_project_id}")
+        print(f"[REFRESH DEBUG] Refreshing images for project {self.current_project_id}")
+
+        try:
+            # Show loading cursor
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+
+            # Clear existing data
+            self.all_versions = []
+            self.filtered_versions = []
+
+            # Reload from ShotGrid
+            self.all_versions = self.sg_session.get_all_image_versions_for_project(self.current_project_id)
+            logger.info(f"Refreshed: loaded {len(self.all_versions)} image versions")
+            print(f"[REFRESH DEBUG] Loaded {len(self.all_versions)} image versions")
+
+            # Apply filters and rebuild thumbnails
+            self._apply_filters()
+
+            # Update folder pane
+            self.update_folder_pane()
+
+            # Update thumbnail states
+            self.update_thumbnail_states()
+
+            QtWidgets.QApplication.restoreOverrideCursor()
+
+        except Exception as e:
+            QtWidgets.QApplication.restoreOverrideCursor()
+            logger.error(f"Failed to refresh images: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Refresh Failed",
+                f"Failed to refresh images from ShotGrid:\n{str(e)}"
+            )
+
+    def _browse_for_image(self):
+        """Open file browser to select an image to upload."""
+        if not self.current_project_id or not self.sg_session:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Project Selected",
+                "Please select a project before uploading images."
+            )
+            return
+
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Select Image to Upload",
+            "",
+            "Images (*.png *.jpg *.jpeg *.gif *.bmp *.tiff *.tif);;All Files (*)"
+        )
+
+        if file_path:
+            self._upload_image(file_path)
+
+    def _container_drag_enter(self, event):
+        """Handle drag enter on the thumbnail container."""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            # Highlight the container
+            self.thumbnail_container.setStyleSheet("background-color: rgba(74, 159, 255, 30);")
+        else:
+            event.ignore()
+
+    def _container_drag_leave(self, event):
+        """Handle drag leave on the thumbnail container."""
+        self.thumbnail_container.setStyleSheet("")
+
+    def _container_drop(self, event):
+        """Handle drop on the thumbnail container."""
+        self.thumbnail_container.setStyleSheet("")
+
+        if not self.current_project_id or not self.sg_session:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Project Selected",
+                "Please select a project before uploading images."
+            )
+            event.ignore()
+            return
+
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if urls:
+                file_path = urls[0].toLocalFile()
+                if self._is_valid_image_file(file_path):
+                    event.acceptProposedAction()
+                    self._upload_image(file_path)
+                else:
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Invalid File",
+                        "Please drop a valid image file (PNG, JPG, JPEG, GIF, BMP, TIFF)"
+                    )
+        else:
+            event.ignore()
+
+    def _is_valid_image_file(self, file_path):
+        """Check if the file is a valid image."""
+        valid_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif']
+        _, ext = os.path.splitext(file_path.lower())
+        return ext in valid_extensions
+
+    def _upload_image(self, file_path):
+        """Upload an image to ShotGrid.
+
+        Args:
+            file_path: Path to the image file to upload
+        """
+        # Show type selection dialog
+        dialog = UploadTypeDialog(self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+
+        selected_type = dialog.get_selected_type()
+        if not selected_type:
+            return
+
+        # Show progress dialog
+        progress = QtWidgets.QProgressDialog(
+            "Uploading image to ShotGrid...",
+            "Cancel",
+            0, 0,
+            self
+        )
+        progress.setWindowModality(QtCore.Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+
+        try:
+            # Map type to ShotGrid version type
+            type_mapping = {
+                'concept_art': 'Concept Art',
+                'storyboard': 'Storyboard',
+                'reference': 'Reference',
+                'video': 'Video'
+            }
+            sg_version_type = type_mapping.get(selected_type, 'Concept Art')
+
+            # Get filename for version code
+            filename = os.path.basename(file_path)
+            version_code = os.path.splitext(filename)[0]
+
+            # Create version in ShotGrid
+            version_data = {
+                'project': {'type': 'Project', 'id': self.current_project_id},
+                'code': version_code,
+                'sg_version_type': sg_version_type,
+                'description': f'Uploaded via FF Bidding App'
+            }
+
+            logger.info(f"Creating version in ShotGrid: {version_code}")
+            version = self.sg_session.sg.create('Version', version_data)
+
+            # Upload the image file
+            logger.info(f"Uploading file: {file_path}")
+            self.sg_session.sg.upload(
+                'Version',
+                version['id'],
+                file_path,
+                field_name='sg_uploaded_movie'
+            )
+
+            # Upload as thumbnail too
+            self.sg_session.sg.upload_thumbnail(
+                'Version',
+                version['id'],
+                file_path
+            )
+
+            # Get the version data (thumbnail might not be ready yet)
+            version = self.sg_session.sg.find_one(
+                'Version',
+                [['id', 'is', version['id']]],
+                ['code', 'image', 'sg_version_type', 'created_at', 'project']
+            )
+
+            logger.info(f"Version created: {version.get('code')}, image data: {version.get('image')}")
+            print(f"[UPLOAD DEBUG] Version created: {version.get('code')}, image data: {version.get('image')}")
+
+            progress.close()
+
+            # Show success message
+            QtWidgets.QMessageBox.information(
+                self,
+                "Upload Successful",
+                f"Image uploaded successfully as '{version_code}'"
+            )
+
+            # Handle the uploaded image
+            self._on_image_uploaded(version)
+
+        except Exception as e:
+            progress.close()
+            logger.error(f"Failed to upload image: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Upload Failed",
+                f"Failed to upload image to ShotGrid:\n{str(e)}"
+            )
 
     def _is_image_version(self, version):
         """Check if version is an image type."""
