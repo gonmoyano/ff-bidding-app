@@ -589,7 +589,8 @@ class PackageTreeView(QtWidgets.QWidget):
         # Build the tree with actual version data
         self.set_bid_tracker_item(versions)
         self.set_documents_item(versions)
-        self.set_images_item(versions)
+        # For RFQ-based view, no folder info, so all images are without folders
+        self.set_images_item([], versions)
 
         # Apply stored visibility preferences
         logger.info(f"Applying visibility preferences: {self.category_visibility_prefs}")
