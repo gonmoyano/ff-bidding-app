@@ -6,10 +6,12 @@ try:
     from .logger import logger
     from .folder_pane_widget import FolderPaneWidget
     from .sliding_overlay_panel import SlidingOverlayPanel
+    from .bid_selector_widget import CollapsibleGroupBox
 except (ImportError, ValueError, SystemError):
     logger = logging.getLogger("FFPackageManager")
     from folder_pane_widget import FolderPaneWidget
     from sliding_overlay_panel import SlidingOverlayPanel
+    from bid_selector_widget import CollapsibleGroupBox
 
 
 class UploadTypeDialog(QtWidgets.QDialog):
@@ -1089,6 +1091,51 @@ class ThumbnailWidget(QtWidgets.QWidget):
         QtWidgets.QToolTip.hideText()
 
 
+class DroppableCategoryContainer(QtWidgets.QWidget):
+    """Container widget that accepts image drops for a specific category."""
+
+    imageDroppedToCategory = QtCore.Signal(int, str)  # (image_id, target_category)
+
+    def __init__(self, category_name, parent=None):
+        super().__init__(parent)
+        self.category_name = category_name
+        self.setAcceptDrops(True)
+        self._is_drag_over = False
+
+    def dragEnterEvent(self, event):
+        """Handle drag enter event."""
+        if event.mimeData().hasFormat("application/x-image-version-id"):
+            event.acceptProposedAction()
+            self._is_drag_over = True
+            self.setStyleSheet("background-color: rgba(74, 159, 255, 50);")
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event):
+        """Handle drag leave event."""
+        self._is_drag_over = False
+        self.setStyleSheet("")
+
+    def dropEvent(self, event):
+        """Handle drop event."""
+        if event.mimeData().hasFormat("application/x-image-version-id"):
+            # Get the dropped image version ID
+            image_id_bytes = event.mimeData().data("application/x-image-version-id")
+            image_id = int(bytes(image_id_bytes).decode())
+
+            event.acceptProposedAction()
+            logger.info(f"Dropped image {image_id} into category {self.category_name}")
+
+            # Emit signal with image ID and target category
+            self.imageDroppedToCategory.emit(image_id, self.category_name)
+
+            # Remove highlight
+            self._is_drag_over = False
+            self.setStyleSheet("")
+        else:
+            event.ignore()
+
+
 class ImageViewerWidget(QtWidgets.QWidget):
     """Widget for viewing image versions with thumbnails."""
 
@@ -1107,8 +1154,11 @@ class ImageViewerWidget(QtWidgets.QWidget):
             'Concept Art': True,
             'Storyboard': True,
             'Reference': True,
-            'Video': True
+            'Misc': True
         }
+
+        # Category groups (will be populated in _create_thumbnail_dock)
+        self.category_groups = {}
 
         # Flags to prevent concurrent operations
         self._is_rebuilding = False
@@ -1170,7 +1220,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
             self._rearrange_thumbnails()
 
     def _create_thumbnail_dock(self):
-        """Create the thumbnail view with filters."""
+        """Create the thumbnail view with filters and category groups."""
         dock_widget = QtWidgets.QWidget()
         dock_layout = QtWidgets.QVBoxLayout(dock_widget)
         dock_layout.setContentsMargins(5, 5, 5, 5)
@@ -1178,7 +1228,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
         # Header with title and filter controls
         header_layout = QtWidgets.QHBoxLayout()
 
-        title_label = QtWidgets.QLabel("Image Thumbnails")
+        title_label = QtWidgets.QLabel("Images")
         title_font = title_label.font()
         title_font.setPointSize(12)
         title_font.setBold(True)
@@ -1211,7 +1261,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         # Filter checkboxes
         self.filter_checkboxes = {}
-        for filter_type in ['Concept Art', 'Storyboard', 'Reference', 'Video']:
+        for filter_type in ['Concept Art', 'Storyboard', 'Reference', 'Misc']:
             checkbox = QtWidgets.QCheckBox(filter_type)
             checkbox.setChecked(True)
             checkbox.stateChanged.connect(lambda state, ft=filter_type: self._on_filter_changed(ft, state))
@@ -1227,17 +1277,42 @@ class ImageViewerWidget(QtWidgets.QWidget):
         self.scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         self.scroll_area.setAcceptDrops(True)
 
-        # Container for thumbnails - also accepts drops
+        # Container for category groups
         self.thumbnail_container = QtWidgets.QWidget()
         self.thumbnail_container.setAcceptDrops(True)
-        self.thumbnail_layout = QtWidgets.QGridLayout(self.thumbnail_container)
-        self.thumbnail_layout.setSpacing(10)
-        self.thumbnail_layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
+        self.thumbnail_container_layout = QtWidgets.QVBoxLayout(self.thumbnail_container)
+        self.thumbnail_container_layout.setContentsMargins(5, 5, 5, 5)
+        self.thumbnail_container_layout.setSpacing(10)
 
-        # Install event filter to handle drops on container
+        # Install event filter to handle drops on container (for file uploads)
         self.thumbnail_container.dragEnterEvent = self._container_drag_enter
         self.thumbnail_container.dragLeaveEvent = self._container_drag_leave
         self.thumbnail_container.dropEvent = self._container_drop
+
+        # Create collapsible groups for each category
+        self.category_groups = {}
+        for category in ['Concept Art', 'Storyboard', 'Reference', 'Misc']:
+            group = CollapsibleGroupBox(f"{category} (0 items)")
+
+            # Create droppable container for this category
+            category_container = DroppableCategoryContainer(category)
+            category_container.imageDroppedToCategory.connect(self._on_image_dropped_to_category)
+
+            # Grid layout for thumbnails within the category
+            grid_layout = QtWidgets.QGridLayout(category_container)
+            grid_layout.setSpacing(10)
+            grid_layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
+
+            group.addWidget(category_container)
+            self.thumbnail_container_layout.addWidget(group)
+
+            self.category_groups[category] = {
+                'group': group,
+                'container': category_container,
+                'layout': grid_layout
+            }
+
+        self.thumbnail_container_layout.addStretch()
 
         self.scroll_area.setWidget(self.thumbnail_container)
         dock_layout.addWidget(self.scroll_area)
@@ -1280,11 +1355,9 @@ class ImageViewerWidget(QtWidgets.QWidget):
             return 'Storyboard'
         elif 'reference' in version_type or 'ref' in version_type:
             return 'Reference'
-        elif 'video' in version_type or 'movie' in version_type:
-            return 'Video'
         else:
-            # Default to Concept Art if unknown
-            return 'Concept Art'
+            # Default to Misc if unknown (includes video, movie, and other types)
+            return 'Misc'
 
     def _rearrange_thumbnails(self):
         """Rearrange existing thumbnails in grid without recreating them."""
@@ -1357,76 +1430,92 @@ class ImageViewerWidget(QtWidgets.QWidget):
                 thumbnail.deleteLater()
             self.thumbnail_widgets.clear()
 
-            # Clear layout
-            while self.thumbnail_layout.count():
-                item = self.thumbnail_layout.takeAt(0)
-                if item.widget():
-                    widget = item.widget()
-                    widget.setParent(None)
-                    widget.deleteLater()
+            # Clear all category group layouts
+            for category, group_data in self.category_groups.items():
+                layout = group_data['layout']
+                while layout.count():
+                    item = layout.takeAt(0)
+                    if item.widget():
+                        widget = item.widget()
+                        widget.setParent(None)
+                        widget.deleteLater()
 
             # Process pending delete events
             QtCore.QCoreApplication.processEvents()
 
-            # Add thumbnails in flat layout
-            self._add_thumbnails_flat()
+            # Add thumbnails grouped by category
+            self._add_thumbnails_grouped()
         except Exception as e:
             logger.error(f"Error rebuilding thumbnails: {e}", exc_info=True)
         finally:
             self._is_rebuilding = False
 
-    def _add_thumbnails_flat(self):
-        """Add thumbnails in a flat grid (no grouping)."""
+    def _add_thumbnails_grouped(self):
+        """Add thumbnails grouped by category."""
         # Safety check
-        if not hasattr(self, 'thumbnail_container') or not self.thumbnail_container:
-            logger.warning("Thumbnail container not available")
+        if not hasattr(self, 'category_groups') or not self.category_groups:
+            logger.warning("Category groups not available")
             return
 
+        # Group versions by category
+        grouped_versions = {
+            'Concept Art': [],
+            'Storyboard': [],
+            'Reference': [],
+            'Misc': []
+        }
+
+        for version in self.filtered_versions:
+            category = self._get_version_type(version)
+            if category in grouped_versions:
+                grouped_versions[category].append(version)
+
         # Calculate columns based on available width
-        # Each thumbnail is 180px wide + 10px spacing
         thumbnail_width = 180 + 10
         available_width = self.thumbnail_container.width()
-
-        # Safety check for width
         if available_width <= 0:
-            available_width = 800  # Reasonable default
-
-        # Calculate columns dynamically, minimum 1, maximum reasonable number
+            available_width = 800
         columns = max(1, available_width // thumbnail_width)
+        if columns == 0:
+            columns = 2
 
-        # If columns is 0 or container width is too small, use a default
-        if columns == 0 or available_width < thumbnail_width:
-            columns = 2  # Default fallback
+        # Populate each category group
+        for category, versions in grouped_versions.items():
+            group_data = self.category_groups.get(category)
+            if not group_data:
+                continue
 
-        for idx, version in enumerate(self.filtered_versions):
-            row = idx // columns
-            col = idx % columns
+            group = group_data['group']
+            layout = group_data['layout']
 
-            thumbnail = ThumbnailWidget(version, self.sg_session, self)
-            thumbnail.clicked.connect(self._on_thumbnail_clicked)
-            thumbnail.deleteRequested.connect(self._on_delete_requested)
-            self.thumbnail_layout.addWidget(thumbnail, row, col)
-            self.thumbnail_widgets.append(thumbnail)
+            # Update group title with count
+            count = len(versions)
+            group.setTitle(f"{category} ({count} item{'s' if count != 1 else ''})")
 
-            # Check if thumbnail needs polling (no image URL available yet)
-            # Note: link_type being present (e.g., 'upload') doesn't mean the URL is ready
-            # We need to check for the actual 'url' field which contains the accessible thumbnail URL
-            image_data = version.get('image')
-            has_url = False
-            if isinstance(image_data, dict):
-                # Only consider it ready if there's an actual URL, not just link_type
-                has_url = bool(image_data.get('url'))
-            elif isinstance(image_data, str):
-                has_url = bool(image_data)  # Non-empty string URL
+            # Add thumbnails to category layout
+            for idx, version in enumerate(versions):
+                row = idx // columns
+                col = idx % columns
 
-            logger.info(f"Checking version {version.get('id')} ({version.get('code')}): image_data={image_data}, has_url={has_url}")
-            print(f"[POLLING DEBUG] Checking version {version.get('id')} ({version.get('code')}): image_data={image_data}, has_url={has_url}")
+                thumbnail = ThumbnailWidget(version, self.sg_session, self)
+                thumbnail.clicked.connect(self._on_thumbnail_clicked)
+                thumbnail.deleteRequested.connect(self._on_delete_requested)
+                layout.addWidget(thumbnail, row, col)
+                self.thumbnail_widgets.append(thumbnail)
 
-            if not has_url:
-                # Add to poller to check for thumbnail availability
-                logger.info(f"Adding version {version.get('id')} to poller (no thumbnail URL yet)")
-                print(f"[POLLING DEBUG] Adding version {version.get('id')} to poller (no thumbnail URL yet)")
-                self.thumbnail_poller.add_version_to_poll(version.get('id'))
+                # Check if thumbnail needs polling
+                image_data = version.get('image')
+                has_url = False
+                if isinstance(image_data, dict):
+                    has_url = bool(image_data.get('url'))
+                elif isinstance(image_data, str):
+                    has_url = bool(image_data)
+
+                logger.debug(f"Checking version {version.get('id')} ({version.get('code')}): has_url={has_url}")
+
+                if not has_url:
+                    logger.info(f"Adding version {version.get('id')} to poller (no thumbnail URL yet)")
+                    self.thumbnail_poller.add_version_to_poll(version.get('id'))
 
 
     def find_thumbnail_by_version_id(self, version_id):
@@ -1483,6 +1572,60 @@ class ImageViewerWidget(QtWidgets.QWidget):
         # Clear folder highlights
         if self.folder_pane:
             self.folder_pane.highlight_folders_for_image(None)
+
+    def _on_image_dropped_to_category(self, image_id, target_category):
+        """Handle image dropped into a category group.
+
+        Args:
+            image_id: ID of the dropped image
+            target_category: Target category name (e.g., 'Concept Art', 'Storyboard', 'Reference', 'Misc')
+        """
+        logger.info(f"Updating image {image_id} category to {target_category}")
+
+        # Map category name to ShotGrid version type
+        category_to_sg_type = {
+            'Concept Art': 'Concept Art',
+            'Storyboard': 'Storyboard',
+            'Reference': 'Reference',
+            'Misc': 'Misc'
+        }
+
+        sg_version_type = category_to_sg_type.get(target_category, 'Misc')
+
+        try:
+            # Update the version in ShotGrid
+            if self.sg_session:
+                self.sg_session.sg.update(
+                    'Version',
+                    image_id,
+                    {'sg_version_type': sg_version_type}
+                )
+                logger.info(f"Successfully updated version {image_id} to type {sg_version_type}")
+
+            # Update local data
+            for version in self.all_versions:
+                if version.get('id') == image_id:
+                    version['sg_version_type'] = sg_version_type
+                    break
+
+            for version in self.filtered_versions:
+                if version.get('id') == image_id:
+                    version['sg_version_type'] = sg_version_type
+                    break
+
+            # Rebuild thumbnails to reflect the change
+            self._rebuild_thumbnails()
+
+            # Update thumbnail states
+            self.update_thumbnail_states()
+
+        except Exception as e:
+            logger.error(f"Failed to update image category: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Update Failed",
+                f"Failed to update image category:\n{str(e)}"
+            )
 
     def _on_delete_requested(self, version_data):
         """Handle delete request from thumbnail context menu.
