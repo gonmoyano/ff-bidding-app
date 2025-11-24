@@ -1209,9 +1209,169 @@ class ShotgridClient:
 
         return result
 
+    # ------------------------------------------------------------------
+    # PackageItem Management (CustomEntity13)
+    # ------------------------------------------------------------------
+
+    def create_package_item(self, package_id, project_id, version_id=None):
+        """
+        Create a new PackageItem (CustomEntity13) entity in ShotGrid.
+
+        Args:
+            package_id: ID of the Package to link to
+            project_id: ID of the project
+            version_id: Optional ID of the version to link
+
+        Returns:
+            Created PackageItem entity dictionary
+        """
+        package_item_data = {
+            "project": {"type": "Project", "id": int(project_id)},
+        }
+
+        # If version_id is provided, link it to the sg_versions field
+        if version_id:
+            package_item_data["sg_versions"] = [{"type": "Version", "id": int(version_id)}]
+
+        logger.info(f"Creating PackageItem in project {project_id}")
+        package_item = self.sg.create("CustomEntity13", package_item_data)
+        logger.info(f"Created PackageItem with ID: {package_item['id']}")
+
+        # Link the PackageItem to the Package's sg_packageitems field
+        self._link_package_item_to_package(package_item["id"], package_id)
+
+        return package_item
+
+    def _link_package_item_to_package(self, package_item_id, package_id):
+        """
+        Link a PackageItem to a Package's sg_packageitems field (multi-entity field).
+
+        Args:
+            package_item_id: ID of the PackageItem to link
+            package_id: ID of the Package
+
+        Returns:
+            Updated Package entity or None if failed
+        """
+        # Get current PackageItems linked to the Package
+        package = self.sg.find_one(
+            "CustomEntity12",
+            [["id", "is", int(package_id)]],
+            ["sg_packageitems"]
+        )
+
+        if not package:
+            logger.error(f"Package {package_id} not found")
+            return None
+
+        # Get existing PackageItems (or empty list if None)
+        existing_items = package.get("sg_packageitems") or []
+
+        # Check if PackageItem is already linked
+        if any(item.get("id") == int(package_item_id) for item in existing_items):
+            logger.info(f"PackageItem {package_item_id} already linked to Package {package_id}")
+            return package
+
+        # Add the new PackageItem to the list
+        package_item_link = {"type": "CustomEntity13", "id": int(package_item_id)}
+        updated_items = existing_items + [package_item_link]
+
+        # Update the Package
+        logger.info(f"Linking PackageItem {package_item_id} to Package {package_id}")
+        result = self.sg.update(
+            "CustomEntity12",
+            int(package_id),
+            {"sg_packageitems": updated_items}
+        )
+        logger.info(f"Successfully linked PackageItem to Package")
+
+        return result
+
+    def get_package_items(self, package_id, fields=None):
+        """
+        Get all PackageItems linked to a Package via its sg_packageitems field.
+
+        Args:
+            package_id: ID of the package
+            fields: List of fields to return for PackageItems
+
+        Returns:
+            List of PackageItem dictionaries
+        """
+        if fields is None:
+            fields = ["id", "sg_versions"]
+
+        # Get the Package with its sg_packageitems field
+        package = self.sg.find_one(
+            "CustomEntity12",
+            [["id", "is", int(package_id)]],
+            ["sg_packageitems"]
+        )
+
+        if not package or not package.get("sg_packageitems"):
+            logger.info(f"No PackageItems linked to Package {package_id}")
+            return []
+
+        # Extract PackageItem IDs
+        package_item_ids = [item["id"] for item in package["sg_packageitems"]]
+
+        if not package_item_ids:
+            return []
+
+        # Query for those PackageItems
+        logger.info(f"Fetching {len(package_item_ids)} PackageItems for Package {package_id}")
+        return self.sg.find(
+            "CustomEntity13",
+            [["id", "in", package_item_ids]],
+            fields
+        )
+
+    def find_package_item_for_version(self, package_id, version_id):
+        """
+        Find the PackageItem that contains a specific version.
+
+        Args:
+            package_id: ID of the Package
+            version_id: ID of the Version to find
+
+        Returns:
+            PackageItem entity dictionary or None if not found
+        """
+        package_items = self.get_package_items(package_id, fields=["id", "sg_versions"])
+
+        for item in package_items:
+            versions = item.get("sg_versions") or []
+            for version in versions:
+                if version.get("id") == int(version_id):
+                    return item
+
+        return None
+
+    def delete_package_item(self, package_item_id):
+        """
+        Delete a PackageItem (CustomEntity13) entity from ShotGrid.
+
+        Args:
+            package_item_id: ID of the PackageItem to delete
+
+        Returns:
+            True if successful, False otherwise
+        """
+        logger.info(f"Deleting PackageItem {package_item_id} from ShotGrid")
+        result = self.sg.delete("CustomEntity13", int(package_item_id))
+        logger.info(f"Successfully deleted PackageItem {package_item_id}")
+        return result
+
+    # ------------------------------------------------------------------
+    # Version Management
+    # ------------------------------------------------------------------
+
     def get_package_versions(self, package_id, fields=None):
         """
-        Get all versions linked to a Package via its sg_versions field.
+        Get all versions linked to a Package via its PackageItems.
+
+        The versions are accessed through the Package's sg_packageitems field,
+        and each PackageItem has a sg_versions field linking to Versions.
 
         Args:
             package_id: ID of the package
@@ -1227,21 +1387,23 @@ class ShotgridClient:
                 "sg_uploaded_movie", "sg_path_to_geometry", "sg_version_type"
             ]
 
-        # Get the Package with its sg_versions field
-        package = self.sg.find_one(
-            "CustomEntity12",
-            [["id", "is", int(package_id)]],
-            ["sg_versions"]
-        )
+        # Get all PackageItems for this Package
+        package_items = self.get_package_items(package_id, fields=["id", "sg_versions"])
 
-        if not package or not package.get("sg_versions"):
-            logger.info(f"No versions linked to Package {package_id}")
+        if not package_items:
+            logger.info(f"No PackageItems linked to Package {package_id}")
             return []
 
-        # Extract version IDs
-        version_ids = [v["id"] for v in package["sg_versions"]]
+        # Collect all version IDs from all PackageItems
+        version_ids = []
+        for item in package_items:
+            versions = item.get("sg_versions") or []
+            for version in versions:
+                if version.get("id") and version["id"] not in version_ids:
+                    version_ids.append(version["id"])
 
         if not version_ids:
+            logger.info(f"No versions found in PackageItems for Package {package_id}")
             return []
 
         # Query for those versions
@@ -1344,92 +1506,75 @@ class ShotgridClient:
 
     def link_version_to_package(self, version_id, package_id):
         """
-        Link a Version to a Package's sg_versions field (multi-entity field).
+        Link a Version to a Package by creating a PackageItem (CustomEntity13).
+
+        The PackageItem is linked to the Package's sg_packageitems field,
+        and the Version is linked to the PackageItem's sg_versions field.
 
         Args:
             version_id: ID of the version to link
             package_id: ID of the package
 
         Returns:
-            Updated Package entity or None if failed
+            Created PackageItem entity or existing package if already linked
         """
-        # Get current versions linked to the Package
+        # Check if version is already linked via an existing PackageItem
+        existing_item = self.find_package_item_for_version(package_id, version_id)
+        if existing_item:
+            logger.info(f"Version {version_id} already linked to Package {package_id} via PackageItem {existing_item['id']}")
+            return existing_item
+
+        # Get the Package to find its project
         package = self.sg.find_one(
             "CustomEntity12",
             [["id", "is", int(package_id)]],
-            ["sg_versions"]
+            ["project"]
         )
 
         if not package:
             logger.error(f"Package {package_id} not found")
             return None
 
-        # Get existing versions (or empty list if None)
-        existing_versions = package.get("sg_versions") or []
+        project_id = package.get("project", {}).get("id")
+        if not project_id:
+            logger.error(f"Package {package_id} has no project")
+            return None
 
-        # Check if version is already linked
-        version_link = {"type": "Version", "id": int(version_id)}
-        if any(v.get("id") == int(version_id) for v in existing_versions):
-            logger.info(f"Version {version_id} already linked to Package {package_id}")
-            return package
-
-        # Add the new version to the list
-        updated_versions = existing_versions + [version_link]
-
-        # Update the Package
-        logger.info(f"Linking Version {version_id} to Package {package_id}")
-        result = self.sg.update(
-            "CustomEntity12",
-            int(package_id),
-            {"sg_versions": updated_versions}
+        # Create a new PackageItem with the version linked
+        logger.info(f"Linking Version {version_id} to Package {package_id} via new PackageItem")
+        package_item = self.create_package_item(
+            package_id=package_id,
+            project_id=project_id,
+            version_id=version_id
         )
-        logger.info(f"Successfully linked Version to Package")
+        logger.info(f"Successfully linked Version to Package via PackageItem {package_item['id']}")
 
-        return result
+        return package_item
 
     def unlink_version_from_package(self, version_id, package_id):
         """
-        Unlink a Version from a Package's sg_versions field.
+        Unlink a Version from a Package by deleting its PackageItem.
+
+        Finds the PackageItem that contains the version and deletes it,
+        which automatically removes the version from the package.
 
         Args:
             version_id: ID of the version to unlink
             package_id: ID of the package
 
         Returns:
-            Updated Package entity or None if failed
+            True if successful, False if version was not linked
         """
-        # Get current versions linked to the Package
-        package = self.sg.find_one(
-            "CustomEntity12",
-            [["id", "is", int(package_id)]],
-            ["sg_versions"]
-        )
+        # Find the PackageItem that contains this version
+        package_item = self.find_package_item_for_version(package_id, version_id)
 
-        if not package:
-            logger.error(f"Package {package_id} not found")
-            return None
-
-        # Get existing versions
-        existing_versions = package.get("sg_versions") or []
-
-        # Remove the version from the list
-        updated_versions = [
-            v for v in existing_versions
-            if v.get("id") != int(version_id)
-        ]
-
-        # Only update if something changed
-        if len(updated_versions) == len(existing_versions):
+        if not package_item:
             logger.info(f"Version {version_id} was not linked to Package {package_id}")
-            return package
+            return False
 
-        # Update the Package
-        logger.info(f"Unlinking Version {version_id} from Package {package_id}")
-        result = self.sg.update(
-            "CustomEntity12",
-            int(package_id),
-            {"sg_versions": updated_versions}
-        )
+        # Delete the PackageItem
+        logger.info(f"Unlinking Version {version_id} from Package {package_id} by deleting PackageItem {package_item['id']}")
+        result = self.delete_package_item(package_item["id"])
         logger.info(f"Successfully unlinked Version from Package")
 
         return result
