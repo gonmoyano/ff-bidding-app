@@ -809,6 +809,13 @@ class ImageViewerDialog(QtWidgets.QDialog):
         zoom_percent = int(self.current_zoom * 100)
         self.zoom_label.setText(f"{zoom_percent}%")
 
+    def showEvent(self, event):
+        """Handle dialog show event to fit image properly."""
+        super().showEvent(event)
+        # Fit image after dialog is shown and has correct dimensions
+        if self.image_pixmap and not self.image_pixmap.isNull():
+            QtCore.QTimer.singleShot(0, self._fit_to_window)
+
     def keyPressEvent(self, event):
         """Handle keyboard shortcuts."""
         if event.key() == QtCore.Qt.Key_Plus or event.key() == QtCore.Qt.Key_Equal:
