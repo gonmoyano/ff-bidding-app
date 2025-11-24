@@ -629,7 +629,7 @@ class ImageViewerDialog(QtWidgets.QDialog):
         self.details_text.setHtml(new_html)
 
     def _load_full_image(self):
-        """Load the full-resolution image from ShotGrid."""
+        """Load the full-resolution image from cache or ShotGrid."""
         try:
             # First try to get the uploaded movie/image
             image_url = None
@@ -654,6 +654,16 @@ class ImageViewerDialog(QtWidgets.QDialog):
                 self.status_label.setText("No image available")
                 return
 
+            # Check cache first
+            version_id = self.version_data.get('id')
+            cache = get_thumbnail_cache()
+            if version_id and cache.is_cached(version_id):
+                cached_data = cache.get_cached_data(version_id)
+                if cached_data:
+                    logger.debug(f"Loading enlarged image for {self.version_data.get('code')} from cache")
+                    self._on_image_loaded(cached_data)
+                    return
+
             # Download image in background
             from PySide6.QtCore import QThread, QObject, Signal
             import requests
@@ -662,22 +672,28 @@ class ImageViewerDialog(QtWidgets.QDialog):
                 finished = Signal(bytes)
                 error = Signal(str)
 
-                def __init__(self, url):
+                def __init__(self, url, version_id, cache):
                     super().__init__()
                     self.url = url
+                    self.version_id = version_id
+                    self.cache = cache
 
                 def run(self):
                     try:
                         response = requests.get(self.url, timeout=30)
                         if response.status_code == 200:
-                            self.finished.emit(response.content)
+                            image_data = response.content
+                            # Cache the downloaded image
+                            if self.version_id and self.cache:
+                                self.cache.cache_thumbnail(self.version_id, image_data)
+                            self.finished.emit(image_data)
                         else:
                             self.error.emit(f"HTTP {response.status_code}")
                     except Exception as e:
                         logger.error(f"Failed to download image: {e}")
                         self.error.emit(str(e))
 
-            self.loader = ImageLoader(image_url)
+            self.loader = ImageLoader(image_url, version_id, cache)
             self.loader_thread = QThread()
             self.loader.moveToThread(self.loader_thread)
             self.loader_thread.started.connect(self.loader.run)
@@ -792,6 +808,13 @@ class ImageViewerDialog(QtWidgets.QDialog):
         """Update the zoom level label."""
         zoom_percent = int(self.current_zoom * 100)
         self.zoom_label.setText(f"{zoom_percent}%")
+
+    def showEvent(self, event):
+        """Handle dialog show event to fit image properly."""
+        super().showEvent(event)
+        # Fit image after dialog is shown and has correct dimensions
+        if self.image_pixmap and not self.image_pixmap.isNull():
+            QtCore.QTimer.singleShot(0, self._fit_to_window)
 
     def keyPressEvent(self, event):
         """Handle keyboard shortcuts."""

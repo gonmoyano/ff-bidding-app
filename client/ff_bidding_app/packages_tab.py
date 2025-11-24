@@ -207,6 +207,10 @@ class PackagesTab(QtWidgets.QWidget):
         self.image_viewer = ImageViewerWidget(self.sg_session, images_view, packages_tab=self)
         images_layout.addWidget(self.image_viewer)
 
+        # Connect folder pane package selection signal for synchronization
+        if hasattr(self.image_viewer, 'folder_pane') and self.image_viewer.folder_pane:
+            self.image_viewer.folder_pane.packageSelected.connect(self._on_folder_pane_package_selected)
+
         # Add views to stacked widget
         self.content_stack.addWidget(bid_tracker_view)  # Index 0
         self.content_stack.addWidget(documents_view)    # Index 1
@@ -1199,12 +1203,17 @@ class PackagesTab(QtWidgets.QWidget):
             # Clear the package data tree (image viewer shows all project images)
             if self.package_data_tree:
                 self.package_data_tree.clear()
+            # Sync to folder pane
+            self._sync_selected_package_to_folder_pane(None)
             logger.info("No package selected")
             return
 
         self.current_package_name = package_name
         self.rename_package_btn.setEnabled(True)
         self.delete_package_btn.setEnabled(True)
+
+        # Sync to folder pane
+        self._sync_selected_package_to_folder_pane(package_name)
 
         # Load package data
         if package_name in self.packages:
@@ -1268,10 +1277,52 @@ class PackagesTab(QtWidgets.QWidget):
 
             self.package_selector_dropdown.blockSignals(False)
 
+            # Sync packages to folder pane dropdown
+            self._sync_packages_to_folder_pane()
+
             logger.info(f"Loaded {len(sg_packages)} package(s) from ShotGrid")
 
         except Exception as e:
             logger.error(f"Error loading packages from ShotGrid: {e}")
+
+    def _sync_packages_to_folder_pane(self):
+        """Sync the package list to the folder pane dropdown."""
+        if self.image_viewer and hasattr(self.image_viewer, 'folder_pane'):
+            folder_pane = self.image_viewer.folder_pane
+            if folder_pane:
+                # Get package names from dropdown (skip "(No Package)")
+                package_names = [
+                    self.package_selector_dropdown.itemText(i)
+                    for i in range(1, self.package_selector_dropdown.count())
+                ]
+                folder_pane.set_packages(package_names)
+                # Sync current selection
+                folder_pane.set_selected_package(self.current_package_name)
+
+    def _sync_selected_package_to_folder_pane(self, package_name):
+        """Sync the selected package to the folder pane dropdown.
+
+        Args:
+            package_name: Selected package name or None
+        """
+        if self.image_viewer and hasattr(self.image_viewer, 'folder_pane'):
+            folder_pane = self.image_viewer.folder_pane
+            if folder_pane:
+                folder_pane.set_selected_package(package_name)
+
+    def _on_folder_pane_package_selected(self, package_name):
+        """Handle package selection from folder pane dropdown.
+
+        Args:
+            package_name: Selected package name or empty string for "(No Package)"
+        """
+        # Update the package selector dropdown to match
+        if not package_name:
+            self.package_selector_dropdown.setCurrentText("(No Package)")
+        else:
+            index = self.package_selector_dropdown.findText(package_name)
+            if index >= 0:
+                self.package_selector_dropdown.setCurrentIndex(index)
 
     def _get_next_package_version_for_rfq(self):
         """Get the next available version number for a package based on current RFQ.
