@@ -814,6 +814,7 @@ class FolderPaneWidget(QtWidgets.QWidget):
     """Widget displaying folders for Assets and Scenes."""
 
     imageDropped = QtCore.Signal()  # Signal emitted when an image is dropped to any folder
+    packageSelected = QtCore.Signal(str)  # Signal emitted when a package is selected (package_name or empty string)
 
     def __init__(self, parent=None):
         """Initialize folder pane widget."""
@@ -850,10 +851,22 @@ class FolderPaneWidget(QtWidgets.QWidget):
         main_layout.setContentsMargins(5, 5, 5, 5)
         main_layout.setSpacing(5)
 
+        # Toolbar layout with package selector and icon size slider
+        toolbar_layout = QtWidgets.QHBoxLayout()
+
+        # Package selector dropdown
+        toolbar_layout.addWidget(QtWidgets.QLabel("Package:"))
+        self.package_dropdown = QtWidgets.QComboBox()
+        self.package_dropdown.setMinimumWidth(150)
+        self.package_dropdown.addItem("(No Package)")
+        self.package_dropdown.currentTextChanged.connect(self._on_package_dropdown_changed)
+        toolbar_layout.addWidget(self.package_dropdown)
+
+        toolbar_layout.addSpacing(20)
+
         # Icon size slider
-        slider_layout = QtWidgets.QHBoxLayout()
         self.slider_label = QtWidgets.QLabel("Icon Size:")
-        slider_layout.addWidget(self.slider_label)
+        toolbar_layout.addWidget(self.slider_label)
 
         self.icon_size_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.icon_size_slider.setMinimum(32)
@@ -862,16 +875,16 @@ class FolderPaneWidget(QtWidgets.QWidget):
         self.icon_size_slider.setTickPosition(QtWidgets.QSlider.NoTicks)  # Remove tick marks
         self.icon_size_slider.setFixedWidth(150)  # Fixed width
         self.icon_size_slider.valueChanged.connect(self._on_size_changed)
-        slider_layout.addWidget(self.icon_size_slider)
+        toolbar_layout.addWidget(self.icon_size_slider)
 
         self.icon_size_label = QtWidgets.QLabel(str(self.current_icon_size))
         self.icon_size_label.setFixedWidth(30)
         self.icon_size_label.setAlignment(QtCore.Qt.AlignRight)
-        slider_layout.addWidget(self.icon_size_label)
+        toolbar_layout.addWidget(self.icon_size_label)
 
-        slider_layout.addStretch()  # Push everything to the left
+        toolbar_layout.addStretch()  # Push everything to the left
 
-        main_layout.addLayout(slider_layout)
+        main_layout.addLayout(toolbar_layout)
 
         # Stacked widget for switching between views
         self.view_stack = QtWidgets.QStackedWidget()
@@ -1197,6 +1210,56 @@ class FolderPaneWidget(QtWidgets.QWidget):
                 folder.set_contains_selected(True)
             else:
                 folder.set_contains_selected(False)
+
+    def _on_package_dropdown_changed(self, package_name):
+        """Handle package dropdown selection change.
+
+        Args:
+            package_name: Selected package name or "(No Package)"
+        """
+        if package_name == "(No Package)":
+            self.packageSelected.emit("")
+        else:
+            self.packageSelected.emit(package_name)
+
+    def set_packages(self, package_names):
+        """Set the list of packages in the dropdown.
+
+        Args:
+            package_names: List of package name strings
+        """
+        self.package_dropdown.blockSignals(True)
+        # Clear all except "(No Package)"
+        while self.package_dropdown.count() > 1:
+            self.package_dropdown.removeItem(1)
+        # Add new packages
+        for name in package_names:
+            self.package_dropdown.addItem(name)
+        self.package_dropdown.blockSignals(False)
+
+    def set_selected_package(self, package_name):
+        """Programmatically select a package in the dropdown.
+
+        Args:
+            package_name: Package name to select, or None/"" for "(No Package)"
+        """
+        self.package_dropdown.blockSignals(True)
+        if not package_name:
+            self.package_dropdown.setCurrentText("(No Package)")
+        else:
+            index = self.package_dropdown.findText(package_name)
+            if index >= 0:
+                self.package_dropdown.setCurrentIndex(index)
+        self.package_dropdown.blockSignals(False)
+
+    def get_selected_package(self):
+        """Get the currently selected package name.
+
+        Returns:
+            str: Selected package name, or None if "(No Package)" is selected
+        """
+        text = self.package_dropdown.currentText()
+        return None if text == "(No Package)" else text
 
     def load_folder_mappings(self, mappings):
         """Load image-to-folder mappings.
