@@ -1543,6 +1543,69 @@ class ShotgridClient:
 
         return package_item
 
+    def remove_folder_reference_from_package(self, version_id, package_id, folder_path):
+        """
+        Remove a folder reference from a version's PackageItem.
+
+        If the sg_package_folders field becomes empty after removal,
+        the PackageItem will be deleted entirely.
+
+        Args:
+            version_id: ID of the version
+            package_id: ID of the package
+            folder_path: Folder path to remove (e.g., '/assets/CRE/Concept Art')
+
+        Returns:
+            True if successful, False otherwise
+        """
+        # Find the PackageItem for this version
+        package_item = self.find_package_item_for_version(package_id, version_id)
+
+        if not package_item:
+            logger.warning(f"No PackageItem found for version {version_id} in package {package_id}")
+            return False
+
+        package_item_id = package_item["id"]
+
+        # Get current folders
+        package_item_full = self.sg.find_one(
+            "CustomEntity13",
+            [["id", "is", int(package_item_id)]],
+            ["sg_package_folders"]
+        )
+
+        if not package_item_full:
+            logger.error(f"PackageItem {package_item_id} not found")
+            return False
+
+        existing_folders = package_item_full.get("sg_package_folders") or ""
+        folder_list = [f.strip() for f in existing_folders.split(";") if f.strip()]
+
+        # Remove the folder path if present
+        if folder_path in folder_list:
+            folder_list.remove(folder_path)
+            new_folders = ";".join(folder_list)
+
+            if new_folders:
+                # Still has folders, just update
+                logger.info(f"Removing folder '{folder_path}' from PackageItem {package_item_id}")
+                self.sg.update(
+                    "CustomEntity13",
+                    int(package_item_id),
+                    {"sg_package_folders": new_folders}
+                )
+                logger.info(f"Updated PackageItem {package_item_id} with remaining folders")
+                return True
+            else:
+                # No more folders, delete the PackageItem
+                logger.info(f"No more folders in PackageItem {package_item_id}, deleting it")
+                self.delete_package_item(package_item_id)
+                logger.info(f"Deleted PackageItem {package_item_id}")
+                return True
+        else:
+            logger.warning(f"Folder '{folder_path}' not found in PackageItem {package_item_id}")
+            return False
+
     # ------------------------------------------------------------------
     # Version Management
     # ------------------------------------------------------------------
