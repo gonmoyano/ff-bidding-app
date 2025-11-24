@@ -231,7 +231,8 @@ class FolderWidget(QtWidgets.QWidget):
             QtWidgets.QStyle.SP_DirIcon
         ).pixmap(self.icon_size, self.icon_size))
 
-        # Apply blue border to icon when folder contains selected image
+        # Always apply border to maintain consistent sizing
+        # Blue border when folder contains selected image, gray (background) border otherwise
         if self._contains_selected:
             self.icon_label.setStyleSheet("""
                 QLabel {
@@ -241,7 +242,13 @@ class FolderWidget(QtWidgets.QWidget):
                 }
             """)
         else:
-            self.icon_label.setStyleSheet("")
+            self.icon_label.setStyleSheet("""
+                QLabel {
+                    border: 3px solid #2b2b2b;
+                    border-radius: 4px;
+                    padding: 2px;
+                }
+            """)
 
     def set_icon_size(self, size):
         """Set the icon size.
