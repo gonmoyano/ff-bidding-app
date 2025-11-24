@@ -793,10 +793,11 @@ class PackageTreeView(QtWidgets.QWidget):
             no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
 
     def set_folders_item(self, versions_with_folders):
-        """Build Folders section with versions grouped by folder assignment.
+        """Build Folders section with versions grouped by hierarchical folder paths.
 
         Args:
             versions_with_folders: List of version dicts with '_package_folders' key
+                                   containing paths like '/assets/CRE/Concept Art'
         """
         folders_root = SGTreeItem(
             self.tree_widget,
@@ -810,59 +811,46 @@ class PackageTreeView(QtWidgets.QWidget):
         font.setBold(True)
         folders_root.setFont(0, font)
 
-        # Group versions by folder
-        folder_to_versions = {}
+        # Build a tree structure from all paths
+        # path_tree[path_component] = {'_versions': [], '_children': {}}
+        path_tree = {}
         no_folder_versions = []
 
         for version in versions_with_folders:
             folders_str = version.get('_package_folders', '')
             if folders_str:
-                # Split by ";" for multiple folders
-                folder_names = [f.strip() for f in folders_str.split(';') if f.strip()]
-                for folder_name in folder_names:
-                    if folder_name not in folder_to_versions:
-                        folder_to_versions[folder_name] = []
-                    folder_to_versions[folder_name].append(version)
+                # Split by ";" for multiple folder paths
+                folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
+                for folder_path in folder_paths:
+                    # Parse the path (e.g., '/assets/CRE/Concept Art')
+                    parts = [p for p in folder_path.split('/') if p]
+
+                    # Navigate/create the tree structure
+                    current_level = path_tree
+                    for part in parts:
+                        if part not in current_level:
+                            current_level[part] = {'_versions': [], '_children': {}}
+                        current_level = current_level[part]['_children']
+
+                    # Add version to the deepest level
+                    # Go back up to add to the last part's versions list
+                    current_level = path_tree
+                    for part in parts[:-1]:
+                        current_level = current_level[part]['_children']
+                    current_level[parts[-1]]['_versions'].append(version)
             else:
                 no_folder_versions.append(version)
 
-        if folder_to_versions:
-            # Create folder items sorted alphabetically
-            for folder_name in sorted(folder_to_versions.keys()):
-                folder_versions = folder_to_versions[folder_name]
-
-                # Create folder item
-                folder_item = SGTreeItem(
-                    folders_root,
-                    [f"► {folder_name}", "Folder", "", f"{len(folder_versions)}"],
-                    sg_data={'type': 'folder', 'folder_name': folder_name},
-                    item_type="folder"
-                )
-                folder_item.setExpanded(False)
-
-                # Add versions under this folder
-                for version in folder_versions:
-                    version_code = version.get('code', 'Unknown')
-                    status = version.get('sg_status_list', '')
-                    status_display = status if status else 'N/A'
-                    version_number = version_code.split('_')[-1] if '_' in version_code else ""
-
-                    version_item = self._create_version_item(
-                        folder_item,
-                        version,
-                        [version_code, "Version", status_display, version_number]
-                    )
-
-                    status_lower = status.lower() if status else ''
-                    if status_lower in status_colors:
-                        version_item.setBackground(2, status_colors[status_lower])
+        # Recursively build the tree items with folder icons
+        if path_tree:
+            self._build_folder_tree(folders_root, path_tree, "")
 
             # Add versions with no folder assignment
             if no_folder_versions:
                 unassigned_item = SGTreeItem(
                     folders_root,
-                    ["► (Unassigned)", "Folder", "", f"{len(no_folder_versions)}"],
-                    sg_data={'type': 'folder', 'folder_name': ''},
+                    ["📁 (Unassigned)", "Folder", "", f"{len(no_folder_versions)}"],
+                    sg_data={'type': 'folder', 'folder_path': ''},
                     item_type="folder"
                 )
                 unassigned_item.setExpanded(False)
@@ -891,6 +879,71 @@ class PackageTreeView(QtWidgets.QWidget):
                 item_type="info"
             )
             no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
+
+    def _build_folder_tree(self, parent_item, tree_dict, current_path):
+        """Recursively build folder tree items from the tree dictionary.
+
+        Args:
+            parent_item: Parent SGTreeItem to add children to
+            tree_dict: Dictionary with folder structure
+            current_path: Current path string for tracking full path
+        """
+        # Sort folders alphabetically
+        for folder_name in sorted(tree_dict.keys()):
+            folder_data = tree_dict[folder_name]
+            versions = folder_data['_versions']
+            children = folder_data['_children']
+
+            # Build full path
+            full_path = f"{current_path}/{folder_name}" if current_path else f"/{folder_name}"
+
+            # Count total versions including descendants
+            total_versions = len(versions) + self._count_versions_recursive(children)
+
+            # Create folder item with icon
+            folder_item = SGTreeItem(
+                parent_item,
+                [f"📁 {folder_name}", "Folder", "", f"{total_versions}"],
+                sg_data={'type': 'folder', 'folder_path': full_path},
+                item_type="folder"
+            )
+            folder_item.setExpanded(False)
+
+            # Add versions at this level
+            for version in versions:
+                version_code = version.get('code', 'Unknown')
+                status = version.get('sg_status_list', '')
+                status_display = status if status else 'N/A'
+                version_number = version_code.split('_')[-1] if '_' in version_code else ""
+
+                version_item = self._create_version_item(
+                    folder_item,
+                    version,
+                    [version_code, "Version", status_display, version_number]
+                )
+
+                status_lower = status.lower() if status else ''
+                if status_lower in status_colors:
+                    version_item.setBackground(2, status_colors[status_lower])
+
+            # Recursively add child folders
+            if children:
+                self._build_folder_tree(folder_item, children, full_path)
+
+    def _count_versions_recursive(self, tree_dict):
+        """Count all versions in a tree dictionary recursively.
+
+        Args:
+            tree_dict: Dictionary with folder structure
+
+        Returns:
+            Total count of versions in this tree and all descendants
+        """
+        total = 0
+        for folder_data in tree_dict.values():
+            total += len(folder_data['_versions'])
+            total += self._count_versions_recursive(folder_data['_children'])
+        return total
 
     def _is_bid_tracker_version(self, version):
         """Determine if a version belongs to Bid Tracker category."""

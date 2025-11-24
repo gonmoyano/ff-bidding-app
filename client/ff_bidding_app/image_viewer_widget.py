@@ -2359,13 +2359,36 @@ class ImageViewerWidget(QtWidgets.QWidget):
             logger.warning(f"No ShotGrid package ID found for package '{selected_package}'")
             return
 
-        # Link the version to the package with folder info
+        # Get the version data to determine its category
+        version_data = None
+        for thumbnail in self.thumbnail_widgets:
+            if thumbnail.version_data.get('id') == image_id:
+                version_data = thumbnail.version_data
+                break
+
+        if not version_data:
+            logger.warning(f"Could not find version data for image {image_id}")
+            return
+
+        # Determine the category from sg_version_type
+        sg_version_type = version_data.get('sg_version_type', '')
+        if isinstance(sg_version_type, dict):
+            category = sg_version_type.get('name', 'Misc')
+        else:
+            category = str(sg_version_type) if sg_version_type else 'Misc'
+
+        # Construct hierarchical path: /folder_type/folder_name/category
+        # folder_type is 'asset' or 'scene', pluralize it
+        folder_type_plural = 'assets' if folder_type == 'asset' else 'scenes'
+        folder_path = f"/{folder_type_plural}/{folder_name}/{category}"
+
+        # Link the version to the package with folder path
         try:
-            logger.info(f"Linking image {image_id} to package {sg_package_id} with folder {folder_name}")
+            logger.info(f"Linking image {image_id} to package {sg_package_id} with path {folder_path}")
             self.sg_session.link_version_to_package_with_folder(
                 version_id=image_id,
                 package_id=sg_package_id,
-                folder_name=folder_name
+                folder_name=folder_path
             )
             logger.info(f"Successfully linked image {image_id} to package")
 
