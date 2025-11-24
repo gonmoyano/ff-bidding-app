@@ -3,6 +3,8 @@ Settings Dialog
 Dialog for configuring application-wide settings.
 """
 
+import shutil
+from pathlib import Path
 from PySide6 import QtWidgets, QtCore
 
 
@@ -168,6 +170,74 @@ class SettingsDialog(QtWidgets.QDialog):
 
         layout.addWidget(currency_group)
 
+        # Thumbnail Cache setting
+        cache_group = QtWidgets.QGroupBox("Thumbnail Cache")
+        cache_layout = QtWidgets.QVBoxLayout(cache_group)
+
+        cache_label = QtWidgets.QLabel(
+            "Thumbnails are cached locally for faster loading. "
+            "Clear the cache if images appear outdated or corrupted."
+        )
+        cache_label.setWordWrap(True)
+        cache_label.setStyleSheet("color: #888888; font-size: 11px;")
+        cache_layout.addWidget(cache_label)
+
+        # Cache folder path
+        cache_path_layout = QtWidgets.QHBoxLayout()
+        cache_path_label = QtWidgets.QLabel("Cache Folder:")
+        self.cache_path_input = QtWidgets.QLineEdit()
+        self.cache_path_input.setReadOnly(True)
+        current_cache_path = self.app_settings.get_thumbnail_cache_path()
+        self.cache_path_input.setText(str(current_cache_path))
+
+        browse_btn = QtWidgets.QPushButton("Browse...")
+        browse_btn.clicked.connect(self._browse_cache_folder)
+
+        cache_path_layout.addWidget(cache_path_label)
+        cache_path_layout.addWidget(self.cache_path_input, 1)
+        cache_path_layout.addWidget(browse_btn)
+        cache_layout.addLayout(cache_path_layout)
+
+        # Cache stats and actions
+        cache_actions_layout = QtWidgets.QHBoxLayout()
+
+        # Cache stats label
+        self.cache_stats_label = QtWidgets.QLabel()
+        self.cache_stats_label.setStyleSheet("color: #666666; font-size: 10px;")
+        self._update_cache_stats()
+        cache_actions_layout.addWidget(self.cache_stats_label)
+
+        cache_actions_layout.addStretch()
+
+        # Clear cache button
+        clear_cache_btn = QtWidgets.QPushButton("Clear Cache")
+        clear_cache_btn.setToolTip("Delete all cached thumbnails")
+        clear_cache_btn.clicked.connect(self._clear_cache)
+        cache_actions_layout.addWidget(clear_cache_btn)
+
+        # Refresh cache button
+        refresh_cache_btn = QtWidgets.QPushButton("Refresh All")
+        refresh_cache_btn.setToolTip("Re-download all thumbnails from ShotGrid")
+        refresh_cache_btn.clicked.connect(self._refresh_all_thumbnails)
+        cache_actions_layout.addWidget(refresh_cache_btn)
+
+        cache_layout.addLayout(cache_actions_layout)
+
+        # Cache max age setting
+        cache_age_layout = QtWidgets.QHBoxLayout()
+        cache_age_label = QtWidgets.QLabel("Cache expires after:")
+        self.cache_age_spinbox = QtWidgets.QSpinBox()
+        self.cache_age_spinbox.setMinimum(1)
+        self.cache_age_spinbox.setMaximum(365)
+        self.cache_age_spinbox.setValue(self.app_settings.get_thumbnail_cache_max_age_days())
+        self.cache_age_spinbox.setSuffix(" days")
+        cache_age_layout.addWidget(cache_age_label)
+        cache_age_layout.addWidget(self.cache_age_spinbox)
+        cache_age_layout.addStretch()
+        cache_layout.addLayout(cache_age_layout)
+
+        layout.addWidget(cache_group)
+
         # Spacer
         layout.addStretch()
 
@@ -221,3 +291,114 @@ class SettingsDialog(QtWidgets.QDialog):
         if self.currency_combo.currentData() == "custom":
             return self.custom_currency_input.text().strip() or "$"
         return self.currency_combo.currentData()
+
+    def get_thumbnail_cache_path(self):
+        """Get the thumbnail cache folder path.
+
+        Returns:
+            Path: Cache folder path
+        """
+        return Path(self.cache_path_input.text())
+
+    def get_thumbnail_cache_max_age_days(self):
+        """Get the cache max age in days.
+
+        Returns:
+            int: Max age in days
+        """
+        return self.cache_age_spinbox.value()
+
+    def _browse_cache_folder(self):
+        """Open a folder browser to select cache folder."""
+        folder = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "Select Thumbnail Cache Folder",
+            self.cache_path_input.text()
+        )
+        if folder:
+            self.cache_path_input.setText(folder)
+            self._update_cache_stats()
+
+    def _update_cache_stats(self):
+        """Update the cache statistics label."""
+        cache_path = Path(self.cache_path_input.text())
+        if cache_path.exists():
+            # Count files and calculate size
+            files = list(cache_path.glob("*.png")) + list(cache_path.glob("*.jpg"))
+            total_size = sum(f.stat().st_size for f in files if f.exists())
+
+            # Format size
+            if total_size < 1024:
+                size_str = f"{total_size} B"
+            elif total_size < 1024 * 1024:
+                size_str = f"{total_size / 1024:.1f} KB"
+            else:
+                size_str = f"{total_size / (1024 * 1024):.1f} MB"
+
+            self.cache_stats_label.setText(f"{len(files)} cached images ({size_str})")
+        else:
+            self.cache_stats_label.setText("Cache folder does not exist")
+
+    def _clear_cache(self):
+        """Clear all cached thumbnails."""
+        cache_path = Path(self.cache_path_input.text())
+
+        if not cache_path.exists():
+            QtWidgets.QMessageBox.information(
+                self,
+                "Cache Empty",
+                "The cache folder does not exist or is already empty."
+            )
+            return
+
+        # Confirm deletion
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Clear Cache",
+            "Are you sure you want to delete all cached thumbnails?\n\n"
+            "Thumbnails will be re-downloaded from ShotGrid when needed.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+
+        if reply == QtWidgets.QMessageBox.Yes:
+            try:
+                # Delete all image files in the cache
+                files = list(cache_path.glob("*.png")) + list(cache_path.glob("*.jpg"))
+                for f in files:
+                    f.unlink()
+
+                self._update_cache_stats()
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Cache Cleared",
+                    f"Deleted {len(files)} cached thumbnails."
+                )
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to clear cache:\n{str(e)}"
+                )
+
+    def _refresh_all_thumbnails(self):
+        """Signal the parent app to refresh all thumbnails."""
+        # Clear cache first
+        cache_path = Path(self.cache_path_input.text())
+        if cache_path.exists():
+            files = list(cache_path.glob("*.png")) + list(cache_path.glob("*.jpg"))
+            for f in files:
+                try:
+                    f.unlink()
+                except:
+                    pass
+
+        self._update_cache_stats()
+
+        # Notify user
+        QtWidgets.QMessageBox.information(
+            self,
+            "Cache Cleared",
+            "Cache has been cleared. Thumbnails will be re-downloaded when you next load images.\n\n"
+            "Close this dialog and refresh images to download fresh thumbnails."
+        )

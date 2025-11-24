@@ -7,11 +7,35 @@ try:
     from .folder_pane_widget import FolderPaneWidget
     from .sliding_overlay_panel import SlidingOverlayPanel
     from .bid_selector_widget import CollapsibleGroupBox
+    from .thumbnail_cache import ThumbnailCache
+    from .settings import AppSettings
 except (ImportError, ValueError, SystemError):
     logger = logging.getLogger("FFPackageManager")
     from folder_pane_widget import FolderPaneWidget
     from sliding_overlay_panel import SlidingOverlayPanel
     from bid_selector_widget import CollapsibleGroupBox
+    from thumbnail_cache import ThumbnailCache
+    from settings import AppSettings
+
+# Global thumbnail cache instance (shared across all widgets)
+_thumbnail_cache = None
+
+
+def get_thumbnail_cache():
+    """Get or create the global thumbnail cache instance."""
+    global _thumbnail_cache
+    if _thumbnail_cache is None:
+        settings = AppSettings()
+        cache_path = settings.get_thumbnail_cache_path()
+        max_age = settings.get_thumbnail_cache_max_age_days()
+        _thumbnail_cache = ThumbnailCache(cache_path, max_age)
+    return _thumbnail_cache
+
+
+def reset_thumbnail_cache():
+    """Reset the global thumbnail cache instance (e.g., after settings change)."""
+    global _thumbnail_cache
+    _thumbnail_cache = None
 
 
 class UploadTypeDialog(QtWidgets.QDialog):
@@ -853,8 +877,9 @@ class ThumbnailWidget(QtWidgets.QWidget):
         layout.addWidget(type_label)
 
     def _load_thumbnail(self):
-        """Load thumbnail from ShotGrid."""
+        """Load thumbnail from cache or ShotGrid."""
         try:
+            version_id = self.version_data.get('id')
             thumbnail_url = None
 
             # Check if version has an image thumbnail
@@ -877,17 +902,31 @@ class ThumbnailWidget(QtWidgets.QWidget):
                     elif isinstance(uploaded_movie, dict):
                         thumbnail_url = uploaded_movie.get('url')
 
+            # Check cache first (even if we have a URL, cached data is faster)
+            cache = get_thumbnail_cache()
+            if version_id and cache.is_cached(version_id):
+                cached_data = cache.get_cached_data(version_id)
+                if cached_data:
+                    logger.debug(f"Loading thumbnail for {self.version_data.get('code')} from cache")
+                    self._on_thumbnail_loaded(cached_data, from_cache=True)
+                    return
+
+            # If no URL available, try to download directly from ShotGrid API
             if not thumbnail_url:
                 logger.debug(f"No thumbnail URL for version {self.version_data.get('code')}, image_data={image_data}")
-                # Show "No Preview" for versions that likely won't get a thumbnail
-                # Show "Processing..." only if there's a pending upload indicator
-                if image_data and isinstance(image_data, dict) and image_data.get('link_type') == 'upload':
-                    self.thumbnail_label.setText("Processing...")
+                # Try ShotGrid API fallback
+                if self.sg_session and version_id:
+                    self._load_thumbnail_from_sg_api(version_id)
                 else:
-                    self.thumbnail_label.setText("No Preview")
+                    # Show "No Preview" for versions that likely won't get a thumbnail
+                    # Show "Processing..." only if there's a pending upload indicator
+                    if image_data and isinstance(image_data, dict) and image_data.get('link_type') == 'upload':
+                        self.thumbnail_label.setText("Processing...")
+                    else:
+                        self.thumbnail_label.setText("No Preview")
                 return
 
-            logger.debug(f"Loading thumbnail for {self.version_data.get('code')} from {thumbnail_url[:50]}...")
+            logger.debug(f"Loading thumbnail for {self.version_data.get('code')} from URL...")
 
             # Download thumbnail in a separate thread to avoid blocking UI
             from PySide6.QtCore import QThread, QObject, Signal
@@ -897,15 +936,21 @@ class ThumbnailWidget(QtWidgets.QWidget):
                 finished = Signal(bytes)
                 error = Signal()
 
-                def __init__(self, url):
+                def __init__(self, url, version_id, cache):
                     super().__init__()
                     self.url = url
+                    self.version_id = version_id
+                    self.cache = cache
 
                 def run(self):
                     try:
                         response = requests.get(self.url, timeout=10)
                         if response.status_code == 200:
-                            self.finished.emit(response.content)
+                            image_data = response.content
+                            # Cache the downloaded image
+                            if self.version_id and self.cache:
+                                self.cache.cache_thumbnail(self.version_id, image_data)
+                            self.finished.emit(image_data)
                         else:
                             self.error.emit()
                     except Exception as e:
@@ -913,7 +958,7 @@ class ThumbnailWidget(QtWidgets.QWidget):
                         self.error.emit()
 
             # Load thumbnail in background
-            self.loader = ThumbnailLoader(thumbnail_url)
+            self.loader = ThumbnailLoader(thumbnail_url, version_id, cache)
             self.loader_thread = QThread()
             self.loader.moveToThread(self.loader_thread)
             self.loader_thread.started.connect(self.loader.run)
@@ -923,7 +968,62 @@ class ThumbnailWidget(QtWidgets.QWidget):
 
         except Exception as e:
             logger.error(f"Error loading thumbnail: {e}")
-            self.thumbnail_label.setText("Processing...")
+
+    def _load_thumbnail_from_sg_api(self, version_id):
+        """Try to load thumbnail directly from ShotGrid API.
+
+        This is a fallback when no URL is available in the version data.
+
+        Args:
+            version_id: ShotGrid version ID
+        """
+        from PySide6.QtCore import QThread, QObject, Signal
+
+        class SGThumbnailLoader(QObject):
+            finished = Signal(bytes)
+            error = Signal()
+
+            def __init__(self, sg_session, version_id, cache):
+                super().__init__()
+                self.sg_session = sg_session
+                self.version_id = version_id
+                self.cache = cache
+
+            def run(self):
+                try:
+                    # Query ShotGrid for the version's image field
+                    version = self.sg_session.sg.find_one(
+                        'Version',
+                        [['id', 'is', self.version_id]],
+                        ['image']
+                    )
+
+                    if version and version.get('image'):
+                        image_url = version['image']
+                        if isinstance(image_url, str) and image_url:
+                            import requests
+                            response = requests.get(image_url, timeout=10)
+                            if response.status_code == 200:
+                                image_data = response.content
+                                # Cache the downloaded image
+                                if self.cache:
+                                    self.cache.cache_thumbnail(self.version_id, image_data)
+                                self.finished.emit(image_data)
+                                return
+
+                    self.error.emit()
+                except Exception as e:
+                    logger.error(f"Failed to load thumbnail from SG API: {e}")
+                    self.error.emit()
+
+        cache = get_thumbnail_cache()
+        self.sg_loader = SGThumbnailLoader(self.sg_session, version_id, cache)
+        self.sg_loader_thread = QThread()
+        self.sg_loader.moveToThread(self.sg_loader_thread)
+        self.sg_loader_thread.started.connect(self.sg_loader.run)
+        self.sg_loader.finished.connect(self._on_thumbnail_loaded)
+        self.sg_loader.error.connect(self._on_thumbnail_error)
+        self.sg_loader_thread.start()
 
     def refresh_thumbnail(self, updated_version_data):
         """Refresh thumbnail with updated version data.
@@ -935,8 +1035,13 @@ class ThumbnailWidget(QtWidgets.QWidget):
         self.version_data = updated_version_data
         self._load_thumbnail()
 
-    def _on_thumbnail_loaded(self, image_data):
-        """Handle thumbnail loaded."""
+    def _on_thumbnail_loaded(self, image_data, from_cache=False):
+        """Handle thumbnail loaded.
+
+        Args:
+            image_data: Image bytes
+            from_cache: True if loaded from cache (skip thread cleanup)
+        """
         try:
             # Create pixmap from image data
             pixmap = QtGui.QPixmap()
@@ -954,10 +1059,14 @@ class ThumbnailWidget(QtWidgets.QWidget):
             else:
                 self.thumbnail_label.setText("No Preview")
 
-            # Clean up thread
-            if hasattr(self, 'loader_thread'):
-                self.loader_thread.quit()
-                self.loader_thread.wait()
+            # Clean up threads (only if not from cache)
+            if not from_cache:
+                if hasattr(self, 'loader_thread'):
+                    self.loader_thread.quit()
+                    self.loader_thread.wait()
+                if hasattr(self, 'sg_loader_thread'):
+                    self.sg_loader_thread.quit()
+                    self.sg_loader_thread.wait()
 
         except Exception as e:
             logger.error(f"Error displaying thumbnail: {e}")
@@ -967,10 +1076,13 @@ class ThumbnailWidget(QtWidgets.QWidget):
         """Handle thumbnail load error."""
         self.thumbnail_label.setText("No Preview")
 
-        # Clean up thread
+        # Clean up threads
         if hasattr(self, 'loader_thread'):
             self.loader_thread.quit()
             self.loader_thread.wait()
+        if hasattr(self, 'sg_loader_thread'):
+            self.sg_loader_thread.quit()
+            self.sg_loader_thread.wait()
 
     def mousePressEvent(self, event):
         """Handle mouse press to select thumbnail."""

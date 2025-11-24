@@ -307,3 +307,39 @@ class AppSettings:
             currency: Currency symbol (e.g., "$", "€", "£", "¥")
         """
         self.set("currency", currency)
+
+    def get_thumbnail_cache_path(self):
+        """Get the thumbnail cache folder path.
+
+        Returns:
+            Path: Path to thumbnail cache folder
+        """
+        default_cache = Path.home() / ".ff_bidding_app" / "thumbnail_cache"
+        cache_path = self.get("thumbnail_cache_path")
+        if cache_path:
+            return Path(cache_path)
+        return default_cache
+
+    def set_thumbnail_cache_path(self, path):
+        """Set the thumbnail cache folder path.
+
+        Args:
+            path: Path to cache folder (string or Path object)
+        """
+        self.set("thumbnail_cache_path", str(path))
+
+    def get_thumbnail_cache_max_age_days(self):
+        """Get the maximum age of cached thumbnails in days.
+
+        Returns:
+            int: Max age in days (default: 7)
+        """
+        return self.get("thumbnail_cache_max_age_days", 7)
+
+    def set_thumbnail_cache_max_age_days(self, days):
+        """Set the maximum age of cached thumbnails in days.
+
+        Args:
+            days: Max age in days
+        """
+        self.set("thumbnail_cache_max_age_days", days)
