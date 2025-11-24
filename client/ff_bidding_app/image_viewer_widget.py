@@ -1703,8 +1703,14 @@ class ImageViewerWidget(QtWidgets.QWidget):
             image_id = version_data.get('id')
             self.folder_pane.highlight_folders_for_image(image_id)
 
-    def _deselect_current_thumbnail(self):
-        """Deselect the currently selected thumbnail."""
+    def _deselect_current_thumbnail(self, image_id=None, folder_name=None, folder_type=None):
+        """Deselect the currently selected thumbnail.
+
+        Args:
+            image_id: Optional image ID (from signal, not used)
+            folder_name: Optional folder name (from signal, not used)
+            folder_type: Optional folder type (from signal, not used)
+        """
         if self.selected_thumbnail:
             try:
                 if self.selected_thumbnail in self.thumbnail_widgets:
@@ -2281,10 +2287,20 @@ class ImageViewerWidget(QtWidgets.QWidget):
         packages[current_package]['folder_mappings'] = mappings
         logger.info("Saved folder mappings to package")
 
-    def update_thumbnail_states(self):
-        """Update all thumbnail border states based on folder mappings."""
+    def update_thumbnail_states(self, dropped_image_id=None, folder_name=None, folder_type=None):
+        """Update all thumbnail border states based on folder mappings.
+
+        Args:
+            dropped_image_id: Optional image ID that was just dropped (from signal)
+            folder_name: Optional folder name the image was dropped to (from signal)
+            folder_type: Optional folder type ('asset' or 'scene') (from signal)
+        """
         if not self.folder_pane:
             return
+
+        # If an image was dropped to a folder, link it to the selected package
+        if dropped_image_id and folder_name and folder_type:
+            self._link_image_to_package(dropped_image_id, folder_name, folder_type)
 
         # Get current mappings
         mappings = self.folder_pane.get_folder_mappings()
@@ -2311,3 +2327,51 @@ class ImageViewerWidget(QtWidgets.QWidget):
             image_id = thumbnail.version_data.get('id')
             folders = image_to_folders.get(image_id, [])
             thumbnail.set_folders_containing(folders)
+
+    def _link_image_to_package(self, image_id, folder_name, folder_type):
+        """Link an image version to the currently selected package with folder info.
+
+        Args:
+            image_id: ID of the image version
+            folder_name: Name of the folder the image was dropped to
+            folder_type: Type of folder ('asset' or 'scene')
+        """
+        # Get the currently selected package
+        selected_package = self.folder_pane.get_selected_package()
+        if not selected_package:
+            logger.info(f"No package selected, skipping ShotGrid link for image {image_id}")
+            return
+
+        # Get the package ID from packages_tab
+        if not self.packages_tab:
+            logger.warning("No packages_tab reference, cannot link to ShotGrid")
+            return
+
+        # Get the ShotGrid package ID for the selected package name
+        sg_package_id = None
+        packages = getattr(self.packages_tab, 'packages', {})
+        for pkg_name, pkg_data in packages.items():
+            if pkg_name == selected_package:
+                sg_package_id = pkg_data.get('sg_package_id')
+                break
+
+        if not sg_package_id:
+            logger.warning(f"No ShotGrid package ID found for package '{selected_package}'")
+            return
+
+        # Link the version to the package with folder info
+        try:
+            logger.info(f"Linking image {image_id} to package {sg_package_id} with folder {folder_name}")
+            self.sg_session.link_version_to_package_with_folder(
+                version_id=image_id,
+                package_id=sg_package_id,
+                folder_name=folder_name
+            )
+            logger.info(f"Successfully linked image {image_id} to package")
+
+            # Refresh the treeview to show the new folder/version
+            if hasattr(self.packages_tab, 'package_data_tree') and self.packages_tab.package_data_tree:
+                self.packages_tab.package_data_tree.load_package_versions(sg_package_id)
+
+        except Exception as e:
+            logger.error(f"Failed to link image to package: {e}", exc_info=True)

@@ -486,8 +486,8 @@ class PackageTreeView(QtWidgets.QWidget):
             logger.info("No package ID or SG session - showing empty tree")
             return
 
-        # Get Bid Tracker versions from Package's sg_versions field
-        bid_tracker_versions = self.sg_session.get_package_versions(
+        # Get versions with folder info from Package's PackageItems
+        package_versions_with_folders = self.sg_session.get_package_versions_with_folders(
             package_id,
             fields=[
                 "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
@@ -496,7 +496,7 @@ class PackageTreeView(QtWidgets.QWidget):
             ]
         )
 
-        logger.info(f"Found {len(bid_tracker_versions)} versions in sg_versions field")
+        logger.info(f"Found {len(package_versions_with_folders)} versions via PackageItems")
 
         # Get other versions (Script, Concept Art, Storyboard) from sg_parent_packages
         other_versions = self.sg_session.get_versions_by_parent_package(
@@ -510,16 +510,18 @@ class PackageTreeView(QtWidgets.QWidget):
 
         logger.info(f"Found {len(other_versions)} versions in sg_parent_packages field")
 
-        # Combine all versions (Bid Tracker uses sg_versions, others use sg_parent_packages)
-        all_versions = bid_tracker_versions + other_versions
+        # Separate bid tracker versions from image versions
+        bid_tracker_versions = [v for v in package_versions_with_folders if self._is_bid_tracker_version(v)]
+        image_versions_with_folders = [v for v in package_versions_with_folders if self._is_image_version(v)]
 
-        logger.info(f"Total versions: {len(all_versions)}")
+        logger.info(f"Bid Tracker versions: {len(bid_tracker_versions)}, Image versions with folders: {len(image_versions_with_folders)}")
 
         # Build the tree with actual version data
-        # Bid Tracker versions come from bid_tracker_versions list
         self.set_bid_tracker_item(bid_tracker_versions)
-        # Other versions come from other_versions list
         self.set_documents_item(other_versions)
+        # Show folders section with images organized by folder
+        self.set_folders_item(image_versions_with_folders)
+        # Also show images that have no folder assigned
         self.set_images_item(other_versions)
 
         # Apply stored visibility preferences
@@ -786,6 +788,106 @@ class PackageTreeView(QtWidgets.QWidget):
             no_data_item = SGTreeItem(
                 images_root,
                 ["No versions found", "Info", "", ""],
+                item_type="info"
+            )
+            no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
+
+    def set_folders_item(self, versions_with_folders):
+        """Build Folders section with versions grouped by folder assignment.
+
+        Args:
+            versions_with_folders: List of version dicts with '_package_folders' key
+        """
+        folders_root = SGTreeItem(
+            self.tree_widget,
+            ["Folders", "Folder", "", ""],
+            sg_data={'type': 'folder'},
+            item_type="folder"
+        )
+        self.category_items["Folders"] = folders_root
+        folders_root.setExpanded(True)
+        font = folders_root.font(0)
+        font.setBold(True)
+        folders_root.setFont(0, font)
+
+        # Group versions by folder
+        folder_to_versions = {}
+        no_folder_versions = []
+
+        for version in versions_with_folders:
+            folders_str = version.get('_package_folders', '')
+            if folders_str:
+                # Split by ";" for multiple folders
+                folder_names = [f.strip() for f in folders_str.split(';') if f.strip()]
+                for folder_name in folder_names:
+                    if folder_name not in folder_to_versions:
+                        folder_to_versions[folder_name] = []
+                    folder_to_versions[folder_name].append(version)
+            else:
+                no_folder_versions.append(version)
+
+        if folder_to_versions:
+            # Create folder items sorted alphabetically
+            for folder_name in sorted(folder_to_versions.keys()):
+                folder_versions = folder_to_versions[folder_name]
+
+                # Create folder item
+                folder_item = SGTreeItem(
+                    folders_root,
+                    [f"► {folder_name}", "Folder", "", f"{len(folder_versions)}"],
+                    sg_data={'type': 'folder', 'folder_name': folder_name},
+                    item_type="folder"
+                )
+                folder_item.setExpanded(False)
+
+                # Add versions under this folder
+                for version in folder_versions:
+                    version_code = version.get('code', 'Unknown')
+                    status = version.get('sg_status_list', '')
+                    status_display = status if status else 'N/A'
+                    version_number = version_code.split('_')[-1] if '_' in version_code else ""
+
+                    version_item = self._create_version_item(
+                        folder_item,
+                        version,
+                        [version_code, "Version", status_display, version_number]
+                    )
+
+                    status_lower = status.lower() if status else ''
+                    if status_lower in status_colors:
+                        version_item.setBackground(2, status_colors[status_lower])
+
+            # Add versions with no folder assignment
+            if no_folder_versions:
+                unassigned_item = SGTreeItem(
+                    folders_root,
+                    ["► (Unassigned)", "Folder", "", f"{len(no_folder_versions)}"],
+                    sg_data={'type': 'folder', 'folder_name': ''},
+                    item_type="folder"
+                )
+                unassigned_item.setExpanded(False)
+                unassigned_item.setForeground(0, QtGui.QColor(120, 120, 120))
+
+                for version in no_folder_versions:
+                    version_code = version.get('code', 'Unknown')
+                    status = version.get('sg_status_list', '')
+                    status_display = status if status else 'N/A'
+                    version_number = version_code.split('_')[-1] if '_' in version_code else ""
+
+                    version_item = self._create_version_item(
+                        unassigned_item,
+                        version,
+                        [version_code, "Version", status_display, version_number]
+                    )
+
+                    status_lower = status.lower() if status else ''
+                    if status_lower in status_colors:
+                        version_item.setBackground(2, status_colors[status_lower])
+        else:
+            # No versions with folders
+            no_data_item = SGTreeItem(
+                folders_root,
+                ["No folder assignments", "Info", "", ""],
                 item_type="info"
             )
             no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))

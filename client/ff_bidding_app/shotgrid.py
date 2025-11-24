@@ -1362,6 +1362,187 @@ class ShotgridClient:
         logger.info(f"Successfully deleted PackageItem {package_item_id}")
         return result
 
+    def update_package_item_folders(self, package_item_id, folder_name):
+        """
+        Update the sg_package_folders field on a PackageItem.
+
+        If the folder is not already in the list, it will be appended.
+        Multiple folders are separated by ";".
+
+        Args:
+            package_item_id: ID of the PackageItem to update
+            folder_name: Folder name to add (e.g., "Asset_Name" or "Scene_001")
+
+        Returns:
+            Updated PackageItem entity or None if failed
+        """
+        # Get the current sg_package_folders value
+        package_item = self.sg.find_one(
+            "CustomEntity13",
+            [["id", "is", int(package_item_id)]],
+            ["sg_package_folders"]
+        )
+
+        if not package_item:
+            logger.error(f"PackageItem {package_item_id} not found")
+            return None
+
+        # Get existing folders or empty string
+        existing_folders = package_item.get("sg_package_folders") or ""
+
+        # Parse existing folders into a list
+        folder_list = [f.strip() for f in existing_folders.split(";") if f.strip()]
+
+        # Add the new folder if not already present
+        if folder_name not in folder_list:
+            folder_list.append(folder_name)
+            new_folders = ";".join(folder_list)
+
+            # Update the PackageItem
+            logger.info(f"Updating PackageItem {package_item_id} folders to: {new_folders}")
+            result = self.sg.update(
+                "CustomEntity13",
+                int(package_item_id),
+                {"sg_package_folders": new_folders}
+            )
+            logger.info(f"Successfully updated PackageItem folders")
+            return result
+        else:
+            logger.info(f"Folder '{folder_name}' already in PackageItem {package_item_id}")
+            return package_item
+
+    def remove_folder_from_package_item(self, package_item_id, folder_name):
+        """
+        Remove a folder from the sg_package_folders field on a PackageItem.
+
+        Args:
+            package_item_id: ID of the PackageItem to update
+            folder_name: Folder name to remove
+
+        Returns:
+            Updated PackageItem entity or None if failed
+        """
+        # Get the current sg_package_folders value
+        package_item = self.sg.find_one(
+            "CustomEntity13",
+            [["id", "is", int(package_item_id)]],
+            ["sg_package_folders"]
+        )
+
+        if not package_item:
+            logger.error(f"PackageItem {package_item_id} not found")
+            return None
+
+        # Get existing folders
+        existing_folders = package_item.get("sg_package_folders") or ""
+        folder_list = [f.strip() for f in existing_folders.split(";") if f.strip()]
+
+        # Remove the folder if present
+        if folder_name in folder_list:
+            folder_list.remove(folder_name)
+            new_folders = ";".join(folder_list)
+
+            # Update the PackageItem
+            logger.info(f"Removing folder '{folder_name}' from PackageItem {package_item_id}")
+            result = self.sg.update(
+                "CustomEntity13",
+                int(package_item_id),
+                {"sg_package_folders": new_folders}
+            )
+            return result
+
+        return package_item
+
+    def get_package_versions_with_folders(self, package_id, fields=None):
+        """
+        Get all versions linked to a Package via its PackageItems,
+        including the folder information from each PackageItem.
+
+        Args:
+            package_id: ID of the package
+            fields: List of fields to return for versions
+
+        Returns:
+            List of version dictionaries, each with an additional
+            '_package_folders' key containing the folder names
+        """
+        if fields is None:
+            fields = [
+                "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
+                "user", "description", "sg_task", "sg_path_to_movie", "sg_path_to_frames",
+                "sg_uploaded_movie", "sg_path_to_geometry", "sg_version_type"
+            ]
+
+        # Get all PackageItems for this Package with folder info
+        package_items = self.get_package_items(
+            package_id,
+            fields=["id", "sg_versions", "sg_package_folders"]
+        )
+
+        if not package_items:
+            logger.info(f"No PackageItems linked to Package {package_id}")
+            return []
+
+        # Build a mapping of version_id -> folder names
+        version_to_folders = {}
+        version_ids = []
+
+        for item in package_items:
+            folders = item.get("sg_package_folders") or ""
+            versions = item.get("sg_versions") or []
+
+            for version in versions:
+                version_id = version.get("id")
+                if version_id:
+                    if version_id not in version_ids:
+                        version_ids.append(version_id)
+                    # Store folders for this version
+                    version_to_folders[version_id] = folders
+
+        if not version_ids:
+            logger.info(f"No versions found in PackageItems for Package {package_id}")
+            return []
+
+        # Query for those versions
+        logger.info(f"Fetching {len(version_ids)} versions for Package {package_id}")
+        versions = self.sg.find(
+            "Version",
+            [["id", "in", version_ids]],
+            fields,
+            order=[
+                {"field_name": "entity", "direction": "asc"},
+                {"field_name": "created_at", "direction": "desc"}
+            ]
+        )
+
+        # Add folder info to each version
+        for version in versions:
+            version_id = version.get("id")
+            version["_package_folders"] = version_to_folders.get(version_id, "")
+
+        return versions
+
+    def link_version_to_package_with_folder(self, version_id, package_id, folder_name):
+        """
+        Link a Version to a Package and set its folder assignment.
+
+        Args:
+            version_id: ID of the version to link
+            package_id: ID of the package
+            folder_name: Name of the folder the version was dropped to
+
+        Returns:
+            PackageItem entity with the version linked and folder set
+        """
+        # First, link the version (creates PackageItem if needed)
+        package_item = self.link_version_to_package(version_id, package_id)
+
+        if package_item:
+            # Update the folder assignment
+            self.update_package_item_folders(package_item["id"], folder_name)
+
+        return package_item
+
     # ------------------------------------------------------------------
     # Version Management
     # ------------------------------------------------------------------

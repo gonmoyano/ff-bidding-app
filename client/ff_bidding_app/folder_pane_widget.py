@@ -123,7 +123,7 @@ class ImageLoader(QtCore.QObject):
 class FolderWidget(QtWidgets.QWidget):
     """Widget representing a folder that can accept image drops."""
 
-    imageDropped = QtCore.Signal()  # Signal emitted when an image is dropped
+    imageDropped = QtCore.Signal(int, str, str)  # Signal emitted when an image is dropped (image_id, folder_name, folder_type)
     doubleClicked = QtCore.Signal(str, str)  # Signal emitted when folder is double-clicked (folder_name, folder_type)
 
     def __init__(self, folder_name, folder_type, parent=None, icon_size=64):
@@ -287,10 +287,10 @@ class FolderWidget(QtWidgets.QWidget):
             self._update_count()
 
             event.acceptProposedAction()
-            logger.info(f"Dropped image {image_id} into folder {self.folder_name}")
+            logger.info(f"Dropped image {image_id} into folder {self.folder_name} ({self.folder_type})")
 
-            # Emit signal to notify parent
-            self.imageDropped.emit()
+            # Emit signal to notify parent with image info
+            self.imageDropped.emit(image_id, self.folder_name, self.folder_type)
 
             # Remove highlight
             self.dragLeaveEvent(event)
@@ -813,7 +813,7 @@ class FolderDetailView(QtWidgets.QWidget):
 class FolderPaneWidget(QtWidgets.QWidget):
     """Widget displaying folders for Assets and Scenes."""
 
-    imageDropped = QtCore.Signal()  # Signal emitted when an image is dropped to any folder
+    imageDropped = QtCore.Signal(int, str, str)  # Signal emitted when an image is dropped to any folder (image_id, folder_name, folder_type)
     packageSelected = QtCore.Signal(str)  # Signal emitted when a package is selected (package_name or empty string)
 
     def __init__(self, parent=None):
