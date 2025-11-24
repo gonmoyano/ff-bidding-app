@@ -855,27 +855,36 @@ class ThumbnailWidget(QtWidgets.QWidget):
     def _load_thumbnail(self):
         """Load thumbnail from ShotGrid."""
         try:
+            thumbnail_url = None
+
             # Check if version has an image thumbnail
             image_data = self.version_data.get('image')
 
-            if not image_data:
-                logger.debug(f"No image data for version {self.version_data.get('code')}")
-                self.thumbnail_label.setText("Processing...")
-                return
+            if image_data:
+                # If image_data is a URL string, download it
+                if isinstance(image_data, str):
+                    thumbnail_url = image_data
+                elif isinstance(image_data, dict):
+                    # Get URL from the dict - only use 'url', not 'link_type' which is just metadata
+                    thumbnail_url = image_data.get('url')
 
-            # If image_data is a URL string, download it
-            if isinstance(image_data, str):
-                thumbnail_url = image_data
-            elif isinstance(image_data, dict):
-                # Get URL from the dict - only use 'url', not 'link_type' which is just metadata
-                thumbnail_url = image_data.get('url')
-            else:
-                self.thumbnail_label.setText("Processing...")
-                return
+            # Fallback: try sg_uploaded_movie for the thumbnail
+            if not thumbnail_url:
+                uploaded_movie = self.version_data.get('sg_uploaded_movie')
+                if uploaded_movie:
+                    if isinstance(uploaded_movie, str):
+                        thumbnail_url = uploaded_movie
+                    elif isinstance(uploaded_movie, dict):
+                        thumbnail_url = uploaded_movie.get('url')
 
             if not thumbnail_url:
-                logger.debug(f"No thumbnail URL for version {self.version_data.get('code')}")
-                self.thumbnail_label.setText("Processing...")
+                logger.debug(f"No thumbnail URL for version {self.version_data.get('code')}, image_data={image_data}")
+                # Show "No Preview" for versions that likely won't get a thumbnail
+                # Show "Processing..." only if there's a pending upload indicator
+                if image_data and isinstance(image_data, dict) and image_data.get('link_type') == 'upload':
+                    self.thumbnail_label.setText("Processing...")
+                else:
+                    self.thumbnail_label.setText("No Preview")
                 return
 
             logger.debug(f"Loading thumbnail for {self.version_data.get('code')} from {thumbnail_url[:50]}...")
