@@ -223,12 +223,25 @@ class FolderWidget(QtWidgets.QWidget):
         if self._contains_selected != contains_selected:
             self._contains_selected = contains_selected
             self._update_style()
+            self._update_icon()  # Update icon border
 
     def _update_icon(self):
-        """Update the folder icon with current size."""
+        """Update the folder icon with current size and selection state."""
         self.icon_label.setPixmap(self.style().standardIcon(
             QtWidgets.QStyle.SP_DirIcon
         ).pixmap(self.icon_size, self.icon_size))
+
+        # Apply blue border to icon when folder contains selected image
+        if self._contains_selected:
+            self.icon_label.setStyleSheet("""
+                QLabel {
+                    border: 3px solid #4a9eff;
+                    border-radius: 4px;
+                    padding: 2px;
+                }
+            """)
+        else:
+            self.icon_label.setStyleSheet("")
 
     def set_icon_size(self, size):
         """Set the icon size.
