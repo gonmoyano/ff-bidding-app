@@ -913,6 +913,45 @@ class PackagesTab(QtWidgets.QWidget):
                     logger.error(f"Error processing root file {version_id}: {e}")
                     files_failed += 1
 
+            # Download bid tracker files to bid_tracker folder
+            current_package_data = self.packages.get(self.current_package_name, {})
+            sg_package_id = current_package_data.get("sg_package_id")
+
+            if sg_package_id:
+                progress.setLabelText("Downloading bid tracker...")
+                QtCore.QCoreApplication.processEvents()
+
+                bid_tracker_versions = self.sg_session.find_bid_tracker_versions_in_package(sg_package_id)
+
+                if bid_tracker_versions:
+                    # Create bid_tracker folder
+                    bid_tracker_folder = package_folder / "bid_tracker"
+                    bid_tracker_folder.mkdir(parents=True, exist_ok=True)
+                    logger.info(f"Created bid_tracker folder: {bid_tracker_folder}")
+
+                    for bt_version in bid_tracker_versions:
+                        if progress.wasCanceled():
+                            logger.info("Package creation cancelled by user")
+                            return
+
+                        bt_version_id = bt_version.get("id")
+                        bt_code = bt_version.get("code", "bid_tracker")
+
+                        if bt_version_id:
+                            try:
+                                downloaded_path = self.sg_session.download_version_movie(
+                                    bt_version_id, str(bid_tracker_folder)
+                                )
+                                if downloaded_path:
+                                    files_copied += 1
+                                    logger.info(f"Downloaded bid tracker: {downloaded_path}")
+                                else:
+                                    logger.warning(f"Failed to download bid tracker {bt_code}")
+                                    files_failed += 1
+                            except Exception as e:
+                                logger.error(f"Error downloading bid tracker {bt_code}: {e}")
+                                files_failed += 1
+
             progress.setValue(95)
             progress.setLabelText("Writing manifest...")
             QtCore.QCoreApplication.processEvents()
