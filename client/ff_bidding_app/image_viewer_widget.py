@@ -1341,10 +1341,13 @@ class ImageViewerWidget(QtWidgets.QWidget):
         self.folder_pane.imageDropped.connect(self.update_thumbnail_states)
         self.folder_pane.imageDropped.connect(self._deselect_current_thumbnail)
 
-        # Set initial sizes (70% thumbnails, 30% folder pane)
-        self.splitter.setSizes([700, 300])
+        # Connect folder remove signal to unlink from package and update tree
+        self.folder_pane.imageRemoved.connect(self._unlink_image_from_package)
+
+        # Set initial sizes (50% thumbnails, 50% folder pane)
+        self.splitter.setSizes([500, 500])
         self.splitter.setStretchFactor(0, 1)
-        self.splitter.setStretchFactor(1, 0)
+        self.splitter.setStretchFactor(1, 1)
 
         # Connect splitter moved signal to adjust thumbnail columns
         self.splitter.splitterMoved.connect(self._on_splitter_moved)
@@ -2421,3 +2424,73 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         except Exception as e:
             logger.error(f"Failed to link image to package: {e}", exc_info=True)
+
+    def _unlink_image_from_package(self, image_id, folder_name, folder_type):
+        """Unlink an image version from the currently selected package.
+
+        Args:
+            image_id: ID of the image version
+            folder_name: Name of the folder the image was removed from
+            folder_type: Type of folder ('asset' or 'scene')
+        """
+        # Get the currently selected package
+        selected_package = self.folder_pane.get_selected_package()
+        if not selected_package:
+            logger.info(f"No package selected, skipping ShotGrid unlink for image {image_id}")
+            return
+
+        # Get the package ID from packages_tab
+        if not self.packages_tab:
+            logger.warning("No packages_tab reference, cannot unlink from ShotGrid")
+            return
+
+        # Get the ShotGrid package ID for the selected package name
+        sg_package_id = None
+        packages = getattr(self.packages_tab, 'packages', {})
+        for pkg_name, pkg_data in packages.items():
+            if pkg_name == selected_package:
+                sg_package_id = pkg_data.get('sg_package_id')
+                break
+
+        if not sg_package_id:
+            logger.warning(f"No ShotGrid package ID found for package '{selected_package}'")
+            return
+
+        # Get the version data to determine its category
+        version_data = None
+        for thumbnail in self.thumbnail_widgets:
+            if thumbnail.version_data.get('id') == image_id:
+                version_data = thumbnail.version_data
+                break
+
+        if not version_data:
+            logger.warning(f"Could not find version data for image {image_id}")
+            return
+
+        # Determine the category from sg_version_type
+        sg_version_type = version_data.get('sg_version_type', '')
+        if isinstance(sg_version_type, dict):
+            category = sg_version_type.get('name', 'Misc')
+        else:
+            category = str(sg_version_type) if sg_version_type else 'Misc'
+
+        # Construct hierarchical path: /folder_type/folder_name/category
+        folder_type_plural = 'assets' if folder_type == 'asset' else 'scenes'
+        folder_path = f"/{folder_type_plural}/{folder_name}/{category}"
+
+        # Remove the folder reference from the package
+        try:
+            logger.info(f"Unlinking image {image_id} from package {sg_package_id} with path {folder_path}")
+            self.sg_session.remove_folder_reference_from_package(
+                version_id=image_id,
+                package_id=sg_package_id,
+                folder_path=folder_path
+            )
+            logger.info(f"Successfully unlinked image {image_id} from package")
+
+            # Refresh the treeview to reflect the removal
+            if hasattr(self.packages_tab, 'package_data_tree') and self.packages_tab.package_data_tree:
+                self.packages_tab.package_data_tree.load_package_versions(sg_package_id)
+
+        except Exception as e:
+            logger.error(f"Failed to unlink image from package: {e}", exc_info=True)

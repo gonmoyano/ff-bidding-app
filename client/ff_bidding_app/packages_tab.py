@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets, QtCore
 import json
 import logging
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -707,16 +708,34 @@ class PackagesTab(QtWidgets.QWidget):
                 )
                 return
 
-        # Generate package name from RFQ code
-        # Convert to lowercase, replace spaces with underscores
-        rfq_code = sg_rfq.get('code', 'rfq')
-        base_name = rfq_code.lower().replace(' ', '_').replace('-', '_')
+        # Generate package name from Current Package name
+        if not self.current_package_name:
+            logger.warning("No package selected")
+            QtWidgets.QMessageBox.warning(
+                self, "Missing Selection",
+                "Please select a Package from the Package Manager."
+            )
+            return
 
-        # Get next version number
-        version_num, version_string = self._get_next_package_version(output_dir, base_name)
-
-        package_name = f"{base_name}_{version_string}"
+        # Use current package name, sanitize for filesystem
+        package_name = self.current_package_name.replace(' ', '_').replace('-', '_')
         logger.info(f"Package name: {package_name}")
+
+        # Check if package folder already exists
+        package_folder = output_dir / package_name
+        is_update = package_folder.exists()
+        if is_update:
+            result = QtWidgets.QMessageBox.question(
+                self, "Package Already Exists",
+                f"The package folder already exists:\n{package_folder}\n\n"
+                f"Do you want to update it? This will overwrite existing files\n"
+                f"and remove files no longer in the package.",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+            )
+            if result == QtWidgets.QMessageBox.No:
+                logger.info("User chose not to update existing package")
+                return
+            logger.info(f"User chose to update existing package: {package_folder}")
 
         progress = QtWidgets.QProgressDialog(
             "Creating data package...", "Cancel", 0, 100, self
@@ -785,6 +804,228 @@ class PackagesTab(QtWidgets.QWidget):
             progress.setValue(70)
             QtCore.QCoreApplication.processEvents()
 
+            # Get manifest of package structure from the tree view
+            manifest = self.package_data_tree.get_package_manifest()
+            logger.info(f"Package manifest: {manifest['summary']['total_folders']} folders, "
+                        f"{manifest['summary']['total_files']} files")
+
+            # Create package folder
+            package_folder = output_dir / package_name
+            package_folder.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Created package folder: {package_folder}")
+
+            # Create folder structure from manifest
+            for folder_path in manifest["folders"].keys():
+                # Remove leading slash and create folder
+                clean_path = folder_path.lstrip("/")
+                if clean_path:
+                    folder_full_path = package_folder / clean_path
+                    folder_full_path.mkdir(parents=True, exist_ok=True)
+                    logger.info(f"Created folder: {folder_full_path}")
+
+            progress.setValue(50)
+            QtCore.QCoreApplication.processEvents()
+
+            # Download files and copy to their assigned folders
+            # Track downloaded files to avoid re-downloading for multiple folder assignments
+            downloaded_files = {}  # version_id -> local file path
+            files_copied = 0
+            files_failed = 0
+
+            # Calculate total files for progress
+            total_files = manifest["summary"]["total_files"]
+            files_processed = 0
+
+            # Process files in folders
+            for folder_path, folder_data in manifest["folders"].items():
+                clean_folder_path = folder_path.lstrip("/")
+                target_folder = package_folder / clean_folder_path if clean_folder_path else package_folder
+
+                for file_info in folder_data.get("files", []):
+                    if progress.wasCanceled():
+                        logger.info("Package creation cancelled by user")
+                        return
+
+                    version_id = file_info.get("id")
+                    if not version_id:
+                        continue
+
+                    files_processed += 1
+                    progress_value = 50 + int((files_processed / max(total_files, 1)) * 40)
+                    progress.setValue(progress_value)
+                    progress.setLabelText(f"Downloading files... ({files_processed}/{total_files})")
+                    QtCore.QCoreApplication.processEvents()
+
+                    try:
+                        # Check if file was already downloaded
+                        if version_id in downloaded_files:
+                            # Copy from already downloaded file
+                            source_file = downloaded_files[version_id]
+                            if source_file and Path(source_file).exists():
+                                dest_file = target_folder / Path(source_file).name
+                                if not dest_file.exists():
+                                    shutil.copy2(source_file, dest_file)
+                                    logger.info(f"Copied file to: {dest_file}")
+                                files_copied += 1
+                        else:
+                            # Download the file
+                            downloaded_path = self.sg_session.download_version_movie(
+                                version_id, str(target_folder)
+                            )
+                            if downloaded_path:
+                                downloaded_files[version_id] = downloaded_path
+                                files_copied += 1
+                                logger.info(f"Downloaded: {downloaded_path}")
+                            else:
+                                logger.warning(f"Failed to download version {version_id}")
+                                files_failed += 1
+                    except Exception as e:
+                        logger.error(f"Error processing file {version_id}: {e}")
+                        files_failed += 1
+
+            # Process root-level files (files without folder assignment)
+            for file_info in manifest.get("root_files", []):
+                if progress.wasCanceled():
+                    logger.info("Package creation cancelled by user")
+                    return
+
+                version_id = file_info.get("id")
+                if not version_id:
+                    continue
+
+                files_processed += 1
+                progress_value = 50 + int((files_processed / max(total_files, 1)) * 40)
+                progress.setValue(progress_value)
+                progress.setLabelText(f"Downloading files... ({files_processed}/{total_files})")
+                QtCore.QCoreApplication.processEvents()
+
+                try:
+                    if version_id not in downloaded_files:
+                        downloaded_path = self.sg_session.download_version_movie(
+                            version_id, str(package_folder)
+                        )
+                        if downloaded_path:
+                            downloaded_files[version_id] = downloaded_path
+                            files_copied += 1
+                            logger.info(f"Downloaded root file: {downloaded_path}")
+                        else:
+                            logger.warning(f"Failed to download root version {version_id}")
+                            files_failed += 1
+                except Exception as e:
+                    logger.error(f"Error processing root file {version_id}: {e}")
+                    files_failed += 1
+
+            # Download bid tracker files to bid_tracker folder
+            current_package_data = self.packages.get(self.current_package_name, {})
+            sg_package_id = current_package_data.get("sg_package_id")
+
+            if sg_package_id:
+                progress.setLabelText("Downloading bid tracker...")
+                QtCore.QCoreApplication.processEvents()
+
+                bid_tracker_versions = self.sg_session.find_bid_tracker_versions_in_package(sg_package_id)
+
+                if bid_tracker_versions:
+                    # Create bid_tracker folder
+                    bid_tracker_folder = package_folder / "bid_tracker"
+                    bid_tracker_folder.mkdir(parents=True, exist_ok=True)
+                    logger.info(f"Created bid_tracker folder: {bid_tracker_folder}")
+
+                    for bt_version in bid_tracker_versions:
+                        if progress.wasCanceled():
+                            logger.info("Package creation cancelled by user")
+                            return
+
+                        bt_version_id = bt_version.get("id")
+                        bt_code = bt_version.get("code", "bid_tracker")
+
+                        if bt_version_id:
+                            try:
+                                downloaded_path = self.sg_session.download_version_movie(
+                                    bt_version_id, str(bid_tracker_folder)
+                                )
+                                if downloaded_path:
+                                    files_copied += 1
+                                    logger.info(f"Downloaded bid tracker: {downloaded_path}")
+                                else:
+                                    logger.warning(f"Failed to download bid tracker {bt_code}")
+                                    files_failed += 1
+                            except Exception as e:
+                                logger.error(f"Error downloading bid tracker {bt_code}: {e}")
+                                files_failed += 1
+
+            # Clean up removed files and empty folders if updating existing package
+            files_removed = 0
+            if is_update:
+                progress.setLabelText("Cleaning up removed files...")
+                QtCore.QCoreApplication.processEvents()
+
+                # Build set of all valid file paths (files that should exist)
+                valid_files = set()
+
+                # Add all downloaded/copied files
+                for file_path in downloaded_files.values():
+                    if file_path:
+                        valid_files.add(Path(file_path).resolve())
+
+                # Also add files that exist in target folders (from copy operations)
+                for folder_path, folder_data in manifest["folders"].items():
+                    clean_folder_path = folder_path.lstrip("/")
+                    target_folder = package_folder / clean_folder_path if clean_folder_path else package_folder
+
+                    for file_info in folder_data.get("files", []):
+                        version_id = file_info.get("id")
+                        if version_id and version_id in downloaded_files:
+                            source_file = downloaded_files[version_id]
+                            if source_file:
+                                dest_file = target_folder / Path(source_file).name
+                                valid_files.add(dest_file.resolve())
+
+                # Add bid tracker files
+                bid_tracker_folder = package_folder / "bid_tracker"
+                if bid_tracker_folder.exists():
+                    for bt_file in bid_tracker_folder.iterdir():
+                        if bt_file.is_file():
+                            valid_files.add(bt_file.resolve())
+
+                # Protected files (manifest files)
+                protected_files = {
+                    (package_folder / "manifest.json").resolve(),
+                    (package_folder / "README.txt").resolve()
+                }
+
+                # Walk the package folder and remove files not in valid_files
+                for file_path in package_folder.rglob("*"):
+                    if file_path.is_file():
+                        resolved_path = file_path.resolve()
+                        if resolved_path not in valid_files and resolved_path not in protected_files:
+                            try:
+                                file_path.unlink()
+                                files_removed += 1
+                                logger.info(f"Removed obsolete file: {file_path}")
+                            except Exception as e:
+                                logger.error(f"Failed to remove file {file_path}: {e}")
+
+                # Remove empty folders (walk bottom-up)
+                folders_removed = 0
+                for folder_path in sorted(package_folder.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+                    if folder_path.is_dir():
+                        try:
+                            # Check if folder is empty
+                            if not any(folder_path.iterdir()):
+                                folder_path.rmdir()
+                                folders_removed += 1
+                                logger.info(f"Removed empty folder: {folder_path}")
+                        except Exception as e:
+                            logger.error(f"Failed to remove folder {folder_path}: {e}")
+
+                if files_removed > 0 or folders_removed > 0:
+                    logger.info(f"Cleanup: removed {files_removed} files and {folders_removed} empty folders")
+
+            progress.setValue(95)
+            progress.setLabelText("Writing manifest...")
+            QtCore.QCoreApplication.processEvents()
+
             package_data = {
                 "metadata": {
                     "source": "Shotgrid",
@@ -793,8 +1034,7 @@ class PackagesTab(QtWidgets.QWidget):
                     "sg_rfq_id": sg_rfq["id"],
                     "sg_rfq_code": sg_rfq["code"],
                     "created_by": "FF Package Manager",
-                    "package_version": version_string,
-                    "package_version_number": version_num,
+                    "package_name": package_name,
                     "data_types": data_types,
                     "active_versions_count": len(active_versions),
                     "active_version_ids": active_version_ids
@@ -802,20 +1042,33 @@ class PackagesTab(QtWidgets.QWidget):
                 "project": sg_project,
                 "rfq": sg_rfq,
                 "fetched_at": datetime.now().isoformat(),
-                "entities": entities
+                "entities": entities,
+                "manifest": manifest
             }
 
-            # Create filename
-            filename = f"{package_name}.json"
-            output_path = output_dir / filename
+            # Write manifest JSON file inside package folder
+            manifest_filename = "manifest.json"
+            manifest_path = package_folder / manifest_filename
 
-            logger.info(f"Writing package to: {output_path}")
+            logger.info(f"Writing manifest to: {manifest_path}")
 
             # Serialize the package data to handle datetime objects
             serialized_package_data = self._serialize_for_json(package_data)
 
-            with open(output_path, 'w', encoding='utf-8') as f:
+            with open(manifest_path, 'w', encoding='utf-8') as f:
                 json.dump(serialized_package_data, f, indent=2)
+
+            # Write plain text manifest for vendors
+            text_manifest_path = package_folder / "README.txt"
+            self._write_text_manifest(
+                text_manifest_path,
+                package_name,
+                sg_project,
+                sg_rfq,
+                manifest,
+                downloaded_files
+            )
+            logger.info(f"Writing text manifest to: {text_manifest_path}")
 
             progress.setValue(100)
 
@@ -824,16 +1077,27 @@ class PackagesTab(QtWidgets.QWidget):
             entity_summary = "\n".join([f"  {k}: {v}" for k, v in entity_counts.items()])
 
             logger.info("Package created successfully")
+
+            # Build file stats message
+            file_stats = f"  Downloaded: {files_copied}"
+            if files_failed > 0:
+                file_stats += f"\n  Failed: {files_failed}"
+            if files_removed > 0:
+                file_stats += f"\n  Removed: {files_removed}"
+
             QtWidgets.QMessageBox.information(
                 self, "Success",
                 f"Package created successfully!\n\n"
                 f"Package: {package_name}\n"
-                f"Version: {version_string}\n"
                 f"Project: {sg_project['code']}\n"
                 f"RFQ: {sg_rfq.get('code', 'N/A')}\n"
                 f"Active Versions: {len(active_versions)}\n"
+                f"\nManifest:\n"
+                f"  Folders: {manifest['summary']['total_folders']}\n"
+                f"  Files: {manifest['summary']['total_files']}\n"
+                f"\nFiles:\n{file_stats}\n"
                 f"\nVersions by category:\n{entity_summary if entity_summary else '  (none)'}\n\n"
-                f"Location:\n{output_path}"
+                f"Location:\n{package_folder}"
             )
 
         except Exception as e:
@@ -844,6 +1108,115 @@ class PackagesTab(QtWidgets.QWidget):
             )
         finally:
             progress.close()
+
+    def _write_text_manifest(self, file_path, package_name,
+                              sg_project, sg_rfq, manifest, downloaded_files):
+        """Write a plain text manifest file for vendors.
+
+        Args:
+            file_path: Path to write the text file
+            package_name: Name of the package
+            sg_project: ShotGrid project data
+            sg_rfq: ShotGrid RFQ data
+            manifest: Package manifest dictionary
+            downloaded_files: Dict mapping version_id to downloaded file path
+        """
+        lines = []
+
+        # Header
+        lines.append("=" * 70)
+        lines.append(f"DATA PACKAGE: {package_name}")
+        lines.append("=" * 70)
+        lines.append("")
+
+        # Package Information
+        lines.append("PACKAGE INFORMATION")
+        lines.append("-" * 70)
+        lines.append(f"  Package Name:    {package_name}")
+        lines.append(f"  Project:         {sg_project.get('code', 'N/A')}")
+        lines.append(f"  RFQ:             {sg_rfq.get('code', 'N/A')}")
+        lines.append(f"  Created:         {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append(f"  Created By:      FF Package Manager")
+        lines.append("")
+
+        # Summary
+        lines.append("SUMMARY")
+        lines.append("-" * 70)
+        lines.append(f"  Total Folders:   {manifest['summary']['total_folders']}")
+        lines.append(f"  Total Files:     {manifest['summary']['total_files']}")
+        lines.append("")
+
+        # Contents by Section (Folders)
+        lines.append("CONTENTS")
+        lines.append("-" * 70)
+
+        # Sort folders for consistent output - only include folders with files
+        sorted_folders = sorted(
+            [fp for fp, fd in manifest["folders"].items() if fd.get("files")]
+        )
+
+        for folder_path in sorted_folders:
+            folder_data = manifest["folders"][folder_path]
+            files = folder_data.get("files", [])
+
+            # Section header with folder path
+            clean_path = folder_path.lstrip("/") or "(Root)"
+            lines.append("")
+            lines.append(f"  [{clean_path}]")
+            lines.append(f"  " + "~" * (len(clean_path) + 2))
+
+            for file_info in files:
+                file_name = file_info.get("code", "Unknown")
+                status = file_info.get("status", "")
+                description = file_info.get("description", "")
+
+                # Get actual downloaded filename if available
+                version_id = file_info.get("id")
+                if version_id and version_id in downloaded_files:
+                    actual_file = Path(downloaded_files[version_id]).name
+                    lines.append(f"    - {actual_file}")
+                else:
+                    lines.append(f"    - {file_name}")
+
+                # Add status if available
+                if status:
+                    lines.append(f"      Status: {status}")
+
+                # Add description if available (truncate if too long)
+                if description:
+                    desc = description[:100] + "..." if len(description) > 100 else description
+                    lines.append(f"      Description: {desc}")
+
+        # Root files section
+        root_files = manifest.get("root_files", [])
+        if root_files:
+            lines.append("")
+            lines.append("  [Root Level Files]")
+            lines.append("  " + "~" * 18)
+
+            for file_info in root_files:
+                file_name = file_info.get("code", "Unknown")
+                status = file_info.get("status", "")
+
+                version_id = file_info.get("id")
+                if version_id and version_id in downloaded_files:
+                    actual_file = Path(downloaded_files[version_id]).name
+                    lines.append(f"    - {actual_file}")
+                else:
+                    lines.append(f"    - {file_name}")
+
+                if status:
+                    lines.append(f"      Status: {status}")
+
+        # Footer
+        lines.append("")
+        lines.append("=" * 70)
+        lines.append("END OF MANIFEST")
+        lines.append("=" * 70)
+
+        # Write to file
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write("\n".join(lines))
 
     def _export_to_excel(self):
         """Export selected bidding scenes to Excel file."""
