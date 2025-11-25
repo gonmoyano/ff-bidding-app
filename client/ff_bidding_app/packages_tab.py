@@ -723,11 +723,13 @@ class PackagesTab(QtWidgets.QWidget):
 
         # Check if package folder already exists
         package_folder = output_dir / package_name
-        if package_folder.exists():
+        is_update = package_folder.exists()
+        if is_update:
             result = QtWidgets.QMessageBox.question(
                 self, "Package Already Exists",
                 f"The package folder already exists:\n{package_folder}\n\n"
-                f"Do you want to update it? This will overwrite existing files.",
+                f"Do you want to update it? This will overwrite existing files\n"
+                f"and remove files no longer in the package.",
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
             )
             if result == QtWidgets.QMessageBox.No:
@@ -952,6 +954,74 @@ class PackagesTab(QtWidgets.QWidget):
                                 logger.error(f"Error downloading bid tracker {bt_code}: {e}")
                                 files_failed += 1
 
+            # Clean up removed files and empty folders if updating existing package
+            files_removed = 0
+            if is_update:
+                progress.setLabelText("Cleaning up removed files...")
+                QtCore.QCoreApplication.processEvents()
+
+                # Build set of all valid file paths (files that should exist)
+                valid_files = set()
+
+                # Add all downloaded/copied files
+                for file_path in downloaded_files.values():
+                    if file_path:
+                        valid_files.add(Path(file_path).resolve())
+
+                # Also add files that exist in target folders (from copy operations)
+                for folder_path, folder_data in manifest["folders"].items():
+                    clean_folder_path = folder_path.lstrip("/")
+                    target_folder = package_folder / clean_folder_path if clean_folder_path else package_folder
+
+                    for file_info in folder_data.get("files", []):
+                        version_id = file_info.get("id")
+                        if version_id and version_id in downloaded_files:
+                            source_file = downloaded_files[version_id]
+                            if source_file:
+                                dest_file = target_folder / Path(source_file).name
+                                valid_files.add(dest_file.resolve())
+
+                # Add bid tracker files
+                bid_tracker_folder = package_folder / "bid_tracker"
+                if bid_tracker_folder.exists():
+                    for bt_file in bid_tracker_folder.iterdir():
+                        if bt_file.is_file():
+                            valid_files.add(bt_file.resolve())
+
+                # Protected files (manifest files)
+                protected_files = {
+                    (package_folder / "manifest.json").resolve(),
+                    (package_folder / "README.txt").resolve()
+                }
+
+                # Walk the package folder and remove files not in valid_files
+                for file_path in package_folder.rglob("*"):
+                    if file_path.is_file():
+                        resolved_path = file_path.resolve()
+                        if resolved_path not in valid_files and resolved_path not in protected_files:
+                            try:
+                                file_path.unlink()
+                                files_removed += 1
+                                logger.info(f"Removed obsolete file: {file_path}")
+                            except Exception as e:
+                                logger.error(f"Failed to remove file {file_path}: {e}")
+
+                # Remove empty folders (walk bottom-up)
+                folders_removed = 0
+                for folder_path in sorted(package_folder.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+                    if folder_path.is_dir():
+                        try:
+                            # Check if folder is empty
+                            if not any(folder_path.iterdir()):
+                                folder_path.rmdir()
+                                folders_removed += 1
+                                logger.info(f"Removed empty folder: {folder_path}")
+                        except Exception as e:
+                            logger.error(f"Failed to remove folder {folder_path}: {e}")
+
+                if files_removed > 0 or folders_removed > 0:
+                    logger.info(f"Cleanup: removed {files_removed} files and {folders_removed} empty folders")
+
             progress.setValue(95)
             progress.setLabelText("Writing manifest...")
             QtCore.QCoreApplication.processEvents()
@@ -1012,6 +1082,8 @@ class PackagesTab(QtWidgets.QWidget):
             file_stats = f"  Downloaded: {files_copied}"
             if files_failed > 0:
                 file_stats += f"\n  Failed: {files_failed}"
+            if files_removed > 0:
+                file_stats += f"\n  Removed: {files_removed}"
 
             QtWidgets.QMessageBox.information(
                 self, "Success",
