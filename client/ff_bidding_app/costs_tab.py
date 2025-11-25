@@ -928,10 +928,6 @@ class CostsTab(QtWidgets.QMainWindow):
 
     def _apply_vfx_shot_work_delegate(self):
         """Apply ValidatedComboBoxDelegate to the sg_vfx_shot_work column."""
-        logger.info("=== _apply_vfx_shot_work_delegate called ===")
-        logger.info(f"Line Item names count: {len(self.line_item_names)}")
-        logger.info(f"Line Item names: {self.line_item_names}")
-
         if not self.shots_cost_widget or not hasattr(self.shots_cost_widget, 'table_view'):
             logger.warning("shots_cost_widget or table_view not available")
             return
@@ -939,48 +935,30 @@ class CostsTab(QtWidgets.QMainWindow):
         try:
             # Find the column index for sg_vfx_shot_work
             if hasattr(self.shots_cost_widget, 'model') and self.shots_cost_widget.model:
-                logger.info(f"Model columns: {self.shots_cost_widget.model.column_fields}")
                 try:
                     col_idx = self.shots_cost_widget.model.column_fields.index("sg_vfx_shot_work")
-                    logger.info(f"Found sg_vfx_shot_work at column index: {col_idx}")
                 except ValueError:
                     # Column not present
-                    logger.info("sg_vfx_shot_work column not found in model")
                     return
-
-                # Ensure the column is visible
-                is_hidden = self.shots_cost_widget.table_view.isColumnHidden(col_idx)
-                logger.info(f"Column sg_vfx_shot_work (index {col_idx}) hidden: {is_hidden}")
-                if is_hidden:
-                    logger.warning(f"Column sg_vfx_shot_work is hidden - it may not be visible to user")
 
                 # Create or update the delegate
                 if self.vfx_shot_work_delegate is None:
-                    logger.info(f"Creating new ValidatedComboBoxDelegate with {len(self.line_item_names)} Line Items")
                     self.vfx_shot_work_delegate = ValidatedComboBoxDelegate(
                         self.line_item_names,
                         self.shots_cost_widget.table_view
                     )
                     self.shots_cost_widget.table_view.setItemDelegateForColumn(col_idx, self.vfx_shot_work_delegate)
-                    logger.info(f"✓ Applied ValidatedComboBoxDelegate to sg_vfx_shot_work column (index {col_idx})")
-
-                    # Verify it was applied
-                    current_delegate = self.shots_cost_widget.table_view.itemDelegateForColumn(col_idx)
-                    logger.info(f"Verification - Current delegate for column {col_idx}: {type(current_delegate).__name__}")
 
                     # Protect delegate from being removed by _apply_column_dropdowns
                     # Store it in the widget's _dropdown_delegates dict
                     if hasattr(self.shots_cost_widget, '_dropdown_delegates'):
                         self.shots_cost_widget._dropdown_delegates['sg_vfx_shot_work'] = self.vfx_shot_work_delegate
-                        logger.info(f"✓ Protected sg_vfx_shot_work delegate from removal")
 
                     # Force a complete repaint of the table
                     self.shots_cost_widget.table_view.viewport().update()
                     self.shots_cost_widget.table_view.update()
-                    logger.info(f"✓ Triggered viewport repaint")
                 else:
                     # Update existing delegate with new Line Item names
-                    logger.info(f"Updating existing delegate with {len(self.line_item_names)} Line Items")
                     self.vfx_shot_work_delegate.update_valid_values(self.line_item_names)
 
                     # Ensure delegate is still protected
@@ -990,7 +968,6 @@ class CostsTab(QtWidgets.QMainWindow):
                     # Force a complete repaint of the table
                     self.shots_cost_widget.table_view.viewport().update()
                     self.shots_cost_widget.table_view.update()
-                    logger.info(f"✓ Updated ValidatedComboBoxDelegate and triggered repaint")
 
         except Exception as e:
             logger.error(f"Failed to apply VFX Shot Work delegate: {e}", exc_info=True)
@@ -1200,10 +1177,6 @@ class CostsTab(QtWidgets.QMainWindow):
 
     def _apply_asset_type_delegate(self):
         """Apply ValidatedComboBoxDelegate to the sg_bid_asset_type column."""
-        logger.info("=== _apply_asset_type_delegate called ===")
-        logger.info(f"Line Item names count: {len(self.line_item_names)}")
-        logger.info(f"Line Item names: {self.line_item_names}")
-
         if not self.asset_cost_widget or not hasattr(self.asset_cost_widget, 'table_view'):
             logger.warning("asset_cost_widget or table_view not available")
             return
@@ -1211,47 +1184,29 @@ class CostsTab(QtWidgets.QMainWindow):
         try:
             # Find the column index for sg_bid_asset_type
             if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
-                logger.info(f"Model columns: {self.asset_cost_widget.model.column_fields}")
                 try:
                     col_idx = self.asset_cost_widget.model.column_fields.index("sg_bid_asset_type")
-                    logger.info(f"Found sg_bid_asset_type at column index: {col_idx}")
                 except ValueError:
                     # Column not present
-                    logger.info("sg_bid_asset_type column not found in model")
                     return
-
-                # Ensure the column is visible
-                is_hidden = self.asset_cost_widget.table_view.isColumnHidden(col_idx)
-                logger.info(f"Column sg_bid_asset_type (index {col_idx}) hidden: {is_hidden}")
-                if is_hidden:
-                    logger.warning(f"Column sg_bid_asset_type is hidden - it may not be visible to user")
 
                 # Create or update the delegate
                 if not hasattr(self, 'asset_type_delegate') or self.asset_type_delegate is None:
-                    logger.info(f"Creating new ValidatedComboBoxDelegate with {len(self.line_item_names)} Line Items")
                     self.asset_type_delegate = ValidatedComboBoxDelegate(
                         self.line_item_names,
                         self.asset_cost_widget.table_view
                     )
                     self.asset_cost_widget.table_view.setItemDelegateForColumn(col_idx, self.asset_type_delegate)
-                    logger.info(f"✓ Applied ValidatedComboBoxDelegate to sg_bid_asset_type column (index {col_idx})")
-
-                    # Verify it was applied
-                    current_delegate = self.asset_cost_widget.table_view.itemDelegateForColumn(col_idx)
-                    logger.info(f"Verification - Current delegate for column {col_idx}: {type(current_delegate).__name__}")
 
                     # Protect delegate from being removed by _apply_column_dropdowns
                     if hasattr(self.asset_cost_widget, '_dropdown_delegates'):
                         self.asset_cost_widget._dropdown_delegates['sg_bid_asset_type'] = self.asset_type_delegate
-                        logger.info(f"✓ Protected sg_bid_asset_type delegate from removal")
 
                     # Force a complete repaint of the table
                     self.asset_cost_widget.table_view.viewport().update()
                     self.asset_cost_widget.table_view.update()
-                    logger.info(f"✓ Triggered viewport repaint")
                 else:
                     # Update existing delegate with new Line Item names
-                    logger.info(f"Updating existing delegate with {len(self.line_item_names)} Line Items")
                     self.asset_type_delegate.update_valid_values(self.line_item_names)
 
                     # Ensure delegate is still protected
@@ -1261,7 +1216,6 @@ class CostsTab(QtWidgets.QMainWindow):
                     # Force a complete repaint of the table
                     self.asset_cost_widget.table_view.viewport().update()
                     self.asset_cost_widget.table_view.update()
-                    logger.info(f"✓ Updated ValidatedComboBoxDelegate and triggered repaint")
 
         except Exception as e:
             logger.error(f"Failed to apply Asset Type delegate: {e}", exc_info=True)
