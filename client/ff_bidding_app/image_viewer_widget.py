@@ -1518,6 +1518,9 @@ class ImageViewerWidget(QtWidgets.QWidget):
             if not self.thumbnail_widgets:
                 return
 
+            if not hasattr(self, 'category_groups') or not self.category_groups:
+                return
+
             # Calculate new column count
             thumbnail_width = 180 + 10
             available_width = self.thumbnail_container.width()
@@ -1530,18 +1533,38 @@ class ImageViewerWidget(QtWidgets.QWidget):
             if columns == 0:
                 columns = 2
 
-            # Account for upload widget at position 0
-            start_idx = 1 if self.current_project_id and self.sg_session else 0
+            # Group thumbnails by category
+            categorized_thumbnails = {
+                'Concept Art': [],
+                'Storyboard': [],
+                'Reference': [],
+                'Misc': []
+            }
 
-            # Rearrange existing widgets in layout
-            for idx, thumbnail in enumerate(self.thumbnail_widgets):
-                grid_idx = idx + start_idx
-                row = grid_idx // columns
-                col = grid_idx % columns
+            for thumbnail in self.thumbnail_widgets:
+                category = self._get_version_type(thumbnail.version_data)
+                if category in categorized_thumbnails:
+                    categorized_thumbnails[category].append(thumbnail)
 
-                # Remove from current position and add to new position
-                self.thumbnail_layout.removeWidget(thumbnail)
-                self.thumbnail_layout.addWidget(thumbnail, row, col)
+            # Rearrange thumbnails within each category group
+            for category, thumbnails in categorized_thumbnails.items():
+                if not thumbnails:
+                    continue
+
+                group_data = self.category_groups.get(category)
+                if not group_data:
+                    continue
+
+                layout = group_data['layout']
+
+                # Rearrange thumbnails in this category's layout
+                for idx, thumbnail in enumerate(thumbnails):
+                    row = idx // columns
+                    col = idx % columns
+
+                    # Remove from current position and add to new position
+                    layout.removeWidget(thumbnail)
+                    layout.addWidget(thumbnail, row, col)
 
         except Exception as e:
             logger.error(f"Error rearranging thumbnails: {e}", exc_info=True)
