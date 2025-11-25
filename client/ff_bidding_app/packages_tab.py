@@ -228,7 +228,15 @@ class PackagesTab(QtWidgets.QWidget):
         self.package_data_tree.set_sg_session(self.sg_session)
         right_layout.addWidget(self.package_data_tree, 1)  # Give it stretch factor
 
-        # Create Data Package button below the tree
+        # Data to Fetch collapsible group
+        self.data_fetch_group = self._create_data_fetch_group()
+        right_layout.addWidget(self.data_fetch_group)
+
+        # Output Settings collapsible group
+        self.output_settings_group = self._create_output_settings_group()
+        right_layout.addWidget(self.output_settings_group)
+
+        # Create Data Package button at bottom right
         create_package_btn_layout = QtWidgets.QHBoxLayout()
         create_package_btn_layout.addStretch()
 
@@ -238,16 +246,7 @@ class PackagesTab(QtWidgets.QWidget):
         create_package_btn.clicked.connect(self._create_package)
         create_package_btn_layout.addWidget(create_package_btn)
 
-        create_package_btn_layout.addStretch()
         right_layout.addLayout(create_package_btn_layout)
-
-        # Data to Fetch collapsible group
-        self.data_fetch_group = self._create_data_fetch_group()
-        right_layout.addWidget(self.data_fetch_group)
-
-        # Output Settings collapsible group
-        self.output_settings_group = self._create_output_settings_group()
-        right_layout.addWidget(self.output_settings_group)
 
         return right_widget
 
@@ -1211,8 +1210,9 @@ class PackagesTab(QtWidgets.QWidget):
             # Clear the package data tree (image viewer shows all project images)
             if self.package_data_tree:
                 self.package_data_tree.clear()
-            # Sync to folder pane
+            # Sync to folder pane and clear folders
             self._sync_selected_package_to_folder_pane(None)
+            self._clear_folder_pane_images()
             logger.info("No package selected")
             return
 
@@ -1234,10 +1234,14 @@ class PackagesTab(QtWidgets.QWidget):
                 logger.info(f"Loading versions for Package ID {sg_package_id}")
                 if self.package_data_tree:
                     self.package_data_tree.load_package_versions(sg_package_id)
+
+                # Load images into folder pane based on package folder assignments
+                self._load_package_images_to_folders(sg_package_id)
             else:
                 logger.info("No ShotGrid Package ID found, clearing tree")
                 if self.package_data_tree:
                     self.package_data_tree.clear()
+                self._clear_folder_pane_images()
 
             logger.info(f"Loaded package: {package_name}")
         else:
@@ -1317,6 +1321,93 @@ class PackagesTab(QtWidgets.QWidget):
             folder_pane = self.image_viewer.folder_pane
             if folder_pane:
                 folder_pane.set_selected_package(package_name)
+
+    def _clear_folder_pane_images(self):
+        """Clear all images from folder pane folders."""
+        if not self.image_viewer or not hasattr(self.image_viewer, 'folder_pane'):
+            return
+
+        folder_pane = self.image_viewer.folder_pane
+        if not folder_pane:
+            return
+
+        # Clear all asset folders
+        for folder_widget in folder_pane.asset_folders.values():
+            folder_widget.image_ids.clear()
+            folder_widget._update_count()
+
+        # Clear all scene folders
+        for folder_widget in folder_pane.scene_folders.values():
+            folder_widget.image_ids.clear()
+            folder_widget._update_count()
+
+        logger.info("Cleared all images from folder pane")
+
+    def _load_package_images_to_folders(self, package_id):
+        """Load images from package into folder pane based on folder assignments.
+
+        Args:
+            package_id: ShotGrid Package ID
+        """
+        if not self.image_viewer or not hasattr(self.image_viewer, 'folder_pane'):
+            return
+
+        folder_pane = self.image_viewer.folder_pane
+        if not folder_pane:
+            return
+
+        # First clear existing assignments
+        self._clear_folder_pane_images()
+
+        # Get versions with folder info from package
+        try:
+            versions_with_folders = self.sg_session.get_package_versions_with_folders(
+                package_id,
+                fields=["id", "code", "sg_version_type"]
+            )
+
+            logger.info(f"Loading {len(versions_with_folders)} versions into folders")
+
+            # Process each version and its folder assignments
+            for version in versions_with_folders:
+                version_id = version.get('id')
+                folders_str = version.get('_package_folders', '')
+
+                if not version_id or not folders_str:
+                    continue
+
+                # Parse folder paths (can be multiple, separated by ";")
+                folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
+
+                for folder_path in folder_paths:
+                    # Parse path like "/assets/CRE/Concept Art" or "/scenes/Scene_001/Storyboard"
+                    parts = [p for p in folder_path.split('/') if p]
+                    if len(parts) < 2:
+                        continue
+
+                    folder_type = parts[0]  # 'assets' or 'scenes'
+                    folder_name = parts[1]  # 'CRE' or 'Scene_001'
+
+                    # Add to appropriate folder
+                    if folder_type == 'assets' and folder_name in folder_pane.asset_folders:
+                        folder_widget = folder_pane.asset_folders[folder_name]
+                        folder_widget.image_ids.add(version_id)
+                        folder_widget._update_count()
+                        logger.debug(f"Added version {version_id} to asset folder {folder_name}")
+                    elif folder_type == 'scenes' and folder_name in folder_pane.scene_folders:
+                        folder_widget = folder_pane.scene_folders[folder_name]
+                        folder_widget.image_ids.add(version_id)
+                        folder_widget._update_count()
+                        logger.debug(f"Added version {version_id} to scene folder {folder_name}")
+
+            # Update the thumbnail states to reflect folder assignments
+            if hasattr(self.image_viewer, 'update_thumbnail_states'):
+                self.image_viewer.update_thumbnail_states()
+
+            logger.info(f"Loaded package images into folders for package {package_id}")
+
+        except Exception as e:
+            logger.error(f"Error loading package images to folders: {e}", exc_info=True)
 
     def _on_folder_pane_package_selected(self, package_name):
         """Handle package selection from folder pane dropdown.
