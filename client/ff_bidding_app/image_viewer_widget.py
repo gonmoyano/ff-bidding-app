@@ -278,11 +278,9 @@ class UploadThumbnailWidget(QtWidgets.QWidget):
                 'description': f'Uploaded via FF Bidding App'
             }
 
-            logger.info(f"Creating version in ShotGrid: {version_code}")
             version = self.sg_session.sg.create('Version', version_data)
 
             # Upload the image file
-            logger.info(f"Uploading file: {file_path}")
             self.sg_session.sg.upload(
                 'Version',
                 version['id'],
@@ -303,9 +301,6 @@ class UploadThumbnailWidget(QtWidgets.QWidget):
                 [['id', 'is', version['id']]],
                 ['code', 'image', 'sg_version_type', 'created_at', 'project']
             )
-
-            logger.info(f"Version created: {version.get('code')}, image data: {version.get('image')}")
-            print(f"[UPLOAD DEBUG] Version created: {version.get('code')}, image data: {version.get('image')}")
 
             progress.close()
 
@@ -349,27 +344,18 @@ class ThumbnailPoller(QtCore.QObject):
         Args:
             version_id: The version ID to poll
         """
-        logger.info(f"Adding version {version_id} to polling queue")
-        print(f"[POLLER DEBUG] add_version_to_poll called for version {version_id}")
         self.pending_versions[version_id] = 0
 
         # Start timer if not already running
         if not self.poll_timer.isActive():
-            logger.info("Starting poller timer")
-            print("[POLLER DEBUG] Starting poller timer (2 second interval)")
             self.poll_timer.start()
 
     def _check_pending_thumbnails(self):
         """Check all pending versions for thumbnail availability."""
-        print(f"[POLLER DEBUG] _check_pending_thumbnails called, pending_versions={list(self.pending_versions.keys())}")
         if not self.pending_versions:
-            logger.debug("No pending versions, stopping poller")
-            print("[POLLER DEBUG] No pending versions, stopping poller")
             self.poll_timer.stop()
             return
 
-        logger.info(f"Polling {len(self.pending_versions)} versions for thumbnail availability")
-        print(f"[POLLER DEBUG] Polling {len(self.pending_versions)} versions for thumbnail availability")
         versions_to_remove = []
 
         for version_id, attempt_count in list(self.pending_versions.items()):
@@ -387,8 +373,6 @@ class ThumbnailPoller(QtCore.QObject):
                     ['code', 'image', 'sg_version_type', 'created_at', 'project']
                 )
 
-                logger.debug(f"Version {version_id} query result: {version_data}")
-
                 if version_data:
                     image_data = version_data.get('image')
                     has_url = False
@@ -400,7 +384,6 @@ class ThumbnailPoller(QtCore.QObject):
                         has_url = bool(image_data)  # Non-empty string URL
 
                     if has_url:
-                        logger.info(f"Thumbnail ready for version {version_id} after {attempt_count + 1} attempts")
                         # Find and update the thumbnail widget
                         thumbnail_widget = self.viewer_widget.find_thumbnail_by_version_id(version_id)
                         if thumbnail_widget:
@@ -409,7 +392,6 @@ class ThumbnailPoller(QtCore.QObject):
                         self.thumbnailReady.emit(version_id, version_data)
                         versions_to_remove.append(version_id)
                     else:
-                        logger.debug(f"Attempt {attempt_count + 1}/30: Thumbnail not ready for version {version_id}, image_data={image_data}")
                         self.pending_versions[version_id] = attempt_count + 1
 
             except Exception as e:
@@ -422,7 +404,6 @@ class ThumbnailPoller(QtCore.QObject):
 
         # Stop timer if no more pending versions
         if not self.pending_versions:
-            logger.info("All thumbnails processed, stopping poller")
             self.poll_timer.stop()
 
 
@@ -936,7 +917,6 @@ class ThumbnailWidget(QtWidgets.QWidget):
 
             # If no URL available, try to download directly from ShotGrid API
             if not thumbnail_url:
-                logger.debug(f"No thumbnail URL for version {self.version_data.get('code')}, image_data={image_data}")
                 # Try ShotGrid API fallback
                 if self.sg_session and version_id:
                     self._load_thumbnail_from_sg_api(version_id)
@@ -948,8 +928,6 @@ class ThumbnailWidget(QtWidgets.QWidget):
                     else:
                         self.thumbnail_label.setText("No Preview")
                 return
-
-            logger.debug(f"Loading thumbnail for {self.version_data.get('code')} from URL...")
 
             # Download thumbnail in a separate thread to avoid blocking UI
             from PySide6.QtCore import QThread, QObject, Signal
@@ -1475,8 +1453,6 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
     def _apply_filters(self):
         """Apply current filters and rebuild thumbnails."""
-        logger.info(f"Applying filters: {self.filter_states}")
-
         # Filter versions based on type
         self.filtered_versions = []
         for version in self.all_versions:
@@ -1484,7 +1460,6 @@ class ImageViewerWidget(QtWidgets.QWidget):
             if self.filter_states.get(version_type, True):
                 self.filtered_versions.append(version)
 
-        logger.info(f"Filtered versions: {len(self.filtered_versions)} of {len(self.all_versions)}")
         self._rebuild_thumbnails()
 
     def _get_version_type(self, version):
@@ -1681,10 +1656,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
                 elif isinstance(image_data, str):
                     has_url = bool(image_data)
 
-                logger.debug(f"Checking version {version.get('id')} ({version.get('code')}): has_url={has_url}")
-
                 if not has_url:
-                    logger.info(f"Adding version {version.get('id')} to poller (no thumbnail URL yet)")
                     self.thumbnail_poller.add_version_to_poll(version.get('id'))
 
 
@@ -1704,8 +1676,6 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
     def _on_thumbnail_clicked(self, version_data):
         """Handle thumbnail click."""
-        logger.info(f"Thumbnail clicked: {version_data.get('code')}")
-
         # Deselect previous (with safety check for deleted widgets)
         if self.selected_thumbnail:
             try:
@@ -1756,8 +1726,6 @@ class ImageViewerWidget(QtWidgets.QWidget):
             image_id: ID of the dropped image
             target_category: Target category name (e.g., 'Concept Art', 'Storyboard', 'Reference', 'Misc')
         """
-        logger.info(f"Updating image {image_id} category to {target_category}")
-
         # Map category name to ShotGrid version type
         category_to_sg_type = {
             'Concept Art': 'Concept Art',
@@ -1776,7 +1744,6 @@ class ImageViewerWidget(QtWidgets.QWidget):
                     image_id,
                     {'sg_version_type': sg_version_type}
                 )
-                logger.info(f"Successfully updated version {image_id} to type {sg_version_type}")
 
             # Update local data
             for version in self.all_versions:
@@ -1831,15 +1798,11 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         # Delete from ShotGrid
         try:
-            logger.info(f"Deleting version {version_id} ({version_code}) from ShotGrid")
-
             # Show progress
             QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
 
             # Delete the version from ShotGrid
             self.sg_session.sg.delete('Version', version_id)
-
-            logger.info(f"Successfully deleted version {version_id} from ShotGrid")
 
             # Remove from local lists
             self.all_versions = [v for v in self.all_versions if v.get('id') != version_id]
@@ -1880,20 +1843,16 @@ class ImageViewerWidget(QtWidgets.QWidget):
             version_id: The version ID that now has a thumbnail
             updated_version_data: The updated version data with image URL
         """
-        logger.info(f"Thumbnail ready for version {version_id}, updating all_versions")
-
         # Update the version data in all_versions list
         for i, version in enumerate(self.all_versions):
             if version.get('id') == version_id:
                 self.all_versions[i] = updated_version_data
-                logger.info(f"Updated version data in all_versions for {updated_version_data.get('code')}")
                 break
 
         # Also update in filtered_versions if present
         for i, version in enumerate(self.filtered_versions):
             if version.get('id') == version_id:
                 self.filtered_versions[i] = updated_version_data
-                logger.info(f"Updated version data in filtered_versions for {updated_version_data.get('code')}")
                 break
 
     def _on_image_uploaded(self, version_data):
@@ -1902,23 +1861,17 @@ class ImageViewerWidget(QtWidgets.QWidget):
         Args:
             version_data: The newly created version data from ShotGrid
         """
-        logger.info(f"Image uploaded successfully: {version_data.get('code')}")
-        print(f"[UPLOAD DEBUG] _on_image_uploaded called with: {version_data.get('code')}, image={version_data.get('image')}")
-
         # Add new version to all_versions list
         if version_data not in self.all_versions:
             self.all_versions.append(version_data)
-            print(f"[UPLOAD DEBUG] Added to all_versions, now has {len(self.all_versions)} versions")
 
         # Don't call _apply_filters() here as it immediately rebuilds and starts threads
         # Instead, let _rebuild_after_upload handle everything after checking for thread completion
         # Use a delay before rebuilding to allow pending operations to complete
-        print("[UPLOAD DEBUG] Scheduling _rebuild_after_upload in 500ms")
         QtCore.QTimer.singleShot(500, self._rebuild_after_upload)
 
     def _rebuild_after_upload(self):
         """Rebuild UI after image upload with proper cleanup."""
-        print("[UPLOAD DEBUG] _rebuild_after_upload called")
         # Check if there are still active image loading threads
         if hasattr(self, 'folder_pane') and self.folder_pane:
             if hasattr(self.folder_pane, 'shared_image_loader'):
@@ -1928,8 +1881,6 @@ class ImageViewerWidget(QtWidgets.QWidget):
                 alive_threads = [t for t in loader.active_threads if t.is_alive()]
 
                 if alive_threads or loader.active_loads > 0:
-                    logger.info(f"Still {len(alive_threads)} threads alive and {loader.active_loads} active loads, waiting...")
-                    print(f"[UPLOAD DEBUG] Waiting for threads: {len(alive_threads)} alive, {loader.active_loads} active")
                     # Check again after 300ms
                     QtCore.QTimer.singleShot(300, self._rebuild_after_upload)
                     return
@@ -1946,7 +1897,6 @@ class ImageViewerWidget(QtWidgets.QWidget):
             if self.filter_states.get(version_type, True):
                 self.filtered_versions.append(version)
 
-        print(f"[UPLOAD DEBUG] filtered_versions now has {len(self.filtered_versions)} versions, calling _rebuild_thumbnails")
         # Rebuild thumbnails to show the new image
         self._rebuild_thumbnails()
 
@@ -1962,16 +1912,12 @@ class ImageViewerWidget(QtWidgets.QWidget):
         self.current_project_id = project_id
 
         if not project_id or not self.sg_session:
-            logger.info("No project ID or SG session")
             self.all_versions = []
             self._rebuild_thumbnails()
             return
 
-        logger.info(f"Loading image versions for project {project_id}")
-
         # Get all image versions for the project
         self.all_versions = self.sg_session.get_all_image_versions_for_project(project_id)
-        logger.info(f"Loaded {len(self.all_versions)} image versions for project")
 
         # Apply filters and rebuild
         self._apply_filters()
@@ -1979,11 +1925,7 @@ class ImageViewerWidget(QtWidgets.QWidget):
     def _refresh_images(self):
         """Refresh all images by reloading from ShotGrid."""
         if not self.current_project_id:
-            logger.info("No project selected, cannot refresh")
             return
-
-        logger.info(f"Refreshing images for project {self.current_project_id}")
-        print(f"[REFRESH DEBUG] Refreshing images for project {self.current_project_id}")
 
         try:
             # Show loading cursor
@@ -1995,8 +1937,6 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
             # Reload from ShotGrid
             self.all_versions = self.sg_session.get_all_image_versions_for_project(self.current_project_id)
-            logger.info(f"Refreshed: loaded {len(self.all_versions)} image versions")
-            print(f"[REFRESH DEBUG] Loaded {len(self.all_versions)} image versions")
 
             # Apply filters and rebuild thumbnails
             self._apply_filters()
@@ -2134,11 +2074,9 @@ class ImageViewerWidget(QtWidgets.QWidget):
                 'description': f'Uploaded via FF Bidding App'
             }
 
-            logger.info(f"Creating version in ShotGrid: {version_code}")
             version = self.sg_session.sg.create('Version', version_data)
 
             # Upload the image file
-            logger.info(f"Uploading file: {file_path}")
             self.sg_session.sg.upload(
                 'Version',
                 version['id'],
@@ -2159,9 +2097,6 @@ class ImageViewerWidget(QtWidgets.QWidget):
                 [['id', 'is', version['id']]],
                 ['code', 'image', 'sg_version_type', 'created_at', 'project']
             )
-
-            logger.info(f"Version created: {version.get('code')}, image data: {version.get('image')}")
-            print(f"[UPLOAD DEBUG] Version created: {version.get('code')}, image data: {version.get('image')}")
 
             progress.close()
 
@@ -2264,8 +2199,6 @@ class ImageViewerWidget(QtWidgets.QWidget):
                     if scene_name:
                         unique_scenes.add(scene_name)
 
-        logger.info(f"Found {len(unique_assets)} unique assets and {len(unique_scenes)} unique scenes")
-
         # Update folder pane
         self.folder_pane.set_assets(list(unique_assets))
         self.folder_pane.set_scenes(list(unique_scenes))
@@ -2289,7 +2222,6 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         if folder_mappings:
             self.folder_pane.load_folder_mappings(folder_mappings)
-            logger.info("Loaded folder mappings from package")
             # Update thumbnail states to reflect loaded mappings
             self.update_thumbnail_states()
 
@@ -2311,7 +2243,6 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         # Save to package data
         packages[current_package]['folder_mappings'] = mappings
-        logger.info("Saved folder mappings to package")
 
     def update_thumbnail_states(self, dropped_image_id=None, folder_name=None, folder_type=None):
         """Update all thumbnail border states based on folder mappings.
@@ -2365,7 +2296,6 @@ class ImageViewerWidget(QtWidgets.QWidget):
         # Get the currently selected package
         selected_package = self.folder_pane.get_selected_package()
         if not selected_package:
-            logger.info(f"No package selected, skipping ShotGrid link for image {image_id}")
             return
 
         # Get the package ID from packages_tab
@@ -2410,13 +2340,11 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         # Link the version to the package with folder path
         try:
-            logger.info(f"Linking image {image_id} to package {sg_package_id} with path {folder_path}")
             self.sg_session.link_version_to_package_with_folder(
                 version_id=image_id,
                 package_id=sg_package_id,
                 folder_name=folder_path
             )
-            logger.info(f"Successfully linked image {image_id} to package")
 
             # Refresh the treeview to show the new folder/version
             if hasattr(self.packages_tab, 'package_data_tree') and self.packages_tab.package_data_tree:
@@ -2436,12 +2364,10 @@ class ImageViewerWidget(QtWidgets.QWidget):
         # Get the currently selected package
         selected_package = self.folder_pane.get_selected_package()
         if not selected_package:
-            logger.info(f"No package selected, skipping ShotGrid unlink for image {image_id}")
             return
 
         # Get the package ID from packages_tab
         if not self.packages_tab:
-            logger.warning("No packages_tab reference, cannot unlink from ShotGrid")
             return
 
         # Get the ShotGrid package ID for the selected package name
@@ -2480,13 +2406,11 @@ class ImageViewerWidget(QtWidgets.QWidget):
 
         # Remove the folder reference from the package
         try:
-            logger.info(f"Unlinking image {image_id} from package {sg_package_id} with path {folder_path}")
             self.sg_session.remove_folder_reference_from_package(
                 version_id=image_id,
                 package_id=sg_package_id,
                 folder_path=folder_path
             )
-            logger.info(f"Successfully unlinked image {image_id} from package")
 
             # Refresh the treeview to reflect the removal
             if hasattr(self.packages_tab, 'package_data_tree') and self.packages_tab.package_data_tree:

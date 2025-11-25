@@ -979,7 +979,6 @@ class ShotgridClient:
             )
 
             if not entity or not entity.get("image"):
-                logger.debug(f"No thumbnail found for {entity_type} {entity_id}")
                 return None
 
             # Download the thumbnail
@@ -1028,9 +1027,7 @@ class ShotgridClient:
         if description:
             package_data["description"] = description
 
-        logger.info(f"Creating Package: {package_name} in project {project_id}")
         package = self.sg.create("CustomEntity12", package_data)
-        logger.info(f"Created Package with ID: {package['id']}")
 
         return package
 
@@ -1100,20 +1097,17 @@ class ShotgridClient:
         # Check if package is already linked
         package_link = {"type": "CustomEntity12", "id": int(package_id)}
         if any(p.get("id") == int(package_id) for p in existing_packages):
-            logger.info(f"Package {package_id} already linked to RFQ {rfq_id}")
             return rfq
 
         # Add the new package to the list
         updated_packages = existing_packages + [package_link]
 
         # Update the RFQ
-        logger.info(f"Linking Package {package_id} to RFQ {rfq_id}")
         result = self.sg.update(
             "CustomEntity04",
             int(rfq_id),
             {"sg_packages": updated_packages}
         )
-        logger.info(f"Successfully linked Package to RFQ")
 
         return result
 
@@ -1137,12 +1131,9 @@ class ShotgridClient:
             update_data["description"] = description
 
         if not update_data:
-            logger.warning(f"No update data provided for Package {package_id}")
             return None
 
-        logger.info(f"Updating Package {package_id}: {update_data}")
         package = self.sg.update("CustomEntity12", int(package_id), update_data)
-        logger.info(f"Successfully updated Package {package_id}")
 
         return package
 
@@ -1156,9 +1147,7 @@ class ShotgridClient:
         Returns:
             True if successful, False otherwise
         """
-        logger.info(f"Deleting Package {package_id} from ShotGrid")
         result = self.sg.delete("CustomEntity12", int(package_id))
-        logger.info(f"Successfully deleted Package {package_id}")
 
         return result
 
@@ -1195,17 +1184,14 @@ class ShotgridClient:
 
         # Only update if something changed
         if len(updated_packages) == len(existing_packages):
-            logger.info(f"Package {package_id} was not linked to RFQ {rfq_id}")
             return rfq
 
         # Update the RFQ
-        logger.info(f"Unlinking Package {package_id} from RFQ {rfq_id}")
         result = self.sg.update(
             "CustomEntity04",
             int(rfq_id),
             {"sg_packages": updated_packages}
         )
-        logger.info(f"Successfully unlinked Package from RFQ")
 
         return result
 
@@ -1233,9 +1219,7 @@ class ShotgridClient:
         if version_id:
             package_item_data["sg_versions"] = [{"type": "Version", "id": int(version_id)}]
 
-        logger.info(f"Creating PackageItem in project {project_id}")
         package_item = self.sg.create("CustomEntity13", package_item_data)
-        logger.info(f"Created PackageItem with ID: {package_item['id']}")
 
         # Link the PackageItem to the Package's sg_packageitems field
         self._link_package_item_to_package(package_item["id"], package_id)
@@ -1269,7 +1253,6 @@ class ShotgridClient:
 
         # Check if PackageItem is already linked
         if any(item.get("id") == int(package_item_id) for item in existing_items):
-            logger.info(f"PackageItem {package_item_id} already linked to Package {package_id}")
             return package
 
         # Add the new PackageItem to the list
@@ -1277,13 +1260,11 @@ class ShotgridClient:
         updated_items = existing_items + [package_item_link]
 
         # Update the Package
-        logger.info(f"Linking PackageItem {package_item_id} to Package {package_id}")
         result = self.sg.update(
             "CustomEntity12",
             int(package_id),
             {"sg_packageitems": updated_items}
         )
-        logger.info(f"Successfully linked PackageItem to Package")
 
         return result
 
@@ -1309,7 +1290,6 @@ class ShotgridClient:
         )
 
         if not package or not package.get("sg_packageitems"):
-            logger.info(f"No PackageItems linked to Package {package_id}")
             return []
 
         # Extract PackageItem IDs
@@ -1319,7 +1299,6 @@ class ShotgridClient:
             return []
 
         # Query for those PackageItems
-        logger.info(f"Fetching {len(package_item_ids)} PackageItems for Package {package_id}")
         return self.sg.find(
             "CustomEntity13",
             [["id", "in", package_item_ids]],
@@ -1357,9 +1336,7 @@ class ShotgridClient:
         Returns:
             True if successful, False otherwise
         """
-        logger.info(f"Deleting PackageItem {package_item_id} from ShotGrid")
         result = self.sg.delete("CustomEntity13", int(package_item_id))
-        logger.info(f"Successfully deleted PackageItem {package_item_id}")
         return result
 
     def update_package_item_folders(self, package_item_id, folder_name):
@@ -1399,16 +1376,13 @@ class ShotgridClient:
             new_folders = ";".join(folder_list)
 
             # Update the PackageItem
-            logger.info(f"Updating PackageItem {package_item_id} folders to: {new_folders}")
             result = self.sg.update(
                 "CustomEntity13",
                 int(package_item_id),
                 {"sg_package_folders": new_folders}
             )
-            logger.info(f"Successfully updated PackageItem folders")
             return result
         else:
-            logger.info(f"Folder '{folder_name}' already in PackageItem {package_item_id}")
             return package_item
 
     def remove_folder_from_package_item(self, package_item_id, folder_name):
@@ -1443,7 +1417,6 @@ class ShotgridClient:
             new_folders = ";".join(folder_list)
 
             # Update the PackageItem
-            logger.info(f"Removing folder '{folder_name}' from PackageItem {package_item_id}")
             result = self.sg.update(
                 "CustomEntity13",
                 int(package_item_id),
@@ -1480,7 +1453,6 @@ class ShotgridClient:
         )
 
         if not package_items:
-            logger.info(f"No PackageItems linked to Package {package_id}")
             return []
 
         # Build a mapping of version_id -> folder names
@@ -1500,11 +1472,9 @@ class ShotgridClient:
                     version_to_folders[version_id] = folders
 
         if not version_ids:
-            logger.info(f"No versions found in PackageItems for Package {package_id}")
             return []
 
         # Query for those versions
-        logger.info(f"Fetching {len(version_ids)} versions for Package {package_id}")
         versions = self.sg.find(
             "Version",
             [["id", "in", version_ids]],
@@ -1588,22 +1558,17 @@ class ShotgridClient:
 
             if new_folders:
                 # Still has folders, just update
-                logger.info(f"Removing folder '{folder_path}' from PackageItem {package_item_id}")
                 self.sg.update(
                     "CustomEntity13",
                     int(package_item_id),
                     {"sg_package_folders": new_folders}
                 )
-                logger.info(f"Updated PackageItem {package_item_id} with remaining folders")
                 return True
             else:
                 # No more folders, delete the PackageItem
-                logger.info(f"No more folders in PackageItem {package_item_id}, deleting it")
                 self.delete_package_item(package_item_id)
-                logger.info(f"Deleted PackageItem {package_item_id}")
                 return True
         else:
-            logger.warning(f"Folder '{folder_path}' not found in PackageItem {package_item_id}")
             return False
 
     # ------------------------------------------------------------------
@@ -1635,7 +1600,6 @@ class ShotgridClient:
         package_items = self.get_package_items(package_id, fields=["id", "sg_versions"])
 
         if not package_items:
-            logger.info(f"No PackageItems linked to Package {package_id}")
             return []
 
         # Collect all version IDs from all PackageItems
@@ -1647,11 +1611,9 @@ class ShotgridClient:
                     version_ids.append(version["id"])
 
         if not version_ids:
-            logger.info(f"No versions found in PackageItems for Package {package_id}")
             return []
 
         # Query for those versions
-        logger.info(f"Fetching {len(version_ids)} versions for Package {package_id}")
         return self.sg.find(
             "Version",
             [["id", "in", version_ids]],
@@ -1682,7 +1644,6 @@ class ShotgridClient:
             ]
 
         # Query versions where sg_parent_packages contains this package
-        logger.info(f"Fetching versions with sg_parent_packages containing Package {package_id}")
         versions = self.sg.find(
             "Version",
             [["sg_parent_packages", "in", {"type": "CustomEntity12", "id": int(package_id)}]],
@@ -1693,7 +1654,6 @@ class ShotgridClient:
             ]
         )
 
-        logger.info(f"Found {len(versions)} versions with sg_parent_packages containing Package {package_id}")
         return versions
 
     def create_version(self, version_code, project_id, description=None, sg_version_type=None):
@@ -1720,9 +1680,7 @@ class ShotgridClient:
         if sg_version_type:
             version_data["sg_version_type"] = sg_version_type
 
-        logger.info(f"Creating Version: {version_code} in project {project_id}")
         version = self.sg.create("Version", version_data)
-        logger.info(f"Created Version with ID: {version['id']}")
 
         return version
 
@@ -1738,14 +1696,12 @@ class ShotgridClient:
         Returns:
             True if successful, False otherwise
         """
-        logger.info(f"Uploading file {file_path} to Version {version_id} field {field_name}")
         result = self.sg.upload(
             "Version",
             int(version_id),
             file_path,
             field_name=field_name
         )
-        logger.info(f"Successfully uploaded file to Version {version_id}")
         return result
 
     def link_version_to_package(self, version_id, package_id):
@@ -1765,7 +1721,6 @@ class ShotgridClient:
         # Check if version is already linked via an existing PackageItem
         existing_item = self.find_package_item_for_version(package_id, version_id)
         if existing_item:
-            logger.info(f"Version {version_id} already linked to Package {package_id} via PackageItem {existing_item['id']}")
             return existing_item
 
         # Get the Package to find its project
@@ -1785,13 +1740,11 @@ class ShotgridClient:
             return None
 
         # Create a new PackageItem with the version linked
-        logger.info(f"Linking Version {version_id} to Package {package_id} via new PackageItem")
         package_item = self.create_package_item(
             package_id=package_id,
             project_id=project_id,
             version_id=version_id
         )
-        logger.info(f"Successfully linked Version to Package via PackageItem {package_item['id']}")
 
         return package_item
 
@@ -1813,13 +1766,10 @@ class ShotgridClient:
         package_item = self.find_package_item_for_version(package_id, version_id)
 
         if not package_item:
-            logger.info(f"Version {version_id} was not linked to Package {package_id}")
             return False
 
         # Delete the PackageItem
-        logger.info(f"Unlinking Version {version_id} from Package {package_id} by deleting PackageItem {package_item['id']}")
         result = self.delete_package_item(package_item["id"])
-        logger.info(f"Successfully unlinked Version from Package")
 
         return result
 

@@ -151,14 +151,12 @@ class RatesTab(QtWidgets.QWidget):
         # Set entity type - columns will be configured when schema is fetched
         if hasattr(self.line_items_widget, 'model') and self.line_items_widget.model:
             self.line_items_widget.model.entity_type = "CustomEntity03"
-            logger.info(f"Configured Line Items widget model for CustomEntity03")
 
             # Create formula evaluator for this table with cross-sheet references
             # Build sheet_models dictionary for cross-sheet references
             sheet_models = {}
             if hasattr(self, 'rate_card_widget') and hasattr(self.rate_card_widget, 'model') and self.rate_card_widget.model:
                 sheet_models['Rate Card'] = self.rate_card_widget.model
-                logger.info("Added 'Rate Card' sheet to Line Items formula evaluator")
 
             self.line_items_formula_evaluator = FormulaEvaluator(
                 self.line_items_widget.model,
@@ -166,9 +164,6 @@ class RatesTab(QtWidgets.QWidget):
             )
             # Set the formula evaluator on the model for dependency tracking
             self.line_items_widget.model.set_formula_evaluator(self.line_items_formula_evaluator)
-
-        # Connect widget signals
-        self.line_items_widget.statusMessageChanged.connect(lambda msg, err: logger.info(f"Line Items status: {msg}"))
 
         layout.addWidget(self.line_items_widget)
 
@@ -197,28 +192,19 @@ class RatesTab(QtWidgets.QWidget):
         CASCADE LOGIC:
         - If Bid == placeholder OR no linked Price List → Price List set to placeholder → cascade continues
         """
-        logger.info(f"set_bid() called with bid_data={bid_data}, project_id={project_id}")
-
         self.current_bid_data = bid_data
         self.current_bid_id = bid_data.get('id') if bid_data else None
         self.current_project_id = project_id
 
         # ALWAYS reset Price List to placeholder first - do this BEFORE any checks
-        logger.info("Resetting Price List dropdown to placeholder")
         self.price_lists_combo.blockSignals(True)
         self.price_lists_combo.clear()
         self.price_lists_combo.addItem("-- Select Price List --", None)
         self.price_lists_combo.setCurrentIndex(0)
         self.price_lists_combo.blockSignals(False)
 
-        # Verify the dropdown is actually at placeholder
-        current_text = self.price_lists_combo.currentText()
-        current_data = self.price_lists_combo.currentData()
-        logger.info(f"Price List dropdown after reset: text='{current_text}', data={current_data}, index={self.price_lists_combo.currentIndex()}")
-
         if not self.current_bid_id or not project_id:
             # No bid selected - ALWAYS trigger cascade to clear downstream
-            logger.info("No Bid selected - triggering cascade to clear Price List, Rate Card, and Line Items")
             self._set_price_lists_status("Select a Bid to view Price Lists.")
             self._on_price_lists_changed(0)
             return
@@ -237,13 +223,11 @@ class RatesTab(QtWidgets.QWidget):
 
         if not has_valid_price_list:
             # Bid has no valid linked Price List - ALWAYS trigger cascade
-            logger.info(f"Bid has no valid linked Price List (sg_price_list={linked_price_list}) - triggering cascade")
             self._set_price_lists_status("Select a Bid to view Price Lists.")
             self._on_price_lists_changed(0)
             return
 
         # Refresh the price lists and auto-select the one linked to this bid
-        logger.info(f"Bid has valid linked Price List - refreshing Price Lists")
         self._refresh_price_lists()
 
     def _refresh_price_lists(self):
@@ -302,15 +286,12 @@ class RatesTab(QtWidgets.QWidget):
                     for i in range(self.price_lists_combo.count()):
                         if self.price_lists_combo.itemData(i) == linked_price_list_id:
                             self.price_lists_combo.setCurrentIndex(i)
-                            logger.info(f"Auto-selected Price List {linked_price_list_id} linked to current Bid")
                             break
                     else:
                         # Linked Price List not found - trigger cascade
-                        logger.warning(f"Linked Price List {linked_price_list_id} not found in project")
                         self._on_price_lists_changed(0)  # Manually trigger cascade
                 else:
                     # No linked Price List - trigger cascade
-                    logger.info("No Price List linked to Bid - selecting placeholder")
                     self._on_price_lists_changed(0)  # Manually trigger cascade
 
                 # Update info label to show linked Price List
@@ -357,14 +338,12 @@ class RatesTab(QtWidgets.QWidget):
             # ALWAYS Clear Line Items tab when placeholder selected
             if hasattr(self, 'line_items_widget'):
                 self._clear_line_items_tab()
-            logger.info("Price List set to placeholder - cascaded to clear Line Items")
             return
 
         # Store the selected price list ID
         self.current_price_list_id = price_list_id
         display_name = self.price_lists_combo.currentText()
         self._set_price_lists_status(f"Selected Price List: '{display_name}'.")
-        logger.info(f"Price List changed to: {display_name} (ID: {price_list_id})")
 
         # Fetch full price list data with linked entities
         self._fetch_price_list_data(price_list_id)
@@ -382,7 +361,6 @@ class RatesTab(QtWidgets.QWidget):
                 ["code", "sg_rate_card", "sg_line_items"]
             )
             self.current_price_list_data = price_list_data
-            logger.info(f"Fetched Price List data: {price_list_data}")
             # Load Rate Card data for formula evaluator
             self._load_rate_card_for_formula_evaluator()
         except Exception as e:

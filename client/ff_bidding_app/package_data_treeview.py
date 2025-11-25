@@ -372,8 +372,6 @@ class PackageTreeView(QtWidgets.QWidget):
 
     def create_panel(self):
         """Create the version tree panel."""
-        logger.info("create_panel() started")
-
         panel = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(panel)
 
@@ -429,7 +427,6 @@ class PackageTreeView(QtWidgets.QWidget):
 
         layout.addWidget(self.tree_widget)
 
-        logger.info("create_panel() completed")
         return panel
 
     def _on_item_expanded(self, item):
@@ -462,7 +459,6 @@ class PackageTreeView(QtWidgets.QWidget):
         Args:
             rfq_data (dict): The RFQ entity data from Shotgrid
         """
-        logger.info(f"set_rfq() called with RFQ: {rfq_data.get('code', 'N/A') if rfq_data else None}")
         self.selected_rfq = rfq_data
 
         # Just load the tree - visibility will be applied from the app
@@ -474,8 +470,6 @@ class PackageTreeView(QtWidgets.QWidget):
         Args:
             package_id: ID of the Package entity
         """
-        logger.info(f"load_package_versions() called with Package ID: {package_id}")
-
         # Store package ID for use in context menu
         self.current_package_id = package_id
 
@@ -483,7 +477,6 @@ class PackageTreeView(QtWidgets.QWidget):
         self.category_items.clear()
 
         if not package_id or not self.sg_session:
-            logger.info("No package ID or SG session - showing empty tree")
             return
 
         # Get versions with folder info from Package's PackageItems
@@ -496,8 +489,6 @@ class PackageTreeView(QtWidgets.QWidget):
             ]
         )
 
-        logger.info(f"Found {len(package_versions_with_folders)} versions via PackageItems")
-
         # Get other versions (Script, Concept Art, Storyboard) from sg_parent_packages
         other_versions = self.sg_session.get_versions_by_parent_package(
             package_id,
@@ -508,16 +499,12 @@ class PackageTreeView(QtWidgets.QWidget):
             ]
         )
 
-        logger.info(f"Found {len(other_versions)} versions in sg_parent_packages field")
-
         # Separate bid tracker versions from image versions
         bid_tracker_versions = [v for v in package_versions_with_folders if self._is_bid_tracker_version(v)]
         image_versions_with_folders = [v for v in package_versions_with_folders if self._is_image_version(v)]
 
         # Also get image versions from other_versions (without folder info)
         image_versions_without_folders = [v for v in other_versions if self._is_image_version(v)]
-
-        logger.info(f"Bid Tracker: {len(bid_tracker_versions)}, Images with folders: {len(image_versions_with_folders)}, Images without folders: {len(image_versions_without_folders)}")
 
         # Build the tree with actual version data
         self.set_bid_tracker_item(bid_tracker_versions)
@@ -526,34 +513,24 @@ class PackageTreeView(QtWidgets.QWidget):
         self.set_images_item(image_versions_with_folders, image_versions_without_folders)
 
         # Apply stored visibility preferences
-        logger.info(f"Applying visibility preferences: {self.category_visibility_prefs}")
         for category_name, visible in self.category_visibility_prefs.items():
             if category_name in self.category_items:
                 self.category_items[category_name].setHidden(not visible)
-                logger.info(f"Applied pref: '{category_name}' = {visible}")
-
-        logger.info("load_package_versions() completed")
 
     def clear(self):
         """Clear the tree view."""
-        logger.info("clear() called")
         self.tree_widget.clear()
         self.selected_rfq = None
 
     def refresh(self):
         """Refresh the tree with current package or RFQ data from ShotGrid."""
-        logger.info("refresh() called")
-
         # Check if we're viewing a package
         if self.current_package_id:
-            logger.info(f"Refreshing package data for package ID: {self.current_package_id}")
             self.load_package_versions(self.current_package_id)
         # Otherwise check if we're viewing an RFQ
         elif self.selected_rfq:
-            logger.info(f"Refreshing RFQ data for RFQ ID: {self.selected_rfq.get('id')}")
             self.load_tree_data()
         else:
-            logger.info("No package or RFQ selected, nothing to refresh")
             self.tree_widget.clear()
             self.category_items.clear()
 
@@ -570,18 +547,14 @@ class PackageTreeView(QtWidgets.QWidget):
         self.tree_widget.setColumnWidth(0, int(250 * dpi_scale))  # Name
         self.tree_widget.setColumnWidth(1, int(80 * dpi_scale))  # Type
         self.tree_widget.setColumnWidth(2, int(80 * dpi_scale))  # Status
-        logger.info(f"Updated tree column widths with DPI scale: {dpi_scale}")
 
     def load_tree_data(self):
         """Load version tree with data from selected RFQ."""
-        logger.info("load_tree_data() started")
-
         self.tree_widget.clear()
         self.category_items.clear()
 
         # Check if we have a selected RFQ
         if not self.selected_rfq:
-            logger.info("No RFQ selected - showing empty tree")
             return
 
         rfq_id = self.selected_rfq.get('id')
@@ -596,8 +569,6 @@ class PackageTreeView(QtWidgets.QWidget):
             ]
         )
 
-        logger.info(f"Found {len(versions)} versions linked to RFQ ID {rfq_id}")
-
         # Build the tree with actual version data
         self.set_bid_tracker_item(versions)
         self.set_documents_item(versions)
@@ -605,13 +576,9 @@ class PackageTreeView(QtWidgets.QWidget):
         self.set_images_item([], versions)
 
         # Apply stored visibility preferences
-        logger.info(f"Applying visibility preferences: {self.category_visibility_prefs}")
         for category_name, visible in self.category_visibility_prefs.items():
             if category_name in self.category_items:
                 self.category_items[category_name].setHidden(not visible)
-                logger.info(f"Applied pref: '{category_name}' = {visible}")
-
-        logger.info("load_tree_data() completed with RFQ data")
 
     def set_category_visibility(self, category_name, visible):
         """
@@ -624,23 +591,16 @@ class PackageTreeView(QtWidgets.QWidget):
         # Store the preference
         self.category_visibility_prefs[category_name] = visible
 
-        logger.info(f"set_category_visibility: '{category_name}' = {visible} (type: {type(visible)})")
-
         if category_name not in self.category_items:
-            logger.info(f"Category '{category_name}' not in tree yet, saved preference")
             return
 
         item = self.category_items[category_name]
 
         # Remove the item from the tree if it's currently there
         index = self.tree_widget.indexOfTopLevelItem(item)
-        logger.info(f"Current index of '{category_name}': {index}")
 
         if index >= 0:
             self.tree_widget.takeTopLevelItem(index)
-            logger.info(f"Removed '{category_name}' from tree at index {index}")
-        else:
-            logger.info(f"'{category_name}' was not in tree (index={index})")
 
         # If we want it visible, add it back in the correct position
         if visible:
@@ -655,19 +615,9 @@ class PackageTreeView(QtWidgets.QWidget):
                     cat_index = self.tree_widget.indexOfTopLevelItem(cat_item)
                     if cat_index >= 0:
                         insert_index += 1
-                        logger.info(
-                            f"  Category '{cat}' is visible at index {cat_index}, incrementing insert_index to {insert_index}")
 
-            logger.info(f"Inserting '{category_name}' at calculated index {insert_index}")
             self.tree_widget.insertTopLevelItem(insert_index, item)
             item.setHidden(False)
-
-            # Verify insertion
-            new_index = self.tree_widget.indexOfTopLevelItem(item)
-            logger.info(
-                f"Successfully inserted '{category_name}' - new index: {new_index}, isHidden: {item.isHidden()}")
-        else:
-            logger.info(f"'{category_name}' removed and will stay hidden")
 
     def apply_visibility_states(self, visibility_states):
         """
@@ -1004,7 +954,6 @@ class PackageTreeView(QtWidgets.QWidget):
             else:
                 version_type = str(sg_version_type).lower()
 
-            logger.debug(f"Version {version.get('code')} has type: {version_type}")
             return 'bid' in version_type or 'tracker' in version_type
 
         # Fallback to task/code checking if sg_version_type is not set
@@ -1031,7 +980,6 @@ class PackageTreeView(QtWidgets.QWidget):
             else:
                 version_type = str(sg_version_type).lower()
 
-            logger.debug(f"Version {version.get('code')} has type: {version_type}")
             return 'script' in version_type or 'document' in version_type
 
         # Fallback to task/code checking
@@ -1052,7 +1000,6 @@ class PackageTreeView(QtWidgets.QWidget):
             else:
                 version_type = str(sg_version_type).lower()
 
-            logger.debug(f"Version {version.get('code')} has type: {version_type}")
             # Check for concept, storyboard, reference, art, image, etc.
             return any(keyword in version_type for keyword in [
                 'concept', 'art', 'storyboard', 'reference', 'image', 'ref'
@@ -1412,33 +1359,17 @@ class PackageTreeView(QtWidgets.QWidget):
             parent_app = None
             parent_widget = self.parent()
 
-            logger.info(f"DEBUG: Initial parent_widget = {parent_widget}")
-            logger.info(f"DEBUG: parent_widget type = {type(parent_widget).__name__ if parent_widget else 'None'}")
-
-            if parent_widget:
-                logger.info(f"DEBUG: hasattr parent_app = {hasattr(parent_widget, 'parent_app')}")
-                if hasattr(parent_widget, 'parent_app'):
-                    logger.info(f"DEBUG: parent_widget.parent_app = {parent_widget.parent_app}")
-                    logger.info(f"DEBUG: parent_widget.parent_app type = {type(parent_widget.parent_app).__name__ if parent_widget.parent_app else 'None'}")
-
             # First check if the immediate parent has a parent_app attribute (e.g., PackagesTab)
             if parent_widget and hasattr(parent_widget, 'parent_app') and parent_widget.parent_app is not None:
                 parent_app = parent_widget.parent_app
-                logger.info(f"Found parent_app via parent_widget.parent_app: {type(parent_app).__name__}")
             else:
                 # Otherwise walk up the hierarchy looking for the combo boxes
-                logger.info("Walking up widget hierarchy to find parent app")
                 temp_parent = parent_widget
                 depth = 0
                 while temp_parent and depth < 10:  # Limit depth to avoid infinite loop
-                    logger.info(f"DEBUG: Checking widget at depth {depth}: {type(temp_parent).__name__}")
-                    logger.info(f"DEBUG: Has sg_project_combo: {hasattr(temp_parent, 'sg_project_combo')}")
-                    logger.info(f"DEBUG: Has rfq_combo: {hasattr(temp_parent, 'rfq_combo')}")
-
                     # Check if this widget has the required attributes (sg_project_combo and rfq_combo)
                     if hasattr(temp_parent, 'sg_project_combo') and hasattr(temp_parent, 'rfq_combo'):
                         parent_app = temp_parent
-                        logger.info(f"Found parent app at depth {depth}: {type(temp_parent).__name__}")
                         break
                     temp_parent = temp_parent.parent()
                     depth += 1
@@ -1466,7 +1397,6 @@ class PackageTreeView(QtWidgets.QWidget):
                 return
 
             # Get all available Bid Tracker versions for this project (not filtered by RFQ)
-            logger.info(f"Fetching all Bid Tracker versions for project {project_id}")
             all_versions = self.sg_session.get_all_bid_tracker_versions_for_project(
                 project_id=project_id,
                 rfq_code=None  # Don't filter by RFQ - show all versions for the project
@@ -1479,8 +1409,6 @@ class PackageTreeView(QtWidgets.QWidget):
                     "No Bid Tracker versions found for this project."
                 )
                 return
-
-            logger.info(f"Found {len(all_versions)} Bid Tracker versions")
 
             # Get currently linked versions for this package
             package_versions = self.sg_session.get_package_versions(
@@ -1512,14 +1440,12 @@ class PackageTreeView(QtWidgets.QWidget):
                             current_version_id,
                             self.current_package_id
                         )
-                        logger.info(f"Unlinked version {current_version_id} from package {self.current_package_id}")
 
                     # Link the new version
                     self.sg_session.link_version_to_package(
                         selected_version_id,
                         self.current_package_id
                     )
-                    logger.info(f"Linked version {selected_version_id} to package {self.current_package_id}")
 
                     # Reload the tree to show the new version
                     self.load_package_versions(self.current_package_id)
@@ -1567,7 +1493,6 @@ class PackageTreeView(QtWidgets.QWidget):
                     version_id,
                     self.current_package_id
                 )
-                logger.info(f"Removed Bid Tracker version {version_id} from package {self.current_package_id}")
 
                 # Reload the tree to show "No Bid Tracker attached"
                 self.load_package_versions(self.current_package_id)
@@ -1626,7 +1551,6 @@ class PackageTreeView(QtWidgets.QWidget):
                     self.current_package_id,
                     folder_path
                 )
-                logger.info(f"Removed folder reference '{folder_path}' for version {version_id} from package {self.current_package_id}")
 
                 # Reload the tree
                 self.load_package_versions(self.current_package_id)

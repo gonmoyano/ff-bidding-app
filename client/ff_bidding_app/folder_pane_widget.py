@@ -287,7 +287,6 @@ class FolderWidget(QtWidgets.QWidget):
             self._update_count()
 
             event.acceptProposedAction()
-            logger.info(f"Dropped image {image_id} into folder {self.folder_name} ({self.folder_type})")
 
             # Emit signal to notify parent with image info
             self.imageDropped.emit(image_id, self.folder_name, self.folder_type)
@@ -360,7 +359,6 @@ class DroppableGroupContainer(QtWidgets.QWidget):
             image_id = int(bytes(image_id_bytes).decode())
 
             event.acceptProposedAction()
-            logger.info(f"Dropped image {image_id} into {self.image_type} group")
 
             # Emit signal with image ID and target type
             self.imageDropped.emit(image_id, self.image_type)
@@ -1306,7 +1304,6 @@ class FolderPaneWidget(QtWidgets.QWidget):
         # Get image IDs in this folder
         image_ids = folder.get_image_ids()
         if not image_ids:
-            logger.info(f"Folder {folder_name} is empty")
             # Still show the detail view, just with empty groups
             image_ids = set()
 
@@ -1348,7 +1345,6 @@ class FolderPaneWidget(QtWidgets.QWidget):
 
         # Remove image from folder
         folder.remove_image(image_id)
-        logger.info(f"Removed image {image_id} from folder {folder_name}")
 
         # Emit signal to notify parent (ImageViewerWidget) for ShotGrid update
         self.imageRemoved.emit(image_id, folder_name, folder_type)
@@ -1400,7 +1396,6 @@ class FolderPaneWidget(QtWidgets.QWidget):
 
         # Add image to folder
         folder.add_image(image_id)
-        logger.info(f"Added image {image_id} to folder {folder_name} via detail view drop")
 
         # Update thumbnail states in image viewer
         if self.image_viewer:
