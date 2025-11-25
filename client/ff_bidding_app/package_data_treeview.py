@@ -390,7 +390,7 @@ class PackageTreeView(QtWidgets.QWidget):
         header_layout.addStretch()
 
         refresh_btn = QtWidgets.QPushButton("Refresh")
-        refresh_btn.clicked.connect(self.load_tree_data)
+        refresh_btn.clicked.connect(self.refresh)
         header_layout.addWidget(refresh_btn)
 
         layout.addLayout(header_layout)
@@ -541,9 +541,21 @@ class PackageTreeView(QtWidgets.QWidget):
         self.selected_rfq = None
 
     def refresh(self):
-        """Refresh the tree with current RFQ data."""
+        """Refresh the tree with current package or RFQ data from ShotGrid."""
         logger.info("refresh() called")
-        self.load_tree_data()
+
+        # Check if we're viewing a package
+        if self.current_package_id:
+            logger.info(f"Refreshing package data for package ID: {self.current_package_id}")
+            self.load_package_versions(self.current_package_id)
+        # Otherwise check if we're viewing an RFQ
+        elif self.selected_rfq:
+            logger.info(f"Refreshing RFQ data for RFQ ID: {self.selected_rfq.get('id')}")
+            self.load_tree_data()
+        else:
+            logger.info("No package or RFQ selected, nothing to refresh")
+            self.tree_widget.clear()
+            self.category_items.clear()
 
     def update_column_widths_for_dpi(self):
         """Update column widths based on current DPI scale."""
