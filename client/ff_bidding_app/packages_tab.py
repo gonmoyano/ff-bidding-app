@@ -708,16 +708,32 @@ class PackagesTab(QtWidgets.QWidget):
                 )
                 return
 
-        # Generate package name from RFQ code
-        # Convert to lowercase, replace spaces with underscores
-        rfq_code = sg_rfq.get('code', 'rfq')
-        base_name = rfq_code.lower().replace(' ', '_').replace('-', '_')
+        # Generate package name from Current Package name
+        if not self.current_package_name:
+            logger.warning("No package selected")
+            QtWidgets.QMessageBox.warning(
+                self, "Missing Selection",
+                "Please select a Package from the Package Manager."
+            )
+            return
 
-        # Get next version number
-        version_num, version_string = self._get_next_package_version(output_dir, base_name)
-
-        package_name = f"{base_name}_{version_string}"
+        # Use current package name, sanitize for filesystem
+        package_name = self.current_package_name.replace(' ', '_').replace('-', '_')
         logger.info(f"Package name: {package_name}")
+
+        # Check if package folder already exists
+        package_folder = output_dir / package_name
+        if package_folder.exists():
+            result = QtWidgets.QMessageBox.question(
+                self, "Package Already Exists",
+                f"The package folder already exists:\n{package_folder}\n\n"
+                f"Do you want to update it? This will overwrite existing files.",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+            )
+            if result == QtWidgets.QMessageBox.No:
+                logger.info("User chose not to update existing package")
+                return
+            logger.info(f"User chose to update existing package: {package_folder}")
 
         progress = QtWidgets.QProgressDialog(
             "Creating data package...", "Cancel", 0, 100, self
@@ -909,8 +925,7 @@ class PackagesTab(QtWidgets.QWidget):
                     "sg_rfq_id": sg_rfq["id"],
                     "sg_rfq_code": sg_rfq["code"],
                     "created_by": "FF Package Manager",
-                    "package_version": version_string,
-                    "package_version_number": version_num,
+                    "package_name": package_name,
                     "data_types": data_types,
                     "active_versions_count": len(active_versions),
                     "active_version_ids": active_version_ids
@@ -939,7 +954,6 @@ class PackagesTab(QtWidgets.QWidget):
             self._write_text_manifest(
                 text_manifest_path,
                 package_name,
-                version_string,
                 sg_project,
                 sg_rfq,
                 manifest,
@@ -964,7 +978,6 @@ class PackagesTab(QtWidgets.QWidget):
                 self, "Success",
                 f"Package created successfully!\n\n"
                 f"Package: {package_name}\n"
-                f"Version: {version_string}\n"
                 f"Project: {sg_project['code']}\n"
                 f"RFQ: {sg_rfq.get('code', 'N/A')}\n"
                 f"Active Versions: {len(active_versions)}\n"
@@ -985,14 +998,13 @@ class PackagesTab(QtWidgets.QWidget):
         finally:
             progress.close()
 
-    def _write_text_manifest(self, file_path, package_name, version_string,
+    def _write_text_manifest(self, file_path, package_name,
                               sg_project, sg_rfq, manifest, downloaded_files):
         """Write a plain text manifest file for vendors.
 
         Args:
             file_path: Path to write the text file
             package_name: Name of the package
-            version_string: Version string (e.g., "v001")
             sg_project: ShotGrid project data
             sg_rfq: ShotGrid RFQ data
             manifest: Package manifest dictionary
@@ -1010,7 +1022,6 @@ class PackagesTab(QtWidgets.QWidget):
         lines.append("PACKAGE INFORMATION")
         lines.append("-" * 70)
         lines.append(f"  Package Name:    {package_name}")
-        lines.append(f"  Version:         {version_string}")
         lines.append(f"  Project:         {sg_project.get('code', 'N/A')}")
         lines.append(f"  RFQ:             {sg_rfq.get('code', 'N/A')}")
         lines.append(f"  Created:         {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

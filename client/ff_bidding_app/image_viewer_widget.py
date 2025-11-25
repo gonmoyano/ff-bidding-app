@@ -1341,10 +1341,10 @@ class ImageViewerWidget(QtWidgets.QWidget):
         self.folder_pane.imageDropped.connect(self.update_thumbnail_states)
         self.folder_pane.imageDropped.connect(self._deselect_current_thumbnail)
 
-        # Set initial sizes (70% thumbnails, 30% folder pane)
-        self.splitter.setSizes([700, 300])
+        # Set initial sizes (50% thumbnails, 50% folder pane)
+        self.splitter.setSizes([500, 500])
         self.splitter.setStretchFactor(0, 1)
-        self.splitter.setStretchFactor(1, 0)
+        self.splitter.setStretchFactor(1, 1)
 
         # Connect splitter moved signal to adjust thumbnail columns
         self.splitter.splitterMoved.connect(self._on_splitter_moved)
