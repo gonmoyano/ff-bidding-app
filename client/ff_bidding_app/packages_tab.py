@@ -120,11 +120,6 @@ class PackagesTab(QtWidgets.QWidget):
         bottom_layout.addWidget(self.status_label)
         bottom_layout.addStretch()
 
-        create_package_btn = QtWidgets.QPushButton("Create Data Package")
-        create_package_btn.setObjectName("createPackageBtn")
-        create_package_btn.clicked.connect(self._create_package)
-        bottom_layout.addWidget(create_package_btn)
-
         layout.addLayout(bottom_layout)
 
         # Create the sliding overlay panel for Package Manager (right pane)
@@ -232,6 +227,19 @@ class PackagesTab(QtWidgets.QWidget):
         self.package_data_tree = PackageTreeView()
         self.package_data_tree.set_sg_session(self.sg_session)
         right_layout.addWidget(self.package_data_tree, 1)  # Give it stretch factor
+
+        # Create Data Package button below the tree
+        create_package_btn_layout = QtWidgets.QHBoxLayout()
+        create_package_btn_layout.addStretch()
+
+        create_package_btn = QtWidgets.QPushButton("Create Data Package")
+        create_package_btn.setObjectName("createPackageBtn")
+        create_package_btn.setToolTip("Create a data package from selected items in the Package Manager")
+        create_package_btn.clicked.connect(self._create_package)
+        create_package_btn_layout.addWidget(create_package_btn)
+
+        create_package_btn_layout.addStretch()
+        right_layout.addLayout(create_package_btn_layout)
 
         # Data to Fetch collapsible group
         self.data_fetch_group = self._create_data_fetch_group()
