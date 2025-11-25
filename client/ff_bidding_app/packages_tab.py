@@ -785,6 +785,11 @@ class PackagesTab(QtWidgets.QWidget):
             progress.setValue(70)
             QtCore.QCoreApplication.processEvents()
 
+            # Get manifest of package structure from the tree view
+            manifest = self.package_data_tree.get_package_manifest()
+            logger.info(f"Package manifest: {manifest['summary']['total_folders']} folders, "
+                        f"{manifest['summary']['total_files']} files")
+
             package_data = {
                 "metadata": {
                     "source": "Shotgrid",
@@ -802,7 +807,8 @@ class PackagesTab(QtWidgets.QWidget):
                 "project": sg_project,
                 "rfq": sg_rfq,
                 "fetched_at": datetime.now().isoformat(),
-                "entities": entities
+                "entities": entities,
+                "manifest": manifest
             }
 
             # Create filename
@@ -832,6 +838,9 @@ class PackagesTab(QtWidgets.QWidget):
                 f"Project: {sg_project['code']}\n"
                 f"RFQ: {sg_rfq.get('code', 'N/A')}\n"
                 f"Active Versions: {len(active_versions)}\n"
+                f"\nManifest:\n"
+                f"  Folders: {manifest['summary']['total_folders']}\n"
+                f"  Files: {manifest['summary']['total_files']}\n"
                 f"\nVersions by category:\n{entity_summary if entity_summary else '  (none)'}\n\n"
                 f"Location:\n{output_path}"
             )

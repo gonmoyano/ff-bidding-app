@@ -1109,6 +1109,127 @@ class PackageTreeView(QtWidgets.QWidget):
         versions = self.get_active_versions()
         return [v.get_sg_data() for v in versions]
 
+    def get_package_manifest(self):
+        """
+        Get a manifest of the package structure with folders and their files.
+
+        Returns:
+            Dictionary with the complete package structure:
+            {
+                "folders": {
+                    "/folder/path": {
+                        "files": [
+                            {
+                                "id": 123,
+                                "code": "version_code",
+                                "name": "file_name",
+                                "status": "approved",
+                                "type": "Version",
+                                "sg_uploaded_movie": {...},
+                                "sg_path_to_movie": "...",
+                                "sg_path_to_frames": "..."
+                            },
+                            ...
+                        ]
+                    },
+                    ...
+                },
+                "root_files": [...],  # Files not in any folder
+                "summary": {
+                    "total_folders": N,
+                    "total_files": N
+                }
+            }
+        """
+        manifest = {
+            "folders": {},
+            "root_files": [],
+            "summary": {
+                "total_folders": 0,
+                "total_files": 0
+            }
+        }
+
+        def extract_file_info(version_data):
+            """Extract relevant file information from version data."""
+            return {
+                "id": version_data.get("id"),
+                "code": version_data.get("code"),
+                "name": version_data.get("code", "Unknown"),
+                "status": version_data.get("sg_status_list", ""),
+                "type": version_data.get("type", "Version"),
+                "description": version_data.get("description", ""),
+                "sg_uploaded_movie": version_data.get("sg_uploaded_movie"),
+                "sg_path_to_movie": version_data.get("sg_path_to_movie"),
+                "sg_path_to_frames": version_data.get("sg_path_to_frames"),
+                "created_at": version_data.get("created_at"),
+                "user": version_data.get("user"),
+            }
+
+        def traverse_item(item, current_path=""):
+            """Recursively traverse tree items to build manifest."""
+            if not isinstance(item, SGTreeItem):
+                return
+
+            item_type = item.get_item_type()
+
+            if item_type == "folder":
+                # Get folder path from sg_data
+                sg_data = item.get_sg_data()
+                folder_path = sg_data.get("folder_path", "") if sg_data else ""
+
+                if folder_path:
+                    if folder_path not in manifest["folders"]:
+                        manifest["folders"][folder_path] = {"files": []}
+                    current_path = folder_path
+
+            elif item_type == "version":
+                # Add version to the appropriate folder or root
+                version_data = item.get_sg_data()
+                if version_data:
+                    file_info = extract_file_info(version_data)
+
+                    # Check if version has folder assignment
+                    folders_str = version_data.get("_package_folders", "")
+                    if folders_str:
+                        folder_paths = [f.strip() for f in folders_str.split(";") if f.strip()]
+                        for folder_path in folder_paths:
+                            if folder_path not in manifest["folders"]:
+                                manifest["folders"][folder_path] = {"files": []}
+                            # Avoid duplicate entries
+                            existing_ids = [f["id"] for f in manifest["folders"][folder_path]["files"]]
+                            if file_info["id"] not in existing_ids:
+                                manifest["folders"][folder_path]["files"].append(file_info)
+                    elif current_path and current_path in manifest["folders"]:
+                        # Add to current folder path
+                        existing_ids = [f["id"] for f in manifest["folders"][current_path]["files"]]
+                        if file_info["id"] not in existing_ids:
+                            manifest["folders"][current_path]["files"].append(file_info)
+                    else:
+                        # Root-level version
+                        existing_ids = [f["id"] for f in manifest["root_files"]]
+                        if file_info["id"] not in existing_ids:
+                            manifest["root_files"].append(file_info)
+
+            # Traverse children
+            for i in range(item.childCount()):
+                child = item.child(i)
+                traverse_item(child, current_path)
+
+        # Traverse all top-level items
+        for i in range(self.tree_widget.topLevelItemCount()):
+            top_item = self.tree_widget.topLevelItem(i)
+            traverse_item(top_item)
+
+        # Calculate summary
+        manifest["summary"]["total_folders"] = len(manifest["folders"])
+        manifest["summary"]["total_files"] = (
+            sum(len(folder["files"]) for folder in manifest["folders"].values())
+            + len(manifest["root_files"])
+        )
+
+        return manifest
+
     def get_selected_version_data(self):
         """
         Get Shotgrid data from currently selected item.
