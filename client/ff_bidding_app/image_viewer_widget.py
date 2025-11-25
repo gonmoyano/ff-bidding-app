@@ -1518,6 +1518,9 @@ class ImageViewerWidget(QtWidgets.QWidget):
             if not self.thumbnail_widgets:
                 return
 
+            if not hasattr(self, 'category_groups') or not self.category_groups:
+                return
+
             # Calculate new column count
             thumbnail_width = 180 + 10
             available_width = self.thumbnail_container.width()
@@ -1530,18 +1533,38 @@ class ImageViewerWidget(QtWidgets.QWidget):
             if columns == 0:
                 columns = 2
 
-            # Account for upload widget at position 0
-            start_idx = 1 if self.current_project_id and self.sg_session else 0
+            # Group thumbnails by category
+            categorized_thumbnails = {
+                'Concept Art': [],
+                'Storyboard': [],
+                'Reference': [],
+                'Misc': []
+            }
 
-            # Rearrange existing widgets in layout
-            for idx, thumbnail in enumerate(self.thumbnail_widgets):
-                grid_idx = idx + start_idx
-                row = grid_idx // columns
-                col = grid_idx % columns
+            for thumbnail in self.thumbnail_widgets:
+                category = self._get_version_type(thumbnail.version_data)
+                if category in categorized_thumbnails:
+                    categorized_thumbnails[category].append(thumbnail)
 
-                # Remove from current position and add to new position
-                self.thumbnail_layout.removeWidget(thumbnail)
-                self.thumbnail_layout.addWidget(thumbnail, row, col)
+            # Rearrange thumbnails within each category group
+            for category, thumbnails in categorized_thumbnails.items():
+                if not thumbnails:
+                    continue
+
+                group_data = self.category_groups.get(category)
+                if not group_data:
+                    continue
+
+                layout = group_data['layout']
+
+                # Rearrange thumbnails in this category's layout
+                for idx, thumbnail in enumerate(thumbnails):
+                    row = idx // columns
+                    col = idx % columns
+
+                    # Remove from current position and add to new position
+                    layout.removeWidget(thumbnail)
+                    layout.addWidget(thumbnail, row, col)
 
         except Exception as e:
             logger.error(f"Error rearranging thumbnails: {e}", exc_info=True)
@@ -1703,8 +1726,14 @@ class ImageViewerWidget(QtWidgets.QWidget):
             image_id = version_data.get('id')
             self.folder_pane.highlight_folders_for_image(image_id)
 
-    def _deselect_current_thumbnail(self):
-        """Deselect the currently selected thumbnail."""
+    def _deselect_current_thumbnail(self, image_id=None, folder_name=None, folder_type=None):
+        """Deselect the currently selected thumbnail.
+
+        Args:
+            image_id: Optional image ID (from signal, not used)
+            folder_name: Optional folder name (from signal, not used)
+            folder_type: Optional folder type (from signal, not used)
+        """
         if self.selected_thumbnail:
             try:
                 if self.selected_thumbnail in self.thumbnail_widgets:
@@ -2281,10 +2310,20 @@ class ImageViewerWidget(QtWidgets.QWidget):
         packages[current_package]['folder_mappings'] = mappings
         logger.info("Saved folder mappings to package")
 
-    def update_thumbnail_states(self):
-        """Update all thumbnail border states based on folder mappings."""
+    def update_thumbnail_states(self, dropped_image_id=None, folder_name=None, folder_type=None):
+        """Update all thumbnail border states based on folder mappings.
+
+        Args:
+            dropped_image_id: Optional image ID that was just dropped (from signal)
+            folder_name: Optional folder name the image was dropped to (from signal)
+            folder_type: Optional folder type ('asset' or 'scene') (from signal)
+        """
         if not self.folder_pane:
             return
+
+        # If an image was dropped to a folder, link it to the selected package
+        if dropped_image_id and folder_name and folder_type:
+            self._link_image_to_package(dropped_image_id, folder_name, folder_type)
 
         # Get current mappings
         mappings = self.folder_pane.get_folder_mappings()
@@ -2311,3 +2350,74 @@ class ImageViewerWidget(QtWidgets.QWidget):
             image_id = thumbnail.version_data.get('id')
             folders = image_to_folders.get(image_id, [])
             thumbnail.set_folders_containing(folders)
+
+    def _link_image_to_package(self, image_id, folder_name, folder_type):
+        """Link an image version to the currently selected package with folder info.
+
+        Args:
+            image_id: ID of the image version
+            folder_name: Name of the folder the image was dropped to
+            folder_type: Type of folder ('asset' or 'scene')
+        """
+        # Get the currently selected package
+        selected_package = self.folder_pane.get_selected_package()
+        if not selected_package:
+            logger.info(f"No package selected, skipping ShotGrid link for image {image_id}")
+            return
+
+        # Get the package ID from packages_tab
+        if not self.packages_tab:
+            logger.warning("No packages_tab reference, cannot link to ShotGrid")
+            return
+
+        # Get the ShotGrid package ID for the selected package name
+        sg_package_id = None
+        packages = getattr(self.packages_tab, 'packages', {})
+        for pkg_name, pkg_data in packages.items():
+            if pkg_name == selected_package:
+                sg_package_id = pkg_data.get('sg_package_id')
+                break
+
+        if not sg_package_id:
+            logger.warning(f"No ShotGrid package ID found for package '{selected_package}'")
+            return
+
+        # Get the version data to determine its category
+        version_data = None
+        for thumbnail in self.thumbnail_widgets:
+            if thumbnail.version_data.get('id') == image_id:
+                version_data = thumbnail.version_data
+                break
+
+        if not version_data:
+            logger.warning(f"Could not find version data for image {image_id}")
+            return
+
+        # Determine the category from sg_version_type
+        sg_version_type = version_data.get('sg_version_type', '')
+        if isinstance(sg_version_type, dict):
+            category = sg_version_type.get('name', 'Misc')
+        else:
+            category = str(sg_version_type) if sg_version_type else 'Misc'
+
+        # Construct hierarchical path: /folder_type/folder_name/category
+        # folder_type is 'asset' or 'scene', pluralize it
+        folder_type_plural = 'assets' if folder_type == 'asset' else 'scenes'
+        folder_path = f"/{folder_type_plural}/{folder_name}/{category}"
+
+        # Link the version to the package with folder path
+        try:
+            logger.info(f"Linking image {image_id} to package {sg_package_id} with path {folder_path}")
+            self.sg_session.link_version_to_package_with_folder(
+                version_id=image_id,
+                package_id=sg_package_id,
+                folder_name=folder_path
+            )
+            logger.info(f"Successfully linked image {image_id} to package")
+
+            # Refresh the treeview to show the new folder/version
+            if hasattr(self.packages_tab, 'package_data_tree') and self.packages_tab.package_data_tree:
+                self.packages_tab.package_data_tree.load_package_versions(sg_package_id)
+
+        except Exception as e:
+            logger.error(f"Failed to link image to package: {e}", exc_info=True)

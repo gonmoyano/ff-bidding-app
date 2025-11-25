@@ -390,7 +390,7 @@ class PackageTreeView(QtWidgets.QWidget):
         header_layout.addStretch()
 
         refresh_btn = QtWidgets.QPushButton("Refresh")
-        refresh_btn.clicked.connect(self.load_tree_data)
+        refresh_btn.clicked.connect(self.refresh)
         header_layout.addWidget(refresh_btn)
 
         layout.addLayout(header_layout)
@@ -486,8 +486,8 @@ class PackageTreeView(QtWidgets.QWidget):
             logger.info("No package ID or SG session - showing empty tree")
             return
 
-        # Get Bid Tracker versions from Package's sg_versions field
-        bid_tracker_versions = self.sg_session.get_package_versions(
+        # Get versions with folder info from Package's PackageItems
+        package_versions_with_folders = self.sg_session.get_package_versions_with_folders(
             package_id,
             fields=[
                 "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
@@ -496,7 +496,7 @@ class PackageTreeView(QtWidgets.QWidget):
             ]
         )
 
-        logger.info(f"Found {len(bid_tracker_versions)} versions in sg_versions field")
+        logger.info(f"Found {len(package_versions_with_folders)} versions via PackageItems")
 
         # Get other versions (Script, Concept Art, Storyboard) from sg_parent_packages
         other_versions = self.sg_session.get_versions_by_parent_package(
@@ -510,17 +510,20 @@ class PackageTreeView(QtWidgets.QWidget):
 
         logger.info(f"Found {len(other_versions)} versions in sg_parent_packages field")
 
-        # Combine all versions (Bid Tracker uses sg_versions, others use sg_parent_packages)
-        all_versions = bid_tracker_versions + other_versions
+        # Separate bid tracker versions from image versions
+        bid_tracker_versions = [v for v in package_versions_with_folders if self._is_bid_tracker_version(v)]
+        image_versions_with_folders = [v for v in package_versions_with_folders if self._is_image_version(v)]
 
-        logger.info(f"Total versions: {len(all_versions)}")
+        # Also get image versions from other_versions (without folder info)
+        image_versions_without_folders = [v for v in other_versions if self._is_image_version(v)]
+
+        logger.info(f"Bid Tracker: {len(bid_tracker_versions)}, Images with folders: {len(image_versions_with_folders)}, Images without folders: {len(image_versions_without_folders)}")
 
         # Build the tree with actual version data
-        # Bid Tracker versions come from bid_tracker_versions list
         self.set_bid_tracker_item(bid_tracker_versions)
-        # Other versions come from other_versions list
         self.set_documents_item(other_versions)
-        self.set_images_item(other_versions)
+        # Show images organized by folder under Images section
+        self.set_images_item(image_versions_with_folders, image_versions_without_folders)
 
         # Apply stored visibility preferences
         logger.info(f"Applying visibility preferences: {self.category_visibility_prefs}")
@@ -538,9 +541,21 @@ class PackageTreeView(QtWidgets.QWidget):
         self.selected_rfq = None
 
     def refresh(self):
-        """Refresh the tree with current RFQ data."""
+        """Refresh the tree with current package or RFQ data from ShotGrid."""
         logger.info("refresh() called")
-        self.load_tree_data()
+
+        # Check if we're viewing a package
+        if self.current_package_id:
+            logger.info(f"Refreshing package data for package ID: {self.current_package_id}")
+            self.load_package_versions(self.current_package_id)
+        # Otherwise check if we're viewing an RFQ
+        elif self.selected_rfq:
+            logger.info(f"Refreshing RFQ data for RFQ ID: {self.selected_rfq.get('id')}")
+            self.load_tree_data()
+        else:
+            logger.info("No package or RFQ selected, nothing to refresh")
+            self.tree_widget.clear()
+            self.category_items.clear()
 
     def update_column_widths_for_dpi(self):
         """Update column widths based on current DPI scale."""
@@ -586,7 +601,8 @@ class PackageTreeView(QtWidgets.QWidget):
         # Build the tree with actual version data
         self.set_bid_tracker_item(versions)
         self.set_documents_item(versions)
-        self.set_images_item(versions)
+        # For RFQ-based view, no folder info, so all images are without folders
+        self.set_images_item([], versions)
 
         # Apply stored visibility preferences
         logger.info(f"Applying visibility preferences: {self.category_visibility_prefs}")
@@ -749,8 +765,13 @@ class PackageTreeView(QtWidgets.QWidget):
             )
             no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
 
-    def set_images_item(self, versions):
-        """Build Images section with real version data (combines Concept Art and Storyboard)."""
+    def set_images_item(self, versions_with_folders, versions_without_folders):
+        """Build Images section with hierarchical folders and versions.
+
+        Args:
+            versions_with_folders: List of version dicts with '_package_folders' key
+            versions_without_folders: List of version dicts without folder assignments
+        """
         images_root = SGTreeItem(
             self.tree_widget,
             ["Images", "Folder", "", ""],
@@ -763,25 +784,53 @@ class PackageTreeView(QtWidgets.QWidget):
         font.setBold(True)
         images_root.setFont(0, font)
 
-        # Filter image versions (concept art, storyboard, reference, etc.)
-        image_versions = [v for v in versions if self._is_image_version(v)]
+        # Build a tree structure from all paths
+        path_tree = {}
 
-        if image_versions:
-            for version in image_versions:
-                version_code = version.get('code', 'Unknown')
-                status = version.get('sg_status_list', '')
-                status_display = status if status else 'N/A'
-                version_number = version_code.split('_')[-1] if '_' in version_code else ""
+        for version in versions_with_folders:
+            folders_str = version.get('_package_folders', '')
+            if folders_str:
+                # Split by ";" for multiple folder paths
+                folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
+                for folder_path in folder_paths:
+                    # Parse the path (e.g., '/assets/CRE/Concept Art')
+                    parts = [p for p in folder_path.split('/') if p]
 
-                version_item = self._create_version_item(
-                    images_root,
-                    version,
-                    [version_code, "Version", status_display, version_number]
-                )
+                    # Navigate/create the tree structure
+                    current_level = path_tree
+                    for part in parts:
+                        if part not in current_level:
+                            current_level[part] = {'_versions': [], '_children': {}}
+                        current_level = current_level[part]['_children']
 
-                status_lower = status.lower() if status else ''
-                if status_lower in status_colors:
-                    version_item.setBackground(2, status_colors[status_lower])
+                    # Add version to the deepest level
+                    current_level = path_tree
+                    for part in parts[:-1]:
+                        current_level = current_level[part]['_children']
+                    current_level[parts[-1]]['_versions'].append(version)
+
+        # Recursively build the tree items with folder icons
+        if path_tree or versions_without_folders:
+            if path_tree:
+                self._build_folder_tree(images_root, path_tree, "")
+
+            # Add versions with no folder assignment directly under Images
+            if versions_without_folders:
+                for version in versions_without_folders:
+                    version_code = version.get('code', 'Unknown')
+                    status = version.get('sg_status_list', '')
+                    status_display = status if status else 'N/A'
+                    version_number = version_code.split('_')[-1] if '_' in version_code else ""
+
+                    version_item = self._create_version_item(
+                        images_root,
+                        version,
+                        [version_code, "Version", status_display, version_number]
+                    )
+
+                    status_lower = status.lower() if status else ''
+                    if status_lower in status_colors:
+                        version_item.setBackground(2, status_colors[status_lower])
         else:
             no_data_item = SGTreeItem(
                 images_root,
@@ -789,6 +838,159 @@ class PackageTreeView(QtWidgets.QWidget):
                 item_type="info"
             )
             no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
+
+    def set_folders_item(self, versions_with_folders):
+        """Build Folders section with versions grouped by hierarchical folder paths.
+
+        Args:
+            versions_with_folders: List of version dicts with '_package_folders' key
+                                   containing paths like '/assets/CRE/Concept Art'
+        """
+        folders_root = SGTreeItem(
+            self.tree_widget,
+            ["Folders", "Folder", "", ""],
+            sg_data={'type': 'folder'},
+            item_type="folder"
+        )
+        self.category_items["Folders"] = folders_root
+        folders_root.setExpanded(True)
+        font = folders_root.font(0)
+        font.setBold(True)
+        folders_root.setFont(0, font)
+
+        # Build a tree structure from all paths
+        # path_tree[path_component] = {'_versions': [], '_children': {}}
+        path_tree = {}
+        no_folder_versions = []
+
+        for version in versions_with_folders:
+            folders_str = version.get('_package_folders', '')
+            if folders_str:
+                # Split by ";" for multiple folder paths
+                folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
+                for folder_path in folder_paths:
+                    # Parse the path (e.g., '/assets/CRE/Concept Art')
+                    parts = [p for p in folder_path.split('/') if p]
+
+                    # Navigate/create the tree structure
+                    current_level = path_tree
+                    for part in parts:
+                        if part not in current_level:
+                            current_level[part] = {'_versions': [], '_children': {}}
+                        current_level = current_level[part]['_children']
+
+                    # Add version to the deepest level
+                    # Go back up to add to the last part's versions list
+                    current_level = path_tree
+                    for part in parts[:-1]:
+                        current_level = current_level[part]['_children']
+                    current_level[parts[-1]]['_versions'].append(version)
+            else:
+                no_folder_versions.append(version)
+
+        # Recursively build the tree items with folder icons
+        if path_tree:
+            self._build_folder_tree(folders_root, path_tree, "")
+
+            # Add versions with no folder assignment
+            if no_folder_versions:
+                unassigned_item = SGTreeItem(
+                    folders_root,
+                    ["📁 (Unassigned)", "Folder", "", f"{len(no_folder_versions)}"],
+                    sg_data={'type': 'folder', 'folder_path': ''},
+                    item_type="folder"
+                )
+                unassigned_item.setExpanded(False)
+                unassigned_item.setForeground(0, QtGui.QColor(120, 120, 120))
+
+                for version in no_folder_versions:
+                    version_code = version.get('code', 'Unknown')
+                    status = version.get('sg_status_list', '')
+                    status_display = status if status else 'N/A'
+                    version_number = version_code.split('_')[-1] if '_' in version_code else ""
+
+                    version_item = self._create_version_item(
+                        unassigned_item,
+                        version,
+                        [version_code, "Version", status_display, version_number]
+                    )
+
+                    status_lower = status.lower() if status else ''
+                    if status_lower in status_colors:
+                        version_item.setBackground(2, status_colors[status_lower])
+        else:
+            # No versions with folders
+            no_data_item = SGTreeItem(
+                folders_root,
+                ["No folder assignments", "Info", "", ""],
+                item_type="info"
+            )
+            no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
+
+    def _build_folder_tree(self, parent_item, tree_dict, current_path):
+        """Recursively build folder tree items from the tree dictionary.
+
+        Args:
+            parent_item: Parent SGTreeItem to add children to
+            tree_dict: Dictionary with folder structure
+            current_path: Current path string for tracking full path
+        """
+        # Sort folders alphabetically
+        for folder_name in sorted(tree_dict.keys()):
+            folder_data = tree_dict[folder_name]
+            versions = folder_data['_versions']
+            children = folder_data['_children']
+
+            # Build full path
+            full_path = f"{current_path}/{folder_name}" if current_path else f"/{folder_name}"
+
+            # Count total versions including descendants
+            total_versions = len(versions) + self._count_versions_recursive(children)
+
+            # Create folder item with icon
+            folder_item = SGTreeItem(
+                parent_item,
+                [f"📁 {folder_name}", "Folder", "", f"{total_versions}"],
+                sg_data={'type': 'folder', 'folder_path': full_path},
+                item_type="folder"
+            )
+            folder_item.setExpanded(False)
+
+            # Add versions at this level
+            for version in versions:
+                version_code = version.get('code', 'Unknown')
+                status = version.get('sg_status_list', '')
+                status_display = status if status else 'N/A'
+                version_number = version_code.split('_')[-1] if '_' in version_code else ""
+
+                version_item = self._create_version_item(
+                    folder_item,
+                    version,
+                    [version_code, "Version", status_display, version_number]
+                )
+
+                status_lower = status.lower() if status else ''
+                if status_lower in status_colors:
+                    version_item.setBackground(2, status_colors[status_lower])
+
+            # Recursively add child folders
+            if children:
+                self._build_folder_tree(folder_item, children, full_path)
+
+    def _count_versions_recursive(self, tree_dict):
+        """Count all versions in a tree dictionary recursively.
+
+        Args:
+            tree_dict: Dictionary with folder structure
+
+        Returns:
+            Total count of versions in this tree and all descendants
+        """
+        total = 0
+        for folder_data in tree_dict.values():
+            total += len(folder_data['_versions'])
+            total += self._count_versions_recursive(folder_data['_children'])
+        return total
 
     def _is_bid_tracker_version(self, version):
         """Determine if a version belongs to Bid Tracker category."""
@@ -944,6 +1146,12 @@ class PackageTreeView(QtWidgets.QWidget):
 
                     remove_action = menu.addAction("Remove from Package")
                     remove_action.triggered.connect(lambda: self._remove_bid_tracker_from_package(item))
+
+                    menu.addSeparator()
+                # Check if this is an image version with folder assignment
+                elif self._is_image_version(item.get_sg_data()) and self.current_package_id:
+                    delete_action = menu.addAction("Delete from Package")
+                    delete_action.triggered.connect(lambda: self._delete_version_from_package(item))
 
                     menu.addSeparator()
 
@@ -1256,6 +1464,101 @@ class PackageTreeView(QtWidgets.QWidget):
                     "Error",
                     f"Failed to remove Bid Tracker: {str(e)}"
                 )
+
+    def _delete_version_from_package(self, item):
+        """Delete a version from the package by removing its folder reference.
+
+        If the PackageItem's sg_package_folders becomes empty, delete the PackageItem.
+        """
+        if not isinstance(item, SGTreeItem) or not self.current_package_id:
+            return
+
+        version_id = item.get_sg_id()
+        version_code = item.get_entity_name()
+
+        if not version_id:
+            return
+
+        # Build the folder path by walking up the tree
+        folder_path = self._get_folder_path_from_item(item)
+
+        if not folder_path:
+            logger.warning(f"Could not determine folder path for version {version_id}")
+            return
+
+        # Confirm the deletion
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Delete from Package",
+            f"Delete '{version_code}' from folder '{folder_path}'?\n\n"
+            f"This will remove the folder assignment from ShotGrid.\n"
+            f"If this is the last folder for this version, the PackageItem will be deleted.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+
+        if reply == QtWidgets.QMessageBox.Yes:
+            try:
+                # Remove the folder reference from the PackageItem
+                self.sg_session.remove_folder_reference_from_package(
+                    version_id,
+                    self.current_package_id,
+                    folder_path
+                )
+                logger.info(f"Removed folder reference '{folder_path}' for version {version_id} from package {self.current_package_id}")
+
+                # Reload the tree
+                self.load_package_versions(self.current_package_id)
+
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Version Deleted",
+                    f"'{version_code}' has been removed from '{folder_path}'."
+                )
+
+            except Exception as e:
+                logger.error(f"Error deleting version from package: {e}", exc_info=True)
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to delete version: {str(e)}"
+                )
+
+    def _get_folder_path_from_item(self, item):
+        """Build the folder path by walking up the tree from a version item.
+
+        Args:
+            item: SGTreeItem representing a version
+
+        Returns:
+            Full folder path (e.g., '/assets/CRE/Concept Art') or None
+        """
+        path_parts = []
+        current = item.parent()
+
+        # Walk up the tree until we reach the root Images folder
+        while current:
+            sg_data = current.get_sg_data() if isinstance(current, SGTreeItem) else None
+            if sg_data and sg_data.get('type') == 'folder':
+                folder_path = sg_data.get('folder_path')
+                if folder_path:
+                    # We found a folder with a path, use it directly
+                    return folder_path
+
+                # Otherwise, collect the folder name
+                folder_name = current.text(0).replace('📁 ', '').strip()
+                # Stop if we've reached the Images root
+                if folder_name == "Images":
+                    break
+                path_parts.insert(0, folder_name)
+
+            current = current.parent() if hasattr(current, 'parent') else None
+
+        # Build the path
+        if path_parts:
+            return '/' + '/'.join(path_parts)
+
+        return None
 
     def _expand_all(self, item):
         """Recursively expand all children."""

@@ -343,3 +343,51 @@ class AppSettings:
             days: Max age in days
         """
         self.set("thumbnail_cache_max_age_days", days)
+
+    def get_last_selected_rfq_id(self):
+        """Get the last selected RFQ ID.
+
+        Returns:
+            int: Last selected RFQ ID, or None if not set
+        """
+        return self.get("last_selected_rfq_id")
+
+    def set_last_selected_rfq_id(self, rfq_id):
+        """Set the last selected RFQ ID.
+
+        Args:
+            rfq_id: RFQ ID to save
+        """
+        self.set("last_selected_rfq_id", rfq_id)
+
+    def get_last_selected_package_for_rfq(self, rfq_id):
+        """Get the last selected package ID for a specific RFQ.
+
+        Args:
+            rfq_id: RFQ ID
+
+        Returns:
+            int: Last selected package ID for this RFQ, or None if not set
+        """
+        if "last_selected_packages" not in self.settings:
+            return None
+        return self.settings["last_selected_packages"].get(str(rfq_id))
+
+    def set_last_selected_package_for_rfq(self, rfq_id, package_id):
+        """Set the last selected package ID for a specific RFQ.
+
+        Args:
+            rfq_id: RFQ ID
+            package_id: Package ID to save (or None to clear)
+        """
+        if "last_selected_packages" not in self.settings:
+            self.settings["last_selected_packages"] = {}
+
+        if package_id is None:
+            # Remove the entry if package_id is None
+            if str(rfq_id) in self.settings["last_selected_packages"]:
+                del self.settings["last_selected_packages"][str(rfq_id)]
+        else:
+            self.settings["last_selected_packages"][str(rfq_id)] = package_id
+
+        self._save()
