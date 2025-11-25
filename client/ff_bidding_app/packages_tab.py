@@ -520,6 +520,9 @@ class PackagesTab(QtWidgets.QWidget):
         # Load packages attached to this RFQ from ShotGrid
         self._load_packages_from_shotgrid(rfq)
 
+        # Restore the last selected package for this RFQ
+        self._restore_last_selected_package(rfq)
+
         # Load all image versions for the current project into the image viewer
         if self.image_viewer and self.parent_app and hasattr(self.parent_app, 'sg_project_combo'):
             current_project_index = self.parent_app.sg_project_combo.currentIndex()
@@ -529,6 +532,12 @@ class PackagesTab(QtWidgets.QWidget):
                 if project_id:
                     logger.info(f"Loading all image versions for project {project_id}")
                     self.image_viewer.load_project_versions(project_id)
+
+        # Save the selected RFQ ID to settings
+        if rfq:
+            rfq_id = rfq.get("id")
+            if rfq_id:
+                self.app_settings.set_last_selected_rfq_id(rfq_id)
 
     def clear(self):
         """Clear the package data tree."""
@@ -1209,6 +1218,11 @@ class PackagesTab(QtWidgets.QWidget):
             # Sync to folder pane and clear folders
             self._sync_selected_package_to_folder_pane(None)
             self._clear_folder_pane_images()
+            # Save the "no package" state to settings
+            if self.current_rfq:
+                rfq_id = self.current_rfq.get("id")
+                if rfq_id:
+                    self.app_settings.set_last_selected_package_for_rfq(rfq_id, None)
             logger.info("No package selected")
             return
 
@@ -1233,6 +1247,13 @@ class PackagesTab(QtWidgets.QWidget):
 
                 # Load images into folder pane based on package folder assignments
                 self._load_package_images_to_folders(sg_package_id)
+
+                # Save the selected package to settings
+                if self.current_rfq:
+                    rfq_id = self.current_rfq.get("id")
+                    if rfq_id:
+                        self.app_settings.set_last_selected_package_for_rfq(rfq_id, sg_package_id)
+                        logger.debug(f"Saved package selection: RFQ {rfq_id} -> Package {sg_package_id}")
             else:
                 logger.info("No ShotGrid Package ID found, clearing tree")
                 if self.package_data_tree:
@@ -1306,6 +1327,37 @@ class PackagesTab(QtWidgets.QWidget):
                 folder_pane.set_packages(package_names)
                 # Sync current selection
                 folder_pane.set_selected_package(self.current_package_name)
+
+    def _restore_last_selected_package(self, rfq):
+        """Restore the last selected package for the given RFQ from settings.
+
+        Args:
+            rfq: RFQ data dict
+        """
+        if not rfq:
+            return
+
+        rfq_id = rfq.get("id")
+        if not rfq_id:
+            return
+
+        # Get the last selected package ID for this RFQ from settings
+        last_package_id = self.app_settings.get_last_selected_package_for_rfq(rfq_id)
+        if not last_package_id:
+            logger.debug(f"No saved package selection for RFQ {rfq_id}")
+            return
+
+        # Find the package with this ID in our loaded packages
+        for package_name, package_data in self.packages.items():
+            if package_data.get("sg_package_id") == last_package_id:
+                # Find the package in the dropdown
+                for i in range(self.package_selector_dropdown.count()):
+                    if self.package_selector_dropdown.itemText(i) == package_name:
+                        logger.info(f"Restoring last selected package: {package_name}")
+                        self.package_selector_dropdown.setCurrentIndex(i)
+                        return
+
+        logger.debug(f"Last selected package (ID: {last_package_id}) not found in dropdown for RFQ {rfq_id}")
 
     def _sync_selected_package_to_folder_pane(self, package_name):
         """Sync the selected package to the folder pane dropdown.

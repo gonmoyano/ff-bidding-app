@@ -1370,9 +1370,22 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             else:
                 self.status_label.setText(f"Loaded {len(rfqs)} RFQs")
 
-                # Auto-select the latest RFQ (first one since get_rfqs returns newest first)
+                # Try to restore the last selected RFQ from settings
+                last_rfq_id = self.app_settings.get_last_selected_rfq_id()
+                rfq_index_to_select = 1  # Default to first RFQ (index 1, because 0 is "-- Select RFQ --")
+
+                if last_rfq_id:
+                    # Try to find the RFQ with this ID in the loaded RFQs
+                    for index in range(1, self.rfq_combo.count()):  # Skip index 0
+                        rfq_data = self.rfq_combo.itemData(index)
+                        if rfq_data and rfq_data.get('id') == last_rfq_id:
+                            rfq_index_to_select = index
+                            logger.info(f"Restoring last selected RFQ: {rfq_data.get('code')}")
+                            break
+
+                # Select the RFQ (either the last selected one or the latest one)
                 if len(rfqs) > 0:
-                    self.rfq_combo.setCurrentIndex(1)  # Index 1 because index 0 is "-- Select RFQ --"
+                    self.rfq_combo.setCurrentIndex(rfq_index_to_select)
 
         except Exception as e:
             logger.error(f"Error loading RFQs: {e}", exc_info=True)
