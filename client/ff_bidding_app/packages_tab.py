@@ -1028,8 +1028,10 @@ class PackagesTab(QtWidgets.QWidget):
         lines.append("CONTENTS")
         lines.append("-" * 70)
 
-        # Sort folders for consistent output
-        sorted_folders = sorted(manifest["folders"].keys())
+        # Sort folders for consistent output - only include folders with files
+        sorted_folders = sorted(
+            [fp for fp, fd in manifest["folders"].items() if fd.get("files")]
+        )
 
         for folder_path in sorted_folders:
             folder_data = manifest["folders"][folder_path]
@@ -1041,30 +1043,27 @@ class PackagesTab(QtWidgets.QWidget):
             lines.append(f"  [{clean_path}]")
             lines.append(f"  " + "~" * (len(clean_path) + 2))
 
-            if files:
-                for file_info in files:
-                    file_name = file_info.get("code", "Unknown")
-                    status = file_info.get("status", "")
-                    description = file_info.get("description", "")
+            for file_info in files:
+                file_name = file_info.get("code", "Unknown")
+                status = file_info.get("status", "")
+                description = file_info.get("description", "")
 
-                    # Get actual downloaded filename if available
-                    version_id = file_info.get("id")
-                    if version_id and version_id in downloaded_files:
-                        actual_file = Path(downloaded_files[version_id]).name
-                        lines.append(f"    - {actual_file}")
-                    else:
-                        lines.append(f"    - {file_name}")
+                # Get actual downloaded filename if available
+                version_id = file_info.get("id")
+                if version_id and version_id in downloaded_files:
+                    actual_file = Path(downloaded_files[version_id]).name
+                    lines.append(f"    - {actual_file}")
+                else:
+                    lines.append(f"    - {file_name}")
 
-                    # Add status if available
-                    if status:
-                        lines.append(f"      Status: {status}")
+                # Add status if available
+                if status:
+                    lines.append(f"      Status: {status}")
 
-                    # Add description if available (truncate if too long)
-                    if description:
-                        desc = description[:100] + "..." if len(description) > 100 else description
-                        lines.append(f"      Description: {desc}")
-            else:
-                lines.append("    (empty)")
+                # Add description if available (truncate if too long)
+                if description:
+                    desc = description[:100] + "..." if len(description) > 100 else description
+                    lines.append(f"      Description: {desc}")
 
         # Root files section
         root_files = manifest.get("root_files", [])
