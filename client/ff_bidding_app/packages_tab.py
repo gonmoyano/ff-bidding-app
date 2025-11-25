@@ -934,6 +934,19 @@ class PackagesTab(QtWidgets.QWidget):
             with open(manifest_path, 'w', encoding='utf-8') as f:
                 json.dump(serialized_package_data, f, indent=2)
 
+            # Write plain text manifest for vendors
+            text_manifest_path = package_folder / "README.txt"
+            self._write_text_manifest(
+                text_manifest_path,
+                package_name,
+                version_string,
+                sg_project,
+                sg_rfq,
+                manifest,
+                downloaded_files
+            )
+            logger.info(f"Writing text manifest to: {text_manifest_path}")
+
             progress.setValue(100)
 
             # Count total entities by category
@@ -971,6 +984,118 @@ class PackagesTab(QtWidgets.QWidget):
             )
         finally:
             progress.close()
+
+    def _write_text_manifest(self, file_path, package_name, version_string,
+                              sg_project, sg_rfq, manifest, downloaded_files):
+        """Write a plain text manifest file for vendors.
+
+        Args:
+            file_path: Path to write the text file
+            package_name: Name of the package
+            version_string: Version string (e.g., "v001")
+            sg_project: ShotGrid project data
+            sg_rfq: ShotGrid RFQ data
+            manifest: Package manifest dictionary
+            downloaded_files: Dict mapping version_id to downloaded file path
+        """
+        lines = []
+
+        # Header
+        lines.append("=" * 70)
+        lines.append(f"DATA PACKAGE: {package_name}")
+        lines.append("=" * 70)
+        lines.append("")
+
+        # Package Information
+        lines.append("PACKAGE INFORMATION")
+        lines.append("-" * 70)
+        lines.append(f"  Package Name:    {package_name}")
+        lines.append(f"  Version:         {version_string}")
+        lines.append(f"  Project:         {sg_project.get('code', 'N/A')}")
+        lines.append(f"  RFQ:             {sg_rfq.get('code', 'N/A')}")
+        lines.append(f"  Created:         {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append(f"  Created By:      FF Package Manager")
+        lines.append("")
+
+        # Summary
+        lines.append("SUMMARY")
+        lines.append("-" * 70)
+        lines.append(f"  Total Folders:   {manifest['summary']['total_folders']}")
+        lines.append(f"  Total Files:     {manifest['summary']['total_files']}")
+        lines.append("")
+
+        # Contents by Section (Folders)
+        lines.append("CONTENTS")
+        lines.append("-" * 70)
+
+        # Sort folders for consistent output
+        sorted_folders = sorted(manifest["folders"].keys())
+
+        for folder_path in sorted_folders:
+            folder_data = manifest["folders"][folder_path]
+            files = folder_data.get("files", [])
+
+            # Section header with folder path
+            clean_path = folder_path.lstrip("/") or "(Root)"
+            lines.append("")
+            lines.append(f"  [{clean_path}]")
+            lines.append(f"  " + "~" * (len(clean_path) + 2))
+
+            if files:
+                for file_info in files:
+                    file_name = file_info.get("code", "Unknown")
+                    status = file_info.get("status", "")
+                    description = file_info.get("description", "")
+
+                    # Get actual downloaded filename if available
+                    version_id = file_info.get("id")
+                    if version_id and version_id in downloaded_files:
+                        actual_file = Path(downloaded_files[version_id]).name
+                        lines.append(f"    - {actual_file}")
+                    else:
+                        lines.append(f"    - {file_name}")
+
+                    # Add status if available
+                    if status:
+                        lines.append(f"      Status: {status}")
+
+                    # Add description if available (truncate if too long)
+                    if description:
+                        desc = description[:100] + "..." if len(description) > 100 else description
+                        lines.append(f"      Description: {desc}")
+            else:
+                lines.append("    (empty)")
+
+        # Root files section
+        root_files = manifest.get("root_files", [])
+        if root_files:
+            lines.append("")
+            lines.append("  [Root Level Files]")
+            lines.append("  " + "~" * 18)
+
+            for file_info in root_files:
+                file_name = file_info.get("code", "Unknown")
+                status = file_info.get("status", "")
+
+                version_id = file_info.get("id")
+                if version_id and version_id in downloaded_files:
+                    actual_file = Path(downloaded_files[version_id]).name
+                    lines.append(f"    - {actual_file}")
+                else:
+                    lines.append(f"    - {file_name}")
+
+                if status:
+                    lines.append(f"      Status: {status}")
+
+        # Footer
+        lines.append("")
+        lines.append("=" * 70)
+        lines.append("END OF MANIFEST")
+        lines.append("=" * 70)
+
+        # Write to file
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write("\n".join(lines))
 
     def _export_to_excel(self):
         """Export selected bidding scenes to Excel file."""
