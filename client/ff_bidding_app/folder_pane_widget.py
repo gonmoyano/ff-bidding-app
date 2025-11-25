@@ -814,6 +814,7 @@ class FolderPaneWidget(QtWidgets.QWidget):
     """Widget displaying folders for Assets and Scenes."""
 
     imageDropped = QtCore.Signal(int, str, str)  # Signal emitted when an image is dropped to any folder (image_id, folder_name, folder_type)
+    imageRemoved = QtCore.Signal(int, str, str)  # Signal emitted when an image is removed from any folder (image_id, folder_name, folder_type)
     packageSelected = QtCore.Signal(str)  # Signal emitted when a package is selected (package_name or empty string)
 
     def __init__(self, parent=None):
@@ -1348,6 +1349,9 @@ class FolderPaneWidget(QtWidgets.QWidget):
         # Remove image from folder
         folder.remove_image(image_id)
         logger.info(f"Removed image {image_id} from folder {folder_name}")
+
+        # Emit signal to notify parent (ImageViewerWidget) for ShotGrid update
+        self.imageRemoved.emit(image_id, folder_name, folder_type)
 
         # Update thumbnail states in image viewer
         if self.image_viewer:
