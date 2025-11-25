@@ -1,6 +1,7 @@
 from PySide6 import QtWidgets, QtCore
 import json
 import logging
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -790,6 +791,116 @@ class PackagesTab(QtWidgets.QWidget):
             logger.info(f"Package manifest: {manifest['summary']['total_folders']} folders, "
                         f"{manifest['summary']['total_files']} files")
 
+            # Create package folder
+            package_folder = output_dir / package_name
+            package_folder.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Created package folder: {package_folder}")
+
+            # Create folder structure from manifest
+            for folder_path in manifest["folders"].keys():
+                # Remove leading slash and create folder
+                clean_path = folder_path.lstrip("/")
+                if clean_path:
+                    folder_full_path = package_folder / clean_path
+                    folder_full_path.mkdir(parents=True, exist_ok=True)
+                    logger.info(f"Created folder: {folder_full_path}")
+
+            progress.setValue(50)
+            QtCore.QCoreApplication.processEvents()
+
+            # Download files and copy to their assigned folders
+            # Track downloaded files to avoid re-downloading for multiple folder assignments
+            downloaded_files = {}  # version_id -> local file path
+            files_copied = 0
+            files_failed = 0
+
+            # Calculate total files for progress
+            total_files = manifest["summary"]["total_files"]
+            files_processed = 0
+
+            # Process files in folders
+            for folder_path, folder_data in manifest["folders"].items():
+                clean_folder_path = folder_path.lstrip("/")
+                target_folder = package_folder / clean_folder_path if clean_folder_path else package_folder
+
+                for file_info in folder_data.get("files", []):
+                    if progress.wasCanceled():
+                        logger.info("Package creation cancelled by user")
+                        return
+
+                    version_id = file_info.get("id")
+                    if not version_id:
+                        continue
+
+                    files_processed += 1
+                    progress_value = 50 + int((files_processed / max(total_files, 1)) * 40)
+                    progress.setValue(progress_value)
+                    progress.setLabelText(f"Downloading files... ({files_processed}/{total_files})")
+                    QtCore.QCoreApplication.processEvents()
+
+                    try:
+                        # Check if file was already downloaded
+                        if version_id in downloaded_files:
+                            # Copy from already downloaded file
+                            source_file = downloaded_files[version_id]
+                            if source_file and Path(source_file).exists():
+                                dest_file = target_folder / Path(source_file).name
+                                if not dest_file.exists():
+                                    shutil.copy2(source_file, dest_file)
+                                    logger.info(f"Copied file to: {dest_file}")
+                                files_copied += 1
+                        else:
+                            # Download the file
+                            downloaded_path = self.sg_session.download_version_movie(
+                                version_id, str(target_folder)
+                            )
+                            if downloaded_path:
+                                downloaded_files[version_id] = downloaded_path
+                                files_copied += 1
+                                logger.info(f"Downloaded: {downloaded_path}")
+                            else:
+                                logger.warning(f"Failed to download version {version_id}")
+                                files_failed += 1
+                    except Exception as e:
+                        logger.error(f"Error processing file {version_id}: {e}")
+                        files_failed += 1
+
+            # Process root-level files (files without folder assignment)
+            for file_info in manifest.get("root_files", []):
+                if progress.wasCanceled():
+                    logger.info("Package creation cancelled by user")
+                    return
+
+                version_id = file_info.get("id")
+                if not version_id:
+                    continue
+
+                files_processed += 1
+                progress_value = 50 + int((files_processed / max(total_files, 1)) * 40)
+                progress.setValue(progress_value)
+                progress.setLabelText(f"Downloading files... ({files_processed}/{total_files})")
+                QtCore.QCoreApplication.processEvents()
+
+                try:
+                    if version_id not in downloaded_files:
+                        downloaded_path = self.sg_session.download_version_movie(
+                            version_id, str(package_folder)
+                        )
+                        if downloaded_path:
+                            downloaded_files[version_id] = downloaded_path
+                            files_copied += 1
+                            logger.info(f"Downloaded root file: {downloaded_path}")
+                        else:
+                            logger.warning(f"Failed to download root version {version_id}")
+                            files_failed += 1
+                except Exception as e:
+                    logger.error(f"Error processing root file {version_id}: {e}")
+                    files_failed += 1
+
+            progress.setValue(95)
+            progress.setLabelText("Writing manifest...")
+            QtCore.QCoreApplication.processEvents()
+
             package_data = {
                 "metadata": {
                     "source": "Shotgrid",
@@ -811,16 +922,16 @@ class PackagesTab(QtWidgets.QWidget):
                 "manifest": manifest
             }
 
-            # Create filename
-            filename = f"{package_name}.json"
-            output_path = output_dir / filename
+            # Write manifest JSON file inside package folder
+            manifest_filename = "manifest.json"
+            manifest_path = package_folder / manifest_filename
 
-            logger.info(f"Writing package to: {output_path}")
+            logger.info(f"Writing manifest to: {manifest_path}")
 
             # Serialize the package data to handle datetime objects
             serialized_package_data = self._serialize_for_json(package_data)
 
-            with open(output_path, 'w', encoding='utf-8') as f:
+            with open(manifest_path, 'w', encoding='utf-8') as f:
                 json.dump(serialized_package_data, f, indent=2)
 
             progress.setValue(100)
@@ -830,6 +941,12 @@ class PackagesTab(QtWidgets.QWidget):
             entity_summary = "\n".join([f"  {k}: {v}" for k, v in entity_counts.items()])
 
             logger.info("Package created successfully")
+
+            # Build file stats message
+            file_stats = f"  Downloaded: {files_copied}"
+            if files_failed > 0:
+                file_stats += f"\n  Failed: {files_failed}"
+
             QtWidgets.QMessageBox.information(
                 self, "Success",
                 f"Package created successfully!\n\n"
@@ -841,8 +958,9 @@ class PackagesTab(QtWidgets.QWidget):
                 f"\nManifest:\n"
                 f"  Folders: {manifest['summary']['total_folders']}\n"
                 f"  Files: {manifest['summary']['total_files']}\n"
+                f"\nFiles:\n{file_stats}\n"
                 f"\nVersions by category:\n{entity_summary if entity_summary else '  (none)'}\n\n"
-                f"Location:\n{output_path}"
+                f"Location:\n{package_folder}"
             )
 
         except Exception as e:
