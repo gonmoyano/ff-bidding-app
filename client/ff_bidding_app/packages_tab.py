@@ -214,7 +214,7 @@ class PackagesTab(QtWidgets.QWidget):
         return self.content_stack
 
     def _create_right_pane(self):
-        """Create the right pane with Package Selector, Package Data tree, Data to Fetch, and Output Settings."""
+        """Create the right pane with Package Selector, Package Data tree, and Output Settings."""
         right_widget = QtWidgets.QWidget()
         right_layout = QtWidgets.QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
@@ -227,10 +227,6 @@ class PackagesTab(QtWidgets.QWidget):
         self.package_data_tree = PackageTreeView()
         self.package_data_tree.set_sg_session(self.sg_session)
         right_layout.addWidget(self.package_data_tree, 1)  # Give it stretch factor
-
-        # Data to Fetch collapsible group
-        self.data_fetch_group = self._create_data_fetch_group()
-        right_layout.addWidget(self.data_fetch_group)
 
         # Output Settings collapsible group
         self.output_settings_group = self._create_output_settings_group()
