@@ -9,12 +9,14 @@ try:
     from .bid_selector_widget import CollapsibleGroupBox
     from .thumbnail_cache import ThumbnailCache
     from .settings import AppSettings
+    from .document_folder_pane_widget import DocumentFolderPaneWidget
 except (ImportError, ValueError, SystemError):
     logger = logging.getLogger("FFPackageManager")
     from sliding_overlay_panel import SlidingOverlayPanel
     from bid_selector_widget import CollapsibleGroupBox
     from thumbnail_cache import ThumbnailCache
     from settings import AppSettings
+    from document_folder_pane_widget import DocumentFolderPaneWidget
 
 # Global document cache instance (shared across all widgets)
 _document_cache = None
@@ -1169,8 +1171,7 @@ class DocumentViewerWidget(QtWidgets.QWidget):
         self.thumbnail_dock = self._create_thumbnail_dock()
         self.splitter.addWidget(self.thumbnail_dock)
 
-        # Right: Folder pane (import here to avoid circular imports)
-        from .document_folder_pane_widget import DocumentFolderPaneWidget
+        # Right: Folder pane
         self.folder_pane = DocumentFolderPaneWidget(self)
         self.folder_pane.document_viewer = self
         self.splitter.addWidget(self.folder_pane)
