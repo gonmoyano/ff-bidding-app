@@ -1102,6 +1102,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
             self.rowCountChanged.emit(0, 0)
             return
 
+        # Notify views that model is being reset
+        self.beginResetModel()
+
         # Start with all rows
         self.filtered_row_indices = list(range(len(self.all_bidding_scenes_data)))
 
@@ -1122,9 +1125,6 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         self.display_row_to_data_row.clear()
         for display_row, data_idx in enumerate(self.filtered_row_indices):
             self.display_row_to_data_row[display_row] = data_idx
-
-        # Notify views
-        self.beginResetModel()
         self.endResetModel()
 
         # Emit row count changed
