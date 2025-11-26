@@ -641,7 +641,6 @@ class ImageViewerDialog(QtWidgets.QDialog):
             if version_id and cache.is_cached(version_id):
                 cached_data = cache.get_cached_data(version_id)
                 if cached_data:
-                    logger.debug(f"Loading enlarged image for {self.version_data.get('code')} from cache")
                     self._on_image_loaded(cached_data)
                     return
 
@@ -911,7 +910,6 @@ class ThumbnailWidget(QtWidgets.QWidget):
             if version_id and cache.is_cached(version_id):
                 cached_data = cache.get_cached_data(version_id)
                 if cached_data:
-                    logger.debug(f"Loading thumbnail for {self.version_data.get('code')} from cache")
                     self._on_thumbnail_loaded(cached_data, from_cache=True)
                     return
 

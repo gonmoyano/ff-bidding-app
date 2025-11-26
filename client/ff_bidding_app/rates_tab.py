@@ -778,7 +778,6 @@ class RatesTab(QtWidgets.QWidget):
                             # Set default formula for Price column
                             if virtual_field == "_calc_price":
                                 item[virtual_field] = default_price_formula
-                                logger.debug(f"Set default Price formula for Line Item: {default_price_formula}")
                             else:
                                 item[virtual_field] = ""  # Initialize with empty string
 

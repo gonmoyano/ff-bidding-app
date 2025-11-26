@@ -140,29 +140,21 @@ class EditCommand:
         field_info = self.field_schema.get(field_name, {})
         data_type = field_info.get("data_type")
 
-        logger.debug(f"Parsing field '{field_name}' with data_type '{data_type}': '{text}'")
-
         # Parse based on ShotGrid data type
         if data_type == "number":
             try:
                 # Try int first
                 if '.' not in str(text):
-                    value = int(text)
-                    logger.debug(f"Parsed '{text}' as int: {value}")
-                    return value
+                    return int(text)
                 else:
-                    value = float(text)
-                    logger.debug(f"Parsed '{text}' as float: {value}")
-                    return value
+                    return float(text)
             except ValueError:
                 logger.warning(f"Failed to parse '{text}' as number for field '{field_name}'")
                 raise ValueError(f"Invalid number format: '{text}'")
 
         elif data_type == "float":
             try:
-                value = float(text)
-                logger.debug(f"Parsed '{text}' as float: {value}")
-                return value
+                return float(text)
             except ValueError:
                 logger.warning(f"Failed to parse '{text}' as float for field '{field_name}'")
                 raise ValueError(f"Invalid float format: '{text}'")
@@ -227,8 +219,6 @@ class PasteCommand:
         # Get field schema info
         field_info = self.field_schema.get(field_name, {})
         data_type = field_info.get("data_type")
-
-        logger.debug(f"Parsing field '{field_name}' with data_type '{data_type}': '{text}'")
 
         # Parse based on ShotGrid data type
         if data_type == "number":
@@ -1968,7 +1958,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         # Check if value actually changed
         if new_value == old_value:
-            logger.debug(f"No change detected for row {row}, col {col} ({field_name})")
             return
 
         logger.info(f"Cell changed at row {row}, col {col} ({field_name}): '{old_value}' -> '{new_value}'")
@@ -2808,12 +2797,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         """
         # Get current bid from bidding tab
         if not hasattr(self.parent_app, 'bidding_tab') or not hasattr(self.parent_app.bidding_tab, 'current_bid'):
-            logger.debug("No current bid available for Line Items query")
             return []
 
         current_bid = self.parent_app.bidding_tab.current_bid
         if not current_bid or not current_bid.get('id'):
-            logger.debug("No valid current bid for Line Items query")
             return []
 
         try:

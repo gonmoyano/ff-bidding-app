@@ -285,8 +285,8 @@ class CostsTab(QtWidgets.QMainWindow):
                         total_str = self.shots_cost_totals_wrapper.get_total(price_col_idx)
                         # Parse the total string (format: "$1,234.56")
                         shot_total = self._parse_currency_value(total_str)
-                    except (ValueError, AttributeError) as e:
-                        logger.debug(f"Could not get shot costs total: {e}")
+                    except (ValueError, AttributeError):
+                        pass
 
             # Get Asset Costs total
             asset_total = 0.0
@@ -298,8 +298,8 @@ class CostsTab(QtWidgets.QMainWindow):
                         total_str = self.asset_cost_totals_wrapper.get_total(price_col_idx)
                         # Parse the total string (format: "$1,234.56")
                         asset_total = self._parse_currency_value(total_str)
-                    except (ValueError, AttributeError) as e:
-                        logger.debug(f"Could not get asset costs total: {e}")
+                    except (ValueError, AttributeError):
+                        pass
 
             # Get Misc total from spreadsheet
             misc_total = 0.0
@@ -312,8 +312,8 @@ class CostsTab(QtWidgets.QMainWindow):
                         if value:
                             parsed_value = self._parse_currency_value(str(value))
                             misc_total += parsed_value
-                except (ValueError, AttributeError) as e:
-                    logger.debug(f"Could not calculate misc costs total: {e}")
+                except (ValueError, AttributeError):
+                    pass
 
             # Calculate grand total
             grand_total = shot_total + asset_total + misc_total
@@ -328,8 +328,6 @@ class CostsTab(QtWidgets.QMainWindow):
             self.total_cost_spreadsheet.set_cell_value(2, 1, f"{currency_symbol}{asset_total:,.2f}")
             self.total_cost_spreadsheet.set_cell_value(3, 1, f"{currency_symbol}{misc_total:,.2f}")
             self.total_cost_spreadsheet.set_cell_value(4, 1, f"{currency_symbol}{grand_total:,.2f}")
-
-            logger.debug(f"Updated Total Cost summary: Shots=${shot_total:,.2f}, Assets=${asset_total:,.2f}, Total=${grand_total:,.2f}")
 
         except Exception as e:
             logger.error(f"Error updating Total Cost summary: {e}", exc_info=True)
@@ -364,8 +362,8 @@ class CostsTab(QtWidgets.QMainWindow):
                     self.shots_cost_totals_wrapper.calculate_totals(columns=[price_col_idx], skip_first_col=True)
                     # Update Total Cost summary
                     self._update_total_cost_summary()
-                except (ValueError, AttributeError) as e:
-                    logger.debug(f"Could not recalculate shots totals: {e}")
+                except (ValueError, AttributeError):
+                    pass
 
     def _on_assets_data_changed(self):
         """Handle data changes in the Assets Cost model - recalculate totals and update summary."""
@@ -378,8 +376,8 @@ class CostsTab(QtWidgets.QMainWindow):
                     self.asset_cost_totals_wrapper.calculate_totals(columns=[price_col_idx], skip_first_col=True)
                     # Update Total Cost summary
                     self._update_total_cost_summary()
-                except (ValueError, AttributeError) as e:
-                    logger.debug(f"Could not recalculate assets totals: {e}")
+                except (ValueError, AttributeError):
+                    pass
 
     def _on_misc_data_changed(self):
         """Handle data changes in the Misc Cost spreadsheet - update summary."""
@@ -605,7 +603,6 @@ class CostsTab(QtWidgets.QMainWindow):
                 line_item_price = 0
                 if vfx_shot_work and vfx_shot_work in self.line_items_price_map:
                     line_item_price = self.line_items_price_map[vfx_shot_work]
-                    logger.debug(f"Scene '{scene.get('code')}': VFX Shot Work='{vfx_shot_work}', Price=${line_item_price:,.2f}")
 
                 # Store Line Item price in hidden column
                 scene["_line_item_price"] = line_item_price
@@ -720,7 +717,6 @@ class CostsTab(QtWidgets.QMainWindow):
     def _load_line_item_names(self):
         """Load Line Item names from the current Bid's Price List for VFX Shot Work validation."""
         if not self.current_bid_data or not self.current_bid_data.get('id'):
-            logger.debug("No current bid for Line Items query")
             self.line_item_names = []
             return
 
@@ -798,7 +794,6 @@ class CostsTab(QtWidgets.QMainWindow):
         self.line_items_price_map = {}
 
         if not self.current_bid_data or not self.current_bid_data.get('id'):
-            logger.debug("No current bid for Line Items price query")
             return
 
         try:
@@ -907,9 +902,6 @@ class CostsTab(QtWidgets.QMainWindow):
                         total_price += mandays * rate
 
                     calculated_price = total_price
-                    logger.debug(f"Calculated price for '{code}': ${calculated_price:,.2f}")
-                else:
-                    logger.debug(f"Using static price for '{code}': ${calculated_price:,.2f}")
 
                 # Store in price map
                 if code:
@@ -1092,7 +1084,6 @@ class CostsTab(QtWidgets.QMainWindow):
                 line_item_price = 0
                 if asset_type and asset_type in self.line_items_price_map:
                     line_item_price = self.line_items_price_map[asset_type]
-                    logger.debug(f"Asset '{asset.get('code')}': Asset Type='{asset_type}', Price=${line_item_price:,.2f}")
 
                 # Store Line Item price in hidden column
                 asset["_line_item_price"] = line_item_price

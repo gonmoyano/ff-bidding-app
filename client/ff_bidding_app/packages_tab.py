@@ -1626,7 +1626,6 @@ class PackagesTab(QtWidgets.QWidget):
                     rfq_id = self.current_rfq.get("id")
                     if rfq_id:
                         self.app_settings.set_last_selected_package_for_rfq(rfq_id, sg_package_id)
-                        logger.debug(f"Saved package selection: RFQ {rfq_id} -> Package {sg_package_id}")
             else:
                 logger.info("No ShotGrid Package ID found, clearing tree")
                 if self.package_data_tree:
@@ -1717,7 +1716,6 @@ class PackagesTab(QtWidgets.QWidget):
         # Get the last selected package ID for this RFQ from settings
         last_package_id = self.app_settings.get_last_selected_package_for_rfq(rfq_id)
         if not last_package_id:
-            logger.debug(f"No saved package selection for RFQ {rfq_id}")
             return
 
         # Find the package with this ID in our loaded packages
@@ -1729,8 +1727,6 @@ class PackagesTab(QtWidgets.QWidget):
                         logger.info(f"Restoring last selected package: {package_name}")
                         self.package_selector_dropdown.setCurrentIndex(i)
                         return
-
-        logger.debug(f"Last selected package (ID: {last_package_id}) not found in dropdown for RFQ {rfq_id}")
 
     def _sync_selected_package_to_folder_pane(self, package_name):
         """Sync the selected package to the folder pane dropdown.
@@ -1814,12 +1810,10 @@ class PackagesTab(QtWidgets.QWidget):
                         folder_widget = folder_pane.asset_folders[folder_name]
                         folder_widget.image_ids.add(version_id)
                         folder_widget._update_count()
-                        logger.debug(f"Added version {version_id} to asset folder {folder_name}")
                     elif folder_type == 'scenes' and folder_name in folder_pane.scene_folders:
                         folder_widget = folder_pane.scene_folders[folder_name]
                         folder_widget.image_ids.add(version_id)
                         folder_widget._update_count()
-                        logger.debug(f"Added version {version_id} to scene folder {folder_name}")
 
             # Update the thumbnail states to reflect folder assignments
             if hasattr(self.image_viewer, 'update_thumbnail_states'):
