@@ -27,7 +27,7 @@ def setup_logging():
 
         # Setup logging
         logging.basicConfig(
-            level=logging.DEBUG,
+            level=logging.WARNING,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             handlers=[
                 logging.FileHandler(log_file, encoding='utf-8'),
@@ -36,10 +36,7 @@ def setup_logging():
         )
 
         logger = logging.getLogger("FFPackageManager")
-        logger.info("=" * 60)
-        logger.info("FF Package Manager Logging Started")
-        logger.info(f"Log file: {log_file}")
-        logger.info("=" * 60)
+        logger.setLevel(logging.WARNING)
 
         return logger
     except Exception as e:
