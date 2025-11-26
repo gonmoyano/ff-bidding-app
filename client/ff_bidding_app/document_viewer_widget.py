@@ -224,6 +224,16 @@ class DocumentViewerDialog(QtWidgets.QDialog):
         self.prev_page_btn.setEnabled(False)
         toolbar.addWidget(self.prev_page_btn)
 
+        # Page slider for quick navigation
+        self.page_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.page_slider.setMinimum(1)
+        self.page_slider.setMaximum(1)
+        self.page_slider.setValue(1)
+        self.page_slider.setFixedWidth(150)
+        self.page_slider.setEnabled(False)
+        self.page_slider.valueChanged.connect(self._on_page_slider_changed)
+        toolbar.addWidget(self.page_slider)
+
         self.page_label = QtWidgets.QLabel("Page 1 of 1")
         toolbar.addWidget(self.page_label)
 
@@ -496,8 +506,14 @@ class DocumentViewerDialog(QtWidgets.QDialog):
             logger.error(f"Error rendering PDF: {e}")
             self._render_document_placeholder("PDF Document", 0, is_pdf=True)
 
-    def _render_pdf_page(self, doc, page_num):
-        """Render a specific page of the PDF."""
+    def _render_pdf_page(self, doc, page_num, preserve_zoom=False):
+        """Render a specific page of the PDF.
+
+        Args:
+            doc: PyMuPDF document object
+            page_num: Page number to render (0-indexed)
+            preserve_zoom: If True, maintain current zoom level instead of fitting to window
+        """
         try:
             import fitz  # PyMuPDF
             page = doc.load_page(page_num)
@@ -511,9 +527,19 @@ class DocumentViewerDialog(QtWidgets.QDialog):
             self.document_pixmap.loadFromData(img_data)
 
             if not self.document_pixmap.isNull():
+                # Save current transform if preserving zoom
+                current_transform = self.graphics_view.transform() if preserve_zoom else None
+
                 self.graphics_scene.clear()
                 self.pixmap_item = self.graphics_scene.addPixmap(self.document_pixmap)
-                self._fit_to_window()
+
+                if preserve_zoom and current_transform is not None:
+                    # Restore the zoom level
+                    self.graphics_view.setTransform(current_transform)
+                    # Center on the new page
+                    self.graphics_view.centerOn(self.pixmap_item)
+                else:
+                    self._fit_to_window()
 
         except Exception as e:
             logger.error(f"Error rendering PDF page {page_num}: {e}")
@@ -636,6 +662,20 @@ class DocumentViewerDialog(QtWidgets.QDialog):
         self.prev_page_btn.setEnabled(self.current_page > 0)
         self.next_page_btn.setEnabled(self.current_page < self.total_pages - 1)
 
+        # Update slider
+        self.page_slider.blockSignals(True)
+        self.page_slider.setMaximum(self.total_pages)
+        self.page_slider.setValue(self.current_page + 1)
+        self.page_slider.setEnabled(self.total_pages > 1)
+        self.page_slider.blockSignals(False)
+
+    def _on_page_slider_changed(self, value):
+        """Handle page slider value change."""
+        new_page = value - 1  # Slider is 1-based, pages are 0-based
+        if new_page != self.current_page and 0 <= new_page < self.total_pages:
+            self.current_page = new_page
+            self._reload_current_page()
+
     def _prev_page(self):
         """Go to previous page."""
         if self.current_page > 0:
@@ -649,13 +689,13 @@ class DocumentViewerDialog(QtWidgets.QDialog):
             self._reload_current_page()
 
     def _reload_current_page(self):
-        """Reload the current page."""
+        """Reload the current page while preserving zoom level."""
         self._update_page_controls()
         if self.document_path and self.document_path.lower().endswith('.pdf'):
             try:
                 import fitz
                 doc = fitz.open(self.document_path)
-                self._render_pdf_page(doc, self.current_page)
+                self._render_pdf_page(doc, self.current_page, preserve_zoom=True)
                 doc.close()
             except Exception as e:
                 logger.error(f"Error reloading page: {e}")
