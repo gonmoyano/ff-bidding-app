@@ -457,11 +457,16 @@ class DocumentViewerDialog(QtWidgets.QDialog):
                 # For other documents (doc, docx, xls, xlsx), show file info
                 self._render_document_placeholder(filename, len(document_data))
 
-            # Update status
+            # Update status with hints
             size_kb = len(document_data) / 1024
+            hint = ""
+            if self.total_pages > 1:
+                hint = " | Scroll to change pages, Ctrl+Scroll to zoom"
+            else:
+                hint = " | Ctrl+Scroll to zoom"
             self.status_label.setText(
                 f"Document: {filename} | Size: {size_kb:.1f} KB | "
-                f"Version: {self.version_data.get('code', 'Unknown')}"
+                f"Version: {self.version_data.get('code', 'Unknown')}{hint}"
             )
 
             if hasattr(self, 'loader_thread'):
@@ -663,17 +668,36 @@ class DocumentViewerDialog(QtWidgets.QDialog):
             self.loader_thread.wait()
 
     def _wheel_event(self, event):
-        """Handle mouse wheel for zooming."""
-        zoom_factor = 1.15
+        """Handle mouse wheel for page navigation and zooming.
 
-        if event.angleDelta().y() > 0:
-            self.graphics_view.scale(zoom_factor, zoom_factor)
-            self.current_zoom *= zoom_factor
+        - Regular scroll: Navigate pages (for multi-page PDFs)
+        - Ctrl+scroll: Zoom in/out
+        """
+        # Check if Ctrl is pressed for zooming
+        if event.modifiers() & QtCore.Qt.ControlModifier:
+            zoom_factor = 1.15
+
+            if event.angleDelta().y() > 0:
+                self.graphics_view.scale(zoom_factor, zoom_factor)
+                self.current_zoom *= zoom_factor
+            else:
+                self.graphics_view.scale(1 / zoom_factor, 1 / zoom_factor)
+                self.current_zoom /= zoom_factor
+
+            self._update_zoom_label()
         else:
-            self.graphics_view.scale(1 / zoom_factor, 1 / zoom_factor)
-            self.current_zoom /= zoom_factor
-
-        self._update_zoom_label()
+            # Regular scroll for page navigation (multi-page PDFs)
+            if self.total_pages > 1:
+                if event.angleDelta().y() < 0:
+                    # Scroll down - next page
+                    self._next_page()
+                elif event.angleDelta().y() > 0:
+                    # Scroll up - previous page
+                    self._prev_page()
+            else:
+                # Single page - allow normal scrolling/panning
+                # Pass to default handler
+                pass
 
     def _zoom_in(self):
         """Zoom in the document."""
