@@ -720,7 +720,6 @@ class RatesTab(QtWidgets.QWidget):
 
             # Get Line Items from the Price List's sg_line_items field
             sg_line_items = self.current_price_list_data.get("sg_line_items")
-            logger.info(f"Price List sg_line_items field: {sg_line_items}")
 
             # Build filters for querying Line Items
             filters = []
@@ -913,9 +912,6 @@ class RatesTab(QtWidgets.QWidget):
                         pass
 
                     self.line_items_widget.model.dataChanged.connect(self._on_line_items_data_changed)
-                    logger.info(f"[Price Static] ✓ Connected dataChanged signal for Price Static auto-update")
-                    logger.info(f"[Price Static] Model type: {type(self.line_items_widget.model)}")
-                    logger.info(f"[Price Static] Columns: {self.line_items_widget.model.column_fields}")
 
         except Exception as e:
             logger.error(f"Failed to fetch schema for CustomEntity03: {e}", exc_info=True)
