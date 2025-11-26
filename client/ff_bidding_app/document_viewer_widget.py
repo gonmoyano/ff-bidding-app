@@ -1613,6 +1613,9 @@ class DocumentViewerWidget(QtWidgets.QWidget):
                     version['sg_version_type'] = sg_version_type
                     break
 
+            # Link to selected package with appropriate folder
+            self._link_document_to_package(document_id, target_category)
+
             self._rebuild_thumbnails()
             self.update_thumbnail_states()
 
@@ -1623,6 +1626,53 @@ class DocumentViewerWidget(QtWidgets.QWidget):
                 "Update Failed",
                 f"Failed to update document category:\n{str(e)}"
             )
+
+    def _link_document_to_package(self, document_id, category):
+        """Link a document to the currently selected package.
+
+        Args:
+            document_id: ID of the document version
+            category: Category name ('Script' or 'Documents')
+        """
+        # Get selected package from folder pane
+        if not self.folder_pane:
+            return
+
+        selected_package = self.folder_pane.get_selected_package()
+        if not selected_package:
+            return
+
+        try:
+            # Get package ID from packages_tab
+            if not self.packages_tab:
+                return
+
+            sg_package_id = None
+            if hasattr(self.packages_tab, 'package_name_to_id'):
+                sg_package_id = self.packages_tab.package_name_to_id.get(selected_package)
+
+            if not sg_package_id:
+                logger.warning(f"Could not find package ID for '{selected_package}'")
+                return
+
+            # Determine folder path based on category
+            folder_path = f"/{category}"
+
+            # Link version to package with folder
+            self.sg_session.link_version_to_package_with_folder(
+                version_id=document_id,
+                package_id=sg_package_id,
+                folder_name=folder_path
+            )
+
+            logger.info(f"Linked document {document_id} to package '{selected_package}' in {folder_path}")
+
+            # Refresh package data tree if available
+            if hasattr(self.packages_tab, 'package_data_tree') and self.packages_tab.package_data_tree:
+                self.packages_tab.package_data_tree.load_package_versions(sg_package_id)
+
+        except Exception as e:
+            logger.error(f"Failed to link document to package: {e}", exc_info=True)
 
     def _on_delete_requested(self, version_data):
         """Handle delete request from thumbnail context menu."""
