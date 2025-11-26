@@ -285,8 +285,8 @@ class CostsTab(QtWidgets.QMainWindow):
                         total_str = self.shots_cost_totals_wrapper.get_total(price_col_idx)
                         # Parse the total string (format: "$1,234.56")
                         shot_total = self._parse_currency_value(total_str)
-                    except (ValueError, AttributeError) as e:
-                        logger.debug(f"Could not get shot costs total: {e}")
+                    except (ValueError, AttributeError):
+                        pass
 
             # Get Asset Costs total
             asset_total = 0.0
@@ -298,8 +298,8 @@ class CostsTab(QtWidgets.QMainWindow):
                         total_str = self.asset_cost_totals_wrapper.get_total(price_col_idx)
                         # Parse the total string (format: "$1,234.56")
                         asset_total = self._parse_currency_value(total_str)
-                    except (ValueError, AttributeError) as e:
-                        logger.debug(f"Could not get asset costs total: {e}")
+                    except (ValueError, AttributeError):
+                        pass
 
             # Get Misc total from spreadsheet
             misc_total = 0.0
@@ -312,8 +312,8 @@ class CostsTab(QtWidgets.QMainWindow):
                         if value:
                             parsed_value = self._parse_currency_value(str(value))
                             misc_total += parsed_value
-                except (ValueError, AttributeError) as e:
-                    logger.debug(f"Could not calculate misc costs total: {e}")
+                except (ValueError, AttributeError):
+                    pass
 
             # Calculate grand total
             grand_total = shot_total + asset_total + misc_total
@@ -328,8 +328,6 @@ class CostsTab(QtWidgets.QMainWindow):
             self.total_cost_spreadsheet.set_cell_value(2, 1, f"{currency_symbol}{asset_total:,.2f}")
             self.total_cost_spreadsheet.set_cell_value(3, 1, f"{currency_symbol}{misc_total:,.2f}")
             self.total_cost_spreadsheet.set_cell_value(4, 1, f"{currency_symbol}{grand_total:,.2f}")
-
-            logger.debug(f"Updated Total Cost summary: Shots=${shot_total:,.2f}, Assets=${asset_total:,.2f}, Total=${grand_total:,.2f}")
 
         except Exception as e:
             logger.error(f"Error updating Total Cost summary: {e}", exc_info=True)
@@ -364,8 +362,8 @@ class CostsTab(QtWidgets.QMainWindow):
                     self.shots_cost_totals_wrapper.calculate_totals(columns=[price_col_idx], skip_first_col=True)
                     # Update Total Cost summary
                     self._update_total_cost_summary()
-                except (ValueError, AttributeError) as e:
-                    logger.debug(f"Could not recalculate shots totals: {e}")
+                except (ValueError, AttributeError):
+                    pass
 
     def _on_assets_data_changed(self):
         """Handle data changes in the Assets Cost model - recalculate totals and update summary."""
@@ -378,8 +376,8 @@ class CostsTab(QtWidgets.QMainWindow):
                     self.asset_cost_totals_wrapper.calculate_totals(columns=[price_col_idx], skip_first_col=True)
                     # Update Total Cost summary
                     self._update_total_cost_summary()
-                except (ValueError, AttributeError) as e:
-                    logger.debug(f"Could not recalculate assets totals: {e}")
+                except (ValueError, AttributeError):
+                    pass
 
     def _on_misc_data_changed(self):
         """Handle data changes in the Misc Cost spreadsheet - update summary."""
@@ -605,7 +603,6 @@ class CostsTab(QtWidgets.QMainWindow):
                 line_item_price = 0
                 if vfx_shot_work and vfx_shot_work in self.line_items_price_map:
                     line_item_price = self.line_items_price_map[vfx_shot_work]
-                    logger.debug(f"Scene '{scene.get('code')}': VFX Shot Work='{vfx_shot_work}', Price=${line_item_price:,.2f}")
 
                 # Store Line Item price in hidden column
                 scene["_line_item_price"] = line_item_price
@@ -720,7 +717,6 @@ class CostsTab(QtWidgets.QMainWindow):
     def _load_line_item_names(self):
         """Load Line Item names from the current Bid's Price List for VFX Shot Work validation."""
         if not self.current_bid_data or not self.current_bid_data.get('id'):
-            logger.debug("No current bid for Line Items query")
             self.line_item_names = []
             return
 
@@ -776,7 +772,6 @@ class CostsTab(QtWidgets.QMainWindow):
 
             # Extract code names
             self.line_item_names = [item.get("code", "") for item in line_items if item.get("code")]
-            logger.info(f"Found {len(self.line_item_names)} Line Items for VFX Shot Work: {self.line_item_names}")
 
         except Exception as e:
             logger.error(f"Failed to load Line Items for VFX Shot Work: {e}", exc_info=True)
@@ -798,7 +793,6 @@ class CostsTab(QtWidgets.QMainWindow):
         self.line_items_price_map = {}
 
         if not self.current_bid_data or not self.current_bid_data.get('id'):
-            logger.debug("No current bid for Line Items price query")
             return
 
         try:
@@ -907,9 +901,6 @@ class CostsTab(QtWidgets.QMainWindow):
                         total_price += mandays * rate
 
                     calculated_price = total_price
-                    logger.debug(f"Calculated price for '{code}': ${calculated_price:,.2f}")
-                else:
-                    logger.debug(f"Using static price for '{code}': ${calculated_price:,.2f}")
 
                 # Store in price map
                 if code:
@@ -918,9 +909,6 @@ class CostsTab(QtWidgets.QMainWindow):
                 # Add to data list
                 self.line_items_data.append(item)
 
-            logger.info(f"Loaded {len(self.line_items_data)} Line Items with prices")
-            logger.info(f"Price map: {self.line_items_price_map}")
-
         except Exception as e:
             logger.error(f"Failed to load Line Items with prices: {e}", exc_info=True)
             self.line_items_data = []
@@ -928,10 +916,6 @@ class CostsTab(QtWidgets.QMainWindow):
 
     def _apply_vfx_shot_work_delegate(self):
         """Apply ValidatedComboBoxDelegate to the sg_vfx_shot_work column."""
-        logger.info("=== _apply_vfx_shot_work_delegate called ===")
-        logger.info(f"Line Item names count: {len(self.line_item_names)}")
-        logger.info(f"Line Item names: {self.line_item_names}")
-
         if not self.shots_cost_widget or not hasattr(self.shots_cost_widget, 'table_view'):
             logger.warning("shots_cost_widget or table_view not available")
             return
@@ -939,48 +923,29 @@ class CostsTab(QtWidgets.QMainWindow):
         try:
             # Find the column index for sg_vfx_shot_work
             if hasattr(self.shots_cost_widget, 'model') and self.shots_cost_widget.model:
-                logger.info(f"Model columns: {self.shots_cost_widget.model.column_fields}")
                 try:
                     col_idx = self.shots_cost_widget.model.column_fields.index("sg_vfx_shot_work")
-                    logger.info(f"Found sg_vfx_shot_work at column index: {col_idx}")
                 except ValueError:
                     # Column not present
-                    logger.info("sg_vfx_shot_work column not found in model")
                     return
-
-                # Ensure the column is visible
-                is_hidden = self.shots_cost_widget.table_view.isColumnHidden(col_idx)
-                logger.info(f"Column sg_vfx_shot_work (index {col_idx}) hidden: {is_hidden}")
-                if is_hidden:
-                    logger.warning(f"Column sg_vfx_shot_work is hidden - it may not be visible to user")
 
                 # Create or update the delegate
                 if self.vfx_shot_work_delegate is None:
-                    logger.info(f"Creating new ValidatedComboBoxDelegate with {len(self.line_item_names)} Line Items")
                     self.vfx_shot_work_delegate = ValidatedComboBoxDelegate(
                         self.line_item_names,
                         self.shots_cost_widget.table_view
                     )
                     self.shots_cost_widget.table_view.setItemDelegateForColumn(col_idx, self.vfx_shot_work_delegate)
-                    logger.info(f"✓ Applied ValidatedComboBoxDelegate to sg_vfx_shot_work column (index {col_idx})")
-
-                    # Verify it was applied
-                    current_delegate = self.shots_cost_widget.table_view.itemDelegateForColumn(col_idx)
-                    logger.info(f"Verification - Current delegate for column {col_idx}: {type(current_delegate).__name__}")
 
                     # Protect delegate from being removed by _apply_column_dropdowns
                     # Store it in the widget's _dropdown_delegates dict
                     if hasattr(self.shots_cost_widget, '_dropdown_delegates'):
                         self.shots_cost_widget._dropdown_delegates['sg_vfx_shot_work'] = self.vfx_shot_work_delegate
-                        logger.info(f"✓ Protected sg_vfx_shot_work delegate from removal")
 
                     # Force a complete repaint of the table
                     self.shots_cost_widget.table_view.viewport().update()
-                    self.shots_cost_widget.table_view.update()
-                    logger.info(f"✓ Triggered viewport repaint")
                 else:
                     # Update existing delegate with new Line Item names
-                    logger.info(f"Updating existing delegate with {len(self.line_item_names)} Line Items")
                     self.vfx_shot_work_delegate.update_valid_values(self.line_item_names)
 
                     # Ensure delegate is still protected
@@ -989,8 +954,6 @@ class CostsTab(QtWidgets.QMainWindow):
 
                     # Force a complete repaint of the table
                     self.shots_cost_widget.table_view.viewport().update()
-                    self.shots_cost_widget.table_view.update()
-                    logger.info(f"✓ Updated ValidatedComboBoxDelegate and triggered repaint")
 
         except Exception as e:
             logger.error(f"Failed to apply VFX Shot Work delegate: {e}", exc_info=True)
@@ -1115,7 +1078,6 @@ class CostsTab(QtWidgets.QMainWindow):
                 line_item_price = 0
                 if asset_type and asset_type in self.line_items_price_map:
                     line_item_price = self.line_items_price_map[asset_type]
-                    logger.debug(f"Asset '{asset.get('code')}': Asset Type='{asset_type}', Price=${line_item_price:,.2f}")
 
                 # Store Line Item price in hidden column
                 asset["_line_item_price"] = line_item_price
@@ -1200,10 +1162,6 @@ class CostsTab(QtWidgets.QMainWindow):
 
     def _apply_asset_type_delegate(self):
         """Apply ValidatedComboBoxDelegate to the sg_bid_asset_type column."""
-        logger.info("=== _apply_asset_type_delegate called ===")
-        logger.info(f"Line Item names count: {len(self.line_item_names)}")
-        logger.info(f"Line Item names: {self.line_item_names}")
-
         if not self.asset_cost_widget or not hasattr(self.asset_cost_widget, 'table_view'):
             logger.warning("asset_cost_widget or table_view not available")
             return
@@ -1211,47 +1169,28 @@ class CostsTab(QtWidgets.QMainWindow):
         try:
             # Find the column index for sg_bid_asset_type
             if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
-                logger.info(f"Model columns: {self.asset_cost_widget.model.column_fields}")
                 try:
                     col_idx = self.asset_cost_widget.model.column_fields.index("sg_bid_asset_type")
-                    logger.info(f"Found sg_bid_asset_type at column index: {col_idx}")
                 except ValueError:
                     # Column not present
-                    logger.info("sg_bid_asset_type column not found in model")
                     return
-
-                # Ensure the column is visible
-                is_hidden = self.asset_cost_widget.table_view.isColumnHidden(col_idx)
-                logger.info(f"Column sg_bid_asset_type (index {col_idx}) hidden: {is_hidden}")
-                if is_hidden:
-                    logger.warning(f"Column sg_bid_asset_type is hidden - it may not be visible to user")
 
                 # Create or update the delegate
                 if not hasattr(self, 'asset_type_delegate') or self.asset_type_delegate is None:
-                    logger.info(f"Creating new ValidatedComboBoxDelegate with {len(self.line_item_names)} Line Items")
                     self.asset_type_delegate = ValidatedComboBoxDelegate(
                         self.line_item_names,
                         self.asset_cost_widget.table_view
                     )
                     self.asset_cost_widget.table_view.setItemDelegateForColumn(col_idx, self.asset_type_delegate)
-                    logger.info(f"✓ Applied ValidatedComboBoxDelegate to sg_bid_asset_type column (index {col_idx})")
-
-                    # Verify it was applied
-                    current_delegate = self.asset_cost_widget.table_view.itemDelegateForColumn(col_idx)
-                    logger.info(f"Verification - Current delegate for column {col_idx}: {type(current_delegate).__name__}")
 
                     # Protect delegate from being removed by _apply_column_dropdowns
                     if hasattr(self.asset_cost_widget, '_dropdown_delegates'):
                         self.asset_cost_widget._dropdown_delegates['sg_bid_asset_type'] = self.asset_type_delegate
-                        logger.info(f"✓ Protected sg_bid_asset_type delegate from removal")
 
                     # Force a complete repaint of the table
                     self.asset_cost_widget.table_view.viewport().update()
-                    self.asset_cost_widget.table_view.update()
-                    logger.info(f"✓ Triggered viewport repaint")
                 else:
                     # Update existing delegate with new Line Item names
-                    logger.info(f"Updating existing delegate with {len(self.line_item_names)} Line Items")
                     self.asset_type_delegate.update_valid_values(self.line_item_names)
 
                     # Ensure delegate is still protected
@@ -1260,8 +1199,6 @@ class CostsTab(QtWidgets.QMainWindow):
 
                     # Force a complete repaint of the table
                     self.asset_cost_widget.table_view.viewport().update()
-                    self.asset_cost_widget.table_view.update()
-                    logger.info(f"✓ Updated ValidatedComboBoxDelegate and triggered repaint")
 
         except Exception as e:
             logger.error(f"Failed to apply Asset Type delegate: {e}", exc_info=True)

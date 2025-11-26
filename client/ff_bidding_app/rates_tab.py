@@ -720,7 +720,6 @@ class RatesTab(QtWidgets.QWidget):
 
             # Get Line Items from the Price List's sg_line_items field
             sg_line_items = self.current_price_list_data.get("sg_line_items")
-            logger.info(f"Price List sg_line_items field: {sg_line_items}")
 
             # Build filters for querying Line Items
             filters = []
@@ -739,7 +738,6 @@ class RatesTab(QtWidgets.QWidget):
                 if line_item_ids:
                     # Query specific Line Items by IDs
                     filters = [["id", "in", line_item_ids]]
-                    logger.info(f"Line Item IDs to fetch: {line_item_ids}")
                 else:
                     logger.info("sg_line_items present but no valid IDs found")
 
@@ -759,9 +757,6 @@ class RatesTab(QtWidgets.QWidget):
             virtual_fields = ["_calc_price"]
             query_fields = [f for f in fields if f not in virtual_fields]
 
-            logger.info(f"Querying CustomEntity03 with filters: {filters}")
-            logger.info(f"Requesting fields: {query_fields}")
-
             line_items_list = self.sg_session.sg.find(
                 "CustomEntity03",
                 filters,
@@ -779,14 +774,12 @@ class RatesTab(QtWidgets.QWidget):
                             # Set default formula for Price column
                             if virtual_field == "_calc_price":
                                 item[virtual_field] = default_price_formula
-                                logger.debug(f"Set default Price formula for Line Item: {default_price_formula}")
                             else:
                                 item[virtual_field] = ""  # Initialize with empty string
 
             logger.info(f"Query returned {len(line_items_list) if line_items_list else 0} Line Item(s)")
 
             if line_items_list:
-                logger.info(f"Line Items data: {line_items_list}")
                 self.line_items_widget.load_bidding_scenes(line_items_list, field_schema=self.line_items_field_schema)
                 logger.info(f"Successfully loaded {len(line_items_list)} Line Item(s) into table")
 
@@ -903,7 +896,6 @@ class RatesTab(QtWidgets.QWidget):
                     if price_col_index >= 0:
                         formula_delegate = FormulaDelegate(self.line_items_formula_evaluator, app_settings=self.app_settings)
                         self.line_items_widget.table_view.setItemDelegateForColumn(price_col_index, formula_delegate)
-                        logger.info(f"Set formula delegate for Price column (index {price_col_index}) with app_settings for dynamic currency")
 
                 # Connect to dataChanged signal to auto-update sg_price_static when _calc_price changes
                 if "_calc_price" in self.line_items_field_allowlist and "sg_price_static" in self.line_items_field_allowlist:
@@ -914,9 +906,6 @@ class RatesTab(QtWidgets.QWidget):
                         pass
 
                     self.line_items_widget.model.dataChanged.connect(self._on_line_items_data_changed)
-                    logger.info(f"[Price Static] ✓ Connected dataChanged signal for Price Static auto-update")
-                    logger.info(f"[Price Static] Model type: {type(self.line_items_widget.model)}")
-                    logger.info(f"[Price Static] Columns: {self.line_items_widget.model.column_fields}")
 
         except Exception as e:
             logger.error(f"Failed to fetch schema for CustomEntity03: {e}", exc_info=True)

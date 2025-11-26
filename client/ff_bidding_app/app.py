@@ -41,7 +41,7 @@ except ImportError:
         log_file = log_dir / f"ff_package_manager_{timestamp}.log"
 
         logging.basicConfig(
-            level=logging.DEBUG,
+            level=logging.WARNING,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             handlers=[
                 logging.FileHandler(log_file, encoding='utf-8'),
@@ -49,10 +49,12 @@ except ImportError:
             ]
         )
         logger = logging.getLogger("FFPackageManager")
+        logger.setLevel(logging.WARNING)
     except Exception as e:
         print(f"Could not setup file logging: {e}")
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.WARNING)
         logger = logging.getLogger("FFPackageManager")
+        logger.setLevel(logging.WARNING)
 
 
 class ProjectDetailsDialog(QtWidgets.QDialog):

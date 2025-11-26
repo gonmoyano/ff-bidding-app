@@ -221,8 +221,6 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         key = event.key()
         modifiers = event.modifiers()
 
-        logger.debug(f"KeyPress: key={key}, modifiers={modifiers}")
-
         # Check for Ctrl+C (Copy)
         if key == Qt.Key_C and (modifiers & Qt.ControlModifier):
             logger.info("Ctrl+C detected - copying")
@@ -257,12 +255,10 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         """Copy the current cell to clipboard."""
         current = self.currentIndex()
         if not current.isValid():
-            logger.debug("Copy: No valid cell selected")
             return
 
         model = self.model()
         if not model:
-            logger.debug("Copy: No model available")
             return
 
         # Get the cell's formula or value (EditRole shows formula if present)
@@ -289,7 +285,6 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         """Cut the current cell to clipboard."""
         current = self.currentIndex()
         if not current.isValid():
-            logger.debug("Cut: No valid cell selected")
             return
 
         # First copy the data
@@ -304,12 +299,10 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         """Paste clipboard data to the current cell."""
         current = self.currentIndex()
         if not current.isValid():
-            logger.debug("Paste: No valid cell selected")
             return
 
         model = self.model()
         if not model:
-            logger.debug("Paste: No model available")
             return
 
         # Try internal clipboard first
@@ -348,19 +341,15 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             if text:
                 model.setData(current, text, Qt.EditRole)
                 logger.info(f"Pasted from system clipboard to ({current.row()},{current.column()}): {text}")
-            else:
-                logger.debug("Paste: No data in clipboard")
 
     def _delete_selection(self):
         """Delete the content of the current cell."""
         current = self.currentIndex()
         if not current.isValid():
-            logger.debug("Delete: No valid cell selected")
             return
 
         model = self.model()
         if not model:
-            logger.debug("Delete: No model available")
             return
 
         # Clear the cell
@@ -507,9 +496,8 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
             self._evaluated_cache[(row, col)] = formatted
             return formatted
 
-        except Exception as e:
-            logger.debug(f"Error evaluating formula at ({row}, {col}): {e}")
-            return f"#ERROR: {str(e)[:20]}"
+        except Exception:
+            return "#ERROR"
 
     def setData(self, index, value, role=Qt.EditRole):
         """Set data for the given index."""

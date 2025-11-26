@@ -257,8 +257,7 @@ class TableWithTotalsBar(QtWidgets.QWidget):
                                         else:
                                             # Skip non-numeric formula results
                                             continue
-                                    except Exception as e:
-                                        logger.debug(f"Error evaluating formula at ({row}, {col}): {e}")
+                                    except Exception:
                                         continue
                                 else:
                                     # No formula evaluator, skip formulas
@@ -493,14 +492,12 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         This is useful for compact views where only totals are needed.
         """
         self.table.setVisible(False)
-        logger.debug("Collapsed table - showing only totals bar")
 
     def expand_table(self):
         """
         Expand the view to show both the main table and totals bar.
         """
         self.table.setVisible(True)
-        logger.debug("Expanded table - showing table and totals bar")
 
     def is_table_collapsed(self):
         """

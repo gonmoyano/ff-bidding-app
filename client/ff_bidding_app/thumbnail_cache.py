@@ -75,7 +75,6 @@ class ThumbnailCache:
         # Check age
         file_age = datetime.now() - datetime.fromtimestamp(cache_file.stat().st_mtime)
         if file_age > timedelta(days=self.max_age_days):
-            logger.debug(f"Cache expired for version {version_id}")
             return False
 
         return True
@@ -114,7 +113,6 @@ class ThumbnailCache:
         try:
             with open(cache_file, 'wb') as f:
                 f.write(image_data)
-            logger.debug(f"Cached thumbnail for version {version_id}")
         except Exception as e:
             logger.error(f"Failed to cache thumbnail: {e}")
 
@@ -153,7 +151,6 @@ class ThumbnailCache:
         for cache_file in self.cache_path.glob(pattern):
             try:
                 cache_file.unlink()
-                logger.debug(f"Invalidated cache for version {version_id}")
             except Exception as e:
                 logger.error(f"Failed to invalidate cache: {e}")
 
