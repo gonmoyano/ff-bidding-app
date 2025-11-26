@@ -953,17 +953,22 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             raise
 
     def _create_top_bar(self):
-        """Create compact top bar with Project, RFQ dropdowns and Current Bid."""
+        """Create compact top bar with View selector, Project, RFQ dropdowns and Current Bid."""
         bar_widget = QtWidgets.QWidget()
-        bar_widget.setObjectName("topBar")
-        bar_widget.setStyleSheet("""
-            QWidget#topBar {
-                border: 1px solid #555555;
-                border-radius: 4px;
-            }
-        """)
         bar_layout = QtWidgets.QHBoxLayout(bar_widget)
         bar_layout.setContentsMargins(6, 6, 6, 6)
+
+        # View selector (leftmost)
+        self.view_selector = QtWidgets.QComboBox()
+        self.view_selector.setMinimumWidth(150)
+        self.view_selector.addItem("Bidding", 0)
+        self.view_selector.addItem("Packages", 1)
+        self.view_selector.addItem("Delivery", 2)
+        self.view_selector.currentIndexChanged.connect(self._on_view_changed)
+        bar_layout.addWidget(self.view_selector)
+
+        # Spacer
+        bar_layout.addSpacing(20)
 
         # Project section
         project_label = QtWidgets.QLabel("Project:")
@@ -1025,21 +1030,6 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         bar_layout.addWidget(self.rfq_bid_label)
 
         bar_layout.addStretch()
-
-        # View selector section
-        view_label = QtWidgets.QLabel("View:")
-        bar_layout.addWidget(view_label)
-
-        self.view_selector = QtWidgets.QComboBox()
-        self.view_selector.setMinimumWidth(150)
-        self.view_selector.addItem("Bidding", 0)
-        self.view_selector.addItem("Packages", 1)
-        self.view_selector.addItem("Delivery", 2)
-        self.view_selector.currentIndexChanged.connect(self._on_view_changed)
-        bar_layout.addWidget(self.view_selector)
-
-        # Spacer
-        bar_layout.addSpacing(20)
 
         # Project Details button
         details_btn = QtWidgets.QPushButton("Project Details")
