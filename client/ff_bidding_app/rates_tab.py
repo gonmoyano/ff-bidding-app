@@ -786,7 +786,6 @@ class RatesTab(QtWidgets.QWidget):
             logger.info(f"Query returned {len(line_items_list) if line_items_list else 0} Line Item(s)")
 
             if line_items_list:
-                logger.info(f"Line Items data: {line_items_list}")
                 self.line_items_widget.load_bidding_scenes(line_items_list, field_schema=self.line_items_field_schema)
                 logger.info(f"Successfully loaded {len(line_items_list)} Line Item(s) into table")
 
