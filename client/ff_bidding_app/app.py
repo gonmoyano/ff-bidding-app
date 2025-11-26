@@ -977,10 +977,8 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         bar_layout.addSpacing(20)
 
         # Project section
-        project_label = QtWidgets.QLabel("Project:")
-        bar_layout.addWidget(project_label)
-
         self.sg_project_combo = QtWidgets.QComboBox()
+        self.sg_project_combo.setToolTip("Project")
         self.sg_project_combo.setMinimumWidth(200)
         self.sg_project_combo.currentIndexChanged.connect(self._on_sg_project_changed)
         bar_layout.addWidget(self.sg_project_combo)
@@ -1034,10 +1032,8 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         bar_layout.addSpacing(20)
 
         # RFQ section
-        rfq_label = QtWidgets.QLabel("RFQ:")
-        bar_layout.addWidget(rfq_label)
-
         self.rfq_combo = QtWidgets.QComboBox()
+        self.rfq_combo.setToolTip("RFQ")
         self.rfq_combo.setMinimumWidth(200)
         self.rfq_combo.currentIndexChanged.connect(self._on_rfq_changed)
         bar_layout.addWidget(self.rfq_combo)
