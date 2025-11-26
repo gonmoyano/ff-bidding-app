@@ -919,42 +919,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self.setCentralWidget(central_widget)
             main_layout = QtWidgets.QVBoxLayout(central_widget)
 
-            # Header
-            header_layout = QtWidgets.QHBoxLayout()
-            title_label = QtWidgets.QLabel("Fireframe Prodigy")
-            title_font = title_label.font()
-            title_font.setPointSize(16)
-            title_font.setBold(True)
-            title_label.setFont(title_font)
-            header_layout.addWidget(title_label)
-            header_layout.addStretch()
-
-            # Settings button (cog icon, no text)
-            self.settings_button = QtWidgets.QPushButton()
-            self.settings_button.setToolTip("Application Settings")
-            self.settings_button.setIcon(create_icon_from_svg_path(COG_OUTLINE_SVG_PATH, size=20, color="#e0e0e0"))
-            self.settings_button.setIconSize(QtCore.QSize(20, 20))
-            self.settings_button.setFixedSize(32, 32)
-            self.settings_button.setStyleSheet("""
-                QPushButton {
-                    border: 1px solid #555555;
-                    border-radius: 4px;
-                    background-color: #2b2b2b;
-                }
-                QPushButton:hover {
-                    background-color: #3b3b3b;
-                    border-color: #0078d4;
-                }
-                QPushButton:pressed {
-                    background-color: #1b1b1b;
-                }
-            """)
-            self.settings_button.clicked.connect(self._show_settings_dialog)
-            header_layout.addWidget(self.settings_button)
-
-            main_layout.addLayout(header_layout)
-
-            # Compact top bar with dropdowns and Current Bid (always visible)
+            # Top bar with Project, RFQ dropdowns, Current Bid, and Settings
             top_bar = self._create_top_bar()
             main_layout.addWidget(top_bar)
 
@@ -1059,6 +1024,29 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         details_btn = QtWidgets.QPushButton("Project Details")
         details_btn.clicked.connect(self._show_project_details)
         bar_layout.addWidget(details_btn)
+
+        # Settings button (cog icon)
+        self.settings_button = QtWidgets.QPushButton()
+        self.settings_button.setToolTip("Application Settings")
+        self.settings_button.setIcon(create_icon_from_svg_path(COG_OUTLINE_SVG_PATH, size=20, color="#e0e0e0"))
+        self.settings_button.setIconSize(QtCore.QSize(20, 20))
+        self.settings_button.setFixedSize(32, 32)
+        self.settings_button.setStyleSheet("""
+            QPushButton {
+                border: 1px solid #555555;
+                border-radius: 4px;
+                background-color: #2b2b2b;
+            }
+            QPushButton:hover {
+                background-color: #3b3b3b;
+                border-color: #0078d4;
+            }
+            QPushButton:pressed {
+                background-color: #1b1b1b;
+            }
+        """)
+        self.settings_button.clicked.connect(self._show_settings_dialog)
+        bar_layout.addWidget(self.settings_button)
 
         return bar_widget
 
