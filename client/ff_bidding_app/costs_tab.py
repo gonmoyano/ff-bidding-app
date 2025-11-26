@@ -772,7 +772,6 @@ class CostsTab(QtWidgets.QMainWindow):
 
             # Extract code names
             self.line_item_names = [item.get("code", "") for item in line_items if item.get("code")]
-            logger.info(f"Found {len(self.line_item_names)} Line Items for VFX Shot Work: {self.line_item_names}")
 
         except Exception as e:
             logger.error(f"Failed to load Line Items for VFX Shot Work: {e}", exc_info=True)
@@ -910,9 +909,6 @@ class CostsTab(QtWidgets.QMainWindow):
                 # Add to data list
                 self.line_items_data.append(item)
 
-            logger.info(f"Loaded {len(self.line_items_data)} Line Items with prices")
-            logger.info(f"Price map: {self.line_items_price_map}")
-
         except Exception as e:
             logger.error(f"Failed to load Line Items with prices: {e}", exc_info=True)
             self.line_items_data = []
@@ -948,7 +944,6 @@ class CostsTab(QtWidgets.QMainWindow):
 
                     # Force a complete repaint of the table
                     self.shots_cost_widget.table_view.viewport().update()
-                    self.shots_cost_widget.table_view.update()
                 else:
                     # Update existing delegate with new Line Item names
                     self.vfx_shot_work_delegate.update_valid_values(self.line_item_names)
@@ -959,7 +954,6 @@ class CostsTab(QtWidgets.QMainWindow):
 
                     # Force a complete repaint of the table
                     self.shots_cost_widget.table_view.viewport().update()
-                    self.shots_cost_widget.table_view.update()
 
         except Exception as e:
             logger.error(f"Failed to apply VFX Shot Work delegate: {e}", exc_info=True)
@@ -1195,7 +1189,6 @@ class CostsTab(QtWidgets.QMainWindow):
 
                     # Force a complete repaint of the table
                     self.asset_cost_widget.table_view.viewport().update()
-                    self.asset_cost_widget.table_view.update()
                 else:
                     # Update existing delegate with new Line Item names
                     self.asset_type_delegate.update_valid_values(self.line_item_names)
@@ -1206,7 +1199,6 @@ class CostsTab(QtWidgets.QMainWindow):
 
                     # Force a complete repaint of the table
                     self.asset_cost_widget.table_view.viewport().update()
-                    self.asset_cost_widget.table_view.update()
 
         except Exception as e:
             logger.error(f"Failed to apply Asset Type delegate: {e}", exc_info=True)
