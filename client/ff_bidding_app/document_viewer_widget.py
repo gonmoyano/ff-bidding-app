@@ -66,7 +66,7 @@ class UploadDocumentTypeDialog(QtWidgets.QDialog):
 
         types = [
             ("Script", "script"),
-            ("Misc", "misc"),
+            ("Documents", "document"),
         ]
 
         for label, type_value in types:
@@ -494,6 +494,7 @@ class DocumentViewerDialog(QtWidgets.QDialog):
     def _render_pdf_page(self, doc, page_num):
         """Render a specific page of the PDF."""
         try:
+            import fitz  # PyMuPDF
             page = doc.load_page(page_num)
             # Render at 2x resolution for better quality
             mat = fitz.Matrix(2.0, 2.0)
@@ -1142,7 +1143,7 @@ class DocumentViewerWidget(QtWidgets.QWidget):
         # Filter states - categories for documents
         self.filter_states = {
             'Script': True,
-            'Misc': True
+            'Documents': True
         }
 
         self.category_groups = {}
@@ -1241,7 +1242,7 @@ class DocumentViewerWidget(QtWidgets.QWidget):
 
         # Filter checkboxes
         self.filter_checkboxes = {}
-        for filter_type in ['Script', 'Misc']:
+        for filter_type in ['Script', 'Documents']:
             checkbox = QtWidgets.QCheckBox(filter_type)
             checkbox.setChecked(True)
             checkbox.stateChanged.connect(lambda state, ft=filter_type: self._on_filter_changed(ft, state))
@@ -1271,7 +1272,7 @@ class DocumentViewerWidget(QtWidgets.QWidget):
 
         # Create collapsible groups for each category
         self.category_groups = {}
-        for category in ['Script', 'Misc']:
+        for category in ['Script', 'Documents']:
             group = CollapsibleGroupBox(f"{category} (0 items)")
 
             category_container = DroppableDocumentCategoryContainer(category)
@@ -1324,7 +1325,7 @@ class DocumentViewerWidget(QtWidgets.QWidget):
         if 'script' in version_type:
             return 'Script'
         else:
-            return 'Misc'
+            return 'Documents'
 
     def _rearrange_thumbnails(self):
         """Rearrange existing thumbnails in grid without recreating them."""
@@ -1356,7 +1357,7 @@ class DocumentViewerWidget(QtWidgets.QWidget):
 
             categorized_thumbnails = {
                 'Script': [],
-                'Misc': []
+                'Documents': []
             }
 
             for thumbnail in self.thumbnail_widgets:
@@ -1433,7 +1434,7 @@ class DocumentViewerWidget(QtWidgets.QWidget):
 
         grouped_versions = {
             'Script': [],
-            'Misc': []
+            'Documents': []
         }
 
         for version in self.filtered_versions:
@@ -1525,10 +1526,10 @@ class DocumentViewerWidget(QtWidgets.QWidget):
         """Handle document dropped into a category group."""
         category_to_sg_type = {
             'Script': 'Script',
-            'Misc': 'Misc'
+            'Documents': 'Document'
         }
 
-        sg_version_type = category_to_sg_type.get(target_category, 'Misc')
+        sg_version_type = category_to_sg_type.get(target_category, 'Document')
 
         try:
             if self.sg_session:
@@ -1790,9 +1791,9 @@ class DocumentViewerWidget(QtWidgets.QWidget):
         try:
             type_mapping = {
                 'script': 'Script',
-                'misc': 'Misc'
+                'document': 'Document'
             }
-            sg_version_type = type_mapping.get(selected_type, 'Misc')
+            sg_version_type = type_mapping.get(selected_type, 'Document')
 
             filename = os.path.basename(file_path)
             version_code = os.path.splitext(filename)[0]
@@ -1989,9 +1990,9 @@ class DocumentViewerWidget(QtWidgets.QWidget):
 
         sg_version_type = version_data.get('sg_version_type', '')
         if isinstance(sg_version_type, dict):
-            category = sg_version_type.get('name', 'Misc')
+            category = sg_version_type.get('name', 'Document')
         else:
-            category = str(sg_version_type) if sg_version_type else 'Misc'
+            category = str(sg_version_type) if sg_version_type else 'Document'
 
         folder_type_plural = 'assets' if folder_type == 'asset' else 'scenes'
         folder_path = f"/{folder_type_plural}/{folder_name}/{category}"
@@ -2041,9 +2042,9 @@ class DocumentViewerWidget(QtWidgets.QWidget):
 
         sg_version_type = version_data.get('sg_version_type', '')
         if isinstance(sg_version_type, dict):
-            category = sg_version_type.get('name', 'Misc')
+            category = sg_version_type.get('name', 'Document')
         else:
-            category = str(sg_version_type) if sg_version_type else 'Misc'
+            category = str(sg_version_type) if sg_version_type else 'Document'
 
         folder_type_plural = 'assets' if folder_type == 'asset' else 'scenes'
         folder_path = f"/{folder_type_plural}/{folder_name}/{category}"
