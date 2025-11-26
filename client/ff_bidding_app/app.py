@@ -964,9 +964,40 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         bar_layout = QtWidgets.QHBoxLayout(bar_widget)
         bar_layout.setContentsMargins(6, 6, 6, 6)
 
-        # View selector (leftmost)
+        # View selector (leftmost) - styled like tabs
         self.view_selector = QtWidgets.QComboBox()
         self.view_selector.setMinimumWidth(150)
+        self.view_selector.setStyleSheet("""
+            QComboBox {
+                background-color: #4a9eff;
+                color: white;
+                font-weight: bold;
+                padding: 6px 12px;
+                border-radius: 4px;
+                border: none;
+            }
+            QComboBox:hover {
+                background-color: #5eb3ff;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 6px solid white;
+                margin-right: 5px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #3a3a3a;
+                color: white;
+                selection-background-color: #4a9eff;
+                selection-color: white;
+                border: 1px solid #555555;
+            }
+        """)
         self.view_selector.addItem("Bidding", 0)
         self.view_selector.addItem("Packages", 1)
         self.view_selector.addItem("Delivery", 2)
