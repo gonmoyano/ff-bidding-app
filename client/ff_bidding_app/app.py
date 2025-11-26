@@ -1074,28 +1074,6 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
         bar_layout.addStretch()
 
-        # Package Manager button (only visible when Packages view is selected)
-        self.package_manager_btn = QtWidgets.QPushButton("Package Manager")
-        self.package_manager_btn.setToolTip("Show/Hide Package Manager Panel")
-        self.package_manager_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4a9eff;
-                color: white;
-                font-weight: bold;
-                padding: 6px 12px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #5eb3ff;
-            }
-            QPushButton:pressed {
-                background-color: #3a8eef;
-            }
-        """)
-        self.package_manager_btn.clicked.connect(self._toggle_package_manager_panel)
-        self.package_manager_btn.setVisible(False)  # Hidden by default
-        bar_layout.addWidget(self.package_manager_btn)
-
         # Settings button (cog icon)
         self.settings_button = QtWidgets.QPushButton()
         self.settings_button.setToolTip("Application Settings")
@@ -1137,14 +1115,6 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self.view_stack.setCurrentIndex(view_index)
             # Save the selected view
             self.app_settings.set("app/lastSelectedView", index)
-            # Show/hide Package Manager button based on selected view
-            # view_index 1 = Packages view
-            self.package_manager_btn.setVisible(view_index == 1)
-
-    def _toggle_package_manager_panel(self):
-        """Toggle the Package Manager panel in the Packages tab."""
-        if hasattr(self, 'packages_tab') and hasattr(self.packages_tab, '_toggle_package_manager_panel'):
-            self.packages_tab._toggle_package_manager_panel()
 
     def _show_config_rfqs_dialog(self):
         """Show the RFQ configuration dialog."""
