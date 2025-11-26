@@ -2851,7 +2851,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
             # Extract code names
             line_item_names = [item.get("code", "") for item in line_items if item.get("code")]
-            logger.info(f"Found {len(line_item_names)} Line Items in Price List {price_list_id} for VFX Shot Work: {line_item_names}")
             return line_item_names
 
         except Exception as e:
