@@ -57,6 +57,46 @@ except ImportError:
         logger.setLevel(logging.WARNING)
 
 
+# SVG path data for icons (from Material Design Icons - https://pictogrammers.com)
+COG_OUTLINE_SVG_PATH = "M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8M12,10A2,2 0 0,0 10,12A2,2 0 0,0 12,14A2,2 0 0,0 14,12A2,2 0 0,0 12,10M10,22C9.75,22 9.54,21.82 9.5,21.58L9.13,18.93C8.5,18.68 7.96,18.34 7.44,17.94L4.95,18.95C4.73,19.03 4.46,18.95 4.34,18.73L2.34,15.27C2.21,15.05 2.27,14.78 2.46,14.63L4.57,12.97L4.5,12L4.57,11L2.46,9.37C2.27,9.22 2.21,8.95 2.34,8.73L4.34,5.27C4.46,5.05 4.73,4.96 4.95,5.05L7.44,6.05C7.96,5.66 8.5,5.32 9.13,5.07L9.5,2.42C9.54,2.18 9.75,2 10,2H14C14.25,2 14.46,2.18 14.5,2.42L14.87,5.07C15.5,5.32 16.04,5.66 16.56,6.05L19.05,5.05C19.27,4.96 19.54,5.05 19.66,5.27L21.66,8.73C21.79,8.95 21.73,9.22 21.54,9.37L19.43,11L19.5,12L19.43,13L21.54,14.63C21.73,14.78 21.79,15.05 21.66,15.27L19.66,18.73C19.54,18.95 19.27,19.04 19.05,18.95L16.56,17.95C16.04,18.34 15.5,18.68 14.87,18.93L14.5,21.58C14.46,21.82 14.25,22 14,22H10M11.25,4L10.88,6.61C9.68,6.86 8.62,7.5 7.85,8.39L5.44,7.35L4.69,8.65L6.8,10.2C6.4,11.37 6.4,12.64 6.8,13.8L4.68,15.36L5.43,16.66L7.86,15.62C8.63,16.5 9.68,17.14 10.87,17.38L11.24,20H12.76L13.13,17.39C14.32,17.14 15.37,16.5 16.14,15.62L18.57,16.66L19.32,15.36L17.2,13.81C17.6,12.64 17.6,11.37 17.2,10.2L19.31,8.65L18.56,7.35L16.15,8.39C15.38,7.5 14.32,6.86 13.12,6.62L12.75,4H11.25Z"
+
+# Cloud download icon (from Material Design Icons - https://pictogrammers.com/library/mdi/icon/cloud-download/)
+CLOUD_DOWNLOAD_SVG_PATH = "M17,13L12,18L7,13H10V9H14V13M19.35,10.03C18.67,6.59 15.64,4 12,4C9.11,4 6.6,5.64 5.35,8.03C2.34,8.36 0,10.9 0,14A6,6 0 0,0 6,20H19A5,5 0 0,0 24,15C24,12.36 21.95,10.22 19.35,10.03Z"
+
+# File cog icon (from Material Design Icons - https://pictogrammers.com/library/mdi/icon/file-cog/)
+FILE_COG_SVG_PATH = "M6 2C4.89 2 4 2.9 4 4V20C4 21.11 4.89 22 6 22H12.68A7 7 0 0 1 12 19A7 7 0 0 1 19 12A7 7 0 0 1 22 12.68V8L15 2H6M13 3.5L19.5 10H13V3.5M18 14C17.87 14 17.76 14.09 17.74 14.21L17.55 15.53C17.25 15.66 16.96 15.82 16.7 16L15.46 15.5C15.35 15.5 15.22 15.5 15.15 15.63L14.15 17.36C14.09 17.47 14.11 17.6 14.21 17.68L15.27 18.5C15.25 18.67 15.24 18.83 15.24 19C15.24 19.17 15.25 19.33 15.27 19.5L14.21 20.32C14.12 20.4 14.09 20.53 14.15 20.64L15.15 22.37C15.21 22.5 15.34 22.5 15.46 22.5L16.7 22C16.96 22.18 17.24 22.35 17.55 22.47L17.74 23.79C17.76 23.91 17.86 24 18 24H20C20.11 24 20.22 23.91 20.24 23.79L20.43 22.47C20.73 22.34 21 22.18 21.27 22L22.5 22.5C22.63 22.5 22.76 22.5 22.83 22.37L23.83 20.64C23.89 20.53 23.86 20.4 23.77 20.32L22.7 19.5C22.72 19.33 22.74 19.17 22.74 19C22.74 18.83 22.73 18.67 22.7 18.5L23.76 17.68C23.85 17.6 23.88 17.47 23.82 17.36L22.82 15.63C22.76 15.5 22.63 15.5 22.5 15.5L21.27 16C21 15.82 20.73 15.65 20.42 15.53L20.23 14.21C20.22 14.09 20.11 14 20 14H18M19 17.5C19.83 17.5 20.5 18.17 20.5 19C20.5 19.83 19.83 20.5 19 20.5C18.16 20.5 17.5 19.83 17.5 19C17.5 18.17 18.17 17.5 19 17.5Z"
+
+# File chart outline icon (from Material Design Icons - https://pictogrammers.com/library/mdi/icon/file-chart-outline/)
+FILE_CHART_OUTLINE_SVG_PATH = "M14 2H6C4.89 2 4 2.9 4 4V20C4 21.11 4.89 22 6 22H18C19.11 22 20 21.11 20 20V8L14 2M18 20H6V4H13V9H18V20M9 13V19H7V13H9M15 15V19H17V15H15M11 11V19H13V11H11Z"
+
+
+def create_icon_from_svg_path(svg_path, size=24, color="#e0e0e0"):
+    """Create a QIcon from an SVG path string.
+
+    Args:
+        svg_path: SVG path data string (the 'd' attribute of a path element)
+        size: Icon size in pixels
+        color: Icon fill color
+
+    Returns:
+        QIcon: The created icon
+    """
+    svg_content = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="{size}" height="{size}">
+        <path fill="{color}" d="{svg_path}"/>
+    </svg>'''
+
+    # Create pixmap from SVG
+    from PySide6.QtSvg import QSvgRenderer
+    renderer = QSvgRenderer(svg_content.encode('utf-8'))
+    pixmap = QtGui.QPixmap(size, size)
+    pixmap.fill(QtCore.Qt.transparent)
+    painter = QtGui.QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+
+    return QtGui.QIcon(pixmap)
+
+
 class ProjectDetailsDialog(QtWidgets.QDialog):
     """Dialog showing project and RFQ details."""
 
@@ -537,7 +577,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         QMainWindow, QWidget {
             background-color: #2b2b2b;
             color: #e0e0e0;
-            font-family: 'Segoe UI', Arial, sans-serif;
+            font-family: system-ui, -apple-system, Arial, sans-serif;
         }
 
         /* Group Box */
@@ -888,43 +928,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self.setCentralWidget(central_widget)
             main_layout = QtWidgets.QVBoxLayout(central_widget)
 
-            # Header
-            header_layout = QtWidgets.QHBoxLayout()
-            title_label = QtWidgets.QLabel("Fireframe Prodigy")
-            title_font = title_label.font()
-            title_font.setPointSize(16)
-            title_font.setBold(True)
-            title_label.setFont(title_font)
-            header_layout.addWidget(title_label)
-            header_layout.addStretch()
-
-            # Settings button (cog icon, no text)
-            self.settings_button = QtWidgets.QPushButton("⚙")  # Gear/cog Unicode character
-            self.settings_button.setToolTip("Application Settings")
-            settings_font = self.settings_button.font()
-            settings_font.setPointSize(14)
-            self.settings_button.setFont(settings_font)
-            self.settings_button.setFixedSize(32, 32)
-            self.settings_button.setStyleSheet("""
-                QPushButton {
-                    border: 1px solid #555555;
-                    border-radius: 4px;
-                    background-color: #2b2b2b;
-                }
-                QPushButton:hover {
-                    background-color: #3b3b3b;
-                    border-color: #0078d4;
-                }
-                QPushButton:pressed {
-                    background-color: #1b1b1b;
-                }
-            """)
-            self.settings_button.clicked.connect(self._show_settings_dialog)
-            header_layout.addWidget(self.settings_button)
-
-            main_layout.addLayout(header_layout)
-
-            # Compact top bar with dropdowns and Current Bid (always visible)
+            # Top bar with Project, RFQ dropdowns, Current Bid, and Settings
             top_bar = self._create_top_bar()
             main_layout.addWidget(top_bar)
 
@@ -955,45 +959,136 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             raise
 
     def _create_top_bar(self):
-        """Create compact top bar with Project, RFQ dropdowns and Current Bid."""
+        """Create compact top bar with View selector, Project, RFQ dropdowns and Current Bid."""
         bar_widget = QtWidgets.QWidget()
-        bar_widget.setObjectName("topBar")
-        bar_widget.setStyleSheet("""
-            QWidget#topBar {
-                border: 1px solid #555555;
-                border-radius: 4px;
-            }
-        """)
         bar_layout = QtWidgets.QHBoxLayout(bar_widget)
         bar_layout.setContentsMargins(6, 6, 6, 6)
 
-        # Project section
-        project_label = QtWidgets.QLabel("Project:")
-        bar_layout.addWidget(project_label)
+        # View selector (leftmost) - styled like tabs
+        self.view_selector = QtWidgets.QComboBox()
+        self.view_selector.setMinimumWidth(150)
+        self.view_selector.setStyleSheet("""
+            QComboBox {
+                background-color: #4a9eff;
+                color: white;
+                font-weight: bold;
+                padding: 6px 12px;
+                border-radius: 4px;
+                border: none;
+            }
+            QComboBox:hover {
+                background-color: #5eb3ff;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 6px solid white;
+                margin-right: 5px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #3a3a3a;
+                color: white;
+                selection-background-color: #4a9eff;
+                selection-color: white;
+                border: 1px solid #555555;
+            }
+        """)
+        self.view_selector.addItem("Bidding", 0)
+        self.view_selector.addItem("Packages", 1)
+        self.view_selector.addItem("Delivery", 2)
+        self.view_selector.currentIndexChanged.connect(self._on_view_changed)
+        bar_layout.addWidget(self.view_selector)
 
+        # Spacer
+        bar_layout.addSpacing(20)
+
+        # Project section
         self.sg_project_combo = QtWidgets.QComboBox()
+        self.sg_project_combo.setToolTip("Project")
         self.sg_project_combo.setMinimumWidth(200)
         self.sg_project_combo.currentIndexChanged.connect(self._on_sg_project_changed)
         bar_layout.addWidget(self.sg_project_combo)
 
-        load_sg_btn = QtWidgets.QPushButton("Load from SG")
+        load_sg_btn = QtWidgets.QPushButton()
+        load_sg_btn.setToolTip("Load from ShotGrid")
+        load_sg_btn.setIcon(create_icon_from_svg_path(CLOUD_DOWNLOAD_SVG_PATH, size=20, color="#e0e0e0"))
+        load_sg_btn.setIconSize(QtCore.QSize(20, 20))
+        load_sg_btn.setFixedSize(32, 32)
+        load_sg_btn.setStyleSheet("""
+            QPushButton {
+                border: 1px solid #555555;
+                border-radius: 4px;
+                background-color: #2b2b2b;
+            }
+            QPushButton:hover {
+                background-color: #3b3b3b;
+                border-color: #0078d4;
+            }
+            QPushButton:pressed {
+                background-color: #1b1b1b;
+            }
+        """)
         load_sg_btn.clicked.connect(self._load_sg_projects)
         bar_layout.addWidget(load_sg_btn)
+
+        # Project Details button
+        details_btn = QtWidgets.QPushButton()
+        details_btn.setToolTip("Project Details")
+        details_btn.setIcon(create_icon_from_svg_path(FILE_CHART_OUTLINE_SVG_PATH, size=20, color="#e0e0e0"))
+        details_btn.setIconSize(QtCore.QSize(20, 20))
+        details_btn.setFixedSize(32, 32)
+        details_btn.setStyleSheet("""
+            QPushButton {
+                border: 1px solid #555555;
+                border-radius: 4px;
+                background-color: #2b2b2b;
+            }
+            QPushButton:hover {
+                background-color: #3b3b3b;
+                border-color: #0078d4;
+            }
+            QPushButton:pressed {
+                background-color: #1b1b1b;
+            }
+        """)
+        details_btn.clicked.connect(self._show_project_details)
+        bar_layout.addWidget(details_btn)
 
         # Spacer
         bar_layout.addSpacing(20)
 
         # RFQ section
-        rfq_label = QtWidgets.QLabel("RFQ:")
-        bar_layout.addWidget(rfq_label)
-
         self.rfq_combo = QtWidgets.QComboBox()
+        self.rfq_combo.setToolTip("RFQ")
         self.rfq_combo.setMinimumWidth(200)
         self.rfq_combo.currentIndexChanged.connect(self._on_rfq_changed)
         bar_layout.addWidget(self.rfq_combo)
 
         # Config RFQs button
-        config_rfqs_btn = QtWidgets.QPushButton("Config RFQs")
+        config_rfqs_btn = QtWidgets.QPushButton()
+        config_rfqs_btn.setToolTip("Config RFQs")
+        config_rfqs_btn.setIcon(create_icon_from_svg_path(FILE_COG_SVG_PATH, size=20, color="#e0e0e0"))
+        config_rfqs_btn.setIconSize(QtCore.QSize(20, 20))
+        config_rfqs_btn.setFixedSize(32, 32)
+        config_rfqs_btn.setStyleSheet("""
+            QPushButton {
+                border: 1px solid #555555;
+                border-radius: 4px;
+                background-color: #2b2b2b;
+            }
+            QPushButton:hover {
+                background-color: #3b3b3b;
+                border-color: #0078d4;
+            }
+            QPushButton:pressed {
+                background-color: #1b1b1b;
+            }
+        """)
         config_rfqs_btn.clicked.connect(self._show_config_rfqs_dialog)
         bar_layout.addWidget(config_rfqs_btn)
 
@@ -1010,25 +1105,50 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
         bar_layout.addStretch()
 
-        # View selector section
-        view_label = QtWidgets.QLabel("View:")
-        bar_layout.addWidget(view_label)
+        # Package Manager button (only visible when Packages view is selected)
+        self.package_manager_btn = QtWidgets.QPushButton("Package Manager")
+        self.package_manager_btn.setToolTip("Show/Hide Package Manager Panel")
+        self.package_manager_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4a9eff;
+                color: white;
+                font-weight: bold;
+                padding: 6px 12px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #5eb3ff;
+            }
+            QPushButton:pressed {
+                background-color: #3a8eef;
+            }
+        """)
+        self.package_manager_btn.clicked.connect(self._toggle_package_manager_panel)
+        self.package_manager_btn.setVisible(False)  # Hidden by default
+        bar_layout.addWidget(self.package_manager_btn)
 
-        self.view_selector = QtWidgets.QComboBox()
-        self.view_selector.setMinimumWidth(150)
-        self.view_selector.addItem("Bidding", 0)
-        self.view_selector.addItem("Packages", 1)
-        self.view_selector.addItem("Delivery", 2)
-        self.view_selector.currentIndexChanged.connect(self._on_view_changed)
-        bar_layout.addWidget(self.view_selector)
-
-        # Spacer
-        bar_layout.addSpacing(20)
-
-        # Project Details button
-        details_btn = QtWidgets.QPushButton("Project Details")
-        details_btn.clicked.connect(self._show_project_details)
-        bar_layout.addWidget(details_btn)
+        # Settings button (cog icon)
+        self.settings_button = QtWidgets.QPushButton()
+        self.settings_button.setToolTip("Application Settings")
+        self.settings_button.setIcon(create_icon_from_svg_path(COG_OUTLINE_SVG_PATH, size=20, color="#e0e0e0"))
+        self.settings_button.setIconSize(QtCore.QSize(20, 20))
+        self.settings_button.setFixedSize(32, 32)
+        self.settings_button.setStyleSheet("""
+            QPushButton {
+                border: 1px solid #555555;
+                border-radius: 4px;
+                background-color: #2b2b2b;
+            }
+            QPushButton:hover {
+                background-color: #3b3b3b;
+                border-color: #0078d4;
+            }
+            QPushButton:pressed {
+                background-color: #1b1b1b;
+            }
+        """)
+        self.settings_button.clicked.connect(self._show_settings_dialog)
+        bar_layout.addWidget(self.settings_button)
 
         return bar_widget
 
@@ -1048,6 +1168,14 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self.view_stack.setCurrentIndex(view_index)
             # Save the selected view
             self.app_settings.set("app/lastSelectedView", index)
+            # Show/hide Package Manager button based on selected view
+            # view_index 1 = Packages view
+            self.package_manager_btn.setVisible(view_index == 1)
+
+    def _toggle_package_manager_panel(self):
+        """Toggle the Package Manager panel in the Packages tab."""
+        if hasattr(self, 'packages_tab') and hasattr(self.packages_tab, '_toggle_package_manager_panel'):
+            self.packages_tab._toggle_package_manager_panel()
 
     def _show_config_rfqs_dialog(self):
         """Show the RFQ configuration dialog."""

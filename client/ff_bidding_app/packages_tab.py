@@ -57,8 +57,7 @@ class PackagesTab(QtWidgets.QWidget):
         self.entity_type_checkboxes = {}
         self.output_path_input = None
         self.package_name_input = None
-        self.content_stack = None
-        self.view_selector_dropdown = None
+        self.content_tabs = None
         self.breakdown_widget = None
         self.package_selector_dropdown = None
         self.create_package_btn = None
@@ -73,48 +72,11 @@ class PackagesTab(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
 
-        # Collapsible bar with view selector and Package Manager button
-        view_selector_group = CollapsibleGroupBox("View")
-        view_selector_layout = QtWidgets.QHBoxLayout()
+        # Tab widget for different views
+        self.content_tabs = self._create_content_tabs()
+        layout.addWidget(self.content_tabs, 1)  # Give it stretch factor
 
-        # View selector dropdown
-        view_selector_layout.addWidget(QtWidgets.QLabel("Show:"))
-        self.view_selector_dropdown = QtWidgets.QComboBox()
-        self.view_selector_dropdown.addItems(["Bid Tracker", "Documents", "Images"])
-        self.view_selector_dropdown.currentIndexChanged.connect(self._on_view_changed)
-        view_selector_layout.addWidget(self.view_selector_dropdown)
-
-        view_selector_layout.addStretch()
-
-        # Toggle button for Package Manager panel
-        self.toggle_panel_btn = QtWidgets.QPushButton("Package Manager ▶")
-        self.toggle_panel_btn.setToolTip("Show/Hide Package Manager Panel")
-        self.toggle_panel_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #4a9eff;
-                color: white;
-                font-weight: bold;
-                padding: 6px 12px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #5eb3ff;
-            }
-            QPushButton:pressed {
-                background-color: #3a8eef;
-            }
-        """)
-        self.toggle_panel_btn.clicked.connect(self._toggle_package_manager_panel)
-        view_selector_layout.addWidget(self.toggle_panel_btn)
-
-        view_selector_group.addLayout(view_selector_layout)
-        layout.addWidget(view_selector_group)
-
-        # Main content area: Stacked widget for different views
-        content_pane = self._create_content_pane()
-        layout.addWidget(content_pane, 1)  # Give it stretch factor
-
-        # Bottom section: Status + Create Package button
+        # Bottom section: Status
         bottom_layout = QtWidgets.QHBoxLayout()
 
         self.status_label = QtWidgets.QLabel("Ready")
@@ -137,19 +99,14 @@ class PackagesTab(QtWidgets.QWidget):
         self.overlay_panel.set_title("Package Manager")
         self.overlay_panel.set_content(right_pane)
 
-        # Connect panel signals to update toggle button
-        self.overlay_panel.panel_shown.connect(self._on_panel_shown)
-        self.overlay_panel.panel_hidden.connect(self._on_panel_hidden)
-
-        # Restore last selected view
+        # Restore last selected tab
         last_view = self.app_settings.get("packagesTab/lastSelectedView", 0)
-        if 0 <= last_view < self.view_selector_dropdown.count():
-            self.view_selector_dropdown.setCurrentIndex(last_view)
+        if 0 <= last_view < self.content_tabs.count():
+            self.content_tabs.setCurrentIndex(last_view)
 
-    def _create_content_pane(self):
-        """Create the content pane with stacked widget for different views."""
-        # Stacked widget to switch between views
-        self.content_stack = QtWidgets.QStackedWidget()
+    def _create_content_tabs(self):
+        """Create the tab widget for different views."""
+        self.content_tabs = QtWidgets.QTabWidget()
 
         # Bid Tracker view with VFX Breakdown widget
         bid_tracker_view = QtWidgets.QWidget()
@@ -189,13 +146,6 @@ class PackagesTab(QtWidgets.QWidget):
         breakdown_button_layout.addStretch()
         bid_tracker_layout.addLayout(breakdown_button_layout)
 
-        # Documents view
-        documents_view = QtWidgets.QWidget()
-        documents_layout = QtWidgets.QVBoxLayout(documents_view)
-        documents_label = QtWidgets.QLabel("Documents content coming soon...")
-        documents_label.setAlignment(QtCore.Qt.AlignCenter)
-        documents_layout.addWidget(documents_label)
-
         # Images view with thumbnail viewer
         images_view = QtWidgets.QWidget()
         images_layout = QtWidgets.QVBoxLayout(images_view)
@@ -207,12 +157,22 @@ class PackagesTab(QtWidgets.QWidget):
         if hasattr(self.image_viewer, 'folder_pane') and self.image_viewer.folder_pane:
             self.image_viewer.folder_pane.packageSelected.connect(self._on_folder_pane_package_selected)
 
-        # Add views to stacked widget
-        self.content_stack.addWidget(bid_tracker_view)  # Index 0
-        self.content_stack.addWidget(documents_view)    # Index 1
-        self.content_stack.addWidget(images_view)       # Index 2
+        # Documents view
+        documents_view = QtWidgets.QWidget()
+        documents_layout = QtWidgets.QVBoxLayout(documents_view)
+        documents_label = QtWidgets.QLabel("Documents content coming soon...")
+        documents_label.setAlignment(QtCore.Qt.AlignCenter)
+        documents_layout.addWidget(documents_label)
 
-        return self.content_stack
+        # Add views as tabs (order: Bid Tracker, Images, Documents)
+        self.content_tabs.addTab(bid_tracker_view, "Bid Tracker")  # Index 0
+        self.content_tabs.addTab(images_view, "Images")            # Index 1
+        self.content_tabs.addTab(documents_view, "Documents")      # Index 2
+
+        # Connect tab change to save selection
+        self.content_tabs.currentChanged.connect(self._on_tab_changed)
+
+        return self.content_tabs
 
     def _create_right_pane(self):
         """Create the right pane with Package Selector, Package Data tree, and Output Settings."""
@@ -288,22 +248,13 @@ class PackagesTab(QtWidgets.QWidget):
 
         return package_group
 
-    def _on_view_changed(self, index):
-        """Handle view change to switch content and save the selection."""
-        self.content_stack.setCurrentIndex(index)
+    def _on_tab_changed(self, index):
+        """Handle tab change to save the selection."""
         self.app_settings.set("packagesTab/lastSelectedView", index)
 
     def _toggle_package_manager_panel(self):
         """Toggle the Package Manager panel visibility."""
         self.overlay_panel.toggle()
-
-    def _on_panel_shown(self):
-        """Handle panel shown event - update toggle button."""
-        self.toggle_panel_btn.setText("Package Manager ◀")
-
-    def _on_panel_hidden(self):
-        """Handle panel hidden event - update toggle button."""
-        self.toggle_panel_btn.setText("Package Manager ▶")
 
     def _load_field_schema(self):
         """Load field schema for CustomEntity02 (Bidding Scenes)."""

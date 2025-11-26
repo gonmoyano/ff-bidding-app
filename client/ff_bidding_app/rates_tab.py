@@ -65,6 +65,9 @@ class RatesTab(QtWidgets.QWidget):
         self.line_items_field_schema = {}
         self.line_items_field_allowlist = []  # Will be populated dynamically with _mandays fields
 
+        # Track signal connection state to avoid RuntimeWarning on disconnect
+        self._line_items_data_changed_connected = False
+
         self._build_ui()
 
     def _build_ui(self):
@@ -787,13 +790,13 @@ class RatesTab(QtWidgets.QWidget):
                 if "_calc_price" in self.line_items_field_allowlist and "sg_price_static" in self.line_items_field_allowlist:
                     if hasattr(self.line_items_widget, 'model') and self.line_items_widget.model:
                         # Disconnect any existing connection first
-                        try:
+                        if self._line_items_data_changed_connected:
                             self.line_items_widget.model.dataChanged.disconnect(self._on_line_items_data_changed)
-                        except:
-                            pass
+                            self._line_items_data_changed_connected = False
 
                         # Reconnect the signal
                         self.line_items_widget.model.dataChanged.connect(self._on_line_items_data_changed)
+                        self._line_items_data_changed_connected = True
                         logger.info(f"[Price Static] ✓ Connected dataChanged signal for auto-update (after loading)")
 
                 # Initialize sg_price_static with calculated prices
@@ -900,12 +903,12 @@ class RatesTab(QtWidgets.QWidget):
                 # Connect to dataChanged signal to auto-update sg_price_static when _calc_price changes
                 if "_calc_price" in self.line_items_field_allowlist and "sg_price_static" in self.line_items_field_allowlist:
                     # Disconnect any existing connection first (in case of reload)
-                    try:
+                    if self._line_items_data_changed_connected:
                         self.line_items_widget.model.dataChanged.disconnect(self._on_line_items_data_changed)
-                    except:
-                        pass
+                        self._line_items_data_changed_connected = False
 
                     self.line_items_widget.model.dataChanged.connect(self._on_line_items_data_changed)
+                    self._line_items_data_changed_connected = True
 
         except Exception as e:
             logger.error(f"Failed to fetch schema for CustomEntity03: {e}", exc_info=True)
