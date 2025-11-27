@@ -701,28 +701,37 @@ class PackageTreeView(QtWidgets.QWidget):
         # Filter document versions
         document_versions = [v for v in versions if self._is_document_version(v)]
 
-        # Separate versions with folder assignments from those without
-        versions_with_folders = []
-        versions_without_folders = []
+        # Process each version's folder paths individually
+        # A version can appear both at root level AND in nested folders
+        versions_for_root = []
+        versions_for_nested = []
 
         for version in document_versions:
             folders_str = version.get('_package_folders', '')
             if folders_str:
-                # Check if any folder path contains scenes or assets (nested structure)
                 folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
-                has_nested = any('/scenes/' in fp or '/assets/' in fp for fp in folder_paths)
-                if has_nested:
-                    versions_with_folders.append(version)
-                else:
-                    versions_without_folders.append(version)
+                has_root_path = False
+                has_nested_path = False
+                for fp in folder_paths:
+                    if '/scenes/' in fp or '/assets/' in fp:
+                        has_nested_path = True
+                    else:
+                        # Root-level path (e.g., /Document or /Documents)
+                        has_root_path = True
+
+                if has_root_path:
+                    versions_for_root.append(version)
+                if has_nested_path:
+                    versions_for_nested.append(version)
             else:
-                versions_without_folders.append(version)
+                # No folder assignment - add to root
+                versions_for_root.append(version)
 
         # Build hierarchical tree for versions in scene/asset folders
-        if versions_with_folders or versions_without_folders:
-            if versions_with_folders:
+        if versions_for_nested or versions_for_root:
+            if versions_for_nested:
                 path_tree = {}
-                for version in versions_with_folders:
+                for version in versions_for_nested:
                     folders_str = version.get('_package_folders', '')
                     folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
                     for folder_path in folder_paths:
@@ -751,8 +760,8 @@ class PackageTreeView(QtWidgets.QWidget):
 
                 self._build_folder_tree(documents_root, path_tree, "")
 
-            # Add versions without nested folders directly under Documents
-            for version in versions_without_folders:
+            # Add versions with root-level paths directly under Documents
+            for version in versions_for_root:
                 version_code = version.get('code', 'Unknown')
                 status = version.get('sg_status_list', '')
                 status_display = status if status else 'N/A'
@@ -797,28 +806,37 @@ class PackageTreeView(QtWidgets.QWidget):
         # Filter script versions
         script_versions = [v for v in versions if self._is_script_version(v)]
 
-        # Separate versions with folder assignments from those without
-        versions_with_folders = []
-        versions_without_folders = []
+        # Process each version's folder paths individually
+        # A version can appear both at root level AND in nested folders
+        versions_for_root = []
+        versions_for_nested = []
 
         for version in script_versions:
             folders_str = version.get('_package_folders', '')
             if folders_str:
-                # Check if any folder path contains scenes or assets (nested structure)
                 folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
-                has_nested = any('/scenes/' in fp or '/assets/' in fp for fp in folder_paths)
-                if has_nested:
-                    versions_with_folders.append(version)
-                else:
-                    versions_without_folders.append(version)
+                has_root_path = False
+                has_nested_path = False
+                for fp in folder_paths:
+                    if '/scenes/' in fp or '/assets/' in fp:
+                        has_nested_path = True
+                    else:
+                        # Root-level path (e.g., /Script or /Scripts)
+                        has_root_path = True
+
+                if has_root_path:
+                    versions_for_root.append(version)
+                if has_nested_path:
+                    versions_for_nested.append(version)
             else:
-                versions_without_folders.append(version)
+                # No folder assignment - add to root
+                versions_for_root.append(version)
 
         # Build hierarchical tree for versions in scene/asset folders
-        if versions_with_folders or versions_without_folders:
-            if versions_with_folders:
+        if versions_for_nested or versions_for_root:
+            if versions_for_nested:
                 path_tree = {}
-                for version in versions_with_folders:
+                for version in versions_for_nested:
                     folders_str = version.get('_package_folders', '')
                     folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
                     for folder_path in folder_paths:
@@ -847,8 +865,8 @@ class PackageTreeView(QtWidgets.QWidget):
 
                 self._build_folder_tree(scripts_root, path_tree, "")
 
-            # Add versions without nested folders directly under Scripts
-            for version in versions_without_folders:
+            # Add versions with root-level paths directly under Scripts
+            for version in versions_for_root:
                 version_code = version.get('code', 'Unknown')
                 status = version.get('sg_status_list', '')
                 status_display = status if status else 'N/A'
