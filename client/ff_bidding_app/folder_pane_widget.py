@@ -21,91 +21,27 @@ def create_trash_icon(size=24, color=QtGui.QColor(255, 255, 255, 200)):
     Returns:
         QIcon with the trash can outline
     """
-    # Material Design Icons trash-can-outline path (24x24 viewBox)
-    svg_path = "M9 3v1H4v2h1v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6h1V4h-5V3H9zM7 6h10v13H7V6zm2 2v9h2V8H9zm4 0v9h2V8h-2z"
+    from PySide6.QtSvg import QSvgRenderer
 
+    # Material Design Icons trash-can-outline path (24x24 viewBox)
+    svg_path = "M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z"
+
+    # Convert QColor to hex string for SVG
+    if isinstance(color, QtGui.QColor):
+        color_str = f"rgba({color.red()},{color.green()},{color.blue()},{color.alpha()/255:.2f})"
+    else:
+        color_str = str(color)
+
+    svg_content = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="{size}" height="{size}">
+        <path fill="{color_str}" d="{svg_path}"/>
+    </svg>'''
+
+    # Create pixmap from SVG using QSvgRenderer
+    renderer = QSvgRenderer(svg_content.encode('utf-8'))
     pixmap = QtGui.QPixmap(size, size)
     pixmap.fill(QtCore.Qt.transparent)
-
     painter = QtGui.QPainter(pixmap)
-    painter.setRenderHint(QtGui.QPainter.Antialiasing)
-
-    # Scale to fit the icon size
-    scale = size / 24.0
-    painter.scale(scale, scale)
-
-    # Parse and draw the path
-    path = QtGui.QPainterPath()
-    path.setFillRule(QtCore.Qt.WindingFill)
-
-    # Parse SVG path commands
-    i = 0
-    commands = svg_path.replace(',', ' ').split()
-    current_x, current_y = 0, 0
-    start_x, start_y = 0, 0
-
-    while i < len(commands):
-        cmd = commands[i]
-        if cmd == 'M':
-            current_x, current_y = float(commands[i+1]), float(commands[i+2])
-            start_x, start_y = current_x, current_y
-            path.moveTo(current_x, current_y)
-            i += 3
-        elif cmd == 'm':
-            current_x += float(commands[i+1])
-            current_y += float(commands[i+2])
-            start_x, start_y = current_x, current_y
-            path.moveTo(current_x, current_y)
-            i += 3
-        elif cmd == 'v':
-            current_y += float(commands[i+1])
-            path.lineTo(current_x, current_y)
-            i += 2
-        elif cmd == 'V':
-            current_y = float(commands[i+1])
-            path.lineTo(current_x, current_y)
-            i += 2
-        elif cmd == 'h':
-            current_x += float(commands[i+1])
-            path.lineTo(current_x, current_y)
-            i += 2
-        elif cmd == 'H':
-            current_x = float(commands[i+1])
-            path.lineTo(current_x, current_y)
-            i += 2
-        elif cmd == 'L':
-            current_x, current_y = float(commands[i+1]), float(commands[i+2])
-            path.lineTo(current_x, current_y)
-            i += 3
-        elif cmd == 'l':
-            current_x += float(commands[i+1])
-            current_y += float(commands[i+2])
-            path.lineTo(current_x, current_y)
-            i += 3
-        elif cmd == 'a':
-            # Simplified arc - just move to endpoint for now
-            rx, ry = float(commands[i+1]), float(commands[i+2])
-            rotation = float(commands[i+3])
-            large_arc = int(commands[i+4])
-            sweep = int(commands[i+5])
-            dx, dy = float(commands[i+6]), float(commands[i+7])
-            current_x += dx
-            current_y += dy
-            path.lineTo(current_x, current_y)
-            i += 8
-        elif cmd == 'z' or cmd == 'Z':
-            path.closeSubpath()
-            current_x, current_y = start_x, start_y
-            i += 1
-        else:
-            # Try to parse as number (continuation of previous command)
-            try:
-                float(cmd)
-                i += 1
-            except ValueError:
-                i += 1
-
-    painter.fillPath(path, color)
+    renderer.render(painter)
     painter.end()
 
     return QtGui.QIcon(pixmap)
