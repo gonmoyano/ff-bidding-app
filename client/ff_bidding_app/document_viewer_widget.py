@@ -1055,6 +1055,26 @@ class DocumentViewerDialog(QtWidgets.QDialog):
         super().showEvent(event)
         if self.document_pixmap and not self.document_pixmap.isNull():
             QtCore.QTimer.singleShot(0, self._fit_to_window)
+        # Also handle Excel sheets on show
+        elif hasattr(self, '_excel_workbook') and self._excel_workbook:
+            QtCore.QTimer.singleShot(0, lambda: self._render_excel_sheet(self.current_page))
+
+    def resizeEvent(self, event):
+        """Handle window resize to adjust Excel viewer."""
+        super().resizeEvent(event)
+        # Re-render Excel sheet on resize with debouncing
+        if hasattr(self, '_excel_workbook') and self._excel_workbook:
+            # Use a timer to debounce resize events
+            if not hasattr(self, '_resize_timer'):
+                self._resize_timer = QtCore.QTimer()
+                self._resize_timer.setSingleShot(True)
+                self._resize_timer.timeout.connect(self._on_resize_timeout)
+            self._resize_timer.start(150)  # 150ms debounce
+
+    def _on_resize_timeout(self):
+        """Handle resize timeout - re-render Excel sheet."""
+        if hasattr(self, '_excel_workbook') and self._excel_workbook:
+            self._render_excel_sheet(self.current_page)
 
     def keyPressEvent(self, event):
         """Handle keyboard shortcuts."""
