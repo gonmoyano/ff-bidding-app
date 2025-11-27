@@ -633,21 +633,24 @@ class FolderDetailView(QtWidgets.QWidget):
         remove_icon.setCursor(QtCore.Qt.PointingHandCursor)
         remove_icon.clicked.connect(lambda: self._remove_image(version.get('id')))
 
-        # Set trash can icon
-        remove_icon.setIcon(create_trash_icon(20, QtGui.QColor(255, 255, 255, 200)))
+        # Set trash can icon (white, turns red on hover)
+        white_icon = create_trash_icon(20, QtGui.QColor(255, 255, 255, 255))
+        red_icon = create_trash_icon(20, QtGui.QColor(255, 80, 80, 255))
+        remove_icon.setIcon(white_icon)
         remove_icon.setIconSize(QtCore.QSize(20, 20))
 
-        # Style for the button
+        # Store icons for hover effect
+        remove_icon.white_icon = white_icon
+        remove_icon.red_icon = red_icon
+        remove_icon.enterEvent = lambda e: remove_icon.setIcon(remove_icon.red_icon)
+        remove_icon.leaveEvent = lambda e: remove_icon.setIcon(remove_icon.white_icon)
+
+        # Style for the button (no border)
         remove_icon.setStyleSheet("""
             QPushButton {
-                background-color: rgba(40, 40, 40, 180);
-                border: 2px solid rgba(255, 255, 255, 200);
-                border-radius: 14px;
-                padding: 2px;
-            }
-            QPushButton:hover {
-                border: 2px solid rgba(255, 80, 80, 255);
-                background-color: rgba(60, 40, 40, 200);
+                background-color: transparent;
+                border: none;
+                padding: 0px;
             }
         """)
 

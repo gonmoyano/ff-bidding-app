@@ -501,21 +501,24 @@ class DocumentFolderDetailView(QtWidgets.QWidget):
         remove_icon.setCursor(QtCore.Qt.PointingHandCursor)
         remove_icon.clicked.connect(lambda: self._remove_document(version.get('id')))
 
-        # Set trash can icon
-        remove_icon.setIcon(create_trash_icon(20, QtGui.QColor(255, 255, 255, 200)))
+        # Set trash can icon (white, turns red on hover)
+        white_icon = create_trash_icon(20, QtGui.QColor(255, 255, 255, 255))
+        red_icon = create_trash_icon(20, QtGui.QColor(255, 80, 80, 255))
+        remove_icon.setIcon(white_icon)
         remove_icon.setIconSize(QtCore.QSize(20, 20))
 
-        # Style for the button
+        # Store icons for hover effect
+        remove_icon.white_icon = white_icon
+        remove_icon.red_icon = red_icon
+        remove_icon.enterEvent = lambda e: remove_icon.setIcon(remove_icon.red_icon)
+        remove_icon.leaveEvent = lambda e: remove_icon.setIcon(remove_icon.white_icon)
+
+        # Style for the button (no border)
         remove_icon.setStyleSheet("""
             QPushButton {
-                background-color: rgba(40, 40, 40, 180);
-                border: 2px solid rgba(255, 255, 255, 200);
-                border-radius: 14px;
-                padding: 2px;
-            }
-            QPushButton:hover {
-                border: 2px solid rgba(255, 80, 80, 255);
-                background-color: rgba(60, 40, 40, 200);
+                background-color: transparent;
+                border: none;
+                padding: 0px;
             }
         """)
 
@@ -1115,20 +1118,24 @@ class DocumentFolderPaneWidget(QtWidgets.QWidget):
         remove_btn.setCursor(QtCore.Qt.PointingHandCursor)
         remove_btn.clicked.connect(lambda: self._remove_from_section(version.get('id'), section_name))
 
-        # Set trash can icon
-        remove_btn.setIcon(create_trash_icon(16, QtGui.QColor(255, 255, 255, 180)))
+        # Set trash can icon (white, turns red on hover)
+        white_icon = create_trash_icon(16, QtGui.QColor(255, 255, 255, 255))
+        red_icon = create_trash_icon(16, QtGui.QColor(255, 80, 80, 255))
+        remove_btn.setIcon(white_icon)
         remove_btn.setIconSize(QtCore.QSize(16, 16))
 
+        # Store icons for hover effect
+        remove_btn.white_icon = white_icon
+        remove_btn.red_icon = red_icon
+        remove_btn.enterEvent = lambda e: remove_btn.setIcon(remove_btn.red_icon)
+        remove_btn.leaveEvent = lambda e: remove_btn.setIcon(remove_btn.white_icon)
+
+        # Style for the button (no border)
         remove_btn.setStyleSheet("""
             QPushButton {
-                background-color: rgba(40, 40, 40, 180);
-                border: 2px solid rgba(255, 255, 255, 180);
-                border-radius: 12px;
-                padding: 2px;
-            }
-            QPushButton:hover {
-                border: 2px solid rgba(255, 80, 80, 255);
-                background-color: rgba(60, 40, 40, 200);
+                background-color: transparent;
+                border: none;
+                padding: 0px;
             }
         """)
 
