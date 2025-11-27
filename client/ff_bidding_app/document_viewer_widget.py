@@ -1634,49 +1634,52 @@ class DocumentViewerWidget(QtWidgets.QWidget):
             document_id: ID of the document version
             category: Category name ('Script' or 'Documents')
         """
+        logger.info(f"_link_document_to_package_category called: doc={document_id}, category={category}")
+
         # Get selected package from folder pane
         if not self.folder_pane:
-            logger.debug("No folder_pane, skipping package link")
+            logger.info("No folder_pane, skipping package link")
             return
 
         selected_package = self.folder_pane.get_selected_package()
+        logger.info(f"Selected package from folder_pane: {selected_package}")
+
         if not selected_package:
-            logger.debug("No package selected, skipping package link")
+            logger.info("No package selected, skipping package link")
             return
 
         try:
             # Get package ID from packages_tab
             if not self.packages_tab:
-                logger.debug("No packages_tab reference, skipping package link")
+                logger.info("No packages_tab reference, skipping package link")
                 return
 
             sg_package_id = None
-            if hasattr(self.packages_tab, 'package_name_to_id'):
-                sg_package_id = self.packages_tab.package_name_to_id.get(selected_package)
+            packages = getattr(self.packages_tab, 'packages', {})
+            logger.info(f"packages dict has {len(packages)} packages: {list(packages.keys())}")
 
-            # Also try getting from packages dict
-            if not sg_package_id:
-                packages = getattr(self.packages_tab, 'packages', {})
-                for pkg_name, pkg_data in packages.items():
-                    if pkg_name == selected_package:
-                        sg_package_id = pkg_data.get('sg_package_id')
-                        break
+            for pkg_name, pkg_data in packages.items():
+                if pkg_name == selected_package:
+                    sg_package_id = pkg_data.get('sg_package_id')
+                    logger.info(f"Found package '{pkg_name}' with sg_package_id={sg_package_id}")
+                    break
 
             if not sg_package_id:
-                logger.warning(f"Could not find package ID for '{selected_package}'")
+                logger.warning(f"Could not find package ID for '{selected_package}' in packages: {list(packages.keys())}")
                 return
 
             # Determine folder path based on category
             folder_path = f"/{category}"
 
             # Link version to package with folder
+            logger.info(f"Calling link_version_to_package_with_folder: version={document_id}, package={sg_package_id}, folder={folder_path}")
             self.sg_session.link_version_to_package_with_folder(
                 version_id=document_id,
                 package_id=sg_package_id,
                 folder_name=folder_path
             )
 
-            logger.info(f"Linked document {document_id} to package '{selected_package}' in {folder_path}")
+            logger.info(f"Successfully linked document {document_id} to package '{selected_package}' in {folder_path}")
 
             # Refresh package data tree if available
             if hasattr(self.packages_tab, 'package_data_tree') and self.packages_tab.package_data_tree:
