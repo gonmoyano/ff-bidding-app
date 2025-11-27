@@ -947,8 +947,87 @@ class FolderPaneWidget(QtWidgets.QWidget):
 
         main_layout.addWidget(self.view_stack)
 
+        # Create "No Package Selected" overlay
+        self._create_no_package_overlay()
+
         # Set minimum width
         self.setMinimumWidth(250)
+
+    def _create_no_package_overlay(self):
+        """Create the 'No Package Selected' overlay widget."""
+        self.no_package_overlay = QtWidgets.QFrame(self)
+        self.no_package_overlay.setObjectName("noPackageOverlay")
+        self.no_package_overlay.setStyleSheet("""
+            QFrame#noPackageOverlay {
+                background-color: rgba(40, 40, 40, 220);
+                border-radius: 4px;
+            }
+        """)
+
+        overlay_layout = QtWidgets.QVBoxLayout(self.no_package_overlay)
+        overlay_layout.setAlignment(QtCore.Qt.AlignCenter)
+
+        # Icon (folder with question mark)
+        icon_label = QtWidgets.QLabel()
+        icon_label.setPixmap(
+            self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxQuestion).pixmap(64, 64)
+        )
+        icon_label.setAlignment(QtCore.Qt.AlignCenter)
+        overlay_layout.addWidget(icon_label)
+
+        # Message
+        message_label = QtWidgets.QLabel("No Package Selected")
+        message_label.setStyleSheet("""
+            QLabel {
+                color: #cccccc;
+                font-size: 16px;
+                font-weight: bold;
+            }
+        """)
+        message_label.setAlignment(QtCore.Qt.AlignCenter)
+        overlay_layout.addWidget(message_label)
+
+        # Sub-message
+        sub_message = QtWidgets.QLabel("Select a package from the dropdown above\nto view and manage folder contents.")
+        sub_message.setStyleSheet("""
+            QLabel {
+                color: #888888;
+                font-size: 12px;
+            }
+        """)
+        sub_message.setAlignment(QtCore.Qt.AlignCenter)
+        overlay_layout.addWidget(sub_message)
+
+        # Initially shown (no package selected by default)
+        self.no_package_overlay.show()
+        self._update_overlay_geometry()
+
+    def _update_overlay_geometry(self):
+        """Update the overlay position to cover the view_stack area."""
+        if hasattr(self, 'no_package_overlay') and hasattr(self, 'view_stack'):
+            # Position overlay over the view_stack
+            stack_pos = self.view_stack.pos()
+            stack_size = self.view_stack.size()
+            self.no_package_overlay.setGeometry(
+                stack_pos.x(), stack_pos.y(),
+                stack_size.width(), stack_size.height()
+            )
+
+    def _show_no_package_overlay(self):
+        """Show the 'No Package Selected' overlay."""
+        if hasattr(self, 'no_package_overlay'):
+            self.no_package_overlay.show()
+            self.no_package_overlay.raise_()
+
+    def _hide_no_package_overlay(self):
+        """Hide the 'No Package Selected' overlay."""
+        if hasattr(self, 'no_package_overlay'):
+            self.no_package_overlay.hide()
+
+    def resizeEvent(self, event):
+        """Handle resize to update overlay position."""
+        super().resizeEvent(event)
+        self._update_overlay_geometry()
 
     def _on_size_changed(self, value):
         """Handle size slider change."""
@@ -1217,8 +1296,10 @@ class FolderPaneWidget(QtWidgets.QWidget):
             package_name: Selected package name or "(No Package)"
         """
         if package_name == "(No Package)":
+            self._show_no_package_overlay()
             self.packageSelected.emit("")
         else:
+            self._hide_no_package_overlay()
             self.packageSelected.emit(package_name)
 
     def set_packages(self, package_names):
@@ -1245,10 +1326,12 @@ class FolderPaneWidget(QtWidgets.QWidget):
         self.package_dropdown.blockSignals(True)
         if not package_name:
             self.package_dropdown.setCurrentText("(No Package)")
+            self._show_no_package_overlay()
         else:
             index = self.package_dropdown.findText(package_name)
             if index >= 0:
                 self.package_dropdown.setCurrentIndex(index)
+            self._hide_no_package_overlay()
         self.package_dropdown.blockSignals(False)
 
     def get_selected_package(self):
