@@ -1172,27 +1172,29 @@ class DocumentFolderPaneWidget(QtWidgets.QWidget):
         doc_label.setCursor(QtCore.Qt.PointingHandCursor)
         doc_label.mouseDoubleClickEvent = lambda event: self._enlarge_document(version)
 
-        # Remove button
+        # Remove button with trash can icon
         remove_btn = QtWidgets.QPushButton(doc_container)
         remove_btn.setFixedSize(24, 24)
         remove_btn.move(thumb_size - 28, thumb_height - 28)
         remove_btn.setCursor(QtCore.Qt.PointingHandCursor)
         remove_btn.clicked.connect(lambda: self._remove_from_section(version.get('id'), section_name))
+
+        # Set trash can icon
+        remove_btn.setIcon(create_trash_icon(16, QtGui.QColor(255, 255, 255, 180)))
+        remove_btn.setIconSize(QtCore.QSize(16, 16))
+
         remove_btn.setStyleSheet("""
             QPushButton {
-                background-color: transparent;
+                background-color: rgba(40, 40, 40, 180);
                 border: 2px solid rgba(255, 255, 255, 180);
                 border-radius: 12px;
-                color: rgba(255, 255, 255, 180);
-                font-weight: bold;
-                font-size: 16px;
+                padding: 2px;
             }
             QPushButton:hover {
                 border: 2px solid rgba(255, 80, 80, 255);
-                color: rgba(255, 80, 80, 255);
+                background-color: rgba(60, 40, 40, 200);
             }
         """)
-        remove_btn.setText("x")
 
         container_layout.addWidget(doc_container)
 
