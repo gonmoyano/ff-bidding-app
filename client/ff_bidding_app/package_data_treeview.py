@@ -499,20 +499,24 @@ class PackageTreeView(QtWidgets.QWidget):
             ]
         )
 
-        # Separate bid tracker versions from image versions and document versions
+        # Separate bid tracker versions from image versions, script versions, and document versions
         bid_tracker_versions = [v for v in package_versions_with_folders if self._is_bid_tracker_version(v)]
         image_versions_with_folders = [v for v in package_versions_with_folders if self._is_image_version(v)]
+        script_versions_with_folders = [v for v in package_versions_with_folders if self._is_script_version(v)]
         document_versions_with_folders = [v for v in package_versions_with_folders if self._is_document_version(v)]
 
-        # Also get image versions from other_versions (without folder info)
+        # Also get versions from other_versions (without folder info)
         image_versions_without_folders = [v for v in other_versions if self._is_image_version(v)]
-
-        # Combine document versions from both sources (PackageItems and parent package linked)
+        script_versions_from_other = [v for v in other_versions if self._is_script_version(v)]
         document_versions_from_other = [v for v in other_versions if self._is_document_version(v)]
+
+        # Combine versions from both sources (PackageItems and parent package linked)
+        all_script_versions = script_versions_with_folders + script_versions_from_other
         all_document_versions = document_versions_with_folders + document_versions_from_other
 
         # Build the tree with actual version data
         self.set_bid_tracker_item(bid_tracker_versions)
+        self.set_scripts_item(all_script_versions)
         self.set_documents_item(all_document_versions)
         # Show images organized by folder under Images section
         self.set_images_item(image_versions_with_folders, image_versions_without_folders)
@@ -576,6 +580,7 @@ class PackageTreeView(QtWidgets.QWidget):
 
         # Build the tree with actual version data
         self.set_bid_tracker_item(versions)
+        self.set_scripts_item(versions)
         self.set_documents_item(versions)
         # For RFQ-based view, no folder info, so all images are without folders
         self.set_images_item([], versions)
@@ -715,6 +720,51 @@ class PackageTreeView(QtWidgets.QWidget):
             # Add info message if no versions found
             no_data_item = SGTreeItem(
                 documents_root,
+                ["No versions found", "Info", "", ""],
+                item_type="info"
+            )
+            no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
+
+    def set_scripts_item(self, versions):
+        """Build Scripts section with real version data."""
+        scripts_root = SGTreeItem(
+            self.tree_widget,
+            ["Scripts", "Folder", "", ""],
+            sg_data={'type': 'folder'},
+            item_type="folder"
+        )
+
+        self.category_items["Scripts"] = scripts_root
+        scripts_root.setExpanded(True)
+        font = scripts_root.font(0)
+        font.setBold(True)
+        scripts_root.setFont(0, font)
+
+        # Filter script versions
+        script_versions = [v for v in versions if self._is_script_version(v)]
+
+        if script_versions:
+            for version in script_versions:
+                version_code = version.get('code', 'Unknown')
+                status = version.get('sg_status_list', '')
+                status_display = status if status else 'N/A'
+                version_number = version_code.split('_')[-1] if '_' in version_code else ""
+
+                # Use helper to create version item
+                version_item = self._create_version_item(
+                    scripts_root,
+                    version,
+                    [version_code, "Version", status_display, version_number]
+                )
+
+                # Set status color if it matches our color scheme (check lowercase)
+                status_lower = status.lower() if status else ''
+                if status_lower in status_colors:
+                    version_item.setBackground(2, status_colors[status_lower])
+        else:
+            # Add info message if no versions found
+            no_data_item = SGTreeItem(
+                scripts_root,
                 ["No versions found", "Info", "", ""],
                 item_type="info"
             )
@@ -1019,8 +1069,8 @@ class PackageTreeView(QtWidgets.QWidget):
         image_keywords = ['concept', 'art', 'storyboard', 'reference', 'image', 'ref']
         return any(keyword in code or keyword in task_name for keyword in image_keywords)
 
-    def _is_document_version(self, version):
-        """Determine if a version belongs to Documents category (Script, Document types)."""
+    def _is_script_version(self, version):
+        """Determine if a version belongs to Scripts category."""
         sg_version_type = version.get('sg_version_type')
 
         if sg_version_type:
@@ -1029,9 +1079,26 @@ class PackageTreeView(QtWidgets.QWidget):
             else:
                 version_type = str(sg_version_type).lower()
 
-            # Check for script, document types
+            # Check for script type only
+            return 'script' in version_type
+
+        return False
+
+    def _is_document_version(self, version):
+        """Determine if a version belongs to Documents category (Document types, not Scripts)."""
+        sg_version_type = version.get('sg_version_type')
+
+        if sg_version_type:
+            if isinstance(sg_version_type, dict):
+                version_type = sg_version_type.get('name', '').lower()
+            else:
+                version_type = str(sg_version_type).lower()
+
+            # Check for document types, but NOT script
+            if 'script' in version_type:
+                return False
             return any(keyword in version_type for keyword in [
-                'script', 'document', 'doc', 'pdf'
+                'document', 'doc', 'pdf'
             ])
 
         return False
