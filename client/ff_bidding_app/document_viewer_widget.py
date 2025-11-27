@@ -1614,7 +1614,7 @@ class DocumentViewerWidget(QtWidgets.QWidget):
                     break
 
             # Link to selected package with appropriate folder
-            self._link_document_to_package(document_id, target_category)
+            self._link_document_to_package_category(document_id, target_category)
 
             self._rebuild_thumbnails()
             self.update_thumbnail_states()
@@ -1627,8 +1627,8 @@ class DocumentViewerWidget(QtWidgets.QWidget):
                 f"Failed to update document category:\n{str(e)}"
             )
 
-    def _link_document_to_package(self, document_id, category):
-        """Link a document to the currently selected package.
+    def _link_document_to_package_category(self, document_id, category):
+        """Link a document to the currently selected package in a category folder.
 
         Args:
             document_id: ID of the document version
@@ -1636,20 +1636,31 @@ class DocumentViewerWidget(QtWidgets.QWidget):
         """
         # Get selected package from folder pane
         if not self.folder_pane:
+            logger.debug("No folder_pane, skipping package link")
             return
 
         selected_package = self.folder_pane.get_selected_package()
         if not selected_package:
+            logger.debug("No package selected, skipping package link")
             return
 
         try:
             # Get package ID from packages_tab
             if not self.packages_tab:
+                logger.debug("No packages_tab reference, skipping package link")
                 return
 
             sg_package_id = None
             if hasattr(self.packages_tab, 'package_name_to_id'):
                 sg_package_id = self.packages_tab.package_name_to_id.get(selected_package)
+
+            # Also try getting from packages dict
+            if not sg_package_id:
+                packages = getattr(self.packages_tab, 'packages', {})
+                for pkg_name, pkg_data in packages.items():
+                    if pkg_name == selected_package:
+                        sg_package_id = pkg_data.get('sg_package_id')
+                        break
 
             if not sg_package_id:
                 logger.warning(f"Could not find package ID for '{selected_package}'")
