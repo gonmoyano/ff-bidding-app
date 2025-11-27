@@ -860,18 +860,25 @@ class DocumentFolderPaneWidget(QtWidgets.QWidget):
         """Link a document to the currently selected package."""
         selected_package = self.get_selected_package()
         if not selected_package or not self.document_viewer:
+            logger.debug(f"No package selected or no document_viewer, skipping link")
             return
 
         try:
             packages_tab = getattr(self.document_viewer, 'packages_tab', None)
             if not packages_tab:
+                logger.debug("No packages_tab, skipping link")
                 return
 
+            # Get package ID from packages dict
             sg_package_id = None
-            if hasattr(packages_tab, 'package_name_to_id'):
-                sg_package_id = packages_tab.package_name_to_id.get(selected_package)
+            packages = getattr(packages_tab, 'packages', {})
+            for pkg_name, pkg_data in packages.items():
+                if pkg_name == selected_package:
+                    sg_package_id = pkg_data.get('sg_package_id')
+                    break
 
             if not sg_package_id:
+                logger.warning(f"Could not find package ID for '{selected_package}'")
                 return
 
             folder_path = f"/{section_name}"
@@ -882,7 +889,7 @@ class DocumentFolderPaneWidget(QtWidgets.QWidget):
                 folder_name=folder_path
             )
 
-            logger.info(f"Linked document {document_id} to package {selected_package}")
+            logger.info(f"Linked document {document_id} to package {selected_package} in {folder_path}")
 
             if hasattr(packages_tab, 'package_data_tree') and packages_tab.package_data_tree:
                 packages_tab.package_data_tree.load_package_versions(sg_package_id)
@@ -1151,18 +1158,25 @@ class DocumentFolderPaneWidget(QtWidgets.QWidget):
         """Link a document from a folder to the selected package."""
         selected_package = self.get_selected_package()
         if not selected_package or not self.document_viewer:
+            logger.debug(f"No package selected or no document_viewer, skipping folder link")
             return
 
         try:
             packages_tab = getattr(self.document_viewer, 'packages_tab', None)
             if not packages_tab:
+                logger.debug("No packages_tab, skipping folder link")
                 return
 
+            # Get package ID from packages dict
             sg_package_id = None
-            if hasattr(packages_tab, 'package_name_to_id'):
-                sg_package_id = packages_tab.package_name_to_id.get(selected_package)
+            packages = getattr(packages_tab, 'packages', {})
+            for pkg_name, pkg_data in packages.items():
+                if pkg_name == selected_package:
+                    sg_package_id = pkg_data.get('sg_package_id')
+                    break
 
             if not sg_package_id:
+                logger.warning(f"Could not find package ID for '{selected_package}'")
                 return
 
             folder_type_plural = 'assets' if folder_type == 'asset' else 'scenes'
@@ -1175,6 +1189,9 @@ class DocumentFolderPaneWidget(QtWidgets.QWidget):
             )
 
             logger.info(f"Linked document {document_id} to package {selected_package} in {folder_path}")
+
+            if hasattr(packages_tab, 'package_data_tree') and packages_tab.package_data_tree:
+                packages_tab.package_data_tree.load_package_versions(sg_package_id)
 
         except Exception as e:
             logger.error(f"Failed to link document to package: {e}", exc_info=True)
