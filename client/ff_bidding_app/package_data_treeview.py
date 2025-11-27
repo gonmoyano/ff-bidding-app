@@ -681,7 +681,10 @@ class PackageTreeView(QtWidgets.QWidget):
             no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
 
     def set_documents_item(self, versions):
-        """Build Documents section with real version data."""
+        """Build Documents section with hierarchical folders and versions.
+
+        Supports folder paths like /Documents (root level) or /scenes/ARR/Document (nested).
+        """
         documents_root = SGTreeItem(
             self.tree_widget,
             ["Documents", "Folder", "", ""],
@@ -695,24 +698,72 @@ class PackageTreeView(QtWidgets.QWidget):
         font.setBold(True)
         documents_root.setFont(0, font)
 
-        # Filter document versions (was script)
+        # Filter document versions
         document_versions = [v for v in versions if self._is_document_version(v)]
 
-        if document_versions:
-            for version in document_versions:
+        # Separate versions with folder assignments from those without
+        versions_with_folders = []
+        versions_without_folders = []
+
+        for version in document_versions:
+            folders_str = version.get('_package_folders', '')
+            if folders_str:
+                # Check if any folder path contains scenes or assets (nested structure)
+                folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
+                has_nested = any('/scenes/' in fp or '/assets/' in fp for fp in folder_paths)
+                if has_nested:
+                    versions_with_folders.append(version)
+                else:
+                    versions_without_folders.append(version)
+            else:
+                versions_without_folders.append(version)
+
+        # Build hierarchical tree for versions in scene/asset folders
+        if versions_with_folders or versions_without_folders:
+            if versions_with_folders:
+                path_tree = {}
+                for version in versions_with_folders:
+                    folders_str = version.get('_package_folders', '')
+                    folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
+                    for folder_path in folder_paths:
+                        # Only process paths with scenes or assets
+                        if '/scenes/' in folder_path or '/assets/' in folder_path:
+                            # Parse the path, skip the Script/Document part at the end
+                            parts = [p for p in folder_path.split('/') if p]
+                            # Remove the last part if it's Script/Document (category)
+                            if parts and parts[-1].lower() in ['script', 'document', 'scripts', 'documents']:
+                                parts = parts[:-1]
+
+                            if parts:
+                                # Navigate/create the tree structure
+                                current_level = path_tree
+                                for part in parts:
+                                    if part not in current_level:
+                                        current_level[part] = {'_versions': [], '_children': {}}
+                                    current_level = current_level[part]['_children']
+
+                                # Add version to the deepest level
+                                current_level = path_tree
+                                for part in parts[:-1]:
+                                    current_level = current_level[part]['_children']
+                                if parts:
+                                    current_level[parts[-1]]['_versions'].append(version)
+
+                self._build_folder_tree(documents_root, path_tree, "")
+
+            # Add versions without nested folders directly under Documents
+            for version in versions_without_folders:
                 version_code = version.get('code', 'Unknown')
                 status = version.get('sg_status_list', '')
                 status_display = status if status else 'N/A'
                 version_number = version_code.split('_')[-1] if '_' in version_code else ""
 
-                # Use helper to create version item
                 version_item = self._create_version_item(
                     documents_root,
                     version,
                     [version_code, "Version", status_display, version_number]
                 )
 
-                # Set status color if it matches our color scheme (check lowercase)
                 status_lower = status.lower() if status else ''
                 if status_lower in status_colors:
                     version_item.setBackground(2, status_colors[status_lower])
@@ -726,7 +777,10 @@ class PackageTreeView(QtWidgets.QWidget):
             no_data_item.setForeground(0, QtGui.QColor(120, 120, 120))
 
     def set_scripts_item(self, versions):
-        """Build Scripts section with real version data."""
+        """Build Scripts section with hierarchical folders and versions.
+
+        Supports folder paths like /Script (root level) or /scenes/ARR/Script (nested).
+        """
         scripts_root = SGTreeItem(
             self.tree_widget,
             ["Scripts", "Folder", "", ""],
@@ -743,21 +797,69 @@ class PackageTreeView(QtWidgets.QWidget):
         # Filter script versions
         script_versions = [v for v in versions if self._is_script_version(v)]
 
-        if script_versions:
-            for version in script_versions:
+        # Separate versions with folder assignments from those without
+        versions_with_folders = []
+        versions_without_folders = []
+
+        for version in script_versions:
+            folders_str = version.get('_package_folders', '')
+            if folders_str:
+                # Check if any folder path contains scenes or assets (nested structure)
+                folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
+                has_nested = any('/scenes/' in fp or '/assets/' in fp for fp in folder_paths)
+                if has_nested:
+                    versions_with_folders.append(version)
+                else:
+                    versions_without_folders.append(version)
+            else:
+                versions_without_folders.append(version)
+
+        # Build hierarchical tree for versions in scene/asset folders
+        if versions_with_folders or versions_without_folders:
+            if versions_with_folders:
+                path_tree = {}
+                for version in versions_with_folders:
+                    folders_str = version.get('_package_folders', '')
+                    folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
+                    for folder_path in folder_paths:
+                        # Only process paths with scenes or assets
+                        if '/scenes/' in folder_path or '/assets/' in folder_path:
+                            # Parse the path, skip the Script/Document part at the end
+                            parts = [p for p in folder_path.split('/') if p]
+                            # Remove the last part if it's Script/Document (category)
+                            if parts and parts[-1].lower() in ['script', 'document', 'scripts', 'documents']:
+                                parts = parts[:-1]
+
+                            if parts:
+                                # Navigate/create the tree structure
+                                current_level = path_tree
+                                for part in parts:
+                                    if part not in current_level:
+                                        current_level[part] = {'_versions': [], '_children': {}}
+                                    current_level = current_level[part]['_children']
+
+                                # Add version to the deepest level
+                                current_level = path_tree
+                                for part in parts[:-1]:
+                                    current_level = current_level[part]['_children']
+                                if parts:
+                                    current_level[parts[-1]]['_versions'].append(version)
+
+                self._build_folder_tree(scripts_root, path_tree, "")
+
+            # Add versions without nested folders directly under Scripts
+            for version in versions_without_folders:
                 version_code = version.get('code', 'Unknown')
                 status = version.get('sg_status_list', '')
                 status_display = status if status else 'N/A'
                 version_number = version_code.split('_')[-1] if '_' in version_code else ""
 
-                # Use helper to create version item
                 version_item = self._create_version_item(
                     scripts_root,
                     version,
                     [version_code, "Version", status_display, version_number]
                 )
 
-                # Set status color if it matches our color scheme (check lowercase)
                 status_lower = status.lower() if status else ''
                 if status_lower in status_colors:
                     version_item.setBackground(2, status_colors[status_lower])
