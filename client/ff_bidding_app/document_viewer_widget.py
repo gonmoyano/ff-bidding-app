@@ -463,8 +463,10 @@ class DocumentViewerDialog(QtWidgets.QDialog):
                 self._render_image(document_data)
             elif ext in ['.txt', '.md', '.json', '.xml', '.html', '.css', '.js', '.py']:
                 self._render_text(document_data)
+            elif ext in ['.xls', '.xlsx']:
+                self._render_excel(filename)
             else:
-                # For other documents (doc, docx, xls, xlsx), show file info
+                # For other documents (doc, docx), show file info
                 self._render_document_placeholder(filename, len(document_data))
 
             # Update status with hints
@@ -584,6 +586,254 @@ class DocumentViewerDialog(QtWidgets.QDialog):
         except Exception as e:
             logger.error(f"Error rendering text: {e}")
 
+    def _render_excel(self, filename):
+        """Render Excel spreadsheet document.
+
+        Supports both .xls (xlrd) and .xlsx (openpyxl) formats.
+        Displays sheets in tabs with full spreadsheet content.
+        """
+        ext = os.path.splitext(filename)[1].lower() if filename else ''
+
+        try:
+            if ext == '.xlsx':
+                self._render_excel_xlsx()
+            else:  # .xls
+                self._render_excel_xls()
+        except ImportError as e:
+            logger.warning(f"Excel library not available: {e}")
+            self._render_excel_placeholder(filename, ext)
+        except Exception as e:
+            logger.error(f"Error rendering Excel file: {e}")
+            self._render_excel_placeholder(filename, ext)
+
+    def _render_excel_xlsx(self):
+        """Render .xlsx file using openpyxl."""
+        import openpyxl
+
+        workbook = openpyxl.load_workbook(self.document_path, data_only=True)
+        sheet_names = workbook.sheetnames
+
+        self.total_pages = len(sheet_names)
+        self.current_page = 0
+        self._excel_workbook = workbook
+        self._excel_sheet_names = sheet_names
+
+        self._update_page_controls()
+        self._render_excel_sheet(0)
+
+    def _render_excel_xls(self):
+        """Render .xls file using xlrd."""
+        import xlrd
+
+        workbook = xlrd.open_workbook(self.document_path)
+        sheet_names = workbook.sheet_names()
+
+        self.total_pages = len(sheet_names)
+        self.current_page = 0
+        self._excel_workbook = workbook
+        self._excel_sheet_names = sheet_names
+        self._excel_is_xlrd = True
+
+        self._update_page_controls()
+        self._render_excel_sheet(0)
+
+    def _render_excel_sheet(self, sheet_index):
+        """Render a specific sheet from the Excel workbook.
+
+        Args:
+            sheet_index: Index of the sheet to render (0-based)
+        """
+        self.graphics_scene.clear()
+
+        # Create container widget for the spreadsheet
+        container = QtWidgets.QWidget()
+        container.setMinimumSize(1000, 700)
+        layout = QtWidgets.QVBoxLayout(container)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        # Sheet name header
+        sheet_name = self._excel_sheet_names[sheet_index]
+        header = QtWidgets.QLabel(f"Sheet: {sheet_name}")
+        header.setStyleSheet("""
+            QLabel {
+                color: #27ae60;
+                font-size: 14px;
+                font-weight: bold;
+                padding: 5px;
+                background-color: #1e3a1e;
+                border-radius: 4px;
+            }
+        """)
+        layout.addWidget(header)
+
+        # Create table widget for spreadsheet data
+        table = QtWidgets.QTableWidget()
+        table.setStyleSheet("""
+            QTableWidget {
+                background-color: #1e1e1e;
+                color: #ddd;
+                gridline-color: #444;
+                font-family: 'Segoe UI', sans-serif;
+                font-size: 11px;
+                border: 1px solid #444;
+            }
+            QTableWidget::item {
+                padding: 4px 8px;
+                border-bottom: 1px solid #333;
+            }
+            QTableWidget::item:selected {
+                background-color: #264f78;
+            }
+            QHeaderView::section {
+                background-color: #2d2d2d;
+                color: #ddd;
+                padding: 6px;
+                border: 1px solid #444;
+                font-weight: bold;
+            }
+            QTableCornerButton::section {
+                background-color: #2d2d2d;
+                border: 1px solid #444;
+            }
+        """)
+
+        # Get sheet data based on format type
+        if hasattr(self, '_excel_is_xlrd') and self._excel_is_xlrd:
+            # xlrd for .xls files
+            sheet = self._excel_workbook.sheet_by_index(sheet_index)
+            rows = sheet.nrows
+            cols = sheet.ncols
+
+            table.setRowCount(rows)
+            table.setColumnCount(cols)
+
+            for row in range(rows):
+                for col in range(cols):
+                    cell_value = sheet.cell_value(row, col)
+                    cell_type = sheet.cell_type(row, col)
+
+                    # Format cell value based on type
+                    if cell_type == 3:  # Date
+                        try:
+                            import xlrd
+                            date_tuple = xlrd.xldate_as_tuple(cell_value, self._excel_workbook.datemode)
+                            display_value = f"{date_tuple[0]:04d}-{date_tuple[1]:02d}-{date_tuple[2]:02d}"
+                        except:
+                            display_value = str(cell_value)
+                    elif isinstance(cell_value, float) and cell_value == int(cell_value):
+                        display_value = str(int(cell_value))
+                    else:
+                        display_value = str(cell_value) if cell_value != '' else ''
+
+                    item = QtWidgets.QTableWidgetItem(display_value)
+                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                    table.setItem(row, col, item)
+        else:
+            # openpyxl for .xlsx files
+            sheet = self._excel_workbook[sheet_name]
+
+            # Get dimensions
+            rows = sheet.max_row or 1
+            cols = sheet.max_column or 1
+
+            table.setRowCount(rows)
+            table.setColumnCount(cols)
+
+            for row_idx, row in enumerate(sheet.iter_rows(min_row=1, max_row=rows, max_col=cols)):
+                for col_idx, cell in enumerate(row):
+                    cell_value = cell.value
+                    if cell_value is None:
+                        display_value = ''
+                    elif isinstance(cell_value, float) and cell_value == int(cell_value):
+                        display_value = str(int(cell_value))
+                    else:
+                        display_value = str(cell_value)
+
+                    item = QtWidgets.QTableWidgetItem(display_value)
+                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                    table.setItem(row_idx, col_idx, item)
+
+        # Set column headers (A, B, C, ...)
+        headers = []
+        for i in range(table.columnCount()):
+            if i < 26:
+                headers.append(chr(65 + i))  # A-Z
+            else:
+                # AA, AB, etc. for columns beyond Z
+                headers.append(chr(65 + i // 26 - 1) + chr(65 + i % 26))
+        table.setHorizontalHeaderLabels(headers)
+
+        # Resize columns to fit content
+        table.resizeColumnsToContents()
+
+        # Set minimum column width
+        for col in range(table.columnCount()):
+            if table.columnWidth(col) < 60:
+                table.setColumnWidth(col, 60)
+            elif table.columnWidth(col) > 300:
+                table.setColumnWidth(col, 300)
+
+        layout.addWidget(table)
+
+        # Add sheet info
+        info_label = QtWidgets.QLabel(f"Rows: {table.rowCount()} | Columns: {table.columnCount()}")
+        info_label.setStyleSheet("color: #888; font-size: 10px; padding: 5px;")
+        layout.addWidget(info_label)
+
+        container.setStyleSheet("background-color: #2b2b2b;")
+
+        # Add to scene
+        proxy = self.graphics_scene.addWidget(container)
+        proxy.setMinimumSize(1000, 700)
+
+        # Update page label to show sheet name
+        self.page_label.setText(f"Sheet {sheet_index + 1} of {self.total_pages}: {sheet_name}")
+
+    def _render_excel_placeholder(self, filename, ext):
+        """Render placeholder when Excel libraries are not available."""
+        self.graphics_scene.clear()
+
+        placeholder = QtWidgets.QWidget()
+        placeholder.setMinimumSize(600, 400)
+        layout = QtWidgets.QVBoxLayout(placeholder)
+        layout.setAlignment(QtCore.Qt.AlignCenter)
+
+        # Excel icon
+        icon_label = QtWidgets.QLabel("XLS")
+        icon_label.setAlignment(QtCore.Qt.AlignCenter)
+        icon_label.setStyleSheet("""
+            QLabel {
+                background-color: #27ae60;
+                color: white;
+                font-size: 48px;
+                font-weight: bold;
+                padding: 30px 40px;
+                border-radius: 10px;
+            }
+        """)
+        layout.addWidget(icon_label)
+
+        # Filename
+        name_label = QtWidgets.QLabel(filename or "Excel Document")
+        name_label.setStyleSheet("font-size: 16px; color: #ddd; margin-top: 20px;")
+        name_label.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(name_label)
+
+        # Install instructions
+        if ext == '.xlsx':
+            install_msg = "Install openpyxl to preview: pip install openpyxl"
+        else:
+            install_msg = "Install xlrd to preview: pip install xlrd"
+
+        info_label = QtWidgets.QLabel(install_msg)
+        info_label.setStyleSheet("font-size: 11px; color: #888; margin-top: 10px;")
+        info_label.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(info_label)
+
+        placeholder.setStyleSheet("background-color: #2b2b2b;")
+        proxy = self.graphics_scene.addWidget(placeholder)
+        self.graphics_view.fitInView(proxy, QtCore.Qt.KeepAspectRatio)
+
     def _render_document_placeholder(self, filename, file_size, is_pdf=False):
         """Render a placeholder for unsupported document types."""
         self.graphics_scene.clear()
@@ -691,14 +941,23 @@ class DocumentViewerDialog(QtWidgets.QDialog):
     def _reload_current_page(self):
         """Reload the current page while preserving zoom level."""
         self._update_page_controls()
-        if self.document_path and self.document_path.lower().endswith('.pdf'):
-            try:
-                import fitz
-                doc = fitz.open(self.document_path)
-                self._render_pdf_page(doc, self.current_page, preserve_zoom=True)
-                doc.close()
-            except Exception as e:
-                logger.error(f"Error reloading page: {e}")
+        if self.document_path:
+            ext = os.path.splitext(self.document_path)[1].lower()
+            if ext == '.pdf':
+                try:
+                    import fitz
+                    doc = fitz.open(self.document_path)
+                    self._render_pdf_page(doc, self.current_page, preserve_zoom=True)
+                    doc.close()
+                except Exception as e:
+                    logger.error(f"Error reloading page: {e}")
+            elif ext in ['.xls', '.xlsx']:
+                # Reload Excel sheet
+                if hasattr(self, '_excel_workbook') and self._excel_workbook:
+                    try:
+                        self._render_excel_sheet(self.current_page)
+                    except Exception as e:
+                        logger.error(f"Error reloading Excel sheet: {e}")
 
     def _on_document_error(self, error_msg):
         """Handle document load error."""
@@ -803,7 +1062,20 @@ class DocumentViewerDialog(QtWidgets.QDialog):
             super().keyPressEvent(event)
 
     def closeEvent(self, event):
-        """Clean up temporary file on close."""
+        """Clean up temporary file and resources on close."""
+        # Clean up Excel workbook if loaded
+        if hasattr(self, '_excel_workbook') and self._excel_workbook:
+            try:
+                if hasattr(self._excel_workbook, 'close'):
+                    self._excel_workbook.close()
+            except Exception as e:
+                logger.warning(f"Could not close Excel workbook: {e}")
+            self._excel_workbook = None
+            self._excel_sheet_names = None
+            if hasattr(self, '_excel_is_xlrd'):
+                delattr(self, '_excel_is_xlrd')
+
+        # Clean up temporary file
         if self.document_path and os.path.exists(self.document_path):
             try:
                 os.unlink(self.document_path)
