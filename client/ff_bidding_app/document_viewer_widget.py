@@ -465,8 +465,10 @@ class DocumentViewerDialog(QtWidgets.QDialog):
                 self._render_text(document_data)
             elif ext in ['.xls', '.xlsx']:
                 self._render_excel(filename)
+            elif ext in ['.doc', '.docx']:
+                self._render_word(filename)
             else:
-                # For other documents (doc, docx), show file info
+                # For other documents, show file info
                 self._render_document_placeholder(filename, len(document_data))
 
             # Update status with hints
@@ -613,13 +615,13 @@ class DocumentViewerDialog(QtWidgets.QDialog):
         workbook = openpyxl.load_workbook(self.document_path, data_only=True)
         sheet_names = workbook.sheetnames
 
-        self.total_pages = len(sheet_names)
+        self.total_pages = 1  # Tabs handle sheets, not pages
         self.current_page = 0
         self._excel_workbook = workbook
         self._excel_sheet_names = sheet_names
 
         self._update_page_controls()
-        self._render_excel_sheet(0)
+        self._render_excel_with_tabs()
 
     def _render_excel_xls(self):
         """Render .xls file using xlrd."""
@@ -628,45 +630,86 @@ class DocumentViewerDialog(QtWidgets.QDialog):
         workbook = xlrd.open_workbook(self.document_path)
         sheet_names = workbook.sheet_names()
 
-        self.total_pages = len(sheet_names)
+        self.total_pages = 1  # Tabs handle sheets, not pages
         self.current_page = 0
         self._excel_workbook = workbook
         self._excel_sheet_names = sheet_names
         self._excel_is_xlrd = True
 
         self._update_page_controls()
-        self._render_excel_sheet(0)
+        self._render_excel_with_tabs()
 
-    def _render_excel_sheet(self, sheet_index):
-        """Render a specific sheet from the Excel workbook.
-
-        Args:
-            sheet_index: Index of the sheet to render (0-based)
-        """
+    def _render_excel_with_tabs(self):
+        """Render Excel workbook with tabbed sheets."""
         self.graphics_scene.clear()
 
         # Create container widget for the spreadsheet
         container = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(container)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(5)
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(0)
 
-        # Sheet name header
-        sheet_name = self._excel_sheet_names[sheet_index]
-        header = QtWidgets.QLabel(f"Sheet: {sheet_name}")
-        header.setStyleSheet("""
-            QLabel {
-                color: #27ae60;
-                font-size: 14px;
-                font-weight: bold;
-                padding: 5px;
-                background-color: #1e3a1e;
-                border-radius: 4px;
+        # Create tab widget for sheets
+        tab_widget = QtWidgets.QTabWidget()
+        tab_widget.setStyleSheet("""
+            QTabWidget::pane {
+                border: 1px solid #444;
+                background-color: #1e1e1e;
+            }
+            QTabBar::tab {
+                background-color: #2d2d2d;
+                color: #aaa;
+                padding: 8px 16px;
+                margin-right: 2px;
+                border: 1px solid #444;
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+            }
+            QTabBar::tab:selected {
+                background-color: #27ae60;
+                color: white;
+            }
+            QTabBar::tab:hover:!selected {
+                background-color: #3d3d3d;
+                color: #ddd;
             }
         """)
-        layout.addWidget(header)
 
-        # Create table widget for spreadsheet data
+        # Create a tab for each sheet
+        for sheet_index, sheet_name in enumerate(self._excel_sheet_names):
+            table = self._create_excel_table(sheet_index)
+            tab_widget.addTab(table, sheet_name)
+
+        layout.addWidget(tab_widget)
+
+        # Add sheet count info
+        info_label = QtWidgets.QLabel(f"Sheets: {len(self._excel_sheet_names)}")
+        info_label.setStyleSheet("color: #888; font-size: 10px; padding: 2px;")
+        layout.addWidget(info_label)
+
+        container.setStyleSheet("background-color: #2b2b2b;")
+
+        # Store references for resizing
+        self._excel_proxy = self.graphics_scene.addWidget(container)
+        self._excel_container = container
+        self._excel_tab_widget = tab_widget
+
+        # Size the Excel widget to fit the viewport
+        self._resize_excel_widget()
+
+        # Update page label
+        self.page_label.setText(f"Excel: {len(self._excel_sheet_names)} sheets")
+
+    def _create_excel_table(self, sheet_index):
+        """Create a table widget for a specific Excel sheet.
+
+        Args:
+            sheet_index: Index of the sheet to render (0-based)
+
+        Returns:
+            QTableWidget with the sheet data
+        """
         table = QtWidgets.QTableWidget()
         table.setStyleSheet("""
             QTableWidget {
@@ -675,7 +718,7 @@ class DocumentViewerDialog(QtWidgets.QDialog):
                 gridline-color: #444;
                 font-family: 'Segoe UI', sans-serif;
                 font-size: 11px;
-                border: 1px solid #444;
+                border: none;
             }
             QTableWidget::item {
                 padding: 4px 8px;
@@ -699,59 +742,9 @@ class DocumentViewerDialog(QtWidgets.QDialog):
 
         # Get sheet data based on format type
         if hasattr(self, '_excel_is_xlrd') and self._excel_is_xlrd:
-            # xlrd for .xls files
-            sheet = self._excel_workbook.sheet_by_index(sheet_index)
-            rows = sheet.nrows
-            cols = sheet.ncols
-
-            table.setRowCount(rows)
-            table.setColumnCount(cols)
-
-            for row in range(rows):
-                for col in range(cols):
-                    cell_value = sheet.cell_value(row, col)
-                    cell_type = sheet.cell_type(row, col)
-
-                    # Format cell value based on type
-                    if cell_type == 3:  # Date
-                        try:
-                            import xlrd
-                            date_tuple = xlrd.xldate_as_tuple(cell_value, self._excel_workbook.datemode)
-                            display_value = f"{date_tuple[0]:04d}-{date_tuple[1]:02d}-{date_tuple[2]:02d}"
-                        except:
-                            display_value = str(cell_value)
-                    elif isinstance(cell_value, float) and cell_value == int(cell_value):
-                        display_value = str(int(cell_value))
-                    else:
-                        display_value = str(cell_value) if cell_value != '' else ''
-
-                    item = QtWidgets.QTableWidgetItem(display_value)
-                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
-                    table.setItem(row, col, item)
+            self._populate_table_xlrd(table, sheet_index)
         else:
-            # openpyxl for .xlsx files
-            sheet = self._excel_workbook[sheet_name]
-
-            # Get dimensions
-            rows = sheet.max_row or 1
-            cols = sheet.max_column or 1
-
-            table.setRowCount(rows)
-            table.setColumnCount(cols)
-
-            for row_idx, row in enumerate(sheet.iter_rows(min_row=1, max_row=rows, max_col=cols)):
-                for col_idx, cell in enumerate(row):
-                    cell_value = cell.value
-                    if cell_value is None:
-                        display_value = ''
-                    elif isinstance(cell_value, float) and cell_value == int(cell_value):
-                        display_value = str(int(cell_value))
-                    else:
-                        display_value = str(cell_value)
-
-                    item = QtWidgets.QTableWidgetItem(display_value)
-                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
-                    table.setItem(row_idx, col_idx, item)
+            self._populate_table_openpyxl(table, sheet_index)
 
         # Set column headers (A, B, C, ...)
         headers = []
@@ -766,32 +759,338 @@ class DocumentViewerDialog(QtWidgets.QDialog):
         # Resize columns to fit content
         table.resizeColumnsToContents()
 
-        # Set minimum column width
+        # Set minimum/maximum column width
         for col in range(table.columnCount()):
             if table.columnWidth(col) < 60:
                 table.setColumnWidth(col, 60)
             elif table.columnWidth(col) > 300:
                 table.setColumnWidth(col, 300)
 
-        # Add table with stretch to fill available space
-        layout.addWidget(table, 1)  # stretch factor 1
+        return table
 
-        # Add sheet info
-        info_label = QtWidgets.QLabel(f"Rows: {table.rowCount()} | Columns: {table.columnCount()}")
+    def _populate_table_xlrd(self, table, sheet_index):
+        """Populate table with data from xlrd sheet."""
+        sheet = self._excel_workbook.sheet_by_index(sheet_index)
+        rows = sheet.nrows
+        cols = sheet.ncols
+
+        table.setRowCount(rows)
+        table.setColumnCount(cols)
+
+        for row in range(rows):
+            for col in range(cols):
+                cell_value = sheet.cell_value(row, col)
+                cell_type = sheet.cell_type(row, col)
+
+                # Format cell value based on type
+                if cell_type == 3:  # Date
+                    try:
+                        import xlrd
+                        date_tuple = xlrd.xldate_as_tuple(cell_value, self._excel_workbook.datemode)
+                        display_value = f"{date_tuple[0]:04d}-{date_tuple[1]:02d}-{date_tuple[2]:02d}"
+                    except:
+                        display_value = str(cell_value)
+                elif isinstance(cell_value, float) and cell_value == int(cell_value):
+                    display_value = str(int(cell_value))
+                else:
+                    display_value = str(cell_value) if cell_value != '' else ''
+
+                item = QtWidgets.QTableWidgetItem(display_value)
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                table.setItem(row, col, item)
+
+    def _populate_table_openpyxl(self, table, sheet_index):
+        """Populate table with data from openpyxl sheet."""
+        sheet_name = self._excel_sheet_names[sheet_index]
+        sheet = self._excel_workbook[sheet_name]
+
+        # Get dimensions
+        rows = sheet.max_row or 1
+        cols = sheet.max_column or 1
+
+        table.setRowCount(rows)
+        table.setColumnCount(cols)
+
+        for row_idx, row in enumerate(sheet.iter_rows(min_row=1, max_row=rows, max_col=cols)):
+            for col_idx, cell in enumerate(row):
+                cell_value = cell.value
+                if cell_value is None:
+                    display_value = ''
+                elif isinstance(cell_value, float) and cell_value == int(cell_value):
+                    display_value = str(int(cell_value))
+                else:
+                    display_value = str(cell_value)
+
+                item = QtWidgets.QTableWidgetItem(display_value)
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                table.setItem(row_idx, col_idx, item)
+
+    def _render_excel_sheet(self, sheet_index):
+        """Legacy method - now redirects to tabbed view."""
+        # This method is kept for compatibility but now uses tabs
+        if not hasattr(self, '_excel_tab_widget') or not self._excel_tab_widget:
+            self._render_excel_with_tabs()
+        else:
+            self._excel_tab_widget.setCurrentIndex(sheet_index)
+
+    def _render_word(self, filename):
+        """Render Word document (.doc or .docx).
+
+        Uses python-docx for .docx files. For .doc files, shows placeholder
+        with conversion suggestion.
+        """
+        ext = os.path.splitext(filename)[1].lower() if filename else ''
+
+        try:
+            if ext == '.docx':
+                self._render_word_docx()
+            else:  # .doc
+                self._render_word_doc_placeholder(filename)
+        except ImportError as e:
+            logger.warning(f"Word library not available: {e}")
+            self._render_word_placeholder(filename, ext)
+        except Exception as e:
+            logger.error(f"Error rendering Word file: {e}")
+            self._render_word_placeholder(filename, ext)
+
+    def _render_word_docx(self):
+        """Render .docx file using python-docx."""
+        from docx import Document
+        from docx.shared import Inches
+
+        doc = Document(self.document_path)
+
+        self.graphics_scene.clear()
+
+        # Create container widget
+        container = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(container)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(10)
+
+        # Create scrollable text area for document content
+        text_edit = QtWidgets.QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setStyleSheet("""
+            QTextEdit {
+                background-color: #ffffff;
+                color: #333;
+                font-family: 'Segoe UI', 'Arial', sans-serif;
+                font-size: 12px;
+                border: 1px solid #ddd;
+                padding: 20px;
+            }
+        """)
+
+        # Build HTML content from document
+        html_content = self._docx_to_html(doc)
+        text_edit.setHtml(html_content)
+
+        layout.addWidget(text_edit)
+
+        # Add document info
+        para_count = len(doc.paragraphs)
+        table_count = len(doc.tables)
+        info_label = QtWidgets.QLabel(f"Paragraphs: {para_count} | Tables: {table_count}")
         info_label.setStyleSheet("color: #888; font-size: 10px; padding: 2px;")
         layout.addWidget(info_label)
 
-        container.setStyleSheet("background-color: #2b2b2b;")
+        container.setStyleSheet("background-color: #f5f5f5;")
 
-        # Add to scene with size matching the dialog
-        self._excel_proxy = self.graphics_scene.addWidget(container)
-        self._excel_container = container
+        # Store references for resizing
+        self._word_proxy = self.graphics_scene.addWidget(container)
+        self._word_container = container
 
-        # Size the Excel widget to fit the viewport
-        self._resize_excel_widget()
+        # Size the Word widget to fit the viewport
+        self._resize_word_widget()
 
-        # Update page label to show sheet name
-        self.page_label.setText(f"Sheet {sheet_index + 1} of {self.total_pages}: {sheet_name}")
+        # Update page controls
+        self.total_pages = 1
+        self._update_page_controls()
+        self.page_label.setText("Word Document")
+
+    def _docx_to_html(self, doc):
+        """Convert docx document to HTML for display.
+
+        Args:
+            doc: python-docx Document object
+
+        Returns:
+            HTML string representation of the document
+        """
+        html_parts = ['<html><body style="font-family: Segoe UI, Arial, sans-serif;">']
+
+        for para in doc.paragraphs:
+            # Determine paragraph style
+            style = para.style.name if para.style else ''
+            text = para.text.strip()
+
+            if not text:
+                html_parts.append('<p>&nbsp;</p>')
+                continue
+
+            # Handle headings
+            if 'Heading 1' in style:
+                html_parts.append(f'<h1 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px;">{text}</h1>')
+            elif 'Heading 2' in style:
+                html_parts.append(f'<h2 style="color: #34495e;">{text}</h2>')
+            elif 'Heading 3' in style:
+                html_parts.append(f'<h3 style="color: #7f8c8d;">{text}</h3>')
+            elif 'Title' in style:
+                html_parts.append(f'<h1 style="color: #2c3e50; text-align: center; font-size: 24px;">{text}</h1>')
+            else:
+                # Regular paragraph - check for formatting
+                formatted_text = self._format_paragraph_runs(para)
+                html_parts.append(f'<p style="margin: 8px 0; line-height: 1.6;">{formatted_text}</p>')
+
+        # Handle tables
+        for table in doc.tables:
+            html_parts.append('<table style="border-collapse: collapse; width: 100%; margin: 10px 0;">')
+            for row in table.rows:
+                html_parts.append('<tr>')
+                for cell in row.cells:
+                    cell_text = cell.text.strip()
+                    html_parts.append(f'<td style="border: 1px solid #ddd; padding: 8px;">{cell_text}</td>')
+                html_parts.append('</tr>')
+            html_parts.append('</table>')
+
+        html_parts.append('</body></html>')
+        return ''.join(html_parts)
+
+    def _format_paragraph_runs(self, para):
+        """Format paragraph runs with bold/italic/underline.
+
+        Args:
+            para: python-docx Paragraph object
+
+        Returns:
+            Formatted HTML string
+        """
+        result = []
+        for run in para.runs:
+            text = run.text
+            if not text:
+                continue
+
+            # Apply formatting
+            if run.bold:
+                text = f'<b>{text}</b>'
+            if run.italic:
+                text = f'<i>{text}</i>'
+            if run.underline:
+                text = f'<u>{text}</u>'
+
+            result.append(text)
+
+        return ''.join(result) if result else para.text
+
+    def _render_word_doc_placeholder(self, filename):
+        """Render placeholder for .doc files (legacy format)."""
+        self.graphics_scene.clear()
+
+        placeholder = QtWidgets.QWidget()
+        placeholder.setMinimumSize(600, 400)
+        layout = QtWidgets.QVBoxLayout(placeholder)
+        layout.setAlignment(QtCore.Qt.AlignCenter)
+
+        # Doc icon
+        icon_label = QtWidgets.QLabel("DOC")
+        icon_label.setAlignment(QtCore.Qt.AlignCenter)
+        icon_label.setStyleSheet("""
+            QLabel {
+                background-color: #3498db;
+                color: white;
+                font-size: 48px;
+                font-weight: bold;
+                padding: 30px 40px;
+                border-radius: 10px;
+            }
+        """)
+        layout.addWidget(icon_label)
+
+        # Filename
+        name_label = QtWidgets.QLabel(filename or "Word Document")
+        name_label.setStyleSheet("font-size: 16px; color: #ddd; margin-top: 20px;")
+        name_label.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(name_label)
+
+        # Info message
+        info_label = QtWidgets.QLabel("Legacy .doc format - convert to .docx for preview")
+        info_label.setStyleSheet("font-size: 11px; color: #888; margin-top: 10px;")
+        info_label.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(info_label)
+
+        placeholder.setStyleSheet("background-color: #2b2b2b;")
+        proxy = self.graphics_scene.addWidget(placeholder)
+        self.graphics_view.fitInView(proxy, QtCore.Qt.KeepAspectRatio)
+
+        self.total_pages = 1
+        self._update_page_controls()
+        self.page_label.setText("Word Document (Legacy)")
+
+    def _render_word_placeholder(self, filename, ext):
+        """Render placeholder when Word libraries are not available."""
+        self.graphics_scene.clear()
+
+        placeholder = QtWidgets.QWidget()
+        placeholder.setMinimumSize(600, 400)
+        layout = QtWidgets.QVBoxLayout(placeholder)
+        layout.setAlignment(QtCore.Qt.AlignCenter)
+
+        # Word icon
+        icon_label = QtWidgets.QLabel("DOC")
+        icon_label.setAlignment(QtCore.Qt.AlignCenter)
+        icon_label.setStyleSheet("""
+            QLabel {
+                background-color: #3498db;
+                color: white;
+                font-size: 48px;
+                font-weight: bold;
+                padding: 30px 40px;
+                border-radius: 10px;
+            }
+        """)
+        layout.addWidget(icon_label)
+
+        # Filename
+        name_label = QtWidgets.QLabel(filename or "Word Document")
+        name_label.setStyleSheet("font-size: 16px; color: #ddd; margin-top: 20px;")
+        name_label.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(name_label)
+
+        # Install instructions
+        info_label = QtWidgets.QLabel("Install python-docx to preview: pip install python-docx")
+        info_label.setStyleSheet("font-size: 11px; color: #888; margin-top: 10px;")
+        info_label.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(info_label)
+
+        placeholder.setStyleSheet("background-color: #2b2b2b;")
+        proxy = self.graphics_scene.addWidget(placeholder)
+        self.graphics_view.fitInView(proxy, QtCore.Qt.KeepAspectRatio)
+
+        self.total_pages = 1
+        self._update_page_controls()
+        self.page_label.setText("Word Document")
+
+    def _resize_word_widget(self):
+        """Resize the Word widget to fit the current viewport size."""
+        if not hasattr(self, '_word_proxy') or not self._word_proxy:
+            return
+
+        # Get the dialog's view size for proper sizing
+        view_size = self.graphics_view.viewport().size()
+        # Use viewport size with minimum dimensions
+        width = max(view_size.width() - 5, 400)
+        height = max(view_size.height() - 5, 300)
+
+        # Resize the proxy and container
+        self._word_proxy.setMinimumSize(width, height)
+        self._word_proxy.resize(width, height)
+        if hasattr(self, '_word_container') and self._word_container:
+            self._word_container.setFixedSize(width, height)
+
+        # Set scene rect to match
+        self.graphics_scene.setSceneRect(0, 0, width, height)
 
     def _resize_excel_widget(self):
         """Resize the Excel widget to fit the current viewport size."""
@@ -1067,16 +1366,22 @@ class DocumentViewerDialog(QtWidgets.QDialog):
         super().showEvent(event)
         if self.document_pixmap and not self.document_pixmap.isNull():
             QtCore.QTimer.singleShot(0, self._fit_to_window)
-        # Also handle Excel sheets on show - resize to fit
+        # Handle Excel sheets on show - resize to fit
         elif hasattr(self, '_excel_proxy') and self._excel_proxy:
             QtCore.QTimer.singleShot(0, self._resize_excel_widget)
+        # Handle Word documents on show - resize to fit
+        elif hasattr(self, '_word_proxy') and self._word_proxy:
+            QtCore.QTimer.singleShot(0, self._resize_word_widget)
 
     def resizeEvent(self, event):
-        """Handle window resize to adjust Excel viewer."""
+        """Handle window resize to adjust document viewers."""
         super().resizeEvent(event)
-        # Resize Excel widget on window resize (no debounce needed for simple resize)
+        # Resize Excel widget on window resize
         if hasattr(self, '_excel_proxy') and self._excel_proxy:
             self._resize_excel_widget()
+        # Resize Word widget on window resize
+        elif hasattr(self, '_word_proxy') and self._word_proxy:
+            self._resize_word_widget()
 
     def keyPressEvent(self, event):
         """Handle keyboard shortcuts."""
@@ -1108,8 +1413,14 @@ class DocumentViewerDialog(QtWidgets.QDialog):
             self._excel_sheet_names = None
             self._excel_proxy = None
             self._excel_container = None
+            self._excel_tab_widget = None
             if hasattr(self, '_excel_is_xlrd'):
                 delattr(self, '_excel_is_xlrd')
+
+        # Clean up Word document resources
+        if hasattr(self, '_word_proxy') and self._word_proxy:
+            self._word_proxy = None
+            self._word_container = None
 
         # Clean up temporary file
         if self.document_path and os.path.exists(self.document_path):
