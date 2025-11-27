@@ -859,43 +859,43 @@ class DocumentFolderPaneWidget(QtWidgets.QWidget):
     def _link_document_to_package(self, document_id, section_name):
         """Link a document to the currently selected package."""
         selected_package = self.get_selected_package()
-        logger.info(f"_link_document_to_package called: doc={document_id}, section={section_name}, selected_package={selected_package}")
+        logger.warning(f"DEBUG _link_document_to_package called: doc={document_id}, section={section_name}, selected_package={selected_package}")
 
         if not selected_package or not self.document_viewer:
-            logger.info(f"Skipping link: selected_package={selected_package}, document_viewer={self.document_viewer}")
+            logger.warning(f"DEBUG Skipping link: selected_package={selected_package}, document_viewer={self.document_viewer}")
             return
 
         try:
             packages_tab = getattr(self.document_viewer, 'packages_tab', None)
             if not packages_tab:
-                logger.info("No packages_tab found on document_viewer")
+                logger.warning("DEBUG No packages_tab found on document_viewer")
                 return
 
             # Get package ID from packages dict
             sg_package_id = None
             packages = getattr(packages_tab, 'packages', {})
-            logger.info(f"packages dict has {len(packages)} packages: {list(packages.keys())}")
+            logger.warning(f"DEBUG packages dict has {len(packages)} packages: {list(packages.keys())}")
 
             for pkg_name, pkg_data in packages.items():
                 if pkg_name == selected_package:
                     sg_package_id = pkg_data.get('sg_package_id')
-                    logger.info(f"Found package '{pkg_name}' with sg_package_id={sg_package_id}")
+                    logger.warning(f"DEBUG Found package '{pkg_name}' with sg_package_id={sg_package_id}")
                     break
 
             if not sg_package_id:
-                logger.warning(f"Could not find package ID for '{selected_package}' in packages: {list(packages.keys())}")
+                logger.warning(f"DEBUG Could not find package ID for '{selected_package}' in packages: {list(packages.keys())}")
                 return
 
             folder_path = f"/{section_name}"
 
-            logger.info(f"Calling link_version_to_package_with_folder: version={document_id}, package={sg_package_id}, folder={folder_path}")
+            logger.warning(f"DEBUG Calling link_version_to_package_with_folder: version={document_id}, package={sg_package_id}, folder={folder_path}")
             self.document_viewer.sg_session.link_version_to_package_with_folder(
                 version_id=document_id,
                 package_id=sg_package_id,
                 folder_name=folder_path
             )
 
-            logger.info(f"Successfully linked document {document_id} to package {selected_package} in {folder_path}")
+            logger.warning(f"DEBUG Successfully linked document {document_id} to package {selected_package} in {folder_path}")
 
             if hasattr(packages_tab, 'package_data_tree') and packages_tab.package_data_tree:
                 packages_tab.package_data_tree.load_package_versions(sg_package_id)
@@ -1163,22 +1163,22 @@ class DocumentFolderPaneWidget(QtWidgets.QWidget):
     def _link_folder_document_to_package(self, document_id, folder_name, folder_type):
         """Link a document from a folder to the selected package."""
         selected_package = self.get_selected_package()
-        logger.info(f"_link_folder_document_to_package called: doc={document_id}, folder={folder_name}, type={folder_type}, selected_package={selected_package}")
+        logger.warning(f"DEBUG _link_folder_document_to_package called: doc={document_id}, folder={folder_name}, type={folder_type}, selected_package={selected_package}")
 
         if not selected_package or not self.document_viewer:
-            logger.info(f"Skipping folder link: selected_package={selected_package}, document_viewer={self.document_viewer}")
+            logger.warning(f"DEBUG Skipping folder link: selected_package={selected_package}, document_viewer={self.document_viewer}")
             return
 
         try:
             packages_tab = getattr(self.document_viewer, 'packages_tab', None)
             if not packages_tab:
-                logger.info("No packages_tab found on document_viewer for folder link")
+                logger.warning("DEBUG No packages_tab found on document_viewer for folder link")
                 return
 
             # Get package ID from packages dict
             sg_package_id = None
             packages = getattr(packages_tab, 'packages', {})
-            logger.info(f"packages dict has {len(packages)} packages for folder link")
+            logger.warning(f"DEBUG packages dict has {len(packages)} packages for folder link")
 
             for pkg_name, pkg_data in packages.items():
                 if pkg_name == selected_package:
@@ -1186,20 +1186,20 @@ class DocumentFolderPaneWidget(QtWidgets.QWidget):
                     break
 
             if not sg_package_id:
-                logger.warning(f"Could not find package ID for '{selected_package}' for folder link")
+                logger.warning(f"DEBUG Could not find package ID for '{selected_package}' for folder link")
                 return
 
             folder_type_plural = 'assets' if folder_type == 'asset' else 'scenes'
             folder_path = f"/{folder_type_plural}/{folder_name}"
 
-            logger.info(f"Calling link_version_to_package_with_folder for folder: version={document_id}, package={sg_package_id}, folder={folder_path}")
+            logger.warning(f"DEBUG Calling link_version_to_package_with_folder for folder: version={document_id}, package={sg_package_id}, folder={folder_path}")
             self.document_viewer.sg_session.link_version_to_package_with_folder(
                 version_id=document_id,
                 package_id=sg_package_id,
                 folder_name=folder_path
             )
 
-            logger.info(f"Successfully linked document {document_id} to package {selected_package} in {folder_path}")
+            logger.warning(f"DEBUG Successfully linked document {document_id} to package {selected_package} in {folder_path}")
 
             if hasattr(packages_tab, 'package_data_tree') and packages_tab.package_data_tree:
                 packages_tab.package_data_tree.load_package_versions(sg_package_id)

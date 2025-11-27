@@ -1504,19 +1504,19 @@ class ShotgridClient:
         Returns:
             PackageItem entity with the version linked and folder set
         """
-        logger.info(f"link_version_to_package_with_folder: version={version_id}, package={package_id}, folder={folder_name}")
+        logger.warning(f"DEBUG link_version_to_package_with_folder: version={version_id}, package={package_id}, folder={folder_name}")
 
         # First, link the version (creates PackageItem if needed)
         package_item = self.link_version_to_package(version_id, package_id)
-        logger.info(f"link_version_to_package returned: {package_item}")
+        logger.warning(f"DEBUG link_version_to_package returned: {package_item}")
 
         if package_item:
             # Update the folder assignment
-            logger.info(f"Updating folder assignment for PackageItem {package_item['id']} to {folder_name}")
+            logger.warning(f"DEBUG Updating folder assignment for PackageItem {package_item['id']} to {folder_name}")
             self.update_package_item_folders(package_item["id"], folder_name)
-            logger.info(f"Folder assignment updated successfully")
+            logger.warning(f"DEBUG Folder assignment updated successfully")
         else:
-            logger.warning(f"No package_item returned, cannot set folder assignment")
+            logger.warning(f"DEBUG No package_item returned, cannot set folder assignment")
 
         return package_item
 
