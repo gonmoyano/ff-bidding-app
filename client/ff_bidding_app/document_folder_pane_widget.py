@@ -897,8 +897,12 @@ class DocumentFolderPaneWidget(QtWidgets.QWidget):
 
             logger.warning(f"DEBUG Successfully linked document {document_id} to package {selected_package} in {folder_path}")
 
+            # Refresh package data tree
             if hasattr(packages_tab, 'package_data_tree') and packages_tab.package_data_tree:
+                logger.warning(f"DEBUG Refreshing package_data_tree for package {sg_package_id}")
                 packages_tab.package_data_tree.load_package_versions(sg_package_id)
+            else:
+                logger.warning(f"DEBUG No package_data_tree: hasattr={hasattr(packages_tab, 'package_data_tree')}")
 
         except Exception as e:
             logger.error(f"Failed to link document to package: {e}", exc_info=True)
