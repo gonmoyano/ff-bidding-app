@@ -1153,11 +1153,8 @@ class DocumentFolderPaneWidget(QtWidgets.QWidget):
 
     def _on_folder_document_dropped(self, document_id, folder_name, folder_type):
         """Handle document dropped into a folder."""
-        # Link to selected package
-        selected_package = self.get_selected_package()
-        if selected_package and self.document_viewer:
-            self._link_folder_document_to_package(document_id, folder_name, folder_type)
-
+        # Emit signal - linking is handled by document_viewer_widget.update_thumbnail_states
+        # which creates the correct path with document category (e.g., /scenes/ARR/Script)
         self.documentDropped.emit(document_id, folder_name, folder_type)
 
     def _link_folder_document_to_package(self, document_id, folder_name, folder_type):

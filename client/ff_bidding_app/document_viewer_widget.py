@@ -2061,7 +2061,9 @@ class DocumentViewerWidget(QtWidgets.QWidget):
         if not self.folder_pane:
             return
 
-        if dropped_document_id and folder_name and folder_type:
+        # Only link for asset/scene folder drops, not for section drops
+        # Section drops (Script/Documents) are already handled by document_folder_pane_widget
+        if dropped_document_id and folder_name and folder_type and folder_type not in ("section",):
             self._link_document_to_package(dropped_document_id, folder_name, folder_type)
 
         mappings = self.folder_pane.get_folder_mappings()
@@ -2087,12 +2089,15 @@ class DocumentViewerWidget(QtWidgets.QWidget):
 
     def _link_document_to_package(self, document_id, folder_name, folder_type):
         """Link a document version to the currently selected package with folder info."""
+        logger.warning(f"DEBUG _link_document_to_package (3-param): doc={document_id}, folder={folder_name}, type={folder_type}")
+
         selected_package = self.folder_pane.get_selected_package()
         if not selected_package:
+            logger.warning("DEBUG No package selected (3-param)")
             return
 
         if not self.packages_tab:
-            logger.warning("No packages_tab reference, cannot link to ShotGrid")
+            logger.warning("DEBUG No packages_tab reference, cannot link to ShotGrid")
             return
 
         sg_package_id = None
@@ -2103,7 +2108,7 @@ class DocumentViewerWidget(QtWidgets.QWidget):
                 break
 
         if not sg_package_id:
-            logger.warning(f"No ShotGrid package ID found for package '{selected_package}'")
+            logger.warning(f"DEBUG No ShotGrid package ID found for package '{selected_package}'")
             return
 
         version_data = None
@@ -2113,7 +2118,7 @@ class DocumentViewerWidget(QtWidgets.QWidget):
                 break
 
         if not version_data:
-            logger.warning(f"Could not find version data for document {document_id}")
+            logger.warning(f"DEBUG Could not find version data for document {document_id}")
             return
 
         sg_version_type = version_data.get('sg_version_type', '')
@@ -2125,12 +2130,16 @@ class DocumentViewerWidget(QtWidgets.QWidget):
         folder_type_plural = 'assets' if folder_type == 'asset' else 'scenes'
         folder_path = f"/{folder_type_plural}/{folder_name}/{category}"
 
+        logger.warning(f"DEBUG Creating folder path: {folder_path} (folder_type={folder_type}, folder_name={folder_name}, category={category})")
+
         try:
             self.sg_session.link_version_to_package_with_folder(
                 version_id=document_id,
                 package_id=sg_package_id,
                 folder_name=folder_path
             )
+
+            logger.warning(f"DEBUG Successfully linked document {document_id} to {folder_path}")
 
             if hasattr(self.packages_tab, 'package_data_tree') and self.packages_tab.package_data_tree:
                 self.packages_tab.package_data_tree.load_package_versions(sg_package_id)
