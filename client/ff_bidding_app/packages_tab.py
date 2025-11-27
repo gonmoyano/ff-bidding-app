@@ -12,6 +12,7 @@ try:
     from .settings import AppSettings
     from .vfx_breakdown_widget import VFXBreakdownWidget
     from .image_viewer_widget import ImageViewerWidget
+    from .document_viewer_widget import DocumentViewerWidget
     from .sliding_overlay_panel import SlidingOverlayPanelWithBackground
 except ImportError:
     from package_data_treeview import PackageTreeView, CustomCheckBox
@@ -19,6 +20,7 @@ except ImportError:
     from settings import AppSettings
     from vfx_breakdown_widget import VFXBreakdownWidget
     from image_viewer_widget import ImageViewerWidget
+    from document_viewer_widget import DocumentViewerWidget
     from sliding_overlay_panel import SlidingOverlayPanelWithBackground
     logger = logging.getLogger("FFPackageManager")
 
@@ -157,12 +159,16 @@ class PackagesTab(QtWidgets.QWidget):
         if hasattr(self.image_viewer, 'folder_pane') and self.image_viewer.folder_pane:
             self.image_viewer.folder_pane.packageSelected.connect(self._on_folder_pane_package_selected)
 
-        # Documents view
+        # Documents view with document viewer widget
         documents_view = QtWidgets.QWidget()
         documents_layout = QtWidgets.QVBoxLayout(documents_view)
-        documents_label = QtWidgets.QLabel("Documents content coming soon...")
-        documents_label.setAlignment(QtCore.Qt.AlignCenter)
-        documents_layout.addWidget(documents_label)
+        documents_layout.setContentsMargins(0, 0, 0, 0)
+        self.document_viewer = DocumentViewerWidget(self.sg_session, documents_view, packages_tab=self)
+        documents_layout.addWidget(self.document_viewer)
+
+        # Connect document folder pane package selection signal for synchronization
+        if hasattr(self.document_viewer, 'folder_pane') and self.document_viewer.folder_pane:
+            self.document_viewer.folder_pane.packageSelected.connect(self._on_document_folder_pane_package_selected)
 
         # Add views as tabs (order: Bid Tracker, Images, Documents)
         self.content_tabs.addTab(bid_tracker_view, "Bid Tracker")  # Index 0
@@ -393,9 +399,11 @@ class PackagesTab(QtWidgets.QWidget):
             # Load into the breakdown widget
             self.breakdown_widget.load_bidding_scenes(bidding_scenes, field_schema=self.field_schema)
 
-            # Update folder pane in image viewer
+            # Update folder pane in image viewer and document viewer
             if self.image_viewer:
                 self.image_viewer.update_folder_pane()
+            if self.document_viewer:
+                self.document_viewer.update_folder_pane()
 
         except Exception as e:
             logger.error(f"Error loading breakdown for RFQ: {e}", exc_info=True)
@@ -475,15 +483,21 @@ class PackagesTab(QtWidgets.QWidget):
         # Restore the last selected package for this RFQ
         self._restore_last_selected_package(rfq)
 
-        # Load all image versions for the current project into the image viewer
-        if self.image_viewer and self.parent_app and hasattr(self.parent_app, 'sg_project_combo'):
+        # Load all image and document versions for the current project
+        if self.parent_app and hasattr(self.parent_app, 'sg_project_combo'):
             current_project_index = self.parent_app.sg_project_combo.currentIndex()
             sg_project = self.parent_app.sg_project_combo.itemData(current_project_index)
             if sg_project:
                 project_id = sg_project.get("id")
                 if project_id:
-                    logger.info(f"Loading all image versions for project {project_id}")
-                    self.image_viewer.load_project_versions(project_id)
+                    # Load image versions
+                    if self.image_viewer:
+                        logger.info(f"Loading all image versions for project {project_id}")
+                        self.image_viewer.load_project_versions(project_id)
+                    # Load document versions
+                    if self.document_viewer:
+                        logger.info(f"Loading all document versions for project {project_id}")
+                        self.document_viewer.load_project_versions(project_id)
 
         # Save the selected RFQ ID to settings
         if rfq:
@@ -1638,9 +1652,25 @@ class PackagesTab(QtWidgets.QWidget):
             logger.error(f"Error loading packages from ShotGrid: {e}")
 
     def _sync_packages_to_folder_pane(self):
-        """Sync the package list to the folder pane dropdown."""
+        """Sync the package list to the folder pane dropdown (images)."""
         if self.image_viewer and hasattr(self.image_viewer, 'folder_pane'):
             folder_pane = self.image_viewer.folder_pane
+            if folder_pane:
+                # Get package names from dropdown (skip "(No Package)")
+                package_names = [
+                    self.package_selector_dropdown.itemText(i)
+                    for i in range(1, self.package_selector_dropdown.count())
+                ]
+                folder_pane.set_packages(package_names)
+                # Sync current selection
+                folder_pane.set_selected_package(self.current_package_name)
+        # Also sync to document folder pane
+        self._sync_packages_to_document_folder_pane()
+
+    def _sync_packages_to_document_folder_pane(self):
+        """Sync the package list to the document folder pane dropdown."""
+        if self.document_viewer and hasattr(self.document_viewer, 'folder_pane'):
+            folder_pane = self.document_viewer.folder_pane
             if folder_pane:
                 # Get package names from dropdown (skip "(No Package)")
                 package_names = [
@@ -1680,13 +1710,18 @@ class PackagesTab(QtWidgets.QWidget):
                         return
 
     def _sync_selected_package_to_folder_pane(self, package_name):
-        """Sync the selected package to the folder pane dropdown.
+        """Sync the selected package to the folder pane dropdown (images and documents).
 
         Args:
             package_name: Selected package name or None
         """
         if self.image_viewer and hasattr(self.image_viewer, 'folder_pane'):
             folder_pane = self.image_viewer.folder_pane
+            if folder_pane:
+                folder_pane.set_selected_package(package_name)
+        # Also sync to document folder pane
+        if self.document_viewer and hasattr(self.document_viewer, 'folder_pane'):
+            folder_pane = self.document_viewer.folder_pane
             if folder_pane:
                 folder_pane.set_selected_package(package_name)
 
@@ -1776,7 +1811,21 @@ class PackagesTab(QtWidgets.QWidget):
             logger.error(f"Error loading package images to folders: {e}", exc_info=True)
 
     def _on_folder_pane_package_selected(self, package_name):
-        """Handle package selection from folder pane dropdown.
+        """Handle package selection from folder pane dropdown (images).
+
+        Args:
+            package_name: Selected package name or empty string for "(No Package)"
+        """
+        # Update the package selector dropdown to match
+        if not package_name:
+            self.package_selector_dropdown.setCurrentText("(No Package)")
+        else:
+            index = self.package_selector_dropdown.findText(package_name)
+            if index >= 0:
+                self.package_selector_dropdown.setCurrentIndex(index)
+
+    def _on_document_folder_pane_package_selected(self, package_name):
+        """Handle package selection from document folder pane dropdown.
 
         Args:
             package_name: Selected package name or empty string for "(No Package)"

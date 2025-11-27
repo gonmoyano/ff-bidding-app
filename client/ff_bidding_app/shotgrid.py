@@ -1504,12 +1504,19 @@ class ShotgridClient:
         Returns:
             PackageItem entity with the version linked and folder set
         """
+        logger.warning(f"DEBUG link_version_to_package_with_folder: version={version_id}, package={package_id}, folder={folder_name}")
+
         # First, link the version (creates PackageItem if needed)
         package_item = self.link_version_to_package(version_id, package_id)
+        logger.warning(f"DEBUG link_version_to_package returned: {package_item}")
 
         if package_item:
             # Update the folder assignment
+            logger.warning(f"DEBUG Updating folder assignment for PackageItem {package_item['id']} to {folder_name}")
             self.update_package_item_folders(package_item["id"], folder_name)
+            logger.warning(f"DEBUG Folder assignment updated successfully")
+        else:
+            logger.warning(f"DEBUG No package_item returned, cannot set folder assignment")
 
         return package_item
 
@@ -1871,6 +1878,48 @@ class ShotgridClient:
 
         logger.info(f"Found {len(image_versions)} image versions in project {project_id}")
         return image_versions
+
+    def get_all_document_versions_for_project(self, project_id):
+        """
+        Get all document versions for a project (Script, Misc, etc.).
+
+        Args:
+            project_id: ID of the project
+
+        Returns:
+            List of version entities with document-related sg_version_type
+        """
+        # Query all versions for the project
+        versions = self.sg.find(
+            "Version",
+            [["project", "is", {"type": "Project", "id": int(project_id)}]],
+            fields=[
+                "id", "code", "entity", "sg_status_list", "created_at", "updated_at",
+                "user", "description", "sg_task", "sg_path_to_movie", "sg_path_to_frames",
+                "sg_uploaded_movie", "sg_path_to_geometry", "sg_version_type", "image"
+            ],
+            order=[{"field_name": "created_at", "direction": "desc"}]
+        )
+
+        # Filter for document-related versions
+        document_versions = []
+        for version in versions:
+            sg_version_type = version.get('sg_version_type')
+            if sg_version_type:
+                # Handle both string and dict formats
+                if isinstance(sg_version_type, dict):
+                    version_type = sg_version_type.get('name', '').lower()
+                else:
+                    version_type = str(sg_version_type).lower()
+
+                # Check for document-related keywords
+                if any(keyword in version_type for keyword in [
+                    'script', 'misc', 'document', 'doc', 'pdf', 'excel', 'xls'
+                ]):
+                    document_versions.append(version)
+
+        logger.info(f"Found {len(document_versions)} document versions in project {project_id}")
+        return document_versions
 
     def get_latest_version_number(self, package_id, version_prefix):
         """
