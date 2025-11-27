@@ -28,7 +28,7 @@ def create_trash_icon(size=24, color=QtGui.QColor(255, 255, 255, 200)):
 
     # Convert QColor to hex string for SVG
     if isinstance(color, QtGui.QColor):
-        color_str = f"rgba({color.red()},{color.green()},{color.blue()},{color.alpha()/255:.2f})"
+        color_str = f"#{color.red():02x}{color.green():02x}{color.blue():02x}"
     else:
         color_str = str(color)
 
