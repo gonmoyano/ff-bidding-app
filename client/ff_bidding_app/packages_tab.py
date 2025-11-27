@@ -194,6 +194,7 @@ class PackagesTab(QtWidgets.QWidget):
         self.package_data_tree = PackageTreeView()
         self.package_data_tree.set_sg_session(self.sg_session)
         self.package_data_tree.documentRemovedFromPackage.connect(self._on_document_removed_from_package)
+        self.package_data_tree.documentRestoredToPackage.connect(self._on_document_restored_to_package)
         right_layout.addWidget(self.package_data_tree, 1)  # Give it stretch factor
 
         # Output Settings collapsible group
@@ -2005,6 +2006,51 @@ class PackagesTab(QtWidgets.QWidget):
         folder_pane._refresh_sections()
 
         logger.info(f"Removed document {version_id} from folder {folder_path} in document folder pane")
+
+    def _on_document_restored_to_package(self, version_id, folder_path):
+        """Handle document restored to package signal (when SG operation fails).
+
+        Args:
+            version_id: ID of the restored document
+            folder_path: Folder path it was restored to
+        """
+        if not self.document_viewer or not hasattr(self.document_viewer, 'folder_pane'):
+            return
+
+        folder_pane = self.document_viewer.folder_pane
+        if not folder_pane:
+            return
+
+        # Parse the folder path
+        parts = [p for p in folder_path.split('/') if p]
+        if not parts:
+            return
+
+        # Check if this is a root-level Script or Document path
+        if len(parts) == 1:
+            if parts[0].lower() in ['script', 'scripts']:
+                folder_pane.script_document_ids.add(version_id)
+            elif parts[0].lower() in ['document', 'documents']:
+                folder_pane.documents_document_ids.add(version_id)
+        else:
+            # Nested path like /scenes/ARR/Script
+            folder_type = parts[0]  # 'assets' or 'scenes'
+            folder_name = parts[1] if len(parts) > 1 else None
+
+            if folder_name:
+                if folder_type == 'assets' and folder_name in folder_pane.asset_folders:
+                    folder_widget = folder_pane.asset_folders[folder_name]
+                    folder_widget.document_ids.add(version_id)
+                    folder_widget._update_count()
+                elif folder_type == 'scenes' and folder_name in folder_pane.scene_folders:
+                    folder_widget = folder_pane.scene_folders[folder_name]
+                    folder_widget.document_ids.add(version_id)
+                    folder_widget._update_count()
+
+        # Refresh the sections
+        folder_pane._refresh_sections()
+
+        logger.info(f"Restored document {version_id} to folder {folder_path} in document folder pane")
 
     def _get_next_package_version_for_rfq(self):
         """Get the next available version number for a package based on current RFQ.
