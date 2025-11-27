@@ -499,16 +499,21 @@ class PackageTreeView(QtWidgets.QWidget):
             ]
         )
 
-        # Separate bid tracker versions from image versions
+        # Separate bid tracker versions from image versions and document versions
         bid_tracker_versions = [v for v in package_versions_with_folders if self._is_bid_tracker_version(v)]
         image_versions_with_folders = [v for v in package_versions_with_folders if self._is_image_version(v)]
+        document_versions_with_folders = [v for v in package_versions_with_folders if self._is_document_version(v)]
 
         # Also get image versions from other_versions (without folder info)
         image_versions_without_folders = [v for v in other_versions if self._is_image_version(v)]
 
+        # Combine document versions from both sources (PackageItems and parent package linked)
+        document_versions_from_other = [v for v in other_versions if self._is_document_version(v)]
+        all_document_versions = document_versions_with_folders + document_versions_from_other
+
         # Build the tree with actual version data
         self.set_bid_tracker_item(bid_tracker_versions)
-        self.set_documents_item(other_versions)
+        self.set_documents_item(all_document_versions)
         # Show images organized by folder under Images section
         self.set_images_item(image_versions_with_folders, image_versions_without_folders)
 
@@ -1013,6 +1018,23 @@ class PackageTreeView(QtWidgets.QWidget):
         # Check for various image-related keywords
         image_keywords = ['concept', 'art', 'storyboard', 'reference', 'image', 'ref']
         return any(keyword in code or keyword in task_name for keyword in image_keywords)
+
+    def _is_document_version(self, version):
+        """Determine if a version belongs to Documents category (Script, Document types)."""
+        sg_version_type = version.get('sg_version_type')
+
+        if sg_version_type:
+            if isinstance(sg_version_type, dict):
+                version_type = sg_version_type.get('name', '').lower()
+            else:
+                version_type = str(sg_version_type).lower()
+
+            # Check for script, document types
+            return any(keyword in version_type for keyword in [
+                'script', 'document', 'doc', 'pdf'
+            ])
+
+        return False
 
     def get_active_versions(self):
         """
