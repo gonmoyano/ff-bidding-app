@@ -333,6 +333,9 @@ status_colors = {
 class PackageTreeView(QtWidgets.QWidget):
     """Widget for displaying package data in a tree view."""
 
+    # Signal emitted when a document/script is removed from a package
+    documentRemovedFromPackage = QtCore.Signal(int, str)  # (version_id, folder_path)
+
     def __init__(self, parent=None):
         """Initialize the PackageTreeView widget."""
         super().__init__(parent)
@@ -1431,6 +1434,12 @@ class PackageTreeView(QtWidgets.QWidget):
                     delete_action.triggered.connect(lambda: self._delete_version_from_package(item))
 
                     menu.addSeparator()
+                # Check if this is a script or document version
+                elif (self._is_script_version(item.get_sg_data()) or self._is_document_version(item.get_sg_data())) and self.current_package_id:
+                    delete_action = menu.addAction("Remove from Package")
+                    delete_action.triggered.connect(lambda: self._delete_document_from_package(item))
+
+                    menu.addSeparator()
 
                 view_action = menu.addAction("View Details")
                 view_action.triggered.connect(lambda: self._show_version_details(item))
@@ -1813,6 +1822,112 @@ class PackageTreeView(QtWidgets.QWidget):
             return '/' + '/'.join(path_parts)
 
         return None
+
+    def _get_document_folder_path_from_item(self, item):
+        """Build the folder path by walking up the tree from a document/script version item.
+
+        Args:
+            item: SGTreeItem representing a version
+
+        Returns:
+            Full folder path (e.g., '/Script', '/Document', '/scenes/ARR/Script') or None
+        """
+        path_parts = []
+        current = item.parent()
+
+        # Walk up the tree until we reach the root Scripts or Documents folder
+        while current:
+            sg_data = current.get_sg_data() if isinstance(current, SGTreeItem) else None
+            if sg_data and sg_data.get('type') == 'folder':
+                folder_path = sg_data.get('folder_path')
+                if folder_path:
+                    # We found a folder with a path, use it directly
+                    return folder_path
+
+                # Otherwise, collect the folder name
+                folder_name = current.text(0).replace('📁 ', '').strip()
+                # Stop if we've reached the Scripts or Documents root
+                if folder_name in ["Scripts", "Documents"]:
+                    # For root-level items, return /Script or /Document
+                    if folder_name == "Scripts":
+                        return "/Script"
+                    else:
+                        return "/Document"
+                path_parts.insert(0, folder_name)
+
+            current = current.parent() if hasattr(current, 'parent') else None
+
+        # Build the path
+        if path_parts:
+            return '/' + '/'.join(path_parts)
+
+        return None
+
+    def _delete_document_from_package(self, item):
+        """Delete a document/script from the package by removing its folder reference.
+
+        If the PackageItem's sg_package_folders becomes empty, delete the PackageItem.
+        """
+        if not isinstance(item, SGTreeItem) or not self.current_package_id:
+            return
+
+        version_id = item.get_sg_id()
+        version_code = item.get_entity_name()
+
+        if not version_id:
+            return
+
+        # Determine if this is a script or document
+        sg_data = item.get_sg_data()
+        is_script = self._is_script_version(sg_data)
+        item_type = "script" if is_script else "document"
+
+        # Build the folder path by walking up the tree
+        folder_path = self._get_document_folder_path_from_item(item)
+
+        if not folder_path:
+            # Default to root folder based on type
+            folder_path = "/Script" if is_script else "/Document"
+
+        # Confirm the deletion
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Remove from Package",
+            f"Remove '{version_code}' from '{folder_path}'?\n\n"
+            f"This will remove the folder assignment from ShotGrid.\n"
+            f"If this is the last folder for this {item_type}, the PackageItem will be deleted.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+
+        if reply == QtWidgets.QMessageBox.Yes:
+            try:
+                # Remove the folder reference from the PackageItem
+                self.sg_session.remove_folder_reference_from_package(
+                    version_id,
+                    self.current_package_id,
+                    folder_path
+                )
+
+                # Reload the tree
+                self.load_package_versions(self.current_package_id)
+
+                # Emit signal to update document folder pane
+                self.documentRemovedFromPackage.emit(version_id, folder_path)
+
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Removed from Package",
+                    f"'{version_code}' has been removed from '{folder_path}'."
+                )
+
+            except Exception as e:
+                logger.error(f"Error removing document from package: {e}", exc_info=True)
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to remove {item_type}: {str(e)}"
+                )
 
     def _expand_all(self, item):
         """Recursively expand all children."""
