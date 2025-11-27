@@ -645,11 +645,17 @@ class DocumentViewerDialog(QtWidgets.QDialog):
         """
         self.graphics_scene.clear()
 
+        # Get the available size from the graphics view viewport
+        viewport_size = self.graphics_view.viewport().size()
+        available_width = max(viewport_size.width() - 20, 400)  # Min 400px
+        available_height = max(viewport_size.height() - 20, 300)  # Min 300px
+
         # Create container widget for the spreadsheet
         container = QtWidgets.QWidget()
-        container.setMinimumSize(1000, 700)
+        container.setFixedSize(available_width, available_height)
         layout = QtWidgets.QVBoxLayout(container)
         layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(5)
 
         # Sheet name header
         sheet_name = self._excel_sheet_names[sheet_index]
@@ -773,18 +779,21 @@ class DocumentViewerDialog(QtWidgets.QDialog):
             elif table.columnWidth(col) > 300:
                 table.setColumnWidth(col, 300)
 
-        layout.addWidget(table)
+        # Add table with stretch to fill available space
+        layout.addWidget(table, 1)  # stretch factor 1
 
         # Add sheet info
         info_label = QtWidgets.QLabel(f"Rows: {table.rowCount()} | Columns: {table.columnCount()}")
-        info_label.setStyleSheet("color: #888; font-size: 10px; padding: 5px;")
+        info_label.setStyleSheet("color: #888; font-size: 10px; padding: 2px;")
         layout.addWidget(info_label)
 
         container.setStyleSheet("background-color: #2b2b2b;")
 
-        # Add to scene
+        # Add to scene - the container is already sized to fit the viewport
         proxy = self.graphics_scene.addWidget(container)
-        proxy.setMinimumSize(1000, 700)
+
+        # Center the widget in the scene
+        self.graphics_scene.setSceneRect(0, 0, available_width, available_height)
 
         # Update page label to show sheet name
         self.page_label.setText(f"Sheet {sheet_index + 1} of {self.total_pages}: {sheet_name}")
