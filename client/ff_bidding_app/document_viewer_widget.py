@@ -18,6 +18,30 @@ except (ImportError, ValueError, SystemError):
     from settings import AppSettings
     from document_folder_pane_widget import DocumentFolderPaneWidget
 
+
+class SGWorker(QtCore.QObject):
+    """Worker for running ShotGrid operations in a background thread."""
+
+    finished = QtCore.Signal(bool, str)  # (success, error_message)
+
+    def __init__(self, sg_session, operation, *args, **kwargs):
+        super().__init__()
+        self.sg_session = sg_session
+        self.operation = operation
+        self.args = args
+        self.kwargs = kwargs
+
+    def run(self):
+        """Execute the ShotGrid operation."""
+        try:
+            method = getattr(self.sg_session, self.operation)
+            method(*self.args, **self.kwargs)
+            self.finished.emit(True, "")
+        except Exception as e:
+            logger.error(f"SG operation failed: {e}", exc_info=True)
+            self.finished.emit(False, str(e))
+
+
 # Global document cache instance (shared across all widgets)
 _document_cache = None
 
@@ -2751,20 +2775,53 @@ class DocumentViewerWidget(QtWidgets.QWidget):
 
         logger.warning(f"DEBUG Creating folder path: {folder_path} (folder_type={folder_type}, folder_name={folder_name}, category={category})")
 
-        try:
-            self.sg_session.link_version_to_package_with_folder(
-                version_id=document_id,
-                package_id=sg_package_id,
-                folder_name=folder_path
-            )
+        # Immediately refresh the treeview (optimistic UI update)
+        if hasattr(self.packages_tab, 'package_data_tree') and self.packages_tab.package_data_tree:
+            self.packages_tab.package_data_tree.load_package_versions(sg_package_id)
 
-            logger.warning(f"DEBUG Successfully linked document {document_id} to {folder_path}")
+        # Run the SG operation in background thread
+        self._run_sg_doc_link_operation(document_id, sg_package_id, folder_path)
 
+    def _run_sg_doc_link_operation(self, document_id, sg_package_id, folder_path):
+        """Run the ShotGrid document link operation in a background thread."""
+        self._sg_doc_link_thread = QtCore.QThread()
+        self._sg_doc_link_worker = SGWorker(
+            self.sg_session,
+            "link_version_to_package_with_folder",
+            document_id,
+            sg_package_id,
+            folder_path
+        )
+        self._sg_doc_link_worker.moveToThread(self._sg_doc_link_thread)
+
+        self._pending_doc_link_data = {
+            'document_id': document_id,
+            'sg_package_id': sg_package_id,
+            'folder_path': folder_path
+        }
+
+        self._sg_doc_link_thread.started.connect(self._sg_doc_link_worker.run)
+        self._sg_doc_link_worker.finished.connect(self._on_sg_doc_link_finished)
+        self._sg_doc_link_worker.finished.connect(self._sg_doc_link_thread.quit)
+        self._sg_doc_link_worker.finished.connect(self._sg_doc_link_worker.deleteLater)
+        self._sg_doc_link_thread.finished.connect(self._sg_doc_link_thread.deleteLater)
+
+        self._sg_doc_link_thread.start()
+
+    def _on_sg_doc_link_finished(self, success, error_message):
+        """Handle completion of the background SG document link operation."""
+        data = getattr(self, '_pending_doc_link_data', None)
+        if not data:
+            return
+
+        if success:
+            logger.info(f"Successfully linked document {data['document_id']} to package")
             if hasattr(self.packages_tab, 'package_data_tree') and self.packages_tab.package_data_tree:
-                self.packages_tab.package_data_tree.load_package_versions(sg_package_id)
+                self.packages_tab.package_data_tree.load_package_versions(data['sg_package_id'])
+        else:
+            logger.error(f"Failed to link document to package: {error_message}")
 
-        except Exception as e:
-            logger.error(f"Failed to link document to package: {e}", exc_info=True)
+        self._pending_doc_link_data = None
 
     def _unlink_document_from_package(self, document_id, folder_name, folder_type):
         """Unlink a document version from the currently selected package."""
@@ -2805,15 +2862,50 @@ class DocumentViewerWidget(QtWidgets.QWidget):
         folder_type_plural = 'assets' if folder_type == 'asset' else 'scenes'
         folder_path = f"/{folder_type_plural}/{folder_name}/{category}"
 
-        try:
-            self.sg_session.remove_folder_reference_from_package(
-                version_id=document_id,
-                package_id=sg_package_id,
-                folder_path=folder_path
-            )
+        # Immediately refresh the treeview (optimistic UI update)
+        if hasattr(self.packages_tab, 'package_data_tree') and self.packages_tab.package_data_tree:
+            self.packages_tab.package_data_tree.load_package_versions(sg_package_id)
 
+        # Run the SG operation in background thread
+        self._run_sg_doc_unlink_operation(document_id, sg_package_id, folder_path)
+
+    def _run_sg_doc_unlink_operation(self, document_id, sg_package_id, folder_path):
+        """Run the ShotGrid document unlink operation in a background thread."""
+        self._sg_doc_unlink_thread = QtCore.QThread()
+        self._sg_doc_unlink_worker = SGWorker(
+            self.sg_session,
+            "remove_folder_reference_from_package",
+            document_id,
+            sg_package_id,
+            folder_path
+        )
+        self._sg_doc_unlink_worker.moveToThread(self._sg_doc_unlink_thread)
+
+        self._pending_doc_unlink_data = {
+            'document_id': document_id,
+            'sg_package_id': sg_package_id,
+            'folder_path': folder_path
+        }
+
+        self._sg_doc_unlink_thread.started.connect(self._sg_doc_unlink_worker.run)
+        self._sg_doc_unlink_worker.finished.connect(self._on_sg_doc_unlink_finished)
+        self._sg_doc_unlink_worker.finished.connect(self._sg_doc_unlink_thread.quit)
+        self._sg_doc_unlink_worker.finished.connect(self._sg_doc_unlink_worker.deleteLater)
+        self._sg_doc_unlink_thread.finished.connect(self._sg_doc_unlink_thread.deleteLater)
+
+        self._sg_doc_unlink_thread.start()
+
+    def _on_sg_doc_unlink_finished(self, success, error_message):
+        """Handle completion of the background SG document unlink operation."""
+        data = getattr(self, '_pending_doc_unlink_data', None)
+        if not data:
+            return
+
+        if success:
+            logger.info(f"Successfully unlinked document {data['document_id']} from package")
             if hasattr(self.packages_tab, 'package_data_tree') and self.packages_tab.package_data_tree:
-                self.packages_tab.package_data_tree.load_package_versions(sg_package_id)
+                self.packages_tab.package_data_tree.load_package_versions(data['sg_package_id'])
+        else:
+            logger.error(f"Failed to unlink document from package: {error_message}")
 
-        except Exception as e:
-            logger.error(f"Failed to unlink document from package: {e}", exc_info=True)
+        self._pending_doc_unlink_data = None
