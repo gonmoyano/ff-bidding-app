@@ -801,21 +801,21 @@ class DocumentFolderPaneWidget(QtWidgets.QWidget):
 
         # Initially shown (no package selected by default)
         self.no_package_overlay.show()
-        self._update_overlay_geometry()
+        # Defer initial geometry update until layout is complete
+        QtCore.QTimer.singleShot(0, self._update_overlay_geometry)
 
     def _update_overlay_geometry(self):
-        """Update the overlay position to cover the view_stack area."""
+        """Update the overlay position to cover the view_stack area (below toolbar)."""
         if hasattr(self, 'no_package_overlay') and hasattr(self, 'view_stack'):
-            stack_pos = self.view_stack.pos()
-            stack_size = self.view_stack.size()
-            self.no_package_overlay.setGeometry(
-                stack_pos.x(), stack_pos.y(),
-                stack_size.width(), stack_size.height()
-            )
+            # Get the view_stack geometry relative to this widget
+            stack_geometry = self.view_stack.geometry()
+            self.no_package_overlay.setGeometry(stack_geometry)
+            self.no_package_overlay.raise_()
 
     def _show_no_package_overlay(self):
         """Show the 'No Package Selected' overlay."""
         if hasattr(self, 'no_package_overlay'):
+            self._update_overlay_geometry()
             self.no_package_overlay.show()
             self.no_package_overlay.raise_()
 
@@ -827,7 +827,15 @@ class DocumentFolderPaneWidget(QtWidgets.QWidget):
     def resizeEvent(self, event):
         """Handle resize to update overlay position."""
         super().resizeEvent(event)
-        self._update_overlay_geometry()
+        # Update overlay geometry when pane resizes
+        if hasattr(self, 'no_package_overlay') and self.no_package_overlay.isVisible():
+            self._update_overlay_geometry()
+
+    def showEvent(self, event):
+        """Handle show event to update overlay position."""
+        super().showEvent(event)
+        # Update overlay geometry when pane is shown
+        QtCore.QTimer.singleShot(0, self._update_overlay_geometry)
 
     def _on_size_changed(self, value):
         """Handle size slider change."""
