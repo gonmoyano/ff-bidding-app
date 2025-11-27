@@ -784,22 +784,34 @@ class DocumentViewerDialog(QtWidgets.QDialog):
         container.setStyleSheet("background-color: #2b2b2b;")
 
         # Add to scene with size matching the dialog
-        proxy = self.graphics_scene.addWidget(container)
+        self._excel_proxy = self.graphics_scene.addWidget(container)
+        self._excel_container = container
 
-        # Get the dialog's view size for proper sizing
-        view_size = self.graphics_view.viewport().size()
-        # Use dialog size or fallback to reasonable defaults
-        width = max(view_size.width(), 1100) if view_size.width() > 100 else 1100
-        height = max(view_size.height(), 700) if view_size.height() > 100 else 700
-
-        proxy.setMinimumSize(width, height)
-        proxy.resize(width, height)
-
-        # Set scene rect to match
-        self.graphics_scene.setSceneRect(0, 0, width, height)
+        # Size the Excel widget to fit the viewport
+        self._resize_excel_widget()
 
         # Update page label to show sheet name
         self.page_label.setText(f"Sheet {sheet_index + 1} of {self.total_pages}: {sheet_name}")
+
+    def _resize_excel_widget(self):
+        """Resize the Excel widget to fit the current viewport size."""
+        if not hasattr(self, '_excel_proxy') or not self._excel_proxy:
+            return
+
+        # Get the dialog's view size for proper sizing
+        view_size = self.graphics_view.viewport().size()
+        # Use viewport size with minimum dimensions
+        width = max(view_size.width() - 5, 400)
+        height = max(view_size.height() - 5, 300)
+
+        # Resize the proxy and container
+        self._excel_proxy.setMinimumSize(width, height)
+        self._excel_proxy.resize(width, height)
+        if hasattr(self, '_excel_container') and self._excel_container:
+            self._excel_container.setFixedSize(width, height)
+
+        # Set scene rect to match
+        self.graphics_scene.setSceneRect(0, 0, width, height)
 
     def _render_excel_placeholder(self, filename, ext):
         """Render placeholder when Excel libraries are not available."""
@@ -1055,26 +1067,16 @@ class DocumentViewerDialog(QtWidgets.QDialog):
         super().showEvent(event)
         if self.document_pixmap and not self.document_pixmap.isNull():
             QtCore.QTimer.singleShot(0, self._fit_to_window)
-        # Also handle Excel sheets on show
-        elif hasattr(self, '_excel_workbook') and self._excel_workbook:
-            QtCore.QTimer.singleShot(0, lambda: self._render_excel_sheet(self.current_page))
+        # Also handle Excel sheets on show - resize to fit
+        elif hasattr(self, '_excel_proxy') and self._excel_proxy:
+            QtCore.QTimer.singleShot(0, self._resize_excel_widget)
 
     def resizeEvent(self, event):
         """Handle window resize to adjust Excel viewer."""
         super().resizeEvent(event)
-        # Re-render Excel sheet on resize with debouncing
-        if hasattr(self, '_excel_workbook') and self._excel_workbook:
-            # Use a timer to debounce resize events
-            if not hasattr(self, '_resize_timer'):
-                self._resize_timer = QtCore.QTimer()
-                self._resize_timer.setSingleShot(True)
-                self._resize_timer.timeout.connect(self._on_resize_timeout)
-            self._resize_timer.start(150)  # 150ms debounce
-
-    def _on_resize_timeout(self):
-        """Handle resize timeout - re-render Excel sheet."""
-        if hasattr(self, '_excel_workbook') and self._excel_workbook:
-            self._render_excel_sheet(self.current_page)
+        # Resize Excel widget on window resize (no debounce needed for simple resize)
+        if hasattr(self, '_excel_proxy') and self._excel_proxy:
+            self._resize_excel_widget()
 
     def keyPressEvent(self, event):
         """Handle keyboard shortcuts."""
@@ -1104,6 +1106,8 @@ class DocumentViewerDialog(QtWidgets.QDialog):
                 logger.warning(f"Could not close Excel workbook: {e}")
             self._excel_workbook = None
             self._excel_sheet_names = None
+            self._excel_proxy = None
+            self._excel_container = None
             if hasattr(self, '_excel_is_xlrd'):
                 delattr(self, '_excel_is_xlrd')
 
