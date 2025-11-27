@@ -645,14 +645,8 @@ class DocumentViewerDialog(QtWidgets.QDialog):
         """
         self.graphics_scene.clear()
 
-        # Get the available size from the graphics view viewport
-        viewport_size = self.graphics_view.viewport().size()
-        available_width = max(viewport_size.width() - 20, 400)  # Min 400px
-        available_height = max(viewport_size.height() - 20, 300)  # Min 300px
-
         # Create container widget for the spreadsheet
         container = QtWidgets.QWidget()
-        container.setFixedSize(available_width, available_height)
         layout = QtWidgets.QVBoxLayout(container)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(5)
@@ -789,11 +783,20 @@ class DocumentViewerDialog(QtWidgets.QDialog):
 
         container.setStyleSheet("background-color: #2b2b2b;")
 
-        # Add to scene - the container is already sized to fit the viewport
+        # Add to scene with size matching the dialog
         proxy = self.graphics_scene.addWidget(container)
 
-        # Center the widget in the scene
-        self.graphics_scene.setSceneRect(0, 0, available_width, available_height)
+        # Get the dialog's view size for proper sizing
+        view_size = self.graphics_view.viewport().size()
+        # Use dialog size or fallback to reasonable defaults
+        width = max(view_size.width(), 1100) if view_size.width() > 100 else 1100
+        height = max(view_size.height(), 700) if view_size.height() > 100 else 700
+
+        proxy.setMinimumSize(width, height)
+        proxy.resize(width, height)
+
+        # Set scene rect to match
+        self.graphics_scene.setSceneRect(0, 0, width, height)
 
         # Update page label to show sheet name
         self.page_label.setText(f"Sheet {sheet_index + 1} of {self.total_pages}: {sheet_name}")
