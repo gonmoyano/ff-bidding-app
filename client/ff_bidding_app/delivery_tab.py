@@ -59,6 +59,29 @@ class PackageShareWidget(QtWidgets.QWidget):
 
         layout.addWidget(package_group)
 
+        # Vendor assignment (moved above delivery options)
+        vendor_group = QtWidgets.QGroupBox("Vendor Assignment")
+        vendor_layout = QtWidgets.QVBoxLayout(vendor_group)
+
+        self.vendor_info_label = QtWidgets.QLabel(
+            "Drag packages to vendor groups on the right panel to assign them, "
+            "or select a vendor below:"
+        )
+        self.vendor_info_label.setWordWrap(True)
+        self.vendor_info_label.setStyleSheet("color: #aaa;")
+        vendor_layout.addWidget(self.vendor_info_label)
+
+        # Vendor selection dropdown
+        vendor_select_layout = QtWidgets.QHBoxLayout()
+        vendor_select_layout.addWidget(QtWidgets.QLabel("Assign to Vendor:"))
+        self.vendor_combo = QtWidgets.QComboBox()
+        self.vendor_combo.setMinimumWidth(200)
+        self.vendor_combo.addItem("-- Select a vendor --", None)
+        vendor_select_layout.addWidget(self.vendor_combo, 1)
+        vendor_layout.addLayout(vendor_select_layout)
+
+        layout.addWidget(vendor_group)
+
         # Delivery options
         delivery_group = QtWidgets.QGroupBox("Delivery Options")
         delivery_layout = QtWidgets.QVBoxLayout(delivery_group)
@@ -93,29 +116,6 @@ class PackageShareWidget(QtWidgets.QWidget):
         delivery_layout.addWidget(self.message_edit)
 
         layout.addWidget(delivery_group)
-
-        # Vendor assignment info
-        vendor_group = QtWidgets.QGroupBox("Vendor Assignment")
-        vendor_layout = QtWidgets.QVBoxLayout(vendor_group)
-
-        self.vendor_info_label = QtWidgets.QLabel(
-            "Drag packages to vendor groups on the right panel to assign them, "
-            "or select a vendor below:"
-        )
-        self.vendor_info_label.setWordWrap(True)
-        self.vendor_info_label.setStyleSheet("color: #aaa;")
-        vendor_layout.addWidget(self.vendor_info_label)
-
-        # Vendor selection dropdown
-        vendor_select_layout = QtWidgets.QHBoxLayout()
-        vendor_select_layout.addWidget(QtWidgets.QLabel("Assign to Vendor:"))
-        self.vendor_combo = QtWidgets.QComboBox()
-        self.vendor_combo.setMinimumWidth(200)
-        self.vendor_combo.addItem("-- Select a vendor --", None)
-        vendor_select_layout.addWidget(self.vendor_combo, 1)
-        vendor_layout.addLayout(vendor_select_layout)
-
-        layout.addWidget(vendor_group)
 
         # Action buttons
         btn_layout = QtWidgets.QHBoxLayout()
@@ -152,7 +152,7 @@ class PackageShareWidget(QtWidgets.QWidget):
 
     def _connect_signals(self):
         self.package_combo.currentIndexChanged.connect(self._on_package_selected)
-        self.vendor_combo.currentIndexChanged.connect(self._update_buttons)
+        self.vendor_combo.currentIndexChanged.connect(self._on_vendor_selected)
         self.email_edit.textChanged.connect(self._update_buttons)
         self.link_check.toggled.connect(self._update_buttons)
         self.share_btn.clicked.connect(self._on_share_clicked)
@@ -208,6 +208,30 @@ class PackageShareWidget(QtWidgets.QWidget):
 
         if self.current_package:
             self.packageSelected.emit(self.current_package)
+
+    def _on_vendor_selected(self, index):
+        """Handle vendor selection from dropdown.
+
+        Pre-fills the recipient email field with emails from the vendor's sg_members.
+        """
+        vendor = self.vendor_combo.itemData(index)
+        self._update_buttons()
+
+        if vendor:
+            # Extract emails from sg_members (Client User entities)
+            members = vendor.get('sg_members', []) or []
+            emails = []
+
+            for member in members:
+                if isinstance(member, dict):
+                    # Client User entity should have an email field
+                    email = member.get('email')
+                    if email:
+                        emails.append(email)
+
+            # Pre-fill the email field with space-separated emails
+            if emails:
+                self.email_edit.setText(' '.join(emails))
 
     def _update_package_info(self):
         """Update the package info display."""

@@ -1896,7 +1896,7 @@ class ShotgridClient:
             List of Vendor dictionaries
         """
         if fields is None:
-            fields = ["id", "code", "sg_vendor_category", "sg_status_list", "description", "created_at", "updated_at"]
+            fields = ["id", "code", "sg_vendor_category", "sg_status_list", "description", "sg_members", "created_at", "updated_at"]
         if order is None:
             order = [{"field_name": "code", "direction": "asc"}]
 
