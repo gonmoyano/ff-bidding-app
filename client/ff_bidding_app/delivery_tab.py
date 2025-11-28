@@ -35,14 +35,18 @@ class ZipWorker(QtCore.QThread):
         self.source_dir = Path(source_dir)
         self.zip_path = Path(zip_path)
 
+    # Files to exclude from the zip (keep in original folder but don't send to vendor)
+    EXCLUDED_FILES = {'manifest.json'}
+
     def run(self):
         """Execute the zipping process."""
         try:
-            # Count total files for progress
+            # Count total files for progress (excluding manifest.json)
             all_files = []
             for root, dirs, files in os.walk(self.source_dir):
                 for file in files:
-                    all_files.append(os.path.join(root, file))
+                    if file not in self.EXCLUDED_FILES:
+                        all_files.append(os.path.join(root, file))
 
             total_files = len(all_files)
             if total_files == 0:
@@ -392,6 +396,10 @@ class PackageShareWidget(QtWidgets.QWidget):
             logger.warning("No package name available for ShotGrid update")
             return
 
+        if not manifest_data:
+            logger.warning("No manifest data available for ShotGrid update")
+            return
+
         try:
             delivery_tab = self._get_delivery_tab()
             if not delivery_tab or not hasattr(delivery_tab, 'sg_session'):
@@ -401,6 +409,8 @@ class PackageShareWidget(QtWidgets.QWidget):
             sg_session = delivery_tab.sg_session
             project_id = delivery_tab.current_project_id
 
+            logger.info(f"Looking for package '{package_name}' in project {project_id}")
+
             # Find the package in ShotGrid by name
             sg_package = sg_session.get_package_by_name(package_name, project_id)
 
@@ -408,14 +418,20 @@ class PackageShareWidget(QtWidgets.QWidget):
                 logger.warning(f"Package '{package_name}' not found in ShotGrid")
                 return
 
+            logger.info(f"Found package in ShotGrid with ID: {sg_package['id']}")
+            logger.info(f"Uploading manifest ({len(json.dumps(manifest_data))} bytes) and setting status to closed")
+
             # Update the package with manifest and status
-            sg_session.update_package(
+            result = sg_session.update_package(
                 sg_package['id'],
                 status='clsd',  # closed status
                 manifest=manifest_data
             )
 
-            logger.info(f"Updated package '{package_name}' in ShotGrid: status=closed, manifest uploaded")
+            if result:
+                logger.info(f"Successfully updated package '{package_name}' in ShotGrid: status=closed, manifest uploaded")
+            else:
+                logger.warning(f"update_package returned None for '{package_name}'")
 
         except Exception as e:
             logger.error(f"Failed to update package in ShotGrid: {e}", exc_info=True)
