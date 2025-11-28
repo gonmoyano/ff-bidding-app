@@ -684,8 +684,8 @@ class PackagesTab(QtWidgets.QWidget):
             )
             return
 
-        # Use current package name, sanitize for filesystem
-        package_name = self.current_package_name.replace(' ', '_').replace('-', '_')
+        # Use current package name, sanitize for filesystem (use hyphens)
+        package_name = self.current_package_name.replace(' ', '-').replace('_', '-')
         logger.info(f"Package name: {package_name}")
 
         # Check if package folder already exists

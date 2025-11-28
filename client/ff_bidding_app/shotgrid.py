@@ -1111,7 +1111,7 @@ class ShotgridClient:
 
         return result
 
-    def update_package(self, package_id, package_name=None, description=None):
+    def update_package(self, package_id, package_name=None, description=None, status=None, manifest=None):
         """
         Update a Package (CustomEntity12) entity in ShotGrid.
 
@@ -1119,6 +1119,8 @@ class ShotgridClient:
             package_id: ID of the package to update
             package_name: New name/code for the package (optional)
             description: New description (optional)
+            status: New status for sg_status_list field (optional)
+            manifest: Manifest data for sg_manifest field (optional, will be JSON serialized)
 
         Returns:
             Updated package entity dictionary
@@ -1129,6 +1131,15 @@ class ShotgridClient:
             update_data["code"] = package_name
         if description is not None:
             update_data["description"] = description
+        if status is not None:
+            update_data["sg_status_list"] = status
+        if manifest is not None:
+            # Serialize manifest to JSON string for Text field type
+            import json
+            if isinstance(manifest, dict):
+                update_data["sg_manifest"] = json.dumps(manifest, indent=2)
+            else:
+                update_data["sg_manifest"] = str(manifest)
 
         if not update_data:
             return None
@@ -1136,6 +1147,27 @@ class ShotgridClient:
         package = self.sg.update("CustomEntity12", int(package_id), update_data)
 
         return package
+
+    def get_package_by_name(self, package_name, project_id=None, fields=None):
+        """
+        Find a Package (CustomEntity12) by its name/code.
+
+        Args:
+            package_name: Name/code of the package to find
+            project_id: Optional project ID to filter by
+            fields: List of fields to return
+
+        Returns:
+            Package entity dictionary or None if not found
+        """
+        if fields is None:
+            fields = ["id", "code", "description", "sg_status_list", "sg_manifest", "project"]
+
+        filters = [["code", "is", package_name]]
+        if project_id:
+            filters.append(["project", "is", {"type": "Project", "id": int(project_id)}])
+
+        return self.sg.find_one("CustomEntity12", filters, fields)
 
     def delete_package(self, package_id):
         """
@@ -1878,6 +1910,121 @@ class ShotgridClient:
 
         logger.info(f"Found {len(image_versions)} image versions in project {project_id}")
         return image_versions
+
+    # ------------------------------------------------------------------
+    # Vendor Management (CustomEntity05)
+    # ------------------------------------------------------------------
+
+    def get_vendors(self, project_id, fields=None, order=None):
+        """
+        Get Vendors (CustomEntity05) for a project.
+
+        Args:
+            project_id: Project ID
+            fields: List of fields to return
+            order: List of order dicts
+
+        Returns:
+            List of Vendor dictionaries
+        """
+        if fields is None:
+            fields = ["id", "code", "sg_vendor_category", "sg_status_list", "description", "sg_members", "created_at", "updated_at"]
+        if order is None:
+            order = [{"field_name": "code", "direction": "asc"}]
+
+        filters = [["project", "is", {"type": "Project", "id": int(project_id)}]]
+        return self.sg.find("CustomEntity05", filters, fields, order=order)
+
+    def get_vendor_categories(self, project_id):
+        """
+        Get unique vendor categories for a project.
+
+        Args:
+            project_id: Project ID
+
+        Returns:
+            List of unique category names
+        """
+        vendors = self.get_vendors(project_id, fields=["id", "sg_vendor_category"])
+        categories = set()
+        for vendor in vendors:
+            category = vendor.get("sg_vendor_category")
+            if category:
+                categories.add(category)
+        return sorted(list(categories))
+
+    def get_client_users(self, user_ids, fields=None):
+        """
+        Get ClientUser entities by their IDs.
+
+        Args:
+            user_ids: List of ClientUser IDs
+            fields: List of fields to return
+
+        Returns:
+            List of ClientUser dictionaries
+        """
+        if not user_ids:
+            return []
+
+        if fields is None:
+            fields = ["id", "name", "email"]
+
+        filters = [["id", "in", user_ids]]
+        return self.sg.find("ClientUser", filters, fields)
+
+    def create_vendor(self, project_id, code, vendor_category=None, description=None):
+        """
+        Create a new Vendor (CustomEntity05).
+
+        Args:
+            project_id: Project ID
+            code: Vendor name/code
+            vendor_category: Vendor category (optional)
+            description: Description (optional)
+
+        Returns:
+            Created Vendor entity dictionary
+        """
+        data = {
+            "code": code,
+            "project": {"type": "Project", "id": int(project_id)},
+        }
+
+        if vendor_category:
+            data["sg_vendor_category"] = vendor_category
+        if description:
+            data["description"] = description
+
+        result = self.sg.create("CustomEntity05", data)
+        return result
+
+    def update_vendor(self, vendor_id, data):
+        """
+        Update a Vendor (CustomEntity05).
+
+        Args:
+            vendor_id: Vendor ID
+            data: Dictionary of fields to update
+
+        Returns:
+            Updated Vendor entity dictionary
+        """
+        result = self.sg.update("CustomEntity05", int(vendor_id), data)
+        return result
+
+    def delete_vendor(self, vendor_id):
+        """
+        Delete a Vendor (CustomEntity05).
+
+        Args:
+            vendor_id: Vendor ID
+
+        Returns:
+            bool: True if successful
+        """
+        result = self.sg.delete("CustomEntity05", int(vendor_id))
+        return result
 
     def get_all_document_versions_for_project(self, project_id):
         """
