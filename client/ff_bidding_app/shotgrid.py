@@ -1120,7 +1120,7 @@ class ShotgridClient:
             package_name: New name/code for the package (optional)
             description: New description (optional)
             status: New status for sg_status_list field (optional)
-            manifest: Manifest data for sg_manifest field (optional, will be JSON serialized)
+            manifest: Manifest data for sg_manifest field (optional, dict type)
 
         Returns:
             Updated package entity dictionary
@@ -1134,12 +1134,8 @@ class ShotgridClient:
         if status is not None:
             update_data["sg_status_list"] = status
         if manifest is not None:
-            # Serialize manifest to JSON string for Text field type
-            import json
-            if isinstance(manifest, dict):
-                update_data["sg_manifest"] = json.dumps(manifest, indent=2)
-            else:
-                update_data["sg_manifest"] = str(manifest)
+            # ShotGrid sg_manifest field expects a Hash/dictionary type
+            update_data["sg_manifest"] = manifest
 
         if not update_data:
             return None
