@@ -1111,7 +1111,7 @@ class ShotgridClient:
 
         return result
 
-    def update_package(self, package_id, package_name=None, description=None):
+    def update_package(self, package_id, package_name=None, description=None, status=None, manifest=None):
         """
         Update a Package (CustomEntity12) entity in ShotGrid.
 
@@ -1119,6 +1119,8 @@ class ShotgridClient:
             package_id: ID of the package to update
             package_name: New name/code for the package (optional)
             description: New description (optional)
+            status: New status for sg_status_list field (optional)
+            manifest: Manifest data for sg_manifest field (optional, will be JSON serialized)
 
         Returns:
             Updated package entity dictionary
@@ -1129,6 +1131,15 @@ class ShotgridClient:
             update_data["code"] = package_name
         if description is not None:
             update_data["description"] = description
+        if status is not None:
+            update_data["sg_status_list"] = status
+        if manifest is not None:
+            # Serialize manifest to JSON string if it's a dict
+            if isinstance(manifest, dict):
+                import json
+                update_data["sg_manifest"] = json.dumps(manifest, indent=2)
+            else:
+                update_data["sg_manifest"] = manifest
 
         if not update_data:
             return None
@@ -1136,6 +1147,27 @@ class ShotgridClient:
         package = self.sg.update("CustomEntity12", int(package_id), update_data)
 
         return package
+
+    def get_package_by_name(self, package_name, project_id=None, fields=None):
+        """
+        Find a Package (CustomEntity12) by its name/code.
+
+        Args:
+            package_name: Name/code of the package to find
+            project_id: Optional project ID to filter by
+            fields: List of fields to return
+
+        Returns:
+            Package entity dictionary or None if not found
+        """
+        if fields is None:
+            fields = ["id", "code", "description", "sg_status_list", "sg_manifest", "project"]
+
+        filters = [["code", "is", package_name]]
+        if project_id:
+            filters.append(["project", "is", {"type": "Project", "id": int(project_id)}])
+
+        return self.sg.find_one("CustomEntity12", filters, fields)
 
     def delete_package(self, package_id):
         """

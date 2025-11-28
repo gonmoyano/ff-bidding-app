@@ -354,8 +354,9 @@ class PackageShareWidget(QtWidgets.QWidget):
     def _on_share_clicked(self):
         """Handle share button click.
 
-        Checks if a zip file exists for the package, creates one if not,
-        then proceeds with sharing.
+        Uploads manifest to ShotGrid, sets package status to closed,
+        then checks if a zip file exists for the package, creates one if not,
+        and proceeds with sharing.
         """
         if not self.current_package:
             return
@@ -368,6 +369,9 @@ class PackageShareWidget(QtWidgets.QWidget):
         package_dir = Path(package_path)
         zip_path = package_dir.with_suffix('.zip')
 
+        # Upload manifest to ShotGrid and set status to closed
+        self._update_package_in_shotgrid()
+
         # Check if zip already exists
         if zip_path.exists():
             logger.info(f"Zip file already exists: {zip_path}")
@@ -375,6 +379,46 @@ class PackageShareWidget(QtWidgets.QWidget):
         else:
             # Need to create zip file
             self._start_zipping(package_dir, zip_path)
+
+    def _update_package_in_shotgrid(self):
+        """Upload manifest to ShotGrid and set package status to closed."""
+        if not self.current_package:
+            return
+
+        package_name = self.current_package.get('code')
+        manifest_data = self.current_package.get('manifest')
+
+        if not package_name:
+            logger.warning("No package name available for ShotGrid update")
+            return
+
+        try:
+            delivery_tab = self._get_delivery_tab()
+            if not delivery_tab or not hasattr(delivery_tab, 'sg_session'):
+                logger.warning("Could not access ShotGrid session")
+                return
+
+            sg_session = delivery_tab.sg_session
+            project_id = delivery_tab.current_project_id
+
+            # Find the package in ShotGrid by name
+            sg_package = sg_session.get_package_by_name(package_name, project_id)
+
+            if not sg_package:
+                logger.warning(f"Package '{package_name}' not found in ShotGrid")
+                return
+
+            # Update the package with manifest and status
+            sg_session.update_package(
+                sg_package['id'],
+                status='clsd',  # closed status
+                manifest=manifest_data
+            )
+
+            logger.info(f"Updated package '{package_name}' in ShotGrid: status=closed, manifest uploaded")
+
+        except Exception as e:
+            logger.error(f"Failed to update package in ShotGrid: {e}", exc_info=True)
 
     def _start_zipping(self, package_dir, zip_path):
         """Start the zipping process in a worker thread.
