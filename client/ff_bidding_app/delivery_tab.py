@@ -159,9 +159,11 @@ class PackageIconWidget(QtWidgets.QWidget):
         drag = QtGui.QDrag(self)
         mime_data = QtCore.QMimeData()
 
-        # Store package ID in mime data
+        # Store package ID and name in mime data
         package_id = self.package_data.get('id', 0)
+        package_name = self.package_data.get('code', f'Package {package_id}')
         mime_data.setData("application/x-package-id", str(package_id).encode())
+        mime_data.setData("application/x-package-name", package_name.encode())
 
         drag.setMimeData(mime_data)
 
@@ -178,208 +180,6 @@ class PackageIconWidget(QtWidgets.QWidget):
 
         self._is_drag_source = False
         self.setCursor(QtCore.Qt.OpenHandCursor)
-
-
-class DroppableVendorWidget(QtWidgets.QWidget):
-    """Widget representing a vendor category that accepts package drops."""
-
-    packageDropped = QtCore.Signal(int, str)  # Signal emitted when a package is dropped (package_id, vendor_code)
-    clicked = QtCore.Signal(object)  # Signal emitted when vendor is clicked (vendor_data)
-
-    def __init__(self, vendor_data, parent=None, icon_size=64):
-        """Initialize vendor widget.
-
-        Args:
-            vendor_data: Vendor data dictionary from ShotGrid
-            parent: Parent widget
-            icon_size: Size of the icon in pixels
-        """
-        super().__init__(parent)
-        self.vendor_data = vendor_data
-        self.icon_size = icon_size
-        self.assigned_packages = set()  # Set of package IDs assigned to this vendor
-        self._is_drag_over = False
-        self._is_selected = False
-
-        self.setAcceptDrops(True)
-        self._setup_ui()
-
-    def _setup_ui(self):
-        """Setup the vendor UI."""
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(5)
-        layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignCenter)
-
-        # Vendor icon
-        self.icon_label = QtWidgets.QLabel()
-        self.icon_label.setAlignment(QtCore.Qt.AlignCenter)
-        self._update_icon()
-        layout.addWidget(self.icon_label)
-
-        # Vendor name
-        vendor_name = self.vendor_data.get('code', 'Unknown')
-        self.name_label = QtWidgets.QLabel(vendor_name)
-        self.name_label.setStyleSheet("font-weight: bold; font-size: 11px;")
-        self.name_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.name_label.setWordWrap(True)
-        layout.addWidget(self.name_label)
-
-        # Package count
-        self.count_label = QtWidgets.QLabel("0 packages")
-        self.count_label.setStyleSheet("color: #888; font-size: 10px;")
-        self.count_label.setAlignment(QtCore.Qt.AlignCenter)
-        layout.addWidget(self.count_label)
-
-        # Apply initial style
-        self._update_style()
-
-    def _update_style(self):
-        """Update the vendor styling based on current state."""
-        if self._is_drag_over:
-            # Drag over state - bright blue highlight
-            self.setStyleSheet("""
-                DroppableVendorWidget {
-                    background-color: #3a5f8f;
-                    border: 2px solid #4a9eff;
-                    border-radius: 4px;
-                }
-            """)
-        elif self._is_selected:
-            # Selected state - blue border
-            self.setStyleSheet("""
-                DroppableVendorWidget {
-                    background-color: #2b3a4a;
-                    border: 2px solid #4a9eff;
-                    border-radius: 4px;
-                }
-            """)
-        else:
-            # Default state
-            self.setStyleSheet("""
-                DroppableVendorWidget {
-                    background-color: #2b2b2b;
-                    border: 1px solid #444;
-                    border-radius: 4px;
-                }
-                DroppableVendorWidget:hover {
-                    background-color: #353535;
-                    border: 1px solid #555;
-                }
-            """)
-
-    def _update_icon(self):
-        """Update the vendor icon."""
-        # Use a different icon for vendors (business/person icon)
-        self.icon_label.setPixmap(self.style().standardIcon(
-            QtWidgets.QStyle.SP_ComputerIcon
-        ).pixmap(self.icon_size, self.icon_size))
-
-        # Apply border styling
-        if self._is_selected or len(self.assigned_packages) > 0:
-            self.icon_label.setStyleSheet("""
-                QLabel {
-                    border: 3px solid #4a9eff;
-                    border-radius: 4px;
-                    padding: 2px;
-                }
-            """)
-        else:
-            self.icon_label.setStyleSheet("""
-                QLabel {
-                    border: 3px solid #2b2b2b;
-                    border-radius: 4px;
-                    padding: 2px;
-                }
-            """)
-
-    def set_icon_size(self, size):
-        """Set the icon size.
-
-        Args:
-            size: Icon size in pixels
-        """
-        self.icon_size = size
-        self._update_icon()
-
-    def set_selected(self, selected):
-        """Set the selected state.
-
-        Args:
-            selected: True if selected, False otherwise
-        """
-        if self._is_selected != selected:
-            self._is_selected = selected
-            self._update_style()
-            self._update_icon()
-
-    def _update_count(self):
-        """Update the package count label."""
-        count = len(self.assigned_packages)
-        self.count_label.setText(f"{count} package{'s' if count != 1 else ''}")
-
-    def add_package(self, package_id):
-        """Add a package to this vendor."""
-        self.assigned_packages.add(package_id)
-        self._update_count()
-        self._update_icon()
-
-    def remove_package(self, package_id):
-        """Remove a package from this vendor."""
-        self.assigned_packages.discard(package_id)
-        self._update_count()
-        self._update_icon()
-
-    def get_package_ids(self):
-        """Get all package IDs assigned to this vendor."""
-        return self.assigned_packages.copy()
-
-    def set_package_ids(self, package_ids):
-        """Set the package IDs for this vendor."""
-        self.assigned_packages = set(package_ids)
-        self._update_count()
-        self._update_icon()
-
-    def mousePressEvent(self, event):
-        """Handle mouse press event."""
-        if event.button() == QtCore.Qt.LeftButton:
-            self.clicked.emit(self.vendor_data)
-        super().mousePressEvent(event)
-
-    def dragEnterEvent(self, event):
-        """Handle drag enter event."""
-        if event.mimeData().hasFormat("application/x-package-id"):
-            event.acceptProposedAction()
-            self._is_drag_over = True
-            self._update_style()
-        else:
-            event.ignore()
-
-    def dragLeaveEvent(self, event):
-        """Handle drag leave event."""
-        self._is_drag_over = False
-        self._update_style()
-
-    def dropEvent(self, event):
-        """Handle drop event."""
-        if event.mimeData().hasFormat("application/x-package-id"):
-            # Get the dropped package ID
-            package_id_bytes = event.mimeData().data("application/x-package-id")
-            package_id = int(bytes(package_id_bytes).decode())
-
-            # Add to this vendor
-            self.add_package(package_id)
-
-            event.acceptProposedAction()
-
-            # Emit signal to notify parent
-            vendor_code = self.vendor_data.get('code', '')
-            self.packageDropped.emit(package_id, vendor_code)
-
-            # Remove highlight
-            self.dragLeaveEvent(event)
-        else:
-            event.ignore()
 
 
 class PackageIconView(QtWidgets.QWidget):
@@ -552,66 +352,34 @@ class PackageIconView(QtWidgets.QWidget):
 
 
 class VendorCategoryView(QtWidgets.QWidget):
-    """View widget for displaying vendor categories."""
+    """View widget for displaying vendors as collapsible groups."""
 
     vendorSelected = QtCore.Signal(object)  # Signal emitted when a vendor is selected (vendor_data)
     packageAssigned = QtCore.Signal(int, str)  # Signal emitted when a package is assigned to a vendor
 
     def __init__(self, parent=None):
-        """Initialize the vendor category view."""
+        """Initialize the vendor view."""
         super().__init__(parent)
-        self.vendors = {}  # vendor_id -> DroppableVendorWidget
-        self.vendor_groups = {}  # category_name -> CollapsibleGroupBox
-        self.current_icon_size = 64
-        self._selected_vendor_id = None
-
-        # Load saved sizes from settings
-        self.settings = QtCore.QSettings("FFBiddingApp", "DeliveryTab")
-        self.current_icon_size = self.settings.value("vendor_icon_size", 64, type=int)
-
-        # Debounce timer for resize events
-        self.resize_timer = QtCore.QTimer()
-        self.resize_timer.setSingleShot(True)
-        self.resize_timer.timeout.connect(self._relayout_vendors)
+        self.vendors = {}  # vendor_id -> vendor_data
+        self.vendor_groups = {}  # vendor_code -> CollapsibleGroupBox with droppable container
+        self.assigned_packages = {}  # vendor_code -> set of package_ids
+        self._selected_vendor_code = None
 
         self._setup_ui()
 
     def _setup_ui(self):
-        """Setup the vendor category view UI."""
+        """Setup the vendor view UI."""
         main_layout = QtWidgets.QVBoxLayout(self)
         main_layout.setContentsMargins(5, 5, 5, 5)
         main_layout.setSpacing(5)
 
-        # Toolbar with icon size slider
-        toolbar_layout = QtWidgets.QHBoxLayout()
-
-        toolbar_layout.addWidget(QtWidgets.QLabel("Icon Size:"))
-
-        self.icon_size_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self.icon_size_slider.setMinimum(32)
-        self.icon_size_slider.setMaximum(128)
-        self.icon_size_slider.setValue(self.current_icon_size)
-        self.icon_size_slider.setTickPosition(QtWidgets.QSlider.NoTicks)
-        self.icon_size_slider.setFixedWidth(150)
-        self.icon_size_slider.valueChanged.connect(self._on_size_changed)
-        toolbar_layout.addWidget(self.icon_size_slider)
-
-        self.icon_size_label = QtWidgets.QLabel(str(self.current_icon_size))
-        self.icon_size_label.setFixedWidth(30)
-        self.icon_size_label.setAlignment(QtCore.Qt.AlignRight)
-        toolbar_layout.addWidget(self.icon_size_label)
-
-        toolbar_layout.addStretch()
-
-        main_layout.addLayout(toolbar_layout)
-
-        # Scroll area for vendor categories
+        # Scroll area for vendor groups
         scroll_area = QtWidgets.QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
 
-        # Container for vendor category groups
+        # Container for vendor groups
         container = QtWidgets.QWidget()
         self.groups_layout = QtWidgets.QVBoxLayout(container)
         self.groups_layout.setContentsMargins(5, 5, 5, 5)
@@ -621,147 +389,61 @@ class VendorCategoryView(QtWidgets.QWidget):
         scroll_area.setWidget(container)
         main_layout.addWidget(scroll_area)
 
-    def _on_size_changed(self, value):
-        """Handle icon size slider change."""
-        self.current_icon_size = value
-        self.icon_size_label.setText(str(value))
-
-        # Save to settings
-        self.settings.setValue("vendor_icon_size", value)
-
-        # Update all existing vendor icons
-        for vendor_widget in self.vendors.values():
-            vendor_widget.set_icon_size(value)
-
-        # Re-layout vendors
-        self._relayout_vendors()
-
     def set_vendors(self, vendors_list):
-        """Set the vendors to display grouped by category.
+        """Set the vendors to display, each as a collapsible group.
 
         Args:
             vendors_list: List of vendor dictionaries from ShotGrid
         """
-        # Clear existing vendors
-        for vendor_widget in self.vendors.values():
-            vendor_widget.deleteLater()
-        self.vendors.clear()
-
         # Clear existing groups
-        for group in self.vendor_groups.values():
-            group.deleteLater()
+        for group_data in self.vendor_groups.values():
+            group_data['group'].deleteLater()
         self.vendor_groups.clear()
+        self.vendors.clear()
+        self.assigned_packages.clear()
 
-        # Remove stretch item
+        # Remove all items from layout
         while self.groups_layout.count():
             item = self.groups_layout.takeAt(0)
             if item.widget():
                 item.widget().setParent(None)
 
-        # Group vendors by category
-        grouped_vendors = {}
+        # Create a collapsible group for each vendor
         for vendor_data in vendors_list:
-            category = vendor_data.get('sg_vendor_category', 'Uncategorized')
-            if not category:
-                category = 'Uncategorized'
-            if category not in grouped_vendors:
-                grouped_vendors[category] = []
-            grouped_vendors[category].append(vendor_data)
+            vendor_id = vendor_data.get('id')
+            vendor_code = vendor_data.get('code', 'Unknown')
 
-        # Create collapsible groups for each category
-        for category in sorted(grouped_vendors.keys()):
-            vendors_in_category = grouped_vendors[category]
+            if vendor_id:
+                self.vendors[vendor_id] = vendor_data
+                self.assigned_packages[vendor_code] = set()
 
-            group = CollapsibleGroupBox(f"{category} ({len(vendors_in_category)} vendors)")
-            group_container = QtWidgets.QWidget()
-            group_layout = QtWidgets.QGridLayout(group_container)
-            group_layout.setSpacing(10)
-            group_layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
-            group.addWidget(group_container)
+                # Create collapsible group with vendor name
+                group = CollapsibleGroupBox(f"{vendor_code} (0 packages)")
 
-            self.groups_layout.addWidget(group)
-            self.vendor_groups[category] = {
-                'group': group,
-                'layout': group_layout,
-                'container': group_container,
-                'vendors': []
-            }
+                # Create droppable container inside the group
+                drop_container = DroppableVendorContainer(vendor_data)
+                drop_container.packageDropped.connect(self._on_package_dropped)
+                group.addWidget(drop_container)
 
-            # Add vendors to this category
-            for vendor_data in vendors_in_category:
-                vendor_id = vendor_data.get('id')
-                if vendor_id:
-                    vendor_widget = DroppableVendorWidget(vendor_data, self, icon_size=self.current_icon_size)
-                    vendor_widget.clicked.connect(self._on_vendor_clicked)
-                    vendor_widget.packageDropped.connect(self._on_package_dropped)
-                    self.vendors[vendor_id] = vendor_widget
-                    self.vendor_groups[category]['vendors'].append(vendor_id)
+                self.groups_layout.addWidget(group)
+                self.vendor_groups[vendor_code] = {
+                    'group': group,
+                    'container': drop_container,
+                    'vendor_data': vendor_data
+                }
 
         self.groups_layout.addStretch()
 
-        # Schedule re-layout
-        QtCore.QTimer.singleShot(50, self._relayout_vendors)
-
-    def _relayout_vendors(self):
-        """Re-layout vendors in grids based on current pane width."""
-        if not self.vendors:
-            return
-
-        # Calculate columns based on pane width and icon size
-        pane_width = self.width()
-        if pane_width <= 0:
-            pane_width = 250
-
-        vendor_width = self.current_icon_size + 40
-        columns = max(1, pane_width // vendor_width)
-
-        # Re-layout each category group
-        for category, group_data in self.vendor_groups.items():
-            layout = group_data['layout']
-            vendor_ids = group_data['vendors']
-
-            # Remove all widgets from layout
-            while layout.count():
-                item = layout.takeAt(0)
-                if item.widget():
-                    layout.removeWidget(item.widget())
-
-            # Re-add vendors to grid
-            for idx, vendor_id in enumerate(vendor_ids):
-                vendor_widget = self.vendors.get(vendor_id)
-                if vendor_widget:
-                    row = idx // columns
-                    col = idx % columns
-                    layout.addWidget(vendor_widget, row, col)
-                    vendor_widget.show()
-
-    def resizeEvent(self, event):
-        """Handle resize event to re-layout vendors."""
-        super().resizeEvent(event)
-        if self.vendors:
-            self.resize_timer.stop()
-            self.resize_timer.start(400)
-
-    def _on_vendor_clicked(self, vendor_data):
-        """Handle vendor click."""
-        vendor_id = vendor_data.get('id')
-
-        # Update selection state
-        for vid, widget in self.vendors.items():
-            widget.set_selected(vid == vendor_id)
-
-        self._selected_vendor_id = vendor_id
-        self.vendorSelected.emit(vendor_data)
-
     def _on_package_dropped(self, package_id, vendor_code):
-        """Handle package dropped on vendor."""
-        self.packageAssigned.emit(package_id, vendor_code)
+        """Handle package dropped on vendor container."""
+        if vendor_code in self.assigned_packages:
+            self.assigned_packages[vendor_code].add(package_id)
+            # Update group title with package count
+            if vendor_code in self.vendor_groups:
+                count = len(self.assigned_packages[vendor_code])
+                self.vendor_groups[vendor_code]['group'].setTitle(f"{vendor_code} ({count} package{'s' if count != 1 else ''})")
 
-    def get_selected_vendor(self):
-        """Get the currently selected vendor data."""
-        if self._selected_vendor_id and self._selected_vendor_id in self.vendors:
-            return self.vendors[self._selected_vendor_id].vendor_data
-        return None
+        self.packageAssigned.emit(package_id, vendor_code)
 
     def get_vendor_mappings(self):
         """Get all package-to-vendor mappings.
@@ -770,12 +452,164 @@ class VendorCategoryView(QtWidgets.QWidget):
             dict: {vendor_code: [package_id1, package_id2, ...]}
         """
         mappings = {}
-        for vendor_id, vendor_widget in self.vendors.items():
-            vendor_code = vendor_widget.vendor_data.get('code', '')
-            package_ids = list(vendor_widget.get_package_ids())
+        for vendor_code, package_ids in self.assigned_packages.items():
             if package_ids:
-                mappings[vendor_code] = package_ids
+                mappings[vendor_code] = list(package_ids)
         return mappings
+
+
+class DroppableVendorContainer(QtWidgets.QWidget):
+    """Container widget inside a vendor group that accepts package drops."""
+
+    packageDropped = QtCore.Signal(int, str)  # Signal emitted when a package is dropped (package_id, vendor_code)
+
+    def __init__(self, vendor_data, parent=None):
+        """Initialize the droppable vendor container.
+
+        Args:
+            vendor_data: Vendor data dictionary from ShotGrid
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.vendor_data = vendor_data
+        self.vendor_code = vendor_data.get('code', 'Unknown')
+        self.package_widgets = {}  # package_id -> QWidget
+        self._is_drag_over = False
+
+        self.setAcceptDrops(True)
+        self.setMinimumHeight(80)
+        self._setup_ui()
+        self._update_style()
+
+    def _setup_ui(self):
+        """Setup the container UI."""
+        self.layout = QtWidgets.QGridLayout(self)
+        self.layout.setContentsMargins(10, 10, 10, 10)
+        self.layout.setSpacing(10)
+        self.layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
+
+        # Placeholder label when empty
+        self.placeholder_label = QtWidgets.QLabel("Drop packages here")
+        self.placeholder_label.setStyleSheet("color: #666; font-style: italic;")
+        self.placeholder_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.layout.addWidget(self.placeholder_label, 0, 0)
+
+    def _update_style(self):
+        """Update container styling based on state."""
+        if self._is_drag_over:
+            self.setStyleSheet("""
+                DroppableVendorContainer {
+                    background-color: rgba(74, 159, 255, 50);
+                    border: 2px dashed #4a9eff;
+                    border-radius: 4px;
+                }
+            """)
+        else:
+            self.setStyleSheet("""
+                DroppableVendorContainer {
+                    background-color: #2a2a2a;
+                    border: 1px dashed #555;
+                    border-radius: 4px;
+                }
+            """)
+
+    def _add_package_widget(self, package_id, package_name):
+        """Add a package widget to the container."""
+        if package_id in self.package_widgets:
+            return  # Already exists
+
+        # Hide placeholder
+        self.placeholder_label.hide()
+
+        # Create package label
+        package_widget = QtWidgets.QFrame()
+        package_widget.setStyleSheet("""
+            QFrame {
+                background-color: #3a3a3a;
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 5px;
+            }
+            QFrame:hover {
+                background-color: #454545;
+                border: 1px solid #666;
+            }
+        """)
+
+        widget_layout = QtWidgets.QHBoxLayout(package_widget)
+        widget_layout.setContentsMargins(8, 5, 8, 5)
+
+        icon_label = QtWidgets.QLabel()
+        icon_label.setPixmap(self.style().standardIcon(
+            QtWidgets.QStyle.SP_DirIcon
+        ).pixmap(24, 24))
+        widget_layout.addWidget(icon_label)
+
+        name_label = QtWidgets.QLabel(package_name)
+        name_label.setStyleSheet("font-size: 11px; font-weight: bold;")
+        widget_layout.addWidget(name_label)
+        widget_layout.addStretch()
+
+        self.package_widgets[package_id] = package_widget
+
+        # Re-layout packages in grid
+        self._relayout_packages()
+
+    def _relayout_packages(self):
+        """Re-layout package widgets in grid."""
+        # Remove all widgets from layout except placeholder
+        for i in reversed(range(self.layout.count())):
+            item = self.layout.itemAt(i)
+            if item.widget() and item.widget() != self.placeholder_label:
+                self.layout.removeWidget(item.widget())
+
+        # Add packages back in grid
+        columns = 3  # Number of columns
+        for idx, (package_id, widget) in enumerate(self.package_widgets.items()):
+            row = idx // columns
+            col = idx % columns
+            self.layout.addWidget(widget, row, col)
+
+    def dragEnterEvent(self, event):
+        """Handle drag enter event."""
+        if event.mimeData().hasFormat("application/x-package-id"):
+            event.acceptProposedAction()
+            self._is_drag_over = True
+            self._update_style()
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event):
+        """Handle drag leave event."""
+        self._is_drag_over = False
+        self._update_style()
+
+    def dropEvent(self, event):
+        """Handle drop event."""
+        if event.mimeData().hasFormat("application/x-package-id"):
+            # Get the dropped package ID
+            package_id_bytes = event.mimeData().data("application/x-package-id")
+            package_id = int(bytes(package_id_bytes).decode())
+
+            # Get package name from mime data if available, or use ID
+            package_name = f"Package {package_id}"
+            if event.mimeData().hasFormat("application/x-package-name"):
+                name_bytes = event.mimeData().data("application/x-package-name")
+                package_name = bytes(name_bytes).decode()
+
+            # Add package widget
+            self._add_package_widget(package_id, package_name)
+
+            event.acceptProposedAction()
+
+            # Emit signal
+            self.packageDropped.emit(package_id, self.vendor_code)
+
+            # Remove highlight
+            self._is_drag_over = False
+            self._update_style()
+        else:
+            event.ignore()
 
 
 class DeliveryTab(QtWidgets.QWidget):
@@ -811,10 +645,10 @@ class DeliveryTab(QtWidgets.QWidget):
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
 
-        # Main splitter for vertical panes
-        self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        # Main splitter for side-by-side panes (horizontal)
+        self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
 
-        # Top pane: Packages icon view
+        # Left pane: Packages icon view
         packages_pane = QtWidgets.QWidget()
         packages_pane_layout = QtWidgets.QVBoxLayout(packages_pane)
         packages_pane_layout.setContentsMargins(0, 0, 0, 0)
@@ -830,7 +664,7 @@ class DeliveryTab(QtWidgets.QWidget):
 
         self.main_splitter.addWidget(packages_pane)
 
-        # Bottom pane: Vendor categories view
+        # Right pane: Vendor groups view
         vendors_pane = QtWidgets.QWidget()
         vendors_pane_layout = QtWidgets.QVBoxLayout(vendors_pane)
         vendors_pane_layout.setContentsMargins(0, 0, 0, 0)
@@ -840,14 +674,13 @@ class DeliveryTab(QtWidgets.QWidget):
         vendors_pane_layout.addWidget(vendors_header)
 
         self.vendor_category_view = VendorCategoryView(self)
-        self.vendor_category_view.vendorSelected.connect(self._on_vendor_selected)
         self.vendor_category_view.packageAssigned.connect(self._on_package_assigned)
         vendors_pane_layout.addWidget(self.vendor_category_view)
 
         self.main_splitter.addWidget(vendors_pane)
 
         # Set initial splitter sizes (equal split)
-        self.main_splitter.setSizes([300, 300])
+        self.main_splitter.setSizes([400, 600])
 
         layout.addWidget(self.main_splitter, 1)
 
@@ -953,15 +786,6 @@ class DeliveryTab(QtWidgets.QWidget):
         package_name = package_data.get('code', 'Unknown')
         logger.info(f"Package double-clicked: {package_name}")
         # Future: Could open package details dialog
-
-    def _on_vendor_selected(self, vendor_data):
-        """Handle vendor selection.
-
-        Args:
-            vendor_data: Selected vendor data
-        """
-        vendor_name = vendor_data.get('code', 'Unknown')
-        self.status_label.setText(f"Selected vendor: {vendor_name}")
 
     def _on_package_assigned(self, package_id, vendor_code):
         """Handle package assigned to vendor.
