@@ -1120,11 +1120,14 @@ class ShotgridClient:
             package_name: New name/code for the package (optional)
             description: New description (optional)
             status: New status for sg_status_list field (optional)
-            manifest: Manifest data for sg_manifest field (optional, dict type)
+            manifest: Manifest data for sg_manifest field (optional, skipped if field type incompatible)
 
         Returns:
             Updated package entity dictionary
         """
+        import logging
+        logger = logging.getLogger("FFPackageManager")
+
         update_data = {}
 
         if package_name:
@@ -1133,14 +1136,24 @@ class ShotgridClient:
             update_data["description"] = description
         if status is not None:
             update_data["sg_status_list"] = status
+
+        # First update non-manifest fields
+        package = None
+        if update_data:
+            package = self.sg.update("CustomEntity12", int(package_id), update_data)
+
+        # Try to update manifest separately - may fail if field type is incompatible
         if manifest is not None:
-            # ShotGrid sg_manifest field expects a Hash/dictionary type
-            update_data["sg_manifest"] = manifest
-
-        if not update_data:
-            return None
-
-        package = self.sg.update("CustomEntity12", int(package_id), update_data)
+            try:
+                import json
+                # Try as JSON string first (for Text field type)
+                manifest_str = json.dumps(manifest, indent=2) if isinstance(manifest, dict) else str(manifest)
+                package = self.sg.update("CustomEntity12", int(package_id), {"sg_manifest": manifest_str})
+            except Exception as e:
+                logger.warning(
+                    f"Could not update sg_manifest field (may need field type change in ShotGrid): {e}"
+                )
+                # Status update already succeeded, so don't fail the entire operation
 
         return package
 
