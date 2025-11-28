@@ -11,6 +11,42 @@ except (ImportError, ValueError, SystemError):
     from bid_selector_widget import CollapsibleGroupBox
 
 
+def create_trash_icon(size=24, color=QtGui.QColor(255, 255, 255, 200)):
+    """Create a trash can outline icon from Material Design Icons.
+
+    Args:
+        size: Icon size in pixels
+        color: Icon color (QColor)
+
+    Returns:
+        QIcon with the trash can outline
+    """
+    from PySide6.QtSvg import QSvgRenderer
+
+    # Material Design Icons trash-can-outline path (24x24 viewBox)
+    svg_path = "M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z"
+
+    # Convert QColor to hex string for SVG
+    if isinstance(color, QtGui.QColor):
+        color_str = f"#{color.red():02x}{color.green():02x}{color.blue():02x}"
+    else:
+        color_str = str(color)
+
+    svg_content = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="{size}" height="{size}">
+        <path fill="{color_str}" d="{svg_path}"/>
+    </svg>'''
+
+    # Create pixmap from SVG using QSvgRenderer
+    renderer = QSvgRenderer(svg_content.encode('utf-8'))
+    pixmap = QtGui.QPixmap(size, size)
+    pixmap.fill(QtCore.Qt.transparent)
+    painter = QtGui.QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+
+    return QtGui.QIcon(pixmap)
+
+
 class ImageLoader(QtCore.QObject):
     """Asynchronous image loader using QThread."""
 
@@ -590,31 +626,33 @@ class FolderDetailView(QtWidgets.QWidget):
         image_label.setCursor(QtCore.Qt.PointingHandCursor)
         image_label.mouseDoubleClickEvent = lambda event: self.imageEnlarged.emit(version)
 
-        # Remove icon overlay (circular outline with X in bottom-right corner)
+        # Remove icon overlay with trash can icon in bottom-right corner
         remove_icon = QtWidgets.QPushButton(image_container)
         remove_icon.setFixedSize(28, 28)
         remove_icon.move(thumb_width - 34, thumb_height - 34)  # Position in bottom-right corner
         remove_icon.setCursor(QtCore.Qt.PointingHandCursor)
         remove_icon.clicked.connect(lambda: self._remove_image(version.get('id')))
 
-        # Circular outline style with X
+        # Set trash can icon (white, turns red on hover)
+        white_icon = create_trash_icon(20, QtGui.QColor(255, 255, 255, 255))
+        red_icon = create_trash_icon(20, QtGui.QColor(255, 80, 80, 255))
+        remove_icon.setIcon(white_icon)
+        remove_icon.setIconSize(QtCore.QSize(20, 20))
+
+        # Store icons for hover effect
+        remove_icon.white_icon = white_icon
+        remove_icon.red_icon = red_icon
+        remove_icon.enterEvent = lambda e: remove_icon.setIcon(remove_icon.red_icon)
+        remove_icon.leaveEvent = lambda e: remove_icon.setIcon(remove_icon.white_icon)
+
+        # Style for the button (no border)
         remove_icon.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
-                border: 3px solid rgba(255, 255, 255, 200);
-                border-radius: 14px;
-                color: rgba(255, 255, 255, 200);
-                font-weight: bold;
-                font-size: 20px;
+                border: none;
                 padding: 0px;
             }
-            QPushButton:hover {
-                border: 3px solid rgba(255, 80, 80, 255);
-                color: rgba(255, 80, 80, 255);
-                background-color: rgba(255, 255, 255, 30);
-            }
         """)
-        remove_icon.setText("×")
 
         container_layout.addWidget(image_container)
 
@@ -947,8 +985,94 @@ class FolderPaneWidget(QtWidgets.QWidget):
 
         main_layout.addWidget(self.view_stack)
 
+        # Create "No Package Selected" overlay
+        self._create_no_package_overlay()
+
         # Set minimum width
         self.setMinimumWidth(250)
+
+    def _create_no_package_overlay(self):
+        """Create the 'No Package Selected' overlay widget."""
+        self.no_package_overlay = QtWidgets.QFrame(self)
+        self.no_package_overlay.setObjectName("noPackageOverlay")
+        self.no_package_overlay.setStyleSheet("""
+            QFrame#noPackageOverlay {
+                background-color: rgba(40, 40, 40, 220);
+                border-radius: 4px;
+            }
+        """)
+
+        overlay_layout = QtWidgets.QVBoxLayout(self.no_package_overlay)
+        overlay_layout.setAlignment(QtCore.Qt.AlignCenter)
+
+        # Icon (folder with question mark)
+        icon_label = QtWidgets.QLabel()
+        icon_label.setPixmap(
+            self.style().standardIcon(QtWidgets.QStyle.SP_MessageBoxQuestion).pixmap(64, 64)
+        )
+        icon_label.setAlignment(QtCore.Qt.AlignCenter)
+        overlay_layout.addWidget(icon_label)
+
+        # Message
+        message_label = QtWidgets.QLabel("No Package Selected")
+        message_label.setStyleSheet("""
+            QLabel {
+                color: #cccccc;
+                font-size: 16px;
+                font-weight: bold;
+            }
+        """)
+        message_label.setAlignment(QtCore.Qt.AlignCenter)
+        overlay_layout.addWidget(message_label)
+
+        # Sub-message
+        sub_message = QtWidgets.QLabel("Select a package from the dropdown above\nto view and manage folder contents.")
+        sub_message.setStyleSheet("""
+            QLabel {
+                color: #888888;
+                font-size: 12px;
+            }
+        """)
+        sub_message.setAlignment(QtCore.Qt.AlignCenter)
+        overlay_layout.addWidget(sub_message)
+
+        # Initially shown (no package selected by default)
+        self.no_package_overlay.show()
+        # Defer initial geometry update until layout is complete
+        QtCore.QTimer.singleShot(0, self._update_overlay_geometry)
+
+    def _update_overlay_geometry(self):
+        """Update the overlay position to cover the view_stack area (below toolbar)."""
+        if hasattr(self, 'no_package_overlay') and hasattr(self, 'view_stack'):
+            # Get the view_stack geometry relative to this widget
+            stack_geometry = self.view_stack.geometry()
+            self.no_package_overlay.setGeometry(stack_geometry)
+            self.no_package_overlay.raise_()
+
+    def _show_no_package_overlay(self):
+        """Show the 'No Package Selected' overlay."""
+        if hasattr(self, 'no_package_overlay'):
+            self._update_overlay_geometry()
+            self.no_package_overlay.show()
+            self.no_package_overlay.raise_()
+
+    def _hide_no_package_overlay(self):
+        """Hide the 'No Package Selected' overlay."""
+        if hasattr(self, 'no_package_overlay'):
+            self.no_package_overlay.hide()
+
+    def resizeEvent(self, event):
+        """Handle resize to update overlay position."""
+        super().resizeEvent(event)
+        # Update overlay geometry when pane resizes
+        if hasattr(self, 'no_package_overlay') and self.no_package_overlay.isVisible():
+            self._update_overlay_geometry()
+
+    def showEvent(self, event):
+        """Handle show event to update overlay position."""
+        super().showEvent(event)
+        # Update overlay geometry when pane is shown
+        QtCore.QTimer.singleShot(0, self._update_overlay_geometry)
 
     def _on_size_changed(self, value):
         """Handle size slider change."""
@@ -1217,8 +1341,10 @@ class FolderPaneWidget(QtWidgets.QWidget):
             package_name: Selected package name or "(No Package)"
         """
         if package_name == "(No Package)":
+            self._show_no_package_overlay()
             self.packageSelected.emit("")
         else:
+            self._hide_no_package_overlay()
             self.packageSelected.emit(package_name)
 
     def set_packages(self, package_names):
@@ -1245,10 +1371,12 @@ class FolderPaneWidget(QtWidgets.QWidget):
         self.package_dropdown.blockSignals(True)
         if not package_name:
             self.package_dropdown.setCurrentText("(No Package)")
+            self._show_no_package_overlay()
         else:
             index = self.package_dropdown.findText(package_name)
             if index >= 0:
                 self.package_dropdown.setCurrentIndex(index)
+            self._hide_no_package_overlay()
         self.package_dropdown.blockSignals(False)
 
     def get_selected_package(self):

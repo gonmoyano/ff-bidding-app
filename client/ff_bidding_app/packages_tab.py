@@ -193,6 +193,8 @@ class PackagesTab(QtWidgets.QWidget):
         # Package Data tree
         self.package_data_tree = PackageTreeView()
         self.package_data_tree.set_sg_session(self.sg_session)
+        self.package_data_tree.documentRemovedFromPackage.connect(self._on_document_removed_from_package)
+        self.package_data_tree.documentRestoredToPackage.connect(self._on_document_restored_to_package)
         right_layout.addWidget(self.package_data_tree, 1)  # Give it stretch factor
 
         # Output Settings collapsible group
@@ -1556,6 +1558,7 @@ class PackagesTab(QtWidgets.QWidget):
             # Sync to folder pane and clear folders
             self._sync_selected_package_to_folder_pane(None)
             self._clear_folder_pane_images()
+            self._clear_document_folder_pane()
             # Save the "no package" state to settings
             if self.current_rfq:
                 rfq_id = self.current_rfq.get("id")
@@ -1586,6 +1589,9 @@ class PackagesTab(QtWidgets.QWidget):
                 # Load images into folder pane based on package folder assignments
                 self._load_package_images_to_folders(sg_package_id)
 
+                # Load documents into document folder pane based on package folder assignments
+                self._load_package_documents_to_folders(sg_package_id)
+
                 # Save the selected package to settings
                 if self.current_rfq:
                     rfq_id = self.current_rfq.get("id")
@@ -1596,6 +1602,7 @@ class PackagesTab(QtWidgets.QWidget):
                 if self.package_data_tree:
                     self.package_data_tree.clear()
                 self._clear_folder_pane_images()
+                self._clear_document_folder_pane()
 
             logger.info(f"Loaded package: {package_name}")
         else:
@@ -1837,6 +1844,213 @@ class PackagesTab(QtWidgets.QWidget):
             index = self.package_selector_dropdown.findText(package_name)
             if index >= 0:
                 self.package_selector_dropdown.setCurrentIndex(index)
+
+    def _clear_document_folder_pane(self):
+        """Clear all document assignments from the document folder pane."""
+        if not self.document_viewer or not hasattr(self.document_viewer, 'folder_pane'):
+            return
+
+        folder_pane = self.document_viewer.folder_pane
+        if not folder_pane:
+            return
+
+        # Clear script and document section IDs
+        folder_pane.script_document_ids.clear()
+        folder_pane.documents_document_ids.clear()
+
+        # Clear all asset folders
+        for folder_widget in folder_pane.asset_folders.values():
+            folder_widget.document_ids.clear()
+            folder_widget._update_count()
+
+        # Clear all scene folders
+        for folder_widget in folder_pane.scene_folders.values():
+            folder_widget.document_ids.clear()
+            folder_widget._update_count()
+
+        # Refresh the sections display
+        folder_pane._refresh_sections()
+
+        logger.info("Cleared all documents from document folder pane")
+
+    def _load_package_documents_to_folders(self, package_id):
+        """Load documents from package into document folder pane based on folder assignments.
+
+        Args:
+            package_id: ShotGrid Package ID
+        """
+        if not self.document_viewer or not hasattr(self.document_viewer, 'folder_pane'):
+            return
+
+        folder_pane = self.document_viewer.folder_pane
+        if not folder_pane:
+            return
+
+        # First clear existing assignments
+        self._clear_document_folder_pane()
+
+        # Get versions with folder info from package
+        try:
+            versions_with_folders = self.sg_session.get_package_versions_with_folders(
+                package_id,
+                fields=["id", "code", "sg_version_type"]
+            )
+
+            logger.info(f"Loading documents from package {package_id} into document folder pane")
+
+            # Process each version and its folder assignments
+            for version in versions_with_folders:
+                version_id = version.get('id')
+                folders_str = version.get('_package_folders', '')
+                sg_version_type = version.get('sg_version_type', '')
+
+                if not version_id or not folders_str:
+                    continue
+
+                # Determine if it's a script or document type
+                version_type_str = ''
+                if sg_version_type:
+                    if isinstance(sg_version_type, dict):
+                        version_type_str = sg_version_type.get('name', '').lower()
+                    else:
+                        version_type_str = str(sg_version_type).lower()
+
+                is_script = 'script' in version_type_str
+                is_document = any(kw in version_type_str for kw in ['document', 'doc', 'pdf']) and not is_script
+
+                if not is_script and not is_document:
+                    continue
+
+                # Parse folder paths (can be multiple, separated by ";")
+                folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
+
+                for folder_path in folder_paths:
+                    # Parse path like "/Script", "/Document", or "/scenes/ARR/Script"
+                    parts = [p for p in folder_path.split('/') if p]
+                    if not parts:
+                        continue
+
+                    # Check if this is a root-level Script or Document path
+                    if len(parts) == 1:
+                        if parts[0].lower() in ['script', 'scripts']:
+                            folder_pane.script_document_ids.add(version_id)
+                            logger.debug(f"Added document {version_id} to Script section")
+                        elif parts[0].lower() in ['document', 'documents']:
+                            folder_pane.documents_document_ids.add(version_id)
+                            logger.debug(f"Added document {version_id} to Documents section")
+                    else:
+                        # Check if path ends with Script or Document (nested path)
+                        folder_type = parts[0]  # 'assets' or 'scenes'
+                        folder_name = parts[1] if len(parts) > 1 else None
+
+                        # Add to appropriate folder
+                        if folder_name:
+                            if folder_type == 'assets' and folder_name in folder_pane.asset_folders:
+                                folder_widget = folder_pane.asset_folders[folder_name]
+                                folder_widget.document_ids.add(version_id)
+                                folder_widget._update_count()
+                            elif folder_type == 'scenes' and folder_name in folder_pane.scene_folders:
+                                folder_widget = folder_pane.scene_folders[folder_name]
+                                folder_widget.document_ids.add(version_id)
+                                folder_widget._update_count()
+
+            # Refresh the sections to show the thumbnails
+            folder_pane._refresh_sections()
+
+            logger.info(f"Loaded package documents into document folder pane for package {package_id}")
+
+        except Exception as e:
+            logger.error(f"Error loading package documents to folder pane: {e}", exc_info=True)
+
+    def _on_document_removed_from_package(self, version_id, folder_path):
+        """Handle document removed from package signal.
+
+        Args:
+            version_id: ID of the removed document
+            folder_path: Folder path it was removed from
+        """
+        if not self.document_viewer or not hasattr(self.document_viewer, 'folder_pane'):
+            return
+
+        folder_pane = self.document_viewer.folder_pane
+        if not folder_pane:
+            return
+
+        # Parse the folder path
+        parts = [p for p in folder_path.split('/') if p]
+        if not parts:
+            return
+
+        # Check if this is a root-level Script or Document path
+        if len(parts) == 1:
+            if parts[0].lower() in ['script', 'scripts']:
+                folder_pane.script_document_ids.discard(version_id)
+            elif parts[0].lower() in ['document', 'documents']:
+                folder_pane.documents_document_ids.discard(version_id)
+        else:
+            # Nested path like /scenes/ARR/Script
+            folder_type = parts[0]  # 'assets' or 'scenes'
+            folder_name = parts[1] if len(parts) > 1 else None
+
+            if folder_name:
+                if folder_type == 'assets' and folder_name in folder_pane.asset_folders:
+                    folder_widget = folder_pane.asset_folders[folder_name]
+                    folder_widget.document_ids.discard(version_id)
+                    folder_widget._update_count()
+                elif folder_type == 'scenes' and folder_name in folder_pane.scene_folders:
+                    folder_widget = folder_pane.scene_folders[folder_name]
+                    folder_widget.document_ids.discard(version_id)
+                    folder_widget._update_count()
+
+        # Refresh the sections
+        folder_pane._refresh_sections()
+
+        logger.info(f"Removed document {version_id} from folder {folder_path} in document folder pane")
+
+    def _on_document_restored_to_package(self, version_id, folder_path):
+        """Handle document restored to package signal (when SG operation fails).
+
+        Args:
+            version_id: ID of the restored document
+            folder_path: Folder path it was restored to
+        """
+        if not self.document_viewer or not hasattr(self.document_viewer, 'folder_pane'):
+            return
+
+        folder_pane = self.document_viewer.folder_pane
+        if not folder_pane:
+            return
+
+        # Parse the folder path
+        parts = [p for p in folder_path.split('/') if p]
+        if not parts:
+            return
+
+        # Check if this is a root-level Script or Document path
+        if len(parts) == 1:
+            if parts[0].lower() in ['script', 'scripts']:
+                folder_pane.script_document_ids.add(version_id)
+            elif parts[0].lower() in ['document', 'documents']:
+                folder_pane.documents_document_ids.add(version_id)
+        else:
+            # Nested path like /scenes/ARR/Script
+            folder_type = parts[0]  # 'assets' or 'scenes'
+            folder_name = parts[1] if len(parts) > 1 else None
+
+            if folder_name:
+                if folder_type == 'assets' and folder_name in folder_pane.asset_folders:
+                    folder_widget = folder_pane.asset_folders[folder_name]
+                    folder_widget.document_ids.add(version_id)
+                    folder_widget._update_count()
+                elif folder_type == 'scenes' and folder_name in folder_pane.scene_folders:
+                    folder_widget = folder_pane.scene_folders[folder_name]
+                    folder_widget.document_ids.add(version_id)
+                    folder_widget._update_count()
+
+        # Refresh the sections
+        folder_pane._refresh_sections()
+
+        logger.info(f"Restored document {version_id} to folder {folder_path} in document folder pane")
 
     def _get_next_package_version_for_rfq(self):
         """Get the next available version number for a package based on current RFQ.

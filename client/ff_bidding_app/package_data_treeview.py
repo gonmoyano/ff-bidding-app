@@ -8,6 +8,29 @@ except (ImportError, ValueError, SystemError):
     logger = logging.getLogger("FFPackageManager")
 
 
+class SGWorker(QtCore.QObject):
+    """Worker for running ShotGrid operations in a background thread."""
+
+    finished = QtCore.Signal(bool, str)  # (success, error_message)
+
+    def __init__(self, sg_session, operation, *args, **kwargs):
+        super().__init__()
+        self.sg_session = sg_session
+        self.operation = operation
+        self.args = args
+        self.kwargs = kwargs
+
+    def run(self):
+        """Execute the ShotGrid operation."""
+        try:
+            method = getattr(self.sg_session, self.operation)
+            method(*self.args, **self.kwargs)
+            self.finished.emit(True, "")
+        except Exception as e:
+            logger.error(f"SG operation failed: {e}", exc_info=True)
+            self.finished.emit(False, str(e))
+
+
 class TreeCheckBoxDelegate(QtWidgets.QStyledItemDelegate):
     """Custom delegate for rendering checkboxes in tree widget with DPI scaling."""
 
@@ -332,6 +355,11 @@ status_colors = {
 
 class PackageTreeView(QtWidgets.QWidget):
     """Widget for displaying package data in a tree view."""
+
+    # Signal emitted when a document/script is removed from a package
+    documentRemovedFromPackage = QtCore.Signal(int, str)  # (version_id, folder_path)
+    # Signal emitted when a remove operation fails and document is restored
+    documentRestoredToPackage = QtCore.Signal(int, str)  # (version_id, folder_path)
 
     def __init__(self, parent=None):
         """Initialize the PackageTreeView widget."""
@@ -701,28 +729,37 @@ class PackageTreeView(QtWidgets.QWidget):
         # Filter document versions
         document_versions = [v for v in versions if self._is_document_version(v)]
 
-        # Separate versions with folder assignments from those without
-        versions_with_folders = []
-        versions_without_folders = []
+        # Process each version's folder paths individually
+        # A version can appear both at root level AND in nested folders
+        versions_for_root = []
+        versions_for_nested = []
 
         for version in document_versions:
             folders_str = version.get('_package_folders', '')
             if folders_str:
-                # Check if any folder path contains scenes or assets (nested structure)
                 folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
-                has_nested = any('/scenes/' in fp or '/assets/' in fp for fp in folder_paths)
-                if has_nested:
-                    versions_with_folders.append(version)
-                else:
-                    versions_without_folders.append(version)
+                has_root_path = False
+                has_nested_path = False
+                for fp in folder_paths:
+                    if '/scenes/' in fp or '/assets/' in fp:
+                        has_nested_path = True
+                    else:
+                        # Root-level path (e.g., /Document or /Documents)
+                        has_root_path = True
+
+                if has_root_path:
+                    versions_for_root.append(version)
+                if has_nested_path:
+                    versions_for_nested.append(version)
             else:
-                versions_without_folders.append(version)
+                # No folder assignment - add to root
+                versions_for_root.append(version)
 
         # Build hierarchical tree for versions in scene/asset folders
-        if versions_with_folders or versions_without_folders:
-            if versions_with_folders:
+        if versions_for_nested or versions_for_root:
+            if versions_for_nested:
                 path_tree = {}
-                for version in versions_with_folders:
+                for version in versions_for_nested:
                     folders_str = version.get('_package_folders', '')
                     folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
                     for folder_path in folder_paths:
@@ -751,8 +788,8 @@ class PackageTreeView(QtWidgets.QWidget):
 
                 self._build_folder_tree(documents_root, path_tree, "")
 
-            # Add versions without nested folders directly under Documents
-            for version in versions_without_folders:
+            # Add versions with root-level paths directly under Documents
+            for version in versions_for_root:
                 version_code = version.get('code', 'Unknown')
                 status = version.get('sg_status_list', '')
                 status_display = status if status else 'N/A'
@@ -797,28 +834,37 @@ class PackageTreeView(QtWidgets.QWidget):
         # Filter script versions
         script_versions = [v for v in versions if self._is_script_version(v)]
 
-        # Separate versions with folder assignments from those without
-        versions_with_folders = []
-        versions_without_folders = []
+        # Process each version's folder paths individually
+        # A version can appear both at root level AND in nested folders
+        versions_for_root = []
+        versions_for_nested = []
 
         for version in script_versions:
             folders_str = version.get('_package_folders', '')
             if folders_str:
-                # Check if any folder path contains scenes or assets (nested structure)
                 folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
-                has_nested = any('/scenes/' in fp or '/assets/' in fp for fp in folder_paths)
-                if has_nested:
-                    versions_with_folders.append(version)
-                else:
-                    versions_without_folders.append(version)
+                has_root_path = False
+                has_nested_path = False
+                for fp in folder_paths:
+                    if '/scenes/' in fp or '/assets/' in fp:
+                        has_nested_path = True
+                    else:
+                        # Root-level path (e.g., /Script or /Scripts)
+                        has_root_path = True
+
+                if has_root_path:
+                    versions_for_root.append(version)
+                if has_nested_path:
+                    versions_for_nested.append(version)
             else:
-                versions_without_folders.append(version)
+                # No folder assignment - add to root
+                versions_for_root.append(version)
 
         # Build hierarchical tree for versions in scene/asset folders
-        if versions_with_folders or versions_without_folders:
-            if versions_with_folders:
+        if versions_for_nested or versions_for_root:
+            if versions_for_nested:
                 path_tree = {}
-                for version in versions_with_folders:
+                for version in versions_for_nested:
                     folders_str = version.get('_package_folders', '')
                     folder_paths = [f.strip() for f in folders_str.split(';') if f.strip()]
                     for folder_path in folder_paths:
@@ -847,8 +893,8 @@ class PackageTreeView(QtWidgets.QWidget):
 
                 self._build_folder_tree(scripts_root, path_tree, "")
 
-            # Add versions without nested folders directly under Scripts
-            for version in versions_without_folders:
+            # Add versions with root-level paths directly under Scripts
+            for version in versions_for_root:
                 version_code = version.get('code', 'Unknown')
                 status = version.get('sg_status_list', '')
                 status_display = status if status else 'N/A'
@@ -1413,6 +1459,12 @@ class PackageTreeView(QtWidgets.QWidget):
                     delete_action.triggered.connect(lambda: self._delete_version_from_package(item))
 
                     menu.addSeparator()
+                # Check if this is a script or document version
+                elif (self._is_script_version(item.get_sg_data()) or self._is_document_version(item.get_sg_data())) and self.current_package_id:
+                    delete_action = menu.addAction("Remove from Package")
+                    delete_action.triggered.connect(lambda: self._delete_document_from_package(item))
+
+                    menu.addSeparator()
 
                 view_action = menu.addAction("View Details")
                 view_action.triggered.connect(lambda: self._show_version_details(item))
@@ -1795,6 +1847,311 @@ class PackageTreeView(QtWidgets.QWidget):
             return '/' + '/'.join(path_parts)
 
         return None
+
+    def _get_document_folder_path_from_item(self, item):
+        """Build the folder path by walking up the tree from a document/script version item.
+
+        Args:
+            item: SGTreeItem representing a version
+
+        Returns:
+            Full folder path (e.g., '/Script', '/Document', '/scenes/ARR/Script') or None
+        """
+        # Determine if this is a script or document to know the suffix
+        sg_data = item.get_sg_data() if isinstance(item, SGTreeItem) else None
+        is_script = self._is_script_version(sg_data) if sg_data else False
+        category_suffix = "Script" if is_script else "Document"
+
+        path_parts = []
+        current = item.parent()
+        found_root = False
+
+        # Walk up the tree until we reach the root Scripts or Documents folder
+        while current:
+            item_sg_data = current.get_sg_data() if isinstance(current, SGTreeItem) else None
+            if item_sg_data and item_sg_data.get('type') == 'folder':
+                folder_path = item_sg_data.get('folder_path')
+
+                # Check folder name to see if we reached the root
+                folder_name = current.text(0).replace('📁 ', '').strip()
+
+                if folder_name in ["Scripts", "Documents"]:
+                    # Reached the root folder
+                    found_root = True
+                    if path_parts:
+                        # We have nested folders (e.g., scenes/ARR), append category suffix
+                        return '/' + '/'.join(path_parts) + '/' + category_suffix
+                    else:
+                        # Direct child of root, return just /Script or /Document
+                        return '/' + category_suffix
+
+                if folder_path:
+                    # We found a folder with a stored path (like /scenes/ARR)
+                    # Append the category suffix to get the full path
+                    return folder_path + '/' + category_suffix
+
+                # Collect folder name for path building
+                path_parts.insert(0, folder_name)
+
+            current = current.parent() if hasattr(current, 'parent') else None
+
+        # If we collected path parts but didn't find root, build the path anyway
+        if path_parts:
+            return '/' + '/'.join(path_parts) + '/' + category_suffix
+
+        # Fallback to just the category
+        return '/' + category_suffix
+
+    def _delete_document_from_package(self, item):
+        """Delete a document/script from the package by removing its folder reference.
+
+        Updates UI immediately for fluid interaction, then performs SG operation
+        in background. Reverts UI on failure.
+        """
+        if not isinstance(item, SGTreeItem) or not self.current_package_id:
+            return
+
+        version_id = item.get_sg_id()
+        version_code = item.get_entity_name()
+
+        if not version_id:
+            return
+
+        # Determine if this is a script or document
+        sg_data = item.get_sg_data()
+        is_script = self._is_script_version(sg_data)
+        item_type = "script" if is_script else "document"
+
+        # Build the folder path by walking up the tree
+        folder_path = self._get_document_folder_path_from_item(item)
+
+        if not folder_path:
+            # Default to root folder based on type
+            folder_path = "/Script" if is_script else "/Document"
+
+        # Confirm the deletion
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Remove from Package",
+            f"Remove '{version_code}' from '{folder_path}'?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+
+        if reply == QtWidgets.QMessageBox.Yes:
+            # Store item data for potential restoration
+            parent_item = item.parent()
+            item_index = parent_item.indexOfChild(item) if parent_item else -1
+            item_columns = [item.text(i) for i in range(item.columnCount())]
+            item_sg_data = item.get_sg_data()
+            item_type_stored = item.get_item_type()
+
+            # Update UI immediately - remove item from tree
+            if parent_item:
+                parent_item.removeChild(item)
+
+            # Update folder counts and remove empty folders
+            self._update_folder_counts_and_cleanup(parent_item)
+
+            # Emit signal to update document folder pane immediately
+            self.documentRemovedFromPackage.emit(version_id, folder_path)
+
+            # Run SG operation in background thread
+            self._run_sg_remove_operation(
+                version_id, folder_path, version_code, item_type,
+                parent_item, item_index, item_columns, item_sg_data, item_type_stored
+            )
+
+    def _update_folder_counts_and_cleanup(self, folder_item):
+        """Update folder counts after removing an item and remove empty folders.
+
+        Args:
+            folder_item: The folder item to update
+        """
+        if not folder_item or not isinstance(folder_item, SGTreeItem):
+            return
+
+        # Walk up the tree and update counts
+        current = folder_item
+        folders_to_remove = []
+
+        while current and isinstance(current, SGTreeItem):
+            sg_data = current.get_sg_data() if isinstance(current, SGTreeItem) else None
+
+            if sg_data and sg_data.get('type') == 'folder':
+                folder_name = current.text(0).replace('📁 ', '').strip()
+
+                # Skip root folders (Scripts, Documents, Images, Bid Tracker)
+                if folder_name in ["Scripts", "Documents", "Images", "Bid Tracker"]:
+                    break
+
+                # Count remaining children (versions and non-empty folders)
+                child_count = self._count_folder_children(current)
+
+                # Update the count column
+                current.setText(3, str(child_count))
+
+                # Mark for removal if empty
+                if child_count == 0:
+                    folders_to_remove.append(current)
+
+            current = current.parent() if hasattr(current, 'parent') else None
+
+        # Remove empty folders (from deepest to shallowest)
+        for folder in folders_to_remove:
+            parent = folder.parent()
+            if parent:
+                parent.removeChild(folder)
+                # Update parent's count after removal
+                if isinstance(parent, SGTreeItem):
+                    new_count = self._count_folder_children(parent)
+                    parent.setText(3, str(new_count))
+
+    def _count_folder_children(self, folder_item):
+        """Count the total number of version items in a folder and its subfolders.
+
+        Args:
+            folder_item: The folder item to count children for
+
+        Returns:
+            Total count of version items
+        """
+        count = 0
+        for i in range(folder_item.childCount()):
+            child = folder_item.child(i)
+            if isinstance(child, SGTreeItem):
+                if child.get_item_type() == "version":
+                    count += 1
+                elif child.get_item_type() == "folder":
+                    count += self._count_folder_children(child)
+        return count
+
+    def _run_sg_remove_operation(self, version_id, folder_path, version_code, item_type,
+                                  parent_item, item_index, item_columns, item_sg_data, item_type_stored):
+        """Run the ShotGrid remove operation in a background thread.
+
+        Args:
+            version_id: ID of the version to remove
+            folder_path: Folder path to remove from
+            version_code: Display name of the version
+            item_type: Type string for display ("script" or "document")
+            parent_item: Parent tree item for restoration on failure
+            item_index: Original index of the item in parent
+            item_columns: Column values for restoration
+            item_sg_data: SG data for restoration
+            item_type_stored: Item type for restoration
+        """
+        # Create thread and worker
+        self._sg_thread = QtCore.QThread()
+        self._sg_worker = SGWorker(
+            self.sg_session,
+            "remove_folder_reference_from_package",
+            version_id,
+            self.current_package_id,
+            folder_path
+        )
+        self._sg_worker.moveToThread(self._sg_thread)
+
+        # Store data for the callback
+        self._pending_remove_data = {
+            'version_id': version_id,
+            'folder_path': folder_path,
+            'version_code': version_code,
+            'item_type': item_type,
+            'parent_item': parent_item,
+            'item_index': item_index,
+            'item_columns': item_columns,
+            'item_sg_data': item_sg_data,
+            'item_type_stored': item_type_stored
+        }
+
+        # Connect signals
+        self._sg_thread.started.connect(self._sg_worker.run)
+        self._sg_worker.finished.connect(self._on_sg_remove_finished)
+        self._sg_worker.finished.connect(self._sg_thread.quit)
+        self._sg_worker.finished.connect(self._sg_worker.deleteLater)
+        self._sg_thread.finished.connect(self._sg_thread.deleteLater)
+
+        # Start the thread
+        self._sg_thread.start()
+
+    def _on_sg_remove_finished(self, success, error_message):
+        """Handle completion of the background SG remove operation.
+
+        Args:
+            success: Whether the operation succeeded
+            error_message: Error message if failed
+        """
+        data = self._pending_remove_data
+        if not data:
+            return
+
+        if success:
+            logger.info(f"Successfully removed {data['item_type']} '{data['version_code']}' from '{data['folder_path']}'")
+        else:
+            # Revert UI - restore the item
+            logger.warning(f"Failed to remove {data['item_type']}, reverting UI: {error_message}")
+
+            parent_item = data['parent_item']
+            if parent_item and isinstance(parent_item, SGTreeItem):
+                # Re-create the item
+                restored_item = SGTreeItem(
+                    parent_item,
+                    data['item_columns'],
+                    sg_data=data['item_sg_data'],
+                    item_type=data['item_type_stored']
+                )
+
+                # Try to restore at original position
+                if data['item_index'] >= 0 and data['item_index'] < parent_item.childCount():
+                    # Move to original position by removing and re-inserting
+                    parent_item.removeChild(restored_item)
+                    parent_item.insertChild(data['item_index'], restored_item)
+
+                # Update folder counts
+                self._update_folder_counts_after_restore(parent_item)
+
+            # Emit signal to restore document folder pane
+            self.documentRestoredToPackage.emit(data['version_id'], data['folder_path'])
+
+            # Show error message
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Operation Failed",
+                f"Failed to remove '{data['version_code']}' from ShotGrid.\n"
+                f"The item has been restored in the tree.\n\n"
+                f"Error: {error_message}"
+            )
+
+        # Clear pending data
+        self._pending_remove_data = None
+
+    def _update_folder_counts_after_restore(self, folder_item):
+        """Update folder counts after restoring an item.
+
+        Args:
+            folder_item: The folder item to update
+        """
+        if not folder_item or not isinstance(folder_item, SGTreeItem):
+            return
+
+        # Walk up the tree and update counts
+        current = folder_item
+        while current and isinstance(current, SGTreeItem):
+            sg_data = current.get_sg_data() if isinstance(current, SGTreeItem) else None
+
+            if sg_data and sg_data.get('type') == 'folder':
+                folder_name = current.text(0).replace('📁 ', '').strip()
+
+                # Skip root folders
+                if folder_name in ["Scripts", "Documents", "Images", "Bid Tracker"]:
+                    break
+
+                # Update the count
+                child_count = self._count_folder_children(current)
+                current.setText(3, str(child_count))
+
+            current = current.parent() if hasattr(current, 'parent') else None
 
     def _expand_all(self, item):
         """Recursively expand all children."""

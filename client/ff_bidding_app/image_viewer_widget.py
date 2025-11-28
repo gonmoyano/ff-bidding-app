@@ -17,6 +17,30 @@ except (ImportError, ValueError, SystemError):
     from thumbnail_cache import ThumbnailCache
     from settings import AppSettings
 
+
+class SGWorker(QtCore.QObject):
+    """Worker for running ShotGrid operations in a background thread."""
+
+    finished = QtCore.Signal(bool, str)  # (success, error_message)
+
+    def __init__(self, sg_session, operation, *args, **kwargs):
+        super().__init__()
+        self.sg_session = sg_session
+        self.operation = operation
+        self.args = args
+        self.kwargs = kwargs
+
+    def run(self):
+        """Execute the ShotGrid operation."""
+        try:
+            method = getattr(self.sg_session, self.operation)
+            method(*self.args, **self.kwargs)
+            self.finished.emit(True, "")
+        except Exception as e:
+            logger.error(f"SG operation failed: {e}", exc_info=True)
+            self.finished.emit(False, str(e))
+
+
 # Global thumbnail cache instance (shared across all widgets)
 _thumbnail_cache = None
 
@@ -2336,20 +2360,69 @@ class ImageViewerWidget(QtWidgets.QWidget):
         folder_type_plural = 'assets' if folder_type == 'asset' else 'scenes'
         folder_path = f"/{folder_type_plural}/{folder_name}/{category}"
 
-        # Link the version to the package with folder path
-        try:
-            self.sg_session.link_version_to_package_with_folder(
-                version_id=image_id,
-                package_id=sg_package_id,
-                folder_name=folder_path
-            )
+        # Immediately refresh the treeview (optimistic UI update)
+        if hasattr(self.packages_tab, 'package_data_tree') and self.packages_tab.package_data_tree:
+            self.packages_tab.package_data_tree.load_package_versions(sg_package_id)
 
-            # Refresh the treeview to show the new folder/version
+        # Run the SG operation in background thread
+        self._run_sg_link_operation(image_id, sg_package_id, folder_path)
+
+    def _run_sg_link_operation(self, image_id, sg_package_id, folder_path):
+        """Run the ShotGrid link operation in a background thread.
+
+        Args:
+            image_id: ID of the image version
+            sg_package_id: ShotGrid package ID
+            folder_path: Folder path for the image
+        """
+        # Create thread and worker
+        self._sg_link_thread = QtCore.QThread()
+        self._sg_link_worker = SGWorker(
+            self.sg_session,
+            "link_version_to_package_with_folder",
+            image_id,
+            sg_package_id,
+            folder_path
+        )
+        self._sg_link_worker.moveToThread(self._sg_link_thread)
+
+        # Store data for the callback
+        self._pending_link_data = {
+            'image_id': image_id,
+            'sg_package_id': sg_package_id,
+            'folder_path': folder_path
+        }
+
+        # Connect signals
+        self._sg_link_thread.started.connect(self._sg_link_worker.run)
+        self._sg_link_worker.finished.connect(self._on_sg_link_finished)
+        self._sg_link_worker.finished.connect(self._sg_link_thread.quit)
+        self._sg_link_worker.finished.connect(self._sg_link_worker.deleteLater)
+        self._sg_link_thread.finished.connect(self._sg_link_thread.deleteLater)
+
+        # Start the thread
+        self._sg_link_thread.start()
+
+    def _on_sg_link_finished(self, success, error_message):
+        """Handle completion of the background SG link operation.
+
+        Args:
+            success: Whether the operation succeeded
+            error_message: Error message if failed
+        """
+        data = getattr(self, '_pending_link_data', None)
+        if not data:
+            return
+
+        if success:
+            logger.info(f"Successfully linked image {data['image_id']} to package")
+            # Refresh treeview to ensure it's in sync
             if hasattr(self.packages_tab, 'package_data_tree') and self.packages_tab.package_data_tree:
-                self.packages_tab.package_data_tree.load_package_versions(sg_package_id)
+                self.packages_tab.package_data_tree.load_package_versions(data['sg_package_id'])
+        else:
+            logger.error(f"Failed to link image to package: {error_message}")
 
-        except Exception as e:
-            logger.error(f"Failed to link image to package: {e}", exc_info=True)
+        self._pending_link_data = None
 
     def _unlink_image_from_package(self, image_id, folder_name, folder_type):
         """Unlink an image version from the currently selected package.
@@ -2402,17 +2475,66 @@ class ImageViewerWidget(QtWidgets.QWidget):
         folder_type_plural = 'assets' if folder_type == 'asset' else 'scenes'
         folder_path = f"/{folder_type_plural}/{folder_name}/{category}"
 
-        # Remove the folder reference from the package
-        try:
-            self.sg_session.remove_folder_reference_from_package(
-                version_id=image_id,
-                package_id=sg_package_id,
-                folder_path=folder_path
-            )
+        # Immediately refresh the treeview (optimistic UI update)
+        if hasattr(self.packages_tab, 'package_data_tree') and self.packages_tab.package_data_tree:
+            self.packages_tab.package_data_tree.load_package_versions(sg_package_id)
 
-            # Refresh the treeview to reflect the removal
+        # Run the SG operation in background thread
+        self._run_sg_unlink_operation(image_id, sg_package_id, folder_path)
+
+    def _run_sg_unlink_operation(self, image_id, sg_package_id, folder_path):
+        """Run the ShotGrid unlink operation in a background thread.
+
+        Args:
+            image_id: ID of the image version
+            sg_package_id: ShotGrid package ID
+            folder_path: Folder path for the image
+        """
+        # Create thread and worker
+        self._sg_unlink_thread = QtCore.QThread()
+        self._sg_unlink_worker = SGWorker(
+            self.sg_session,
+            "remove_folder_reference_from_package",
+            image_id,
+            sg_package_id,
+            folder_path
+        )
+        self._sg_unlink_worker.moveToThread(self._sg_unlink_thread)
+
+        # Store data for the callback
+        self._pending_unlink_data = {
+            'image_id': image_id,
+            'sg_package_id': sg_package_id,
+            'folder_path': folder_path
+        }
+
+        # Connect signals
+        self._sg_unlink_thread.started.connect(self._sg_unlink_worker.run)
+        self._sg_unlink_worker.finished.connect(self._on_sg_unlink_finished)
+        self._sg_unlink_worker.finished.connect(self._sg_unlink_thread.quit)
+        self._sg_unlink_worker.finished.connect(self._sg_unlink_worker.deleteLater)
+        self._sg_unlink_thread.finished.connect(self._sg_unlink_thread.deleteLater)
+
+        # Start the thread
+        self._sg_unlink_thread.start()
+
+    def _on_sg_unlink_finished(self, success, error_message):
+        """Handle completion of the background SG unlink operation.
+
+        Args:
+            success: Whether the operation succeeded
+            error_message: Error message if failed
+        """
+        data = getattr(self, '_pending_unlink_data', None)
+        if not data:
+            return
+
+        if success:
+            logger.info(f"Successfully unlinked image {data['image_id']} from package")
+            # Refresh treeview to ensure it's in sync
             if hasattr(self.packages_tab, 'package_data_tree') and self.packages_tab.package_data_tree:
-                self.packages_tab.package_data_tree.load_package_versions(sg_package_id)
+                self.packages_tab.package_data_tree.load_package_versions(data['sg_package_id'])
+        else:
+            logger.error(f"Failed to unlink image from package: {error_message}")
 
-        except Exception as e:
-            logger.error(f"Failed to unlink image from package: {e}", exc_info=True)
+        self._pending_unlink_data = None
