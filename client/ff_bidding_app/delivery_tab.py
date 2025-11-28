@@ -1,5 +1,6 @@
 """Delivery tab widget for managing package delivery to vendors."""
 from PySide6 import QtWidgets, QtCore, QtGui
+from pathlib import Path
 import logging
 
 try:
@@ -12,343 +13,284 @@ except ImportError:
     from settings import AppSettings
 
 
-class PackageIconWidget(QtWidgets.QWidget):
-    """Widget representing a package in the icon view."""
+class PackageShareWidget(QtWidgets.QWidget):
+    """
+    Widget for sharing packages with vendors.
 
-    clicked = QtCore.Signal(object)  # Signal emitted when package is clicked (package_data)
-    doubleClicked = QtCore.Signal(object)  # Signal emitted when package is double-clicked (package_data)
+    Provides UI for selecting packages and configuring delivery options.
+    """
 
-    def __init__(self, package_data, parent=None, icon_size=64):
-        """Initialize package icon widget.
-
-        Args:
-            package_data: Package data dictionary from ShotGrid
-            parent: Parent widget
-            icon_size: Size of the icon in pixels
-        """
-        super().__init__(parent)
-        self.package_data = package_data
-        self.icon_size = icon_size
-        self._is_selected = False
-        self._is_drag_source = False
-
-        self.setAcceptDrops(False)  # Packages don't accept drops, vendors do
-        self._setup_ui()
-
-    def _setup_ui(self):
-        """Setup the package icon UI."""
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
-        layout.setSpacing(5)
-        layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignCenter)
-
-        # Package icon
-        self.icon_label = QtWidgets.QLabel()
-        self.icon_label.setAlignment(QtCore.Qt.AlignCenter)
-        self._update_icon()
-        layout.addWidget(self.icon_label)
-
-        # Package name
-        package_name = self.package_data.get('code', 'Unknown')
-        self.name_label = QtWidgets.QLabel(package_name)
-        self.name_label.setStyleSheet("font-weight: bold; font-size: 11px;")
-        self.name_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.name_label.setWordWrap(True)
-        layout.addWidget(self.name_label)
-
-        # Apply initial style
-        self._update_style()
-
-        # Enable drag
-        self.setCursor(QtCore.Qt.OpenHandCursor)
-
-    def _update_style(self):
-        """Update the package widget styling based on current state."""
-        if self._is_selected:
-            self.setStyleSheet("""
-                PackageIconWidget {
-                    background-color: #2b3a4a;
-                    border: 2px solid #4a9eff;
-                    border-radius: 4px;
-                }
-            """)
-        else:
-            self.setStyleSheet("""
-                PackageIconWidget {
-                    background-color: #2b2b2b;
-                    border: 1px solid #444;
-                    border-radius: 4px;
-                }
-                PackageIconWidget:hover {
-                    background-color: #353535;
-                    border: 1px solid #555;
-                }
-            """)
-
-    def _update_icon(self):
-        """Update the package icon."""
-        # Use a folder icon for packages
-        self.icon_label.setPixmap(self.style().standardIcon(
-            QtWidgets.QStyle.SP_DirIcon
-        ).pixmap(self.icon_size, self.icon_size))
-
-        # Apply border styling
-        if self._is_selected:
-            self.icon_label.setStyleSheet("""
-                QLabel {
-                    border: 3px solid #4a9eff;
-                    border-radius: 4px;
-                    padding: 2px;
-                }
-            """)
-        else:
-            self.icon_label.setStyleSheet("""
-                QLabel {
-                    border: 3px solid #2b2b2b;
-                    border-radius: 4px;
-                    padding: 2px;
-                }
-            """)
-
-    def set_icon_size(self, size):
-        """Set the icon size.
-
-        Args:
-            size: Icon size in pixels
-        """
-        self.icon_size = size
-        self._update_icon()
-
-    def set_selected(self, selected):
-        """Set the selected state.
-
-        Args:
-            selected: True if selected, False otherwise
-        """
-        if self._is_selected != selected:
-            self._is_selected = selected
-            self._update_style()
-            self._update_icon()
-
-    def mousePressEvent(self, event):
-        """Handle mouse press event."""
-        if event.button() == QtCore.Qt.LeftButton:
-            self._drag_start_position = event.pos()
-            self.clicked.emit(self.package_data)
-        super().mousePressEvent(event)
-
-    def mouseDoubleClickEvent(self, event):
-        """Handle double-click event."""
-        if event.button() == QtCore.Qt.LeftButton:
-            self.doubleClicked.emit(self.package_data)
-        super().mouseDoubleClickEvent(event)
-
-    def mouseMoveEvent(self, event):
-        """Handle mouse move event for drag initiation."""
-        if not (event.buttons() & QtCore.Qt.LeftButton):
-            return
-
-        if not hasattr(self, '_drag_start_position'):
-            return
-
-        # Check if we've moved enough to start a drag
-        if (event.pos() - self._drag_start_position).manhattanLength() < QtWidgets.QApplication.startDragDistance():
-            return
-
-        # Start drag
-        drag = QtGui.QDrag(self)
-        mime_data = QtCore.QMimeData()
-
-        # Store package ID and name in mime data
-        package_id = self.package_data.get('id', 0)
-        package_name = self.package_data.get('code', f'Package {package_id}')
-        mime_data.setData("application/x-package-id", str(package_id).encode())
-        mime_data.setData("application/x-package-name", package_name.encode())
-
-        drag.setMimeData(mime_data)
-
-        # Create drag pixmap
-        pixmap = self.grab()
-        drag.setPixmap(pixmap.scaled(80, 80, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
-        drag.setHotSpot(QtCore.QPoint(40, 40))
-
-        self._is_drag_source = True
-        self.setCursor(QtCore.Qt.ClosedHandCursor)
-
-        # Execute drag
-        drag.exec(QtCore.Qt.CopyAction)
-
-        self._is_drag_source = False
-        self.setCursor(QtCore.Qt.OpenHandCursor)
-
-
-class PackageIconView(QtWidgets.QWidget):
-    """Icon view widget for displaying packages."""
-
-    packageSelected = QtCore.Signal(object)  # Signal emitted when a package is selected (package_data)
-    packageDoubleClicked = QtCore.Signal(object)  # Signal emitted when a package is double-clicked
+    packageSelected = QtCore.Signal(object)  # Emitted when a package is selected
+    shareRequested = QtCore.Signal(dict)  # Emitted when share is requested with config
 
     def __init__(self, parent=None):
-        """Initialize the package icon view."""
         super().__init__(parent)
-        self.packages = {}  # package_id -> PackageIconWidget
-        self.current_icon_size = 64
-        self._selected_package_id = None
 
-        # Load saved sizes from settings
-        self.settings = QtCore.QSettings("FFBiddingApp", "DeliveryTab")
-        self.current_icon_size = self.settings.value("package_icon_size", 64, type=int)
-
-        # Debounce timer for resize events
-        self.resize_timer = QtCore.QTimer()
-        self.resize_timer.setSingleShot(True)
-        self.resize_timer.timeout.connect(self._relayout_packages)
+        self.packages_list = []
+        self.current_package = None
 
         self._setup_ui()
+        self._connect_signals()
 
     def _setup_ui(self):
-        """Setup the package icon view UI."""
-        main_layout = QtWidgets.QVBoxLayout(self)
-        main_layout.setContentsMargins(5, 5, 5, 5)
-        main_layout.setSpacing(5)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(10)
 
-        # Toolbar with icon size slider
-        toolbar_layout = QtWidgets.QHBoxLayout()
+        # Package selection
+        package_group = QtWidgets.QGroupBox("Package to Deliver")
+        package_layout = QtWidgets.QVBoxLayout(package_group)
 
-        toolbar_layout.addWidget(QtWidgets.QLabel("Icon Size:"))
+        # Package dropdown
+        pkg_select_layout = QtWidgets.QHBoxLayout()
+        pkg_select_layout.addWidget(QtWidgets.QLabel("Select Package:"))
+        self.package_combo = QtWidgets.QComboBox()
+        self.package_combo.setMinimumWidth(200)
+        self.package_combo.addItem("-- Select a package --", None)
+        pkg_select_layout.addWidget(self.package_combo, 1)
+        package_layout.addLayout(pkg_select_layout)
 
-        self.icon_size_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
-        self.icon_size_slider.setMinimum(32)
-        self.icon_size_slider.setMaximum(128)
-        self.icon_size_slider.setValue(self.current_icon_size)
-        self.icon_size_slider.setTickPosition(QtWidgets.QSlider.NoTicks)
-        self.icon_size_slider.setFixedWidth(150)
-        self.icon_size_slider.valueChanged.connect(self._on_size_changed)
-        toolbar_layout.addWidget(self.icon_size_slider)
+        # Package info display
+        self.package_info_label = QtWidgets.QLabel("No package selected")
+        self.package_info_label.setStyleSheet("color: #888; padding: 10px;")
+        self.package_info_label.setWordWrap(True)
+        package_layout.addWidget(self.package_info_label)
 
-        self.icon_size_label = QtWidgets.QLabel(str(self.current_icon_size))
-        self.icon_size_label.setFixedWidth(30)
-        self.icon_size_label.setAlignment(QtCore.Qt.AlignRight)
-        toolbar_layout.addWidget(self.icon_size_label)
+        layout.addWidget(package_group)
 
-        toolbar_layout.addStretch()
+        # Delivery options
+        delivery_group = QtWidgets.QGroupBox("Delivery Options")
+        delivery_layout = QtWidgets.QVBoxLayout(delivery_group)
 
-        main_layout.addLayout(toolbar_layout)
+        # Email sharing
+        email_layout = QtWidgets.QHBoxLayout()
+        email_layout.addWidget(QtWidgets.QLabel("Recipient Email:"))
+        self.email_edit = QtWidgets.QLineEdit()
+        self.email_edit.setPlaceholderText("vendor@example.com (optional)")
+        email_layout.addWidget(self.email_edit)
+        delivery_layout.addLayout(email_layout)
 
-        # Scroll area for packages
-        scroll_area = QtWidgets.QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        # Permission level
+        perm_layout = QtWidgets.QHBoxLayout()
+        perm_layout.addWidget(QtWidgets.QLabel("Permission:"))
+        self.permission_combo = QtWidgets.QComboBox()
+        self.permission_combo.addItems(["View only", "Can comment", "Can edit"])
+        perm_layout.addWidget(self.permission_combo)
+        perm_layout.addStretch()
+        delivery_layout.addLayout(perm_layout)
 
-        # Container for packages grid
-        container = QtWidgets.QWidget()
-        self.packages_layout = QtWidgets.QGridLayout(container)
-        self.packages_layout.setSpacing(10)
-        self.packages_layout.setAlignment(QtCore.Qt.AlignTop | QtCore.Qt.AlignLeft)
+        # Link sharing checkbox
+        self.link_check = QtWidgets.QCheckBox("Generate shareable link (anyone with link can access)")
+        self.link_check.setChecked(True)
+        delivery_layout.addWidget(self.link_check)
 
-        scroll_area.setWidget(container)
-        main_layout.addWidget(scroll_area)
+        # Notification message
+        delivery_layout.addWidget(QtWidgets.QLabel("Notification message (optional):"))
+        self.message_edit = QtWidgets.QTextEdit()
+        self.message_edit.setPlaceholderText("Your data package is ready for download.")
+        self.message_edit.setMaximumHeight(80)
+        delivery_layout.addWidget(self.message_edit)
 
-    def _on_size_changed(self, value):
-        """Handle icon size slider change."""
-        self.current_icon_size = value
-        self.icon_size_label.setText(str(value))
+        layout.addWidget(delivery_group)
 
-        # Save to settings
-        self.settings.setValue("package_icon_size", value)
+        # Vendor assignment info
+        vendor_group = QtWidgets.QGroupBox("Vendor Assignment")
+        vendor_layout = QtWidgets.QVBoxLayout(vendor_group)
 
-        # Update all existing package icons
-        for package_widget in self.packages.values():
-            package_widget.set_icon_size(value)
+        self.vendor_info_label = QtWidgets.QLabel(
+            "Drag packages to vendor groups on the right panel to assign them, "
+            "or select a vendor below:"
+        )
+        self.vendor_info_label.setWordWrap(True)
+        self.vendor_info_label.setStyleSheet("color: #aaa;")
+        vendor_layout.addWidget(self.vendor_info_label)
 
-        # Re-layout packages
-        self._relayout_packages()
+        # Vendor selection dropdown
+        vendor_select_layout = QtWidgets.QHBoxLayout()
+        vendor_select_layout.addWidget(QtWidgets.QLabel("Assign to Vendor:"))
+        self.vendor_combo = QtWidgets.QComboBox()
+        self.vendor_combo.setMinimumWidth(200)
+        self.vendor_combo.addItem("-- Select a vendor --", None)
+        vendor_select_layout.addWidget(self.vendor_combo, 1)
+        vendor_layout.addLayout(vendor_select_layout)
+
+        layout.addWidget(vendor_group)
+
+        # Action buttons
+        btn_layout = QtWidgets.QHBoxLayout()
+        btn_layout.addStretch()
+
+        self.assign_btn = QtWidgets.QPushButton("Assign to Vendor")
+        self.assign_btn.setEnabled(False)
+        self.assign_btn.setMinimumWidth(130)
+        btn_layout.addWidget(self.assign_btn)
+
+        self.share_btn = QtWidgets.QPushButton("Share Package")
+        self.share_btn.setEnabled(False)
+        self.share_btn.setMinimumWidth(130)
+        btn_layout.addWidget(self.share_btn)
+
+        layout.addLayout(btn_layout)
+
+        # Result display
+        self.result_group = QtWidgets.QGroupBox("Share Result")
+        result_layout = QtWidgets.QVBoxLayout(self.result_group)
+        self.result_link = QtWidgets.QLineEdit()
+        self.result_link.setReadOnly(True)
+        self.result_link.setPlaceholderText("Shareable link will appear here...")
+        self.copy_link_btn = QtWidgets.QPushButton("Copy Link")
+        self.copy_link_btn.setEnabled(False)
+        result_h = QtWidgets.QHBoxLayout()
+        result_h.addWidget(self.result_link)
+        result_h.addWidget(self.copy_link_btn)
+        result_layout.addLayout(result_h)
+        self.result_group.setVisible(False)
+        layout.addWidget(self.result_group)
+
+        layout.addStretch()
+
+    def _connect_signals(self):
+        self.package_combo.currentIndexChanged.connect(self._on_package_selected)
+        self.vendor_combo.currentIndexChanged.connect(self._update_buttons)
+        self.email_edit.textChanged.connect(self._update_buttons)
+        self.link_check.toggled.connect(self._update_buttons)
+        self.share_btn.clicked.connect(self._on_share_clicked)
+        self.assign_btn.clicked.connect(self._on_assign_clicked)
+        self.copy_link_btn.clicked.connect(self._copy_link)
 
     def set_packages(self, packages_list):
-        """Set the packages to display.
+        """Set the list of packages available for delivery.
 
         Args:
             packages_list: List of package dictionaries from ShotGrid
         """
-        # Clear existing packages
-        for package_widget in self.packages.values():
-            package_widget.deleteLater()
-        self.packages.clear()
+        self.packages_list = packages_list
 
-        # Clear existing layout
-        while self.packages_layout.count():
-            item = self.packages_layout.takeAt(0)
-            if item.widget():
-                item.widget().setParent(None)
+        # Update combo box
+        self.package_combo.blockSignals(True)
+        self.package_combo.clear()
+        self.package_combo.addItem("-- Select a package --", None)
 
-        # Add new packages
-        for package_data in packages_list:
-            package_id = package_data.get('id')
-            if package_id:
-                package_widget = PackageIconWidget(package_data, self, icon_size=self.current_icon_size)
-                package_widget.clicked.connect(self._on_package_clicked)
-                package_widget.doubleClicked.connect(self._on_package_double_clicked)
-                self.packages[package_id] = package_widget
+        for pkg in packages_list:
+            pkg_name = pkg.get('code', f"Package {pkg.get('id', '?')}")
+            self.package_combo.addItem(pkg_name, pkg)
 
-        # Schedule re-layout
-        QtCore.QTimer.singleShot(50, self._relayout_packages)
+        self.package_combo.blockSignals(False)
 
-    def _relayout_packages(self):
-        """Re-layout packages in grid based on current pane width."""
-        if not self.packages:
+        # Reset selection
+        self.current_package = None
+        self._update_package_info()
+        self._update_buttons()
+
+    def set_vendors(self, vendors_list):
+        """Set the list of vendors available for assignment.
+
+        Args:
+            vendors_list: List of vendor dictionaries from ShotGrid
+        """
+        self.vendor_combo.blockSignals(True)
+        self.vendor_combo.clear()
+        self.vendor_combo.addItem("-- Select a vendor --", None)
+
+        for vendor in vendors_list:
+            vendor_name = vendor.get('code', f"Vendor {vendor.get('id', '?')}")
+            self.vendor_combo.addItem(vendor_name, vendor)
+
+        self.vendor_combo.blockSignals(False)
+        self._update_buttons()
+
+    def _on_package_selected(self, index):
+        """Handle package selection from dropdown."""
+        self.current_package = self.package_combo.itemData(index)
+        self._update_package_info()
+        self._update_buttons()
+
+        if self.current_package:
+            self.packageSelected.emit(self.current_package)
+
+    def _update_package_info(self):
+        """Update the package info display."""
+        if self.current_package:
+            pkg_name = self.current_package.get('code', 'Unknown')
+            pkg_id = self.current_package.get('id', 'N/A')
+            description = self.current_package.get('description', 'No description available')
+
+            info_text = f"<b>{pkg_name}</b><br>"
+            info_text += f"ID: {pkg_id}<br>"
+            if description:
+                info_text += f"Description: {description}"
+
+            self.package_info_label.setText(info_text)
+            self.package_info_label.setStyleSheet("color: #ddd; padding: 10px;")
+        else:
+            self.package_info_label.setText("No package selected")
+            self.package_info_label.setStyleSheet("color: #888; padding: 10px;")
+
+    def _update_buttons(self):
+        """Update button enabled states."""
+        has_package = self.current_package is not None
+        has_vendor = self.vendor_combo.currentData() is not None
+        has_target = bool(self.email_edit.text().strip()) or self.link_check.isChecked()
+
+        self.assign_btn.setEnabled(has_package and has_vendor)
+        self.share_btn.setEnabled(has_package and has_target)
+
+    def _on_share_clicked(self):
+        """Handle share button click."""
+        if not self.current_package:
             return
 
-        # Calculate columns based on pane width and icon size
-        pane_width = self.width()
-        if pane_width <= 0:
-            pane_width = 250
+        config = {
+            'package': self.current_package,
+            'email': self.email_edit.text().strip() or None,
+            'permission': self._get_permission_value(),
+            'link_sharing': self.link_check.isChecked(),
+            'message': self.message_edit.toPlainText().strip() or None,
+            'vendor': self.vendor_combo.currentData()
+        }
 
-        package_width = self.current_icon_size + 40
-        columns = max(1, pane_width // package_width)
+        self.shareRequested.emit(config)
 
-        # Get sorted package IDs
-        package_ids = sorted(self.packages.keys())
+        # Show placeholder result (actual implementation would connect to sharing service)
+        self.result_link.setText(f"https://drive.google.com/share/{self.current_package.get('id', 'xxx')}")
+        self.copy_link_btn.setEnabled(True)
+        self.result_group.setVisible(True)
 
-        # Re-add all packages to grid
-        for idx, package_id in enumerate(package_ids):
-            package_widget = self.packages.get(package_id)
-            if package_widget:
-                # Remove from current position
-                self.packages_layout.removeWidget(package_widget)
-                # Add to new position
-                row = idx // columns
-                col = idx % columns
-                self.packages_layout.addWidget(package_widget, row, col)
-                package_widget.show()
+    def _on_assign_clicked(self):
+        """Handle assign button click."""
+        if not self.current_package:
+            return
 
-    def resizeEvent(self, event):
-        """Handle resize event to re-layout packages."""
-        super().resizeEvent(event)
-        if self.packages:
-            self.resize_timer.stop()
-            self.resize_timer.start(400)
+        vendor = self.vendor_combo.currentData()
+        if vendor:
+            # This will be handled by the parent DeliveryTab
+            config = {
+                'package': self.current_package,
+                'vendor': vendor
+            }
+            self.shareRequested.emit(config)
 
-    def _on_package_clicked(self, package_data):
-        """Handle package click."""
-        package_id = package_data.get('id')
+    def _get_permission_value(self):
+        """Get the permission value from the combo box."""
+        mapping = {
+            "View only": "reader",
+            "Can comment": "commenter",
+            "Can edit": "writer"
+        }
+        return mapping.get(self.permission_combo.currentText(), "reader")
 
-        # Update selection state
-        for pid, widget in self.packages.items():
-            widget.set_selected(pid == package_id)
-
-        self._selected_package_id = package_id
-        self.packageSelected.emit(package_data)
-
-    def _on_package_double_clicked(self, package_data):
-        """Handle package double-click."""
-        self.packageDoubleClicked.emit(package_data)
+    def _copy_link(self):
+        """Copy the shareable link to clipboard."""
+        link = self.result_link.text()
+        if link:
+            QtWidgets.QApplication.clipboard().setText(link)
+            # Brief visual feedback
+            self.copy_link_btn.setText("Copied!")
+            QtCore.QTimer.singleShot(1500, lambda: self.copy_link_btn.setText("Copy Link"))
 
     def get_selected_package(self):
         """Get the currently selected package data."""
-        if self._selected_package_id and self._selected_package_id in self.packages:
-            return self.packages[self._selected_package_id].package_data
-        return None
+        return self.current_package
 
 
 class VendorCategoryView(QtWidgets.QWidget):
@@ -444,6 +386,24 @@ class VendorCategoryView(QtWidgets.QWidget):
                 self.vendor_groups[vendor_code]['group'].setTitle(f"{vendor_code} ({count} package{'s' if count != 1 else ''})")
 
         self.packageAssigned.emit(package_id, vendor_code)
+
+    def add_package_to_vendor(self, package_id, package_name, vendor_code):
+        """Programmatically add a package to a vendor.
+
+        Args:
+            package_id: Package ID
+            package_name: Package name/code
+            vendor_code: Vendor code to add to
+        """
+        if vendor_code in self.vendor_groups:
+            container = self.vendor_groups[vendor_code]['container']
+            container._add_package_widget(package_id, package_name)
+
+            # Update tracking
+            if vendor_code in self.assigned_packages:
+                self.assigned_packages[vendor_code].add(package_id)
+                count = len(self.assigned_packages[vendor_code])
+                self.vendor_groups[vendor_code]['group'].setTitle(f"{vendor_code} ({count} package{'s' if count != 1 else ''})")
 
     def get_vendor_mappings(self):
         """Get all package-to-vendor mappings.
@@ -564,7 +524,7 @@ class DroppableVendorContainer(QtWidgets.QWidget):
                 self.layout.removeWidget(item.widget())
 
         # Add packages back in grid
-        columns = 3  # Number of columns
+        columns = 2  # Number of columns
         for idx, (package_id, widget) in enumerate(self.package_widgets.items()):
             row = idx // columns
             col = idx % columns
@@ -648,21 +608,21 @@ class DeliveryTab(QtWidgets.QWidget):
         # Main splitter for side-by-side panes (horizontal)
         self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
 
-        # Left pane: Packages icon view
-        packages_pane = QtWidgets.QWidget()
-        packages_pane_layout = QtWidgets.QVBoxLayout(packages_pane)
-        packages_pane_layout.setContentsMargins(0, 0, 0, 0)
+        # Left pane: Package share/delivery details
+        details_pane = QtWidgets.QWidget()
+        details_pane_layout = QtWidgets.QVBoxLayout(details_pane)
+        details_pane_layout.setContentsMargins(0, 0, 0, 0)
 
-        packages_header = QtWidgets.QLabel("Packages")
-        packages_header.setStyleSheet("font-size: 14px; font-weight: bold; padding: 5px;")
-        packages_pane_layout.addWidget(packages_header)
+        details_header = QtWidgets.QLabel("Package Delivery")
+        details_header.setStyleSheet("font-size: 14px; font-weight: bold; padding: 5px;")
+        details_pane_layout.addWidget(details_header)
 
-        self.package_icon_view = PackageIconView(self)
-        self.package_icon_view.packageSelected.connect(self._on_package_selected)
-        self.package_icon_view.packageDoubleClicked.connect(self._on_package_double_clicked)
-        packages_pane_layout.addWidget(self.package_icon_view)
+        self.package_share_widget = PackageShareWidget(self)
+        self.package_share_widget.packageSelected.connect(self._on_package_selected)
+        self.package_share_widget.shareRequested.connect(self._on_share_requested)
+        details_pane_layout.addWidget(self.package_share_widget)
 
-        self.main_splitter.addWidget(packages_pane)
+        self.main_splitter.addWidget(details_pane)
 
         # Right pane: Vendor groups view
         vendors_pane = QtWidgets.QWidget()
@@ -679,8 +639,8 @@ class DeliveryTab(QtWidgets.QWidget):
 
         self.main_splitter.addWidget(vendors_pane)
 
-        # Set initial splitter sizes (equal split)
-        self.main_splitter.setSizes([400, 600])
+        # Set initial splitter sizes (details pane narrower, vendors wider)
+        self.main_splitter.setSizes([450, 550])
 
         layout.addWidget(self.main_splitter, 1)
 
@@ -702,7 +662,7 @@ class DeliveryTab(QtWidgets.QWidget):
         self.current_rfq = rfq
 
         if not rfq:
-            self.package_icon_view.set_packages([])
+            self.package_share_widget.set_packages([])
             self.status_label.setText("No RFQ selected")
             return
 
@@ -721,6 +681,7 @@ class DeliveryTab(QtWidgets.QWidget):
 
         if not project_id:
             self.vendor_category_view.set_vendors([])
+            self.package_share_widget.set_vendors([])
             return
 
         # Load vendors for this project
@@ -734,19 +695,19 @@ class DeliveryTab(QtWidgets.QWidget):
         """
         if not rfq:
             self.packages_list = []
-            self.package_icon_view.set_packages([])
+            self.package_share_widget.set_packages([])
             return
 
         try:
             rfq_id = rfq.get('id')
             if rfq_id:
                 self.packages_list = self.sg_session.get_packages_for_rfq(rfq_id)
-                self.package_icon_view.set_packages(self.packages_list)
+                self.package_share_widget.set_packages(self.packages_list)
                 logger.info(f"Loaded {len(self.packages_list)} packages for RFQ {rfq_id}")
         except Exception as e:
             logger.error(f"Error loading packages for RFQ: {e}", exc_info=True)
             self.packages_list = []
-            self.package_icon_view.set_packages([])
+            self.package_share_widget.set_packages([])
 
     def _load_vendors_for_project(self, project_id):
         """Load vendors for the project.
@@ -757,16 +718,19 @@ class DeliveryTab(QtWidgets.QWidget):
         if not project_id:
             self.vendors_list = []
             self.vendor_category_view.set_vendors([])
+            self.package_share_widget.set_vendors([])
             return
 
         try:
             self.vendors_list = self.sg_session.get_vendors(project_id)
             self.vendor_category_view.set_vendors(self.vendors_list)
+            self.package_share_widget.set_vendors(self.vendors_list)
             logger.info(f"Loaded {len(self.vendors_list)} vendors for project {project_id}")
         except Exception as e:
             logger.error(f"Error loading vendors for project: {e}", exc_info=True)
             self.vendors_list = []
             self.vendor_category_view.set_vendors([])
+            self.package_share_widget.set_vendors([])
 
     def _on_package_selected(self, package_data):
         """Handle package selection.
@@ -777,18 +741,29 @@ class DeliveryTab(QtWidgets.QWidget):
         package_name = package_data.get('code', 'Unknown')
         self.status_label.setText(f"Selected package: {package_name}")
 
-    def _on_package_double_clicked(self, package_data):
-        """Handle package double-click.
+    def _on_share_requested(self, config):
+        """Handle share request from the share widget.
 
         Args:
-            package_data: Double-clicked package data
+            config: Dictionary with share configuration
         """
-        package_name = package_data.get('code', 'Unknown')
-        logger.info(f"Package double-clicked: {package_name}")
-        # Future: Could open package details dialog
+        package = config.get('package', {})
+        vendor = config.get('vendor')
+        package_name = package.get('code', 'Unknown')
+        package_id = package.get('id')
+
+        if vendor:
+            vendor_code = vendor.get('code', 'Unknown')
+            # Add package to vendor in the right pane
+            self.vendor_category_view.add_package_to_vendor(package_id, package_name, vendor_code)
+            self.status_label.setText(f"Assigned '{package_name}' to vendor '{vendor_code}'")
+            logger.info(f"Package {package_id} assigned to vendor {vendor_code}")
+        else:
+            self.status_label.setText(f"Share requested for package: {package_name}")
+            logger.info(f"Share requested: {config}")
 
     def _on_package_assigned(self, package_id, vendor_code):
-        """Handle package assigned to vendor.
+        """Handle package assigned to vendor via drag and drop.
 
         Args:
             package_id: ID of the assigned package
@@ -804,8 +779,6 @@ class DeliveryTab(QtWidgets.QWidget):
         self.status_label.setText(f"Assigned package '{package_name}' to vendor '{vendor_code}'")
         logger.info(f"Package {package_id} assigned to vendor {vendor_code}")
 
-        # Future: Could save the assignment to ShotGrid
-
     def set_status(self, message):
         """Set the status label text.
 
@@ -819,6 +792,6 @@ class DeliveryTab(QtWidgets.QWidget):
         """Clear the delivery tab data."""
         self.packages_list = []
         self.vendors_list = []
-        self.package_icon_view.set_packages([])
+        self.package_share_widget.set_packages([])
         self.vendor_category_view.set_vendors([])
         self.status_label.setText("Ready")
