@@ -1120,11 +1120,14 @@ class ShotgridClient:
             package_name: New name/code for the package (optional)
             description: New description (optional)
             status: New status for sg_status_list field (optional)
-            manifest: Manifest data for sg_manifest field (optional, skipped if field type incompatible)
+            manifest: Manifest data for sg_manifest field (optional, uploaded as JSON file)
 
         Returns:
             Updated package entity dictionary
         """
+        import json
+        import tempfile
+        import os
         import logging
         logger = logging.getLogger("FFPackageManager")
 
@@ -1142,18 +1145,36 @@ class ShotgridClient:
         if update_data:
             package = self.sg.update("CustomEntity12", int(package_id), update_data)
 
-        # Try to update manifest separately - may fail if field type is incompatible
+        # Upload manifest as a file attachment
         if manifest is not None:
+            temp_file = None
             try:
-                import json
-                # Try as JSON string first (for Text field type)
+                # Write manifest to a temporary JSON file
                 manifest_str = json.dumps(manifest, indent=2) if isinstance(manifest, dict) else str(manifest)
-                package = self.sg.update("CustomEntity12", int(package_id), {"sg_manifest": manifest_str})
-            except Exception as e:
-                logger.warning(
-                    f"Could not update sg_manifest field (may need field type change in ShotGrid): {e}"
+                temp_file = tempfile.NamedTemporaryFile(
+                    mode='w',
+                    suffix='.json',
+                    prefix='manifest_',
+                    delete=False
                 )
-                # Status update already succeeded, so don't fail the entire operation
+                temp_file.write(manifest_str)
+                temp_file.close()
+
+                # Upload the file to sg_manifest field
+                self.sg.upload(
+                    "CustomEntity12",
+                    int(package_id),
+                    temp_file.name,
+                    field_name="sg_manifest",
+                    display_name="manifest.json"
+                )
+                logger.info(f"Uploaded manifest to package {package_id}")
+            except Exception as e:
+                logger.warning(f"Could not upload manifest to sg_manifest field: {e}")
+            finally:
+                # Clean up temp file
+                if temp_file and os.path.exists(temp_file.name):
+                    os.unlink(temp_file.name)
 
         return package
 
