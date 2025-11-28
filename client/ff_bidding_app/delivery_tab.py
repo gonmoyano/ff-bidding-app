@@ -191,6 +191,12 @@ class PackageShareWidget(QtWidgets.QWidget):
         btn_layout = QtWidgets.QHBoxLayout()
         btn_layout.addStretch()
 
+        # Google Drive connection status label
+        self.gdrive_status_label = QtWidgets.QLabel()
+        self.gdrive_status_label.setStyleSheet("color: gray;")
+        self._update_gdrive_status()
+        btn_layout.addWidget(self.gdrive_status_label)
+
         self.share_btn = QtWidgets.QPushButton("Share Package")
         self.share_btn.setEnabled(False)
         self.share_btn.setMinimumWidth(130)
@@ -222,6 +228,26 @@ class PackageShareWidget(QtWidgets.QWidget):
         self.link_check.toggled.connect(self._update_buttons)
         self.share_btn.clicked.connect(self._on_share_clicked)
         self.copy_link_btn.clicked.connect(self._copy_link)
+
+    def _update_gdrive_status(self):
+        """Update the Google Drive connection status label."""
+        # Check for credentials and token files
+        app_dir = Path(__file__).parent
+        credentials_file = app_dir / "credentials.json"
+        token_file = app_dir / "token.json"
+
+        if not credentials_file.exists():
+            self.gdrive_status_label.setText("Google Drive: Not configured")
+            self.gdrive_status_label.setStyleSheet("color: #cc6666;")  # Red
+            self.gdrive_status_label.setToolTip("credentials.json not found")
+        elif not token_file.exists():
+            self.gdrive_status_label.setText("Google Drive: Not authenticated")
+            self.gdrive_status_label.setStyleSheet("color: #cccc66;")  # Yellow
+            self.gdrive_status_label.setToolTip("Click Share to authenticate with Google Drive")
+        else:
+            self.gdrive_status_label.setText("Google Drive: Connected")
+            self.gdrive_status_label.setStyleSheet("color: #66cc66;")  # Green
+            self.gdrive_status_label.setToolTip("Authenticated with Google Drive")
 
     def set_packages(self, packages_list):
         """Set the list of packages available for delivery.
