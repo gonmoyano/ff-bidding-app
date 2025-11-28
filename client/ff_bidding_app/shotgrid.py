@@ -1134,8 +1134,12 @@ class ShotgridClient:
         if status is not None:
             update_data["sg_status_list"] = status
         if manifest is not None:
-            # Pass manifest dict directly - ShotGrid expects Hash type, not JSON string
-            update_data["sg_manifest"] = manifest
+            # Serialize manifest to JSON string for Text field type
+            import json
+            if isinstance(manifest, dict):
+                update_data["sg_manifest"] = json.dumps(manifest, indent=2)
+            else:
+                update_data["sg_manifest"] = str(manifest)
 
         if not update_data:
             return None
