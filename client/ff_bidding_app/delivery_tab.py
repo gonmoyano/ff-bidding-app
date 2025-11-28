@@ -218,20 +218,52 @@ class PackageShareWidget(QtWidgets.QWidget):
         self._update_buttons()
 
         if vendor:
-            # Extract emails from sg_members (Client User entities)
+            # Extract member IDs from sg_members (Client User entity links)
             members = vendor.get('sg_members', []) or []
-            emails = []
+            member_ids = []
 
             for member in members:
                 if isinstance(member, dict):
-                    # Client User entity should have an email field
-                    email = member.get('email')
-                    if email:
-                        emails.append(email)
+                    member_id = member.get('id')
+                    if member_id:
+                        member_ids.append(member_id)
 
-            # Pre-fill the email field with space-separated emails
-            if emails:
-                self.email_edit.setText(' '.join(emails))
+            # Fetch ClientUser details to get emails
+            if member_ids:
+                try:
+                    # Access sg_session from parent DeliveryTab
+                    parent_tab = self.parent()
+                    if parent_tab and hasattr(parent_tab, 'parent_app'):
+                        delivery_tab = parent_tab.parent_app
+                        if hasattr(delivery_tab, 'sg_session'):
+                            # Actually parent_tab is DeliveryTab's details_pane, go up more
+                            pass
+
+                    # Try to get sg_session from the DeliveryTab
+                    delivery_tab = self._get_delivery_tab()
+                    if delivery_tab and hasattr(delivery_tab, 'sg_session'):
+                        client_users = delivery_tab.sg_session.get_client_users(member_ids)
+                        emails = [u.get('email') for u in client_users if u.get('email')]
+
+                        # Pre-fill the email field with space-separated emails
+                        if emails:
+                            self.email_edit.setText(' '.join(emails))
+                except Exception as e:
+                    logger.warning(f"Could not fetch client user emails: {e}")
+
+    def _get_delivery_tab(self):
+        """Get the parent DeliveryTab widget.
+
+        Returns:
+            DeliveryTab instance or None
+        """
+        # Walk up the parent hierarchy to find DeliveryTab
+        parent = self.parent()
+        while parent:
+            if isinstance(parent, DeliveryTab):
+                return parent
+            parent = parent.parent()
+        return None
 
     def _update_package_info(self):
         """Update the package info display."""

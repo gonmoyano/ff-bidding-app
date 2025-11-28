@@ -1921,6 +1921,26 @@ class ShotgridClient:
                 categories.add(category)
         return sorted(list(categories))
 
+    def get_client_users(self, user_ids, fields=None):
+        """
+        Get ClientUser entities by their IDs.
+
+        Args:
+            user_ids: List of ClientUser IDs
+            fields: List of fields to return
+
+        Returns:
+            List of ClientUser dictionaries
+        """
+        if not user_ids:
+            return []
+
+        if fields is None:
+            fields = ["id", "name", "email"]
+
+        filters = [["id", "in", user_ids]]
+        return self.sg.find("ClientUser", filters, fields)
+
     def create_vendor(self, project_id, code, vendor_category=None, description=None):
         """
         Create a new Vendor (CustomEntity05).
