@@ -13,6 +13,7 @@ try:
     from .package_data_treeview import PackageTreeView, CustomCheckBox
     from .packages_tab import PackagesTab
     from .bidding_tab import BiddingTab
+    from .delivery_tab import DeliveryTab
     from .bid_selector_widget import CollapsibleGroupBox
     from .settings import AppSettings
     from .settings_dialog import SettingsDialog
@@ -29,6 +30,7 @@ except ImportError:
     from package_data_treeview import PackageTreeView, CustomCheckBox
     from packages_tab import PackagesTab
     from bidding_tab import BiddingTab
+    from delivery_tab import DeliveryTab
     from bid_selector_widget import CollapsibleGroupBox
     from settings import AppSettings
     from settings_dialog import SettingsDialog
@@ -1377,21 +1379,8 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
     def _create_delivery_tab(self):
         """Create the Delivery tab content."""
-        delivery_widget = QtWidgets.QWidget()
-        delivery_layout = QtWidgets.QVBoxLayout(delivery_widget)
-
-        # Placeholder content
-        label = QtWidgets.QLabel("Delivery")
-        label.setStyleSheet("font-size: 18px; font-weight: bold; padding: 20px;")
-        delivery_layout.addWidget(label)
-
-        info_label = QtWidgets.QLabel("Delivery content will be displayed here.")
-        info_label.setStyleSheet("padding: 20px;")
-        delivery_layout.addWidget(info_label)
-
-        delivery_layout.addStretch()
-
-        return delivery_widget
+        self.delivery_tab = DeliveryTab(self.sg_session, parent=self)
+        return self.delivery_tab
 
     def _create_bidding_tab(self):
         """Create the Bidding tab content."""
@@ -1460,14 +1449,19 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         project = self.sg_project_combo.itemData(index)
 
         if project:
-
             # Load RFQs for this project
             self._load_rfqs(project['id'])
+
+            # Load vendors for the delivery tab
+            if hasattr(self, "delivery_tab"):
+                self.delivery_tab.set_project(project['id'])
         else:
             self.rfq_combo.clear()
             self.rfq_combo.addItem("-- Select RFQ --", None)
             if hasattr(self, "packages_tab"):
                 self.packages_tab.clear()
+            if hasattr(self, "delivery_tab"):
+                self.delivery_tab.clear()
 
         current_rfq = self.rfq_combo.itemData(self.rfq_combo.currentIndex())
         if hasattr(self, "vfx_breakdown_tab"):
@@ -1560,11 +1554,17 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             # Update the bidding tab with RFQ data (includes Reports nested tab)
             if hasattr(self, "bidding_tab"):
                 self.bidding_tab.set_rfq(rfq)
+
+            # Update the delivery tab with RFQ data
+            if hasattr(self, "delivery_tab"):
+                self.delivery_tab.set_rfq(rfq)
         else:
             if hasattr(self, "rfq_bid_label"):
                 self.rfq_bid_label.setText("-")
             if hasattr(self, "packages_tab"):
                 self.packages_tab.clear()
+            if hasattr(self, "delivery_tab"):
+                self.delivery_tab.clear()
 
     def _show_settings_dialog(self):
         """Show the application settings dialog."""

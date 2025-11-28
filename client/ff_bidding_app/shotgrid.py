@@ -1879,6 +1879,101 @@ class ShotgridClient:
         logger.info(f"Found {len(image_versions)} image versions in project {project_id}")
         return image_versions
 
+    # ------------------------------------------------------------------
+    # Vendor Management (CustomEntity05)
+    # ------------------------------------------------------------------
+
+    def get_vendors(self, project_id, fields=None, order=None):
+        """
+        Get Vendors (CustomEntity05) for a project.
+
+        Args:
+            project_id: Project ID
+            fields: List of fields to return
+            order: List of order dicts
+
+        Returns:
+            List of Vendor dictionaries
+        """
+        if fields is None:
+            fields = ["id", "code", "sg_vendor_category", "sg_status_list", "description", "created_at", "updated_at"]
+        if order is None:
+            order = [{"field_name": "code", "direction": "asc"}]
+
+        filters = [["project", "is", {"type": "Project", "id": int(project_id)}]]
+        return self.sg.find("CustomEntity05", filters, fields, order=order)
+
+    def get_vendor_categories(self, project_id):
+        """
+        Get unique vendor categories for a project.
+
+        Args:
+            project_id: Project ID
+
+        Returns:
+            List of unique category names
+        """
+        vendors = self.get_vendors(project_id, fields=["id", "sg_vendor_category"])
+        categories = set()
+        for vendor in vendors:
+            category = vendor.get("sg_vendor_category")
+            if category:
+                categories.add(category)
+        return sorted(list(categories))
+
+    def create_vendor(self, project_id, code, vendor_category=None, description=None):
+        """
+        Create a new Vendor (CustomEntity05).
+
+        Args:
+            project_id: Project ID
+            code: Vendor name/code
+            vendor_category: Vendor category (optional)
+            description: Description (optional)
+
+        Returns:
+            Created Vendor entity dictionary
+        """
+        data = {
+            "code": code,
+            "project": {"type": "Project", "id": int(project_id)},
+        }
+
+        if vendor_category:
+            data["sg_vendor_category"] = vendor_category
+        if description:
+            data["description"] = description
+
+        result = self.sg.create("CustomEntity05", data)
+        return result
+
+    def update_vendor(self, vendor_id, data):
+        """
+        Update a Vendor (CustomEntity05).
+
+        Args:
+            vendor_id: Vendor ID
+            data: Dictionary of fields to update
+
+        Returns:
+            Updated Vendor entity dictionary
+        """
+        result = self.sg.update("CustomEntity05", int(vendor_id), data)
+        return result
+
+    def delete_vendor(self, vendor_id):
+        """
+        Delete a Vendor (CustomEntity05).
+
+        Args:
+            vendor_id: Vendor ID
+
+        Returns:
+            bool: True if successful
+        """
+        result = self.sg.delete("CustomEntity05", int(vendor_id))
+        return result
+
     def get_all_document_versions_for_project(self, project_id):
         """
         Get all document versions for a project (Script, Misc, etc.).
