@@ -39,6 +39,15 @@ class GoogleDriveService:
         self._service = None
         self._creds = None
 
+        # Debug logging
+        logger.info(f"GoogleDriveService initialized")
+        logger.info(f"  __file__ = {__file__}")
+        logger.info(f"  credentials_dir = {self.credentials_dir}")
+        logger.info(f"  credentials_file = {self.credentials_file}")
+        logger.info(f"  credentials_file exists = {self.credentials_file.exists()}")
+        logger.info(f"  token_file = {self.token_file}")
+        logger.info(f"  token_file exists = {self.token_file.exists()}")
+
     @property
     def is_available(self):
         """Check if Google API libraries are available."""
@@ -47,17 +56,23 @@ class GoogleDriveService:
     @property
     def has_credentials(self):
         """Check if credentials.json exists."""
-        return self.credentials_file.exists()
+        exists = self.credentials_file.exists()
+        logger.info(f"has_credentials check: {self.credentials_file} exists={exists}")
+        return exists
 
     @property
     def is_authenticated(self):
         """Check if we have valid authentication token."""
         if not self.token_file.exists():
+            logger.info(f"is_authenticated: token file does not exist: {self.token_file}")
             return False
         try:
             creds = Credentials.from_authorized_user_file(str(self.token_file), SCOPES)
-            return creds and creds.valid
-        except Exception:
+            valid = creds and creds.valid
+            logger.info(f"is_authenticated: token loaded, valid={valid}")
+            return valid
+        except Exception as e:
+            logger.info(f"is_authenticated: error loading token: {e}")
             return False
 
     def authenticate(self):
@@ -68,12 +83,23 @@ class GoogleDriveService:
         Returns:
             True if authentication successful, False otherwise.
         """
+        logger.info(f"authenticate() called")
+        logger.info(f"  GOOGLE_API_AVAILABLE = {GOOGLE_API_AVAILABLE}")
+        logger.info(f"  credentials_file = {self.credentials_file}")
+        logger.info(f"  credentials_file.exists() = {self.credentials_file.exists()}")
+
         if not GOOGLE_API_AVAILABLE:
             logger.error("Google API libraries not available")
             return False
 
         if not self.has_credentials:
             logger.error(f"credentials.json not found at {self.credentials_file}")
+            # List files in the directory for debugging
+            try:
+                files = list(self.credentials_dir.iterdir())
+                logger.error(f"Files in {self.credentials_dir}: {[f.name for f in files]}")
+            except Exception as e:
+                logger.error(f"Could not list directory: {e}")
             return False
 
         try:
@@ -81,7 +107,9 @@ class GoogleDriveService:
 
             # Load existing token if available
             if self.token_file.exists():
+                logger.info(f"Loading existing token from {self.token_file}")
                 creds = Credentials.from_authorized_user_file(str(self.token_file), SCOPES)
+                logger.info(f"Token loaded, valid={creds.valid if creds else 'None'}")
 
             # If no valid credentials, authenticate
             if not creds or not creds.valid:
@@ -89,13 +117,14 @@ class GoogleDriveService:
                     logger.info("Refreshing expired Google Drive token...")
                     creds.refresh(Request())
                 else:
-                    logger.info("Starting Google Drive OAuth flow...")
+                    logger.info(f"Starting Google Drive OAuth flow with {self.credentials_file}...")
                     flow = InstalledAppFlow.from_client_secrets_file(
                         str(self.credentials_file), SCOPES
                     )
                     creds = flow.run_local_server(port=0)
 
                 # Save the token for future use
+                logger.info(f"Saving token to {self.token_file}")
                 with open(self.token_file, 'w') as token:
                     token.write(creds.to_json())
                 logger.info(f"Token saved to {self.token_file}")

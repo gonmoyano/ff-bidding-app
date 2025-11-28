@@ -28,7 +28,7 @@ def get_logger():
 
         # Setup logging
         logging.basicConfig(
-            level=logging.WARNING,
+            level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             handlers=[
                 logging.FileHandler(log_file, encoding='utf-8'),
@@ -38,7 +38,7 @@ def get_logger():
         )
 
         _logger = logging.getLogger("FFPackageManager")
-        _logger.setLevel(logging.WARNING)
+        _logger.setLevel(logging.INFO)
 
         return _logger
 
