@@ -3,6 +3,8 @@ from PySide6 import QtWidgets, QtCore, QtGui
 from pathlib import Path
 import logging
 import json
+import zipfile
+import os
 
 try:
     from .logger import logger
@@ -12,6 +14,58 @@ except ImportError:
     logger = logging.getLogger("FFPackageManager")
     from bid_selector_widget import CollapsibleGroupBox
     from settings import AppSettings
+
+
+class ZipWorker(QtCore.QThread):
+    """Worker thread for zipping package directories."""
+
+    progress = QtCore.Signal(int, str)  # (percent, current_file)
+    finished = QtCore.Signal(str)  # zip_path
+    error = QtCore.Signal(str)  # error_message
+
+    def __init__(self, source_dir, zip_path, parent=None):
+        """Initialize the zip worker.
+
+        Args:
+            source_dir: Path to the directory to zip
+            zip_path: Path for the output zip file
+            parent: Parent QObject
+        """
+        super().__init__(parent)
+        self.source_dir = Path(source_dir)
+        self.zip_path = Path(zip_path)
+
+    def run(self):
+        """Execute the zipping process."""
+        try:
+            # Count total files for progress
+            all_files = []
+            for root, dirs, files in os.walk(self.source_dir):
+                for file in files:
+                    all_files.append(os.path.join(root, file))
+
+            total_files = len(all_files)
+            if total_files == 0:
+                self.error.emit("No files to zip")
+                return
+
+            # Create zip file
+            with zipfile.ZipFile(self.zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for idx, file_path in enumerate(all_files):
+                    # Calculate relative path for archive
+                    rel_path = os.path.relpath(file_path, self.source_dir)
+
+                    # Update progress
+                    percent = int((idx + 1) / total_files * 100)
+                    self.progress.emit(percent, os.path.basename(file_path))
+
+                    # Add file to archive
+                    zipf.write(file_path, rel_path)
+
+            self.finished.emit(str(self.zip_path))
+
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class PackageShareWidget(QtWidgets.QWidget):
@@ -117,14 +171,21 @@ class PackageShareWidget(QtWidgets.QWidget):
 
         layout.addWidget(delivery_group)
 
+        # Progress bar for zipping
+        self.progress_group = QtWidgets.QGroupBox("Progress")
+        progress_layout = QtWidgets.QVBoxLayout(self.progress_group)
+        self.progress_label = QtWidgets.QLabel("Ready")
+        progress_layout.addWidget(self.progress_label)
+        self.progress_bar = QtWidgets.QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        progress_layout.addWidget(self.progress_bar)
+        self.progress_group.setVisible(False)
+        layout.addWidget(self.progress_group)
+
         # Action buttons
         btn_layout = QtWidgets.QHBoxLayout()
         btn_layout.addStretch()
-
-        self.assign_btn = QtWidgets.QPushButton("Assign to Vendor")
-        self.assign_btn.setEnabled(False)
-        self.assign_btn.setMinimumWidth(130)
-        btn_layout.addWidget(self.assign_btn)
 
         self.share_btn = QtWidgets.QPushButton("Share Package")
         self.share_btn.setEnabled(False)
@@ -156,7 +217,6 @@ class PackageShareWidget(QtWidgets.QWidget):
         self.email_edit.textChanged.connect(self._update_buttons)
         self.link_check.toggled.connect(self._update_buttons)
         self.share_btn.clicked.connect(self._on_share_clicked)
-        self.assign_btn.clicked.connect(self._on_assign_clicked)
         self.copy_link_btn.clicked.connect(self._copy_link)
 
     def set_packages(self, packages_list):
@@ -287,19 +347,102 @@ class PackageShareWidget(QtWidgets.QWidget):
     def _update_buttons(self):
         """Update button enabled states."""
         has_package = self.current_package is not None
-        has_vendor = self.vendor_combo.currentData() is not None
         has_target = bool(self.email_edit.text().strip()) or self.link_check.isChecked()
 
-        self.assign_btn.setEnabled(has_package and has_vendor)
         self.share_btn.setEnabled(has_package and has_target)
 
     def _on_share_clicked(self):
-        """Handle share button click."""
+        """Handle share button click.
+
+        Checks if a zip file exists for the package, creates one if not,
+        then proceeds with sharing.
+        """
         if not self.current_package:
             return
 
+        package_path = self.current_package.get('path')
+        if not package_path:
+            logger.warning("No package path available")
+            return
+
+        package_dir = Path(package_path)
+        zip_path = package_dir.with_suffix('.zip')
+
+        # Check if zip already exists
+        if zip_path.exists():
+            logger.info(f"Zip file already exists: {zip_path}")
+            self._complete_share(zip_path)
+        else:
+            # Need to create zip file
+            self._start_zipping(package_dir, zip_path)
+
+    def _start_zipping(self, package_dir, zip_path):
+        """Start the zipping process in a worker thread.
+
+        Args:
+            package_dir: Path to the package directory
+            zip_path: Path for the output zip file
+        """
+        # Show progress UI
+        self.progress_group.setVisible(True)
+        self.progress_label.setText(f"Zipping {package_dir.name}...")
+        self.progress_bar.setValue(0)
+        self.share_btn.setEnabled(False)
+
+        # Create and start worker thread
+        self.zip_worker = ZipWorker(package_dir, zip_path)
+        self.zip_worker.progress.connect(self._on_zip_progress)
+        self.zip_worker.finished.connect(self._on_zip_finished)
+        self.zip_worker.error.connect(self._on_zip_error)
+        self.zip_worker.start()
+
+    def _on_zip_progress(self, percent, current_file):
+        """Handle zip progress updates.
+
+        Args:
+            percent: Progress percentage (0-100)
+            current_file: Name of file currently being zipped
+        """
+        self.progress_bar.setValue(percent)
+        self.progress_label.setText(f"Zipping: {current_file}")
+
+    def _on_zip_finished(self, zip_path):
+        """Handle zip completion.
+
+        Args:
+            zip_path: Path to the created zip file
+        """
+        self.progress_label.setText("Zipping complete!")
+        self.progress_bar.setValue(100)
+        self._update_buttons()
+
+        # Hide progress after a short delay
+        QtCore.QTimer.singleShot(1500, lambda: self.progress_group.setVisible(False))
+
+        self._complete_share(Path(zip_path))
+
+    def _on_zip_error(self, error_msg):
+        """Handle zip error.
+
+        Args:
+            error_msg: Error message
+        """
+        self.progress_label.setText(f"Error: {error_msg}")
+        self._update_buttons()
+        logger.error(f"Zip error: {error_msg}")
+
+        # Hide progress after a delay
+        QtCore.QTimer.singleShot(3000, lambda: self.progress_group.setVisible(False))
+
+    def _complete_share(self, zip_path):
+        """Complete the share process after zip is ready.
+
+        Args:
+            zip_path: Path to the zip file
+        """
         config = {
             'package': self.current_package,
+            'zip_path': str(zip_path),
             'email': self.email_edit.text().strip() or None,
             'permission': self._get_permission_value(),
             'link_sharing': self.link_check.isChecked(),
@@ -313,20 +456,6 @@ class PackageShareWidget(QtWidgets.QWidget):
         self.result_link.setText(f"https://drive.google.com/share/{self.current_package.get('id', 'xxx')}")
         self.copy_link_btn.setEnabled(True)
         self.result_group.setVisible(True)
-
-    def _on_assign_clicked(self):
-        """Handle assign button click."""
-        if not self.current_package:
-            return
-
-        vendor = self.vendor_combo.currentData()
-        if vendor:
-            # This will be handled by the parent DeliveryTab
-            config = {
-                'package': self.current_package,
-                'vendor': vendor
-            }
-            self.shareRequested.emit(config)
 
     def _get_permission_value(self):
         """Get the permission value from the combo box."""
