@@ -10,10 +10,12 @@ try:
     from .logger import logger
     from .bid_selector_widget import CollapsibleGroupBox
     from .settings import AppSettings
+    from .gdrive_service import get_gdrive_service, GOOGLE_API_AVAILABLE
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
     from bid_selector_widget import CollapsibleGroupBox
     from settings import AppSettings
+    from gdrive_service import get_gdrive_service, GOOGLE_API_AVAILABLE
 
 
 class ZipWorker(QtCore.QThread):
@@ -231,16 +233,17 @@ class PackageShareWidget(QtWidgets.QWidget):
 
     def _update_gdrive_status(self):
         """Update the Google Drive connection status label."""
-        # Check for credentials and token files
-        app_dir = Path(__file__).parent
-        credentials_file = app_dir / "credentials.json"
-        token_file = app_dir / "token.json"
+        gdrive = get_gdrive_service()
 
-        if not credentials_file.exists():
+        if not GOOGLE_API_AVAILABLE:
+            self.gdrive_status_label.setText("Google Drive: Libraries missing")
+            self.gdrive_status_label.setStyleSheet("color: #cc6666;")  # Red
+            self.gdrive_status_label.setToolTip("pip install google-auth google-auth-oauthlib google-api-python-client")
+        elif not gdrive.has_credentials:
             self.gdrive_status_label.setText("Google Drive: Not configured")
             self.gdrive_status_label.setStyleSheet("color: #cc6666;")  # Red
             self.gdrive_status_label.setToolTip("credentials.json not found")
-        elif not token_file.exists():
+        elif not gdrive.is_authenticated:
             self.gdrive_status_label.setText("Google Drive: Not authenticated")
             self.gdrive_status_label.setStyleSheet("color: #cccc66;")  # Yellow
             self.gdrive_status_label.setToolTip("Click Share to authenticate with Google Drive")
@@ -538,10 +541,56 @@ class PackageShareWidget(QtWidgets.QWidget):
 
         self.shareRequested.emit(config)
 
-        # Show placeholder result (actual implementation would connect to sharing service)
-        self.result_link.setText(f"https://drive.google.com/share/{self.current_package.get('id', 'xxx')}")
-        self.copy_link_btn.setEnabled(True)
-        self.result_group.setVisible(True)
+        # Upload to Google Drive
+        gdrive = get_gdrive_service()
+        if not gdrive.is_available:
+            QtWidgets.QMessageBox.warning(
+                self, "Google Drive Error",
+                "Google API libraries not installed.\n\n"
+                "Run: pip install google-auth google-auth-oauthlib google-api-python-client"
+            )
+            return
+
+        # Show progress
+        self.progress_group.setVisible(True)
+        self.progress_label.setText("Uploading to Google Drive...")
+        self.progress_bar.setRange(0, 0)  # Indeterminate progress
+        self.share_btn.setEnabled(False)
+        QtWidgets.QApplication.processEvents()
+
+        try:
+            result = gdrive.upload_and_share(
+                file_path=str(zip_path),
+                email=config['email'],
+                role=config['permission'],
+                link_sharing=config['link_sharing']
+            )
+
+            if result and result.get('webViewLink'):
+                self.result_link.setText(result['webViewLink'])
+                self.copy_link_btn.setEnabled(True)
+                self.result_group.setVisible(True)
+                self.progress_label.setText("Upload complete!")
+                logger.info(f"File shared successfully: {result['webViewLink']}")
+            else:
+                self.progress_label.setText("Upload failed - check logs")
+                QtWidgets.QMessageBox.warning(
+                    self, "Upload Failed",
+                    "Failed to upload file to Google Drive. Check the logs for details."
+                )
+        except Exception as e:
+            logger.error(f"Google Drive upload error: {e}")
+            self.progress_label.setText(f"Error: {str(e)[:50]}")
+            QtWidgets.QMessageBox.critical(
+                self, "Upload Error",
+                f"Error uploading to Google Drive:\n\n{str(e)}"
+            )
+        finally:
+            self.progress_bar.setRange(0, 100)
+            self.progress_bar.setValue(100)
+            self._update_buttons()
+            self._update_gdrive_status()
+            QtCore.QTimer.singleShot(2000, lambda: self.progress_group.setVisible(False))
 
     def _get_permission_value(self):
         """Get the permission value from the combo box."""
