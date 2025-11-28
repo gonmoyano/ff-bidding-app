@@ -1379,7 +1379,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
     def _create_delivery_tab(self):
         """Create the Delivery tab content."""
-        self.delivery_tab = DeliveryTab(self.sg_session, parent=self)
+        self.delivery_tab = DeliveryTab(self.sg_session, self.output_directory, parent=self)
         return self.delivery_tab
 
     def _create_bidding_tab(self):

@@ -2,6 +2,7 @@
 from PySide6 import QtWidgets, QtCore, QtGui
 from pathlib import Path
 import logging
+import json
 
 try:
     from .logger import logger
@@ -212,13 +213,14 @@ class PackageShareWidget(QtWidgets.QWidget):
         """Update the package info display."""
         if self.current_package:
             pkg_name = self.current_package.get('code', 'Unknown')
-            pkg_id = self.current_package.get('id', 'N/A')
+            pkg_path = self.current_package.get('path', '')
             description = self.current_package.get('description', 'No description available')
 
             info_text = f"<b>{pkg_name}</b><br>"
-            info_text += f"ID: {pkg_id}<br>"
+            if pkg_path:
+                info_text += f"Path: {pkg_path}<br>"
             if description:
-                info_text += f"Description: {description}"
+                info_text += f"{description}"
 
             self.package_info_label.setText(info_text)
             self.package_info_label.setStyleSheet("color: #ddd; padding: 10px;")
@@ -575,15 +577,17 @@ class DroppableVendorContainer(QtWidgets.QWidget):
 class DeliveryTab(QtWidgets.QWidget):
     """Delivery tab widget for managing package delivery to vendors."""
 
-    def __init__(self, sg_session, parent=None):
+    def __init__(self, sg_session, output_directory, parent=None):
         """Initialize the Delivery tab.
 
         Args:
             sg_session: ShotgridClient instance
+            output_directory: Default output directory path for packages
             parent: Parent widget (PackageManagerApp)
         """
         super().__init__(parent)
         self.sg_session = sg_session
+        self.output_directory = output_directory
         self.parent_app = parent
 
         # Settings
@@ -687,8 +691,27 @@ class DeliveryTab(QtWidgets.QWidget):
         # Load vendors for this project
         self._load_vendors_for_project(project_id)
 
+    def _get_output_directory(self):
+        """Get the current output directory path.
+
+        Returns the output directory from the packages tab if available,
+        otherwise falls back to the default output directory.
+
+        Returns:
+            Path: The output directory path
+        """
+        # Try to get the current output directory from the packages tab
+        if self.parent_app and hasattr(self.parent_app, 'packages_tab'):
+            packages_tab = self.parent_app.packages_tab
+            if hasattr(packages_tab, 'output_path_input'):
+                return Path(packages_tab.output_path_input.text())
+
+        return Path(self.output_directory)
+
     def _load_packages_for_rfq(self, rfq):
-        """Load packages linked to the RFQ.
+        """Load packages from the output directory filesystem.
+
+        Only loads packages that exist in the filesystem.
 
         Args:
             rfq: RFQ data dict
@@ -699,15 +722,70 @@ class DeliveryTab(QtWidgets.QWidget):
             return
 
         try:
-            rfq_id = rfq.get('id')
-            if rfq_id:
-                self.packages_list = self.sg_session.get_packages_for_rfq(rfq_id)
-                self.package_share_widget.set_packages(self.packages_list)
-                logger.info(f"Loaded {len(self.packages_list)} packages for RFQ {rfq_id}")
+            output_dir = self._get_output_directory()
+
+            if not output_dir.exists():
+                logger.warning(f"Output directory does not exist: {output_dir}")
+                self.packages_list = []
+                self.package_share_widget.set_packages([])
+                return
+
+            # Scan the output directory for package folders with manifest.json
+            packages_found = []
+
+            for item in output_dir.iterdir():
+                if item.is_dir():
+                    manifest_path = item / "manifest.json"
+                    if manifest_path.exists():
+                        try:
+                            with open(manifest_path, 'r', encoding='utf-8') as f:
+                                manifest_data = json.load(f)
+
+                            # Create a package dict with info from the manifest
+                            package_info = {
+                                'id': manifest_data.get('package_name', item.name),
+                                'code': manifest_data.get('package_name', item.name),
+                                'path': str(item),
+                                'description': self._get_package_description(manifest_data),
+                                'manifest': manifest_data
+                            }
+                            packages_found.append(package_info)
+                            logger.debug(f"Found package: {item.name}")
+                        except (json.JSONDecodeError, IOError) as e:
+                            logger.warning(f"Could not read manifest for {item.name}: {e}")
+
+            self.packages_list = packages_found
+            self.package_share_widget.set_packages(self.packages_list)
+            logger.info(f"Loaded {len(self.packages_list)} packages from filesystem")
+
         except Exception as e:
-            logger.error(f"Error loading packages for RFQ: {e}", exc_info=True)
+            logger.error(f"Error loading packages from filesystem: {e}", exc_info=True)
             self.packages_list = []
             self.package_share_widget.set_packages([])
+
+    def _get_package_description(self, manifest_data):
+        """Extract a description from manifest data.
+
+        Args:
+            manifest_data: Manifest dictionary
+
+        Returns:
+            str: Package description
+        """
+        summary = manifest_data.get('manifest', {}).get('summary', {})
+        total_folders = summary.get('total_folders', 0)
+        total_files = summary.get('total_files', 0)
+
+        # Get RFQ info if available
+        rfq_info = manifest_data.get('rfq', {})
+        rfq_name = rfq_info.get('code', '')
+
+        parts = []
+        if rfq_name:
+            parts.append(f"RFQ: {rfq_name}")
+        parts.append(f"{total_folders} folders, {total_files} files")
+
+        return " | ".join(parts)
 
     def _load_vendors_for_project(self, project_id):
         """Load vendors for the project.
