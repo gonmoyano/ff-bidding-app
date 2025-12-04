@@ -8,6 +8,311 @@ from pathlib import Path
 from PySide6 import QtWidgets, QtCore, QtGui
 
 
+class ClientUserEditDialog(QtWidgets.QDialog):
+    """Dialog for adding or editing a Client User."""
+
+    def __init__(self, client_user=None, parent=None):
+        """Initialize the client user edit dialog.
+
+        Args:
+            client_user: Existing ClientUser dict to edit, or None for new user
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.client_user = client_user
+
+        if client_user:
+            self.setWindowTitle("Edit Client User")
+        else:
+            self.setWindowTitle("Add Client User")
+
+        self.setModal(True)
+        self.setMinimumWidth(400)
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        form_layout = QtWidgets.QFormLayout()
+        form_layout.setSpacing(10)
+
+        # Name
+        self.name_input = QtWidgets.QLineEdit()
+        self.name_input.setPlaceholderText("Enter user's full name")
+        if self.client_user:
+            self.name_input.setText(self.client_user.get("name", ""))
+        form_layout.addRow("Name:", self.name_input)
+
+        # Email
+        self.email_input = QtWidgets.QLineEdit()
+        self.email_input.setPlaceholderText("Enter email address")
+        if self.client_user:
+            self.email_input.setText(self.client_user.get("email", "") or "")
+        form_layout.addRow("Email:", self.email_input)
+
+        # Status
+        self.status_combo = QtWidgets.QComboBox()
+        self.status_combo.addItem("Active", "act")
+        self.status_combo.addItem("Inactive", "dis")
+        if self.client_user:
+            status = self.client_user.get("sg_status_list", "act")
+            idx = self.status_combo.findData(status)
+            if idx >= 0:
+                self.status_combo.setCurrentIndex(idx)
+        form_layout.addRow("Status:", self.status_combo)
+
+        layout.addLayout(form_layout)
+
+        # Button box
+        button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        button_box.accepted.connect(self._validate_and_accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+    def _validate_and_accept(self):
+        """Validate inputs and accept if valid."""
+        name = self.name_input.text().strip()
+        if not name:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Validation Error",
+                "Name is required."
+            )
+            self.name_input.setFocus()
+            return
+
+        email = self.email_input.text().strip()
+        if not email:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Validation Error",
+                "Email is required."
+            )
+            self.email_input.setFocus()
+            return
+
+        self.accept()
+
+    def get_client_user_data(self):
+        """Get the client user data from the form.
+
+        Returns:
+            dict: ClientUser data with name, email, sg_status_list
+        """
+        return {
+            "name": self.name_input.text().strip(),
+            "email": self.email_input.text().strip(),
+            "sg_status_list": self.status_combo.currentData(),
+        }
+
+
+class ManageClientUsersDialog(QtWidgets.QDialog):
+    """Dialog for managing Client Users."""
+
+    def __init__(self, sg_client, parent=None):
+        """Initialize the manage client users dialog.
+
+        Args:
+            sg_client: ShotGrid client instance
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.sg_client = sg_client
+        self.client_users = []
+
+        self.setWindowTitle("Manage Client Users")
+        self.setModal(True)
+        self.setMinimumWidth(600)
+        self.setMinimumHeight(400)
+
+        self._build_ui()
+        self._load_data()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Description
+        desc_label = QtWidgets.QLabel(
+            "Manage Client Users. These users can be assigned as recipients to vendors."
+        )
+        desc_label.setWordWrap(True)
+        desc_label.setStyleSheet("color: #888888; font-size: 11px;")
+        layout.addWidget(desc_label)
+
+        # Client Users table
+        self.users_table = QtWidgets.QTableWidget()
+        self.users_table.setColumnCount(3)
+        self.users_table.setHorizontalHeaderLabels(["Name", "Email", "Status"])
+        self.users_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.users_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.users_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.users_table.horizontalHeader().setStretchLastSection(True)
+        self.users_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        self.users_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+        self.users_table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        self.users_table.verticalHeader().setVisible(False)
+        self.users_table.doubleClicked.connect(self._edit_selected_user)
+        layout.addWidget(self.users_table)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+
+        self.add_btn = QtWidgets.QPushButton("Add")
+        self.add_btn.clicked.connect(self._add_user)
+        button_layout.addWidget(self.add_btn)
+
+        self.edit_btn = QtWidgets.QPushButton("Edit")
+        self.edit_btn.clicked.connect(self._edit_selected_user)
+        self.edit_btn.setEnabled(False)
+        button_layout.addWidget(self.edit_btn)
+
+        self.delete_btn = QtWidgets.QPushButton("Delete")
+        self.delete_btn.clicked.connect(self._delete_selected_user)
+        self.delete_btn.setEnabled(False)
+        button_layout.addWidget(self.delete_btn)
+
+        button_layout.addStretch()
+
+        self.refresh_btn = QtWidgets.QPushButton("Refresh")
+        self.refresh_btn.clicked.connect(self._load_data)
+        button_layout.addWidget(self.refresh_btn)
+
+        layout.addLayout(button_layout)
+
+        # Close button
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+
+        # Connect selection change
+        self.users_table.selectionModel().selectionChanged.connect(self._on_selection_changed)
+
+    def _load_data(self):
+        """Load client users from ShotGrid."""
+        if not self.sg_client:
+            return
+
+        try:
+            self.client_users = self.sg_client.get_all_client_users(include_inactive=True)
+            self._populate_table()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to load client users:\n{str(e)}"
+            )
+
+    def _populate_table(self):
+        """Populate the client users table."""
+        self.users_table.setRowCount(len(self.client_users))
+
+        for row, user in enumerate(self.client_users):
+            # Name
+            name_item = QtWidgets.QTableWidgetItem(user.get("name", ""))
+            name_item.setData(QtCore.Qt.UserRole, user.get("id"))
+            self.users_table.setItem(row, 0, name_item)
+
+            # Email
+            email_item = QtWidgets.QTableWidgetItem(user.get("email", "") or "")
+            self.users_table.setItem(row, 1, email_item)
+
+            # Status
+            status = user.get("sg_status_list", "act")
+            status_text = "Active" if status == "act" else "Inactive"
+            status_item = QtWidgets.QTableWidgetItem(status_text)
+            if status != "act":
+                status_item.setForeground(QtGui.QColor("#999999"))
+            self.users_table.setItem(row, 2, status_item)
+
+    def _on_selection_changed(self):
+        """Handle selection change in the table."""
+        has_selection = len(self.users_table.selectedItems()) > 0
+        self.edit_btn.setEnabled(has_selection)
+        self.delete_btn.setEnabled(has_selection)
+
+    def _get_selected_user(self):
+        """Get the currently selected user."""
+        selected_rows = self.users_table.selectionModel().selectedRows()
+        if not selected_rows:
+            return None
+
+        row = selected_rows[0].row()
+        user_id = self.users_table.item(row, 0).data(QtCore.Qt.UserRole)
+
+        for user in self.client_users:
+            if user.get("id") == user_id:
+                return user
+        return None
+
+    def _add_user(self):
+        """Add a new client user."""
+        dialog = ClientUserEditDialog(parent=self)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            data = dialog.get_client_user_data()
+            try:
+                self.sg_client.create_client_user(
+                    data["name"],
+                    data["email"],
+                    status=data["sg_status_list"]
+                )
+                self._load_data()
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to create client user:\n{str(e)}"
+                )
+
+    def _edit_selected_user(self):
+        """Edit the selected client user."""
+        user = self._get_selected_user()
+        if not user:
+            return
+
+        dialog = ClientUserEditDialog(client_user=user, parent=self)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            data = dialog.get_client_user_data()
+            try:
+                self.sg_client.update_client_user(user["id"], data)
+                self._load_data()
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to update client user:\n{str(e)}"
+                )
+
+    def _delete_selected_user(self):
+        """Delete the selected client user."""
+        user = self._get_selected_user()
+        if not user:
+            return
+
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete '{user.get('name')}'?\n\n"
+            "This action cannot be undone.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+
+        if reply == QtWidgets.QMessageBox.Yes:
+            try:
+                self.sg_client.delete_client_user(user["id"])
+                self._load_data()
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to delete client user:\n{str(e)}"
+                )
+
+
 class VendorEditDialog(QtWidgets.QDialog):
     """Dialog for adding or editing a vendor."""
 
@@ -226,6 +531,216 @@ class VendorEditDialog(QtWidgets.QDialog):
         }
 
 
+class ManageVendorsDialog(QtWidgets.QDialog):
+    """Dialog for managing Vendors."""
+
+    def __init__(self, sg_client, project_id, parent=None):
+        """Initialize the manage vendors dialog.
+
+        Args:
+            sg_client: ShotGrid client instance
+            project_id: Current project ID
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.sg_client = sg_client
+        self.project_id = project_id
+        self.vendors = []
+        self.client_users = []
+
+        self.setWindowTitle("Manage Vendors")
+        self.setModal(True)
+        self.setMinimumWidth(600)
+        self.setMinimumHeight(400)
+
+        self._build_ui()
+        self._load_data()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Description
+        desc_label = QtWidgets.QLabel(
+            "Manage vendors for this project. Vendors can be assigned to packages for delivery tracking."
+        )
+        desc_label.setWordWrap(True)
+        desc_label.setStyleSheet("color: #888888; font-size: 11px;")
+        layout.addWidget(desc_label)
+
+        # Vendors table
+        self.vendors_table = QtWidgets.QTableWidget()
+        self.vendors_table.setColumnCount(2)
+        self.vendors_table.setHorizontalHeaderLabels(["Name", "Recipients"])
+        self.vendors_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.vendors_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.vendors_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.vendors_table.horizontalHeader().setStretchLastSection(True)
+        self.vendors_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        self.vendors_table.verticalHeader().setVisible(False)
+        self.vendors_table.doubleClicked.connect(self._edit_selected_vendor)
+        layout.addWidget(self.vendors_table)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+
+        self.add_btn = QtWidgets.QPushButton("Add")
+        self.add_btn.clicked.connect(self._add_vendor)
+        button_layout.addWidget(self.add_btn)
+
+        self.edit_btn = QtWidgets.QPushButton("Edit")
+        self.edit_btn.clicked.connect(self._edit_selected_vendor)
+        self.edit_btn.setEnabled(False)
+        button_layout.addWidget(self.edit_btn)
+
+        self.delete_btn = QtWidgets.QPushButton("Delete")
+        self.delete_btn.clicked.connect(self._delete_selected_vendor)
+        self.delete_btn.setEnabled(False)
+        button_layout.addWidget(self.delete_btn)
+
+        button_layout.addStretch()
+
+        self.refresh_btn = QtWidgets.QPushButton("Refresh")
+        self.refresh_btn.clicked.connect(self._load_data)
+        button_layout.addWidget(self.refresh_btn)
+
+        layout.addLayout(button_layout)
+
+        # Close button
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+
+        # Connect selection change
+        self.vendors_table.selectionModel().selectionChanged.connect(self._on_selection_changed)
+
+    def _load_data(self):
+        """Load vendors and client users from ShotGrid."""
+        if not self.sg_client or not self.project_id:
+            return
+
+        try:
+            self.vendors = self.sg_client.get_vendors(self.project_id)
+            self.client_users = self.sg_client.get_all_client_users()
+            self._populate_table()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to load data:\n{str(e)}"
+            )
+
+    def _populate_table(self):
+        """Populate the vendors table."""
+        self.vendors_table.setRowCount(len(self.vendors))
+
+        for row, vendor in enumerate(self.vendors):
+            # Name
+            name_item = QtWidgets.QTableWidgetItem(vendor.get("code", ""))
+            name_item.setData(QtCore.Qt.UserRole, vendor.get("id"))
+            self.vendors_table.setItem(row, 0, name_item)
+
+            # Recipients
+            members = vendor.get("sg_members") or []
+            recipient_names = []
+            for member in members:
+                if isinstance(member, dict):
+                    name = member.get("name", f"User {member.get('id', '?')}")
+                    recipient_names.append(name)
+
+            recipients_text = ", ".join(recipient_names) if recipient_names else "(none)"
+            recipients_item = QtWidgets.QTableWidgetItem(recipients_text)
+            self.vendors_table.setItem(row, 1, recipients_item)
+
+    def _on_selection_changed(self):
+        """Handle selection change in the table."""
+        has_selection = len(self.vendors_table.selectedItems()) > 0
+        self.edit_btn.setEnabled(has_selection)
+        self.delete_btn.setEnabled(has_selection)
+
+    def _get_selected_vendor(self):
+        """Get the currently selected vendor."""
+        selected_rows = self.vendors_table.selectionModel().selectedRows()
+        if not selected_rows:
+            return None
+
+        row = selected_rows[0].row()
+        vendor_id = self.vendors_table.item(row, 0).data(QtCore.Qt.UserRole)
+
+        for vendor in self.vendors:
+            if vendor.get("id") == vendor_id:
+                return vendor
+        return None
+
+    def _add_vendor(self):
+        """Add a new vendor."""
+        dialog = VendorEditDialog(available_client_users=self.client_users, parent=self)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            data = dialog.get_vendor_data()
+            try:
+                # Create vendor first
+                new_vendor = self.sg_client.create_vendor(
+                    self.project_id,
+                    data["code"],
+                    description=data.get("description")
+                )
+                # Update with sg_members if provided
+                if data.get("sg_members"):
+                    self.sg_client.update_vendor(new_vendor["id"], {"sg_members": data["sg_members"]})
+                self._load_data()
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to create vendor:\n{str(e)}"
+                )
+
+    def _edit_selected_vendor(self):
+        """Edit the selected vendor."""
+        vendor = self._get_selected_vendor()
+        if not vendor:
+            return
+
+        dialog = VendorEditDialog(vendor=vendor, available_client_users=self.client_users, parent=self)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            data = dialog.get_vendor_data()
+            try:
+                self.sg_client.update_vendor(vendor["id"], data)
+                self._load_data()
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to update vendor:\n{str(e)}"
+                )
+
+    def _delete_selected_vendor(self):
+        """Delete the selected vendor."""
+        vendor = self._get_selected_vendor()
+        if not vendor:
+            return
+
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete vendor '{vendor.get('code')}'?\n\n"
+            "This action cannot be undone.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+
+        if reply == QtWidgets.QMessageBox.Yes:
+            try:
+                self.sg_client.delete_vendor(vendor["id"])
+                self._load_data()
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to delete vendor:\n{str(e)}"
+                )
+
+
 class VendorsTab(QtWidgets.QWidget):
     """Tab widget for managing vendors."""
 
@@ -253,13 +768,13 @@ class VendorsTab(QtWidgets.QWidget):
 
         # Description label
         desc_label = QtWidgets.QLabel(
-            "Manage vendors for this project. Vendors can be assigned to packages for delivery tracking."
+            "Manage vendors and client users for this project. Vendors can be assigned to packages for delivery tracking."
         )
         desc_label.setWordWrap(True)
         desc_label.setStyleSheet("color: #888888; font-size: 11px;")
         layout.addWidget(desc_label)
 
-        # Vendor table
+        # Vendor table (read-only display)
         self.vendor_table = QtWidgets.QTableWidget()
         self.vendor_table.setColumnCount(2)
         self.vendor_table.setHorizontalHeaderLabels(["Name", "Recipients"])
@@ -269,25 +784,18 @@ class VendorsTab(QtWidgets.QWidget):
         self.vendor_table.horizontalHeader().setStretchLastSection(True)
         self.vendor_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
         self.vendor_table.verticalHeader().setVisible(False)
-        self.vendor_table.doubleClicked.connect(self._edit_selected_vendor)
         layout.addWidget(self.vendor_table)
 
         # Buttons
         button_layout = QtWidgets.QHBoxLayout()
 
-        self.add_btn = QtWidgets.QPushButton("Add Vendor")
-        self.add_btn.clicked.connect(self._add_vendor)
-        button_layout.addWidget(self.add_btn)
+        self.manage_vendors_btn = QtWidgets.QPushButton("Manage Vendors")
+        self.manage_vendors_btn.clicked.connect(self._open_manage_vendors)
+        button_layout.addWidget(self.manage_vendors_btn)
 
-        self.edit_btn = QtWidgets.QPushButton("Edit")
-        self.edit_btn.clicked.connect(self._edit_selected_vendor)
-        self.edit_btn.setEnabled(False)
-        button_layout.addWidget(self.edit_btn)
-
-        self.remove_btn = QtWidgets.QPushButton("Remove")
-        self.remove_btn.clicked.connect(self._remove_selected_vendor)
-        self.remove_btn.setEnabled(False)
-        button_layout.addWidget(self.remove_btn)
+        self.manage_users_btn = QtWidgets.QPushButton("Manage Client Users")
+        self.manage_users_btn.clicked.connect(self._open_manage_client_users)
+        button_layout.addWidget(self.manage_users_btn)
 
         button_layout.addStretch()
 
@@ -296,9 +804,6 @@ class VendorsTab(QtWidgets.QWidget):
         button_layout.addWidget(self.refresh_btn)
 
         layout.addLayout(button_layout)
-
-        # Connect selection change
-        self.vendor_table.selectionModel().selectionChanged.connect(self._on_selection_changed)
 
     def _load_data(self):
         """Load vendors and client users from ShotGrid."""
@@ -338,112 +843,19 @@ class VendorsTab(QtWidgets.QWidget):
             recipients_item = QtWidgets.QTableWidgetItem(recipients_text)
             self.vendor_table.setItem(row, 1, recipients_item)
 
-    def _on_selection_changed(self):
-        """Handle selection change in the table."""
-        has_selection = len(self.vendor_table.selectedItems()) > 0
-        self.edit_btn.setEnabled(has_selection)
-        self.remove_btn.setEnabled(has_selection)
+    def _open_manage_vendors(self):
+        """Open the Manage Vendors dialog."""
+        dialog = ManageVendorsDialog(self.sg_client, self.project_id, parent=self)
+        dialog.exec()
+        # Refresh data after dialog closes
+        self._load_data()
 
-    def _get_selected_vendor(self):
-        """Get the currently selected vendor.
-
-        Returns:
-            dict: Selected vendor or None
-        """
-        selected_rows = self.vendor_table.selectionModel().selectedRows()
-        if not selected_rows:
-            return None
-
-        row = selected_rows[0].row()
-        vendor_id = self.vendor_table.item(row, 0).data(QtCore.Qt.UserRole)
-
-        for vendor in self.vendors:
-            if vendor.get("id") == vendor_id:
-                return vendor
-        return None
-
-    def _add_vendor(self):
-        """Add a new vendor."""
-        dialog = VendorEditDialog(available_client_users=self.client_users, parent=self)
-        if dialog.exec() == QtWidgets.QDialog.Accepted:
-            data = dialog.get_vendor_data()
-            try:
-                # Create vendor first
-                new_vendor = self.sg_client.create_vendor(
-                    self.project_id,
-                    data["code"],
-                    description=data.get("description")
-                )
-                # Update with sg_members if provided
-                if data.get("sg_members"):
-                    self.sg_client.update_vendor(new_vendor["id"], {"sg_members": data["sg_members"]})
-                self._load_data()
-                QtWidgets.QMessageBox.information(
-                    self,
-                    "Success",
-                    f"Vendor '{data['code']}' has been created."
-                )
-            except Exception as e:
-                QtWidgets.QMessageBox.critical(
-                    self,
-                    "Error",
-                    f"Failed to create vendor:\n{str(e)}"
-                )
-
-    def _edit_selected_vendor(self):
-        """Edit the selected vendor."""
-        vendor = self._get_selected_vendor()
-        if not vendor:
-            return
-
-        dialog = VendorEditDialog(vendor=vendor, available_client_users=self.client_users, parent=self)
-        if dialog.exec() == QtWidgets.QDialog.Accepted:
-            data = dialog.get_vendor_data()
-            try:
-                self.sg_client.update_vendor(vendor["id"], data)
-                self._load_data()
-                QtWidgets.QMessageBox.information(
-                    self,
-                    "Success",
-                    f"Vendor '{data['code']}' has been updated."
-                )
-            except Exception as e:
-                QtWidgets.QMessageBox.critical(
-                    self,
-                    "Error",
-                    f"Failed to update vendor:\n{str(e)}"
-                )
-
-    def _remove_selected_vendor(self):
-        """Remove the selected vendor."""
-        vendor = self._get_selected_vendor()
-        if not vendor:
-            return
-
-        reply = QtWidgets.QMessageBox.question(
-            self,
-            "Confirm Deletion",
-            f"Are you sure you want to delete vendor '{vendor.get('code')}'?\n\n"
-            "This action cannot be undone.",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No
-        )
-
-        if reply == QtWidgets.QMessageBox.Yes:
-            try:
-                self.sg_client.delete_vendor(vendor["id"])
-                self._load_data()
-                QtWidgets.QMessageBox.information(
-                    self,
-                    "Success",
-                    f"Vendor '{vendor.get('code')}' has been deleted."
-                )
-            except Exception as e:
-                QtWidgets.QMessageBox.critical(
-                    self,
-                    "Error",
-                    f"Failed to delete vendor:\n{str(e)}"
-                )
+    def _open_manage_client_users(self):
+        """Open the Manage Client Users dialog."""
+        dialog = ManageClientUsersDialog(self.sg_client, parent=self)
+        dialog.exec()
+        # Refresh data after dialog closes (client users might have changed)
+        self._load_data()
 
 
 class GeneralTab(QtWidgets.QWidget):

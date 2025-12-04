@@ -2003,22 +2003,70 @@ class ShotgridClient:
         filters = [["id", "in", user_ids]]
         return self.sg.find("ClientUser", filters, fields)
 
-    def get_all_client_users(self, fields=None):
+    def get_all_client_users(self, fields=None, include_inactive=False):
         """
-        Get all active ClientUser entities.
+        Get all ClientUser entities.
 
         Args:
             fields: List of fields to return
+            include_inactive: If True, include inactive users
 
         Returns:
             List of ClientUser dictionaries
         """
         if fields is None:
-            fields = ["id", "name", "email"]
+            fields = ["id", "name", "email", "sg_status_list"]
 
-        # Filter for active client users only
-        filters = [["sg_status_list", "is", "act"]]
+        # Filter for active client users only unless include_inactive is True
+        if include_inactive:
+            filters = []
+        else:
+            filters = [["sg_status_list", "is", "act"]]
         return self.sg.find("ClientUser", filters, fields, order=[{"field_name": "name", "direction": "asc"}])
+
+    def create_client_user(self, name, email, status="act"):
+        """
+        Create a new ClientUser.
+
+        Args:
+            name: User's name
+            email: User's email address
+            status: Status ('act' for active, 'dis' for inactive)
+
+        Returns:
+            Created ClientUser entity dictionary
+        """
+        data = {
+            "name": name,
+            "email": email,
+            "sg_status_list": status,
+        }
+        return self.sg.create("ClientUser", data)
+
+    def update_client_user(self, user_id, data):
+        """
+        Update a ClientUser.
+
+        Args:
+            user_id: ClientUser ID
+            data: Dictionary of fields to update
+
+        Returns:
+            Updated ClientUser entity dictionary
+        """
+        return self.sg.update("ClientUser", int(user_id), data)
+
+    def delete_client_user(self, user_id):
+        """
+        Delete a ClientUser.
+
+        Args:
+            user_id: ClientUser ID
+
+        Returns:
+            bool: True if successful
+        """
+        return self.sg.delete("ClientUser", int(user_id))
 
     def create_vendor(self, project_id, code, vendor_category=None, description=None):
         """
