@@ -1571,11 +1571,12 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         # Store current DPI scale
         old_dpi_scale = self.app_settings.get_dpi_scale()
 
-        # Get current project ID for vendor management
+        # Get current project ID and ShotGrid client for vendor management
         project = self.sg_project_combo.itemData(self.sg_project_combo.currentIndex())
         project_id = project.get("id") if project else None
+        sg_client = getattr(self, 'sg_session', None)
 
-        dialog = SettingsDialog(self.app_settings, sg_client=self.sg, project_id=project_id, parent=self)
+        dialog = SettingsDialog(self.app_settings, sg_client=sg_client, project_id=project_id, parent=self)
         if dialog.exec() == QtWidgets.QDialog.Accepted:
             # Get the new settings
             dpi_scale = dialog.get_dpi_scale()
