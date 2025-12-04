@@ -307,7 +307,7 @@ class VendorsTab(QtWidgets.QWidget):
 
         try:
             self.vendors = self.sg_client.get_vendors(self.project_id)
-            self.client_users = self.sg_client.get_all_client_users_for_project(self.project_id)
+            self.client_users = self.sg_client.get_all_client_users()
             self._populate_table()
         except Exception as e:
             QtWidgets.QMessageBox.critical(

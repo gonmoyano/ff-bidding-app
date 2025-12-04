@@ -2003,12 +2003,11 @@ class ShotgridClient:
         filters = [["id", "in", user_ids]]
         return self.sg.find("ClientUser", filters, fields)
 
-    def get_all_client_users_for_project(self, project_id, fields=None):
+    def get_all_client_users(self, fields=None):
         """
-        Get all ClientUser entities associated with a project.
+        Get all active ClientUser entities.
 
         Args:
-            project_id: Project ID
             fields: List of fields to return
 
         Returns:
@@ -2017,7 +2016,8 @@ class ShotgridClient:
         if fields is None:
             fields = ["id", "name", "email"]
 
-        filters = [["projects", "is", {"type": "Project", "id": int(project_id)}]]
+        # Filter for active client users only
+        filters = [["sg_status_list", "is", "act"]]
         return self.sg.find("ClientUser", filters, fields, order=[{"field_name": "name", "direction": "asc"}])
 
     def create_vendor(self, project_id, code, vendor_category=None, description=None):
