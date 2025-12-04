@@ -5,53 +5,345 @@ Dialog for configuring application-wide settings.
 
 import shutil
 from pathlib import Path
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 
 
-class SettingsDialog(QtWidgets.QDialog):
-    """Dialog for configuring application settings."""
+class VendorEditDialog(QtWidgets.QDialog):
+    """Dialog for adding or editing a vendor."""
 
-    def __init__(self, app_settings, parent=None):
-        """Initialize the settings dialog.
+    def __init__(self, vendor=None, categories=None, parent=None):
+        """Initialize the vendor edit dialog.
 
         Args:
-            app_settings: AppSettings instance
-            parent: Parent widget (should be the main app window)
+            vendor: Existing vendor dict to edit, or None for new vendor
+            categories: List of existing category names for autocomplete
+            parent: Parent widget
         """
         super().__init__(parent)
-        self.app_settings = app_settings
-        self.parent_app = parent  # Store reference to main app
-        self.setWindowTitle("Application Settings")
+        self.vendor = vendor
+        self.categories = categories or []
+
+        if vendor:
+            self.setWindowTitle("Edit Vendor")
+        else:
+            self.setWindowTitle("Add Vendor")
+
         self.setModal(True)
-        self.setMinimumWidth(500)
-
-        # Store original DPI scale to restore on cancel
-        self.original_dpi_scale = app_settings.get_dpi_scale()
-
+        self.setMinimumWidth(400)
         self._build_ui()
 
     def _build_ui(self):
         """Build the dialog UI."""
         layout = QtWidgets.QVBoxLayout(self)
 
-        # Title
-        title_label = QtWidgets.QLabel("Application Settings")
-        title_font = title_label.font()
-        title_font.setPointSize(14)
-        title_font.setBold(True)
-        title_label.setFont(title_font)
-        layout.addWidget(title_label)
-
-        # Separator
-        separator = QtWidgets.QFrame()
-        separator.setFrameShape(QtWidgets.QFrame.HLine)
-        separator.setFrameShadow(QtWidgets.QFrame.Sunken)
-        layout.addWidget(separator)
-
-        # Form layout for settings
         form_layout = QtWidgets.QFormLayout()
-        form_layout.setContentsMargins(20, 20, 20, 20)
-        form_layout.setSpacing(15)
+        form_layout.setSpacing(10)
+
+        # Vendor name/code
+        self.name_input = QtWidgets.QLineEdit()
+        self.name_input.setPlaceholderText("Enter vendor name")
+        if self.vendor:
+            self.name_input.setText(self.vendor.get("code", ""))
+        form_layout.addRow("Name:", self.name_input)
+
+        # Category (combo with editable)
+        self.category_combo = QtWidgets.QComboBox()
+        self.category_combo.setEditable(True)
+        self.category_combo.addItem("")  # Empty option
+        for cat in sorted(self.categories):
+            self.category_combo.addItem(cat)
+        if self.vendor:
+            current_cat = self.vendor.get("sg_vendor_category", "")
+            if current_cat:
+                idx = self.category_combo.findText(current_cat)
+                if idx >= 0:
+                    self.category_combo.setCurrentIndex(idx)
+                else:
+                    self.category_combo.setCurrentText(current_cat)
+        form_layout.addRow("Category:", self.category_combo)
+
+        # Description
+        self.description_input = QtWidgets.QTextEdit()
+        self.description_input.setPlaceholderText("Enter vendor description (optional)")
+        self.description_input.setMaximumHeight(100)
+        if self.vendor:
+            self.description_input.setText(self.vendor.get("description", "") or "")
+        form_layout.addRow("Description:", self.description_input)
+
+        layout.addLayout(form_layout)
+
+        # Button box
+        button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        button_box.accepted.connect(self._validate_and_accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+    def _validate_and_accept(self):
+        """Validate inputs and accept if valid."""
+        name = self.name_input.text().strip()
+        if not name:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Validation Error",
+                "Vendor name is required."
+            )
+            self.name_input.setFocus()
+            return
+        self.accept()
+
+    def get_vendor_data(self):
+        """Get the vendor data from the form.
+
+        Returns:
+            dict: Vendor data with code, sg_vendor_category, description
+        """
+        return {
+            "code": self.name_input.text().strip(),
+            "sg_vendor_category": self.category_combo.currentText().strip() or None,
+            "description": self.description_input.toPlainText().strip() or None,
+        }
+
+
+class VendorsTab(QtWidgets.QWidget):
+    """Tab widget for managing vendors."""
+
+    def __init__(self, sg_client, project_id, parent=None):
+        """Initialize the vendors tab.
+
+        Args:
+            sg_client: ShotGrid client instance
+            project_id: Current project ID
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.sg_client = sg_client
+        self.project_id = project_id
+        self.vendors = []
+        self.categories = []
+
+        self._build_ui()
+        self._load_vendors()
+
+    def _build_ui(self):
+        """Build the tab UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+
+        # Description label
+        desc_label = QtWidgets.QLabel(
+            "Manage vendors for this project. Vendors can be assigned to packages for delivery tracking."
+        )
+        desc_label.setWordWrap(True)
+        desc_label.setStyleSheet("color: #888888; font-size: 11px;")
+        layout.addWidget(desc_label)
+
+        # Vendor table
+        self.vendor_table = QtWidgets.QTableWidget()
+        self.vendor_table.setColumnCount(3)
+        self.vendor_table.setHorizontalHeaderLabels(["Name", "Category", "Description"])
+        self.vendor_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.vendor_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.vendor_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.vendor_table.horizontalHeader().setStretchLastSection(True)
+        self.vendor_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        self.vendor_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+        self.vendor_table.verticalHeader().setVisible(False)
+        self.vendor_table.setAlternatingRowColors(True)
+        self.vendor_table.doubleClicked.connect(self._edit_selected_vendor)
+        layout.addWidget(self.vendor_table)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+
+        self.add_btn = QtWidgets.QPushButton("Add Vendor")
+        self.add_btn.clicked.connect(self._add_vendor)
+        button_layout.addWidget(self.add_btn)
+
+        self.edit_btn = QtWidgets.QPushButton("Edit")
+        self.edit_btn.clicked.connect(self._edit_selected_vendor)
+        self.edit_btn.setEnabled(False)
+        button_layout.addWidget(self.edit_btn)
+
+        self.remove_btn = QtWidgets.QPushButton("Remove")
+        self.remove_btn.clicked.connect(self._remove_selected_vendor)
+        self.remove_btn.setEnabled(False)
+        button_layout.addWidget(self.remove_btn)
+
+        button_layout.addStretch()
+
+        self.refresh_btn = QtWidgets.QPushButton("Refresh")
+        self.refresh_btn.clicked.connect(self._load_vendors)
+        button_layout.addWidget(self.refresh_btn)
+
+        layout.addLayout(button_layout)
+
+        # Connect selection change
+        self.vendor_table.selectionModel().selectionChanged.connect(self._on_selection_changed)
+
+    def _load_vendors(self):
+        """Load vendors from ShotGrid."""
+        if not self.sg_client or not self.project_id:
+            return
+
+        try:
+            self.vendors = self.sg_client.get_vendors(self.project_id)
+            self.categories = self.sg_client.get_vendor_categories(self.project_id)
+            self._populate_table()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to load vendors:\n{str(e)}"
+            )
+
+    def _populate_table(self):
+        """Populate the vendor table."""
+        self.vendor_table.setRowCount(len(self.vendors))
+
+        for row, vendor in enumerate(self.vendors):
+            # Store vendor ID in first column's data
+            name_item = QtWidgets.QTableWidgetItem(vendor.get("code", ""))
+            name_item.setData(QtCore.Qt.UserRole, vendor.get("id"))
+            self.vendor_table.setItem(row, 0, name_item)
+
+            category_item = QtWidgets.QTableWidgetItem(vendor.get("sg_vendor_category", "") or "")
+            self.vendor_table.setItem(row, 1, category_item)
+
+            description = vendor.get("description", "") or ""
+            # Truncate long descriptions for display
+            if len(description) > 100:
+                description = description[:100] + "..."
+            desc_item = QtWidgets.QTableWidgetItem(description)
+            self.vendor_table.setItem(row, 2, desc_item)
+
+    def _on_selection_changed(self):
+        """Handle selection change in the table."""
+        has_selection = len(self.vendor_table.selectedItems()) > 0
+        self.edit_btn.setEnabled(has_selection)
+        self.remove_btn.setEnabled(has_selection)
+
+    def _get_selected_vendor(self):
+        """Get the currently selected vendor.
+
+        Returns:
+            dict: Selected vendor or None
+        """
+        selected_rows = self.vendor_table.selectionModel().selectedRows()
+        if not selected_rows:
+            return None
+
+        row = selected_rows[0].row()
+        vendor_id = self.vendor_table.item(row, 0).data(QtCore.Qt.UserRole)
+
+        for vendor in self.vendors:
+            if vendor.get("id") == vendor_id:
+                return vendor
+        return None
+
+    def _add_vendor(self):
+        """Add a new vendor."""
+        dialog = VendorEditDialog(categories=self.categories, parent=self)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            data = dialog.get_vendor_data()
+            try:
+                self.sg_client.create_vendor(
+                    self.project_id,
+                    data["code"],
+                    vendor_category=data.get("sg_vendor_category"),
+                    description=data.get("description")
+                )
+                self._load_vendors()
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Vendor '{data['code']}' has been created."
+                )
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to create vendor:\n{str(e)}"
+                )
+
+    def _edit_selected_vendor(self):
+        """Edit the selected vendor."""
+        vendor = self._get_selected_vendor()
+        if not vendor:
+            return
+
+        dialog = VendorEditDialog(vendor=vendor, categories=self.categories, parent=self)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            data = dialog.get_vendor_data()
+            try:
+                self.sg_client.update_vendor(vendor["id"], data)
+                self._load_vendors()
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Vendor '{data['code']}' has been updated."
+                )
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to update vendor:\n{str(e)}"
+                )
+
+    def _remove_selected_vendor(self):
+        """Remove the selected vendor."""
+        vendor = self._get_selected_vendor()
+        if not vendor:
+            return
+
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete vendor '{vendor.get('code')}'?\n\n"
+            "This action cannot be undone.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No
+        )
+
+        if reply == QtWidgets.QMessageBox.Yes:
+            try:
+                self.sg_client.delete_vendor(vendor["id"])
+                self._load_vendors()
+                QtWidgets.QMessageBox.information(
+                    self,
+                    "Success",
+                    f"Vendor '{vendor.get('code')}' has been deleted."
+                )
+            except Exception as e:
+                QtWidgets.QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Failed to delete vendor:\n{str(e)}"
+                )
+
+
+class GeneralTab(QtWidgets.QWidget):
+    """Tab widget for general settings."""
+
+    # Signal emitted when DPI slider changes
+    dpiChanged = QtCore.Signal(int)
+
+    def __init__(self, app_settings, parent=None):
+        """Initialize the general settings tab.
+
+        Args:
+            app_settings: AppSettings instance
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.app_settings = app_settings
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build the tab UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
 
         # DPI Scale setting
         dpi_group = QtWidgets.QGroupBox("Display Scaling")
@@ -85,7 +377,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.dpi_percentage_label.setMinimumWidth(50)
         self.dpi_percentage_label.setStyleSheet("font-weight: bold; color: #0078d4;")
 
-        # Connect slider to update label and apply preview
+        # Connect slider to update label and emit signal
         self.dpi_slider.valueChanged.connect(self._on_dpi_slider_changed)
 
         slider_layout.addWidget(slider_label)
@@ -125,11 +417,11 @@ class SettingsDialog(QtWidgets.QDialog):
         currency_combo_label = QtWidgets.QLabel("Currency Symbol:")
         self.currency_combo = QtWidgets.QComboBox()
         self.currency_combo.addItem("$ - US Dollar", "$")
-        self.currency_combo.addItem("€ - Euro", "€")
-        self.currency_combo.addItem("£ - British Pound", "£")
-        self.currency_combo.addItem("¥ - Japanese Yen / Chinese Yuan", "¥")
-        self.currency_combo.addItem("₹ - Indian Rupee", "₹")
-        self.currency_combo.addItem("₽ - Russian Ruble", "₽")
+        self.currency_combo.addItem("\u20ac - Euro", "\u20ac")
+        self.currency_combo.addItem("\u00a3 - British Pound", "\u00a3")
+        self.currency_combo.addItem("\u00a5 - Japanese Yen / Chinese Yuan", "\u00a5")
+        self.currency_combo.addItem("\u20b9 - Indian Rupee", "\u20b9")
+        self.currency_combo.addItem("\u20bd - Russian Ruble", "\u20bd")
         self.currency_combo.addItem("R$ - Brazilian Real", "R$")
         self.currency_combo.addItem("Custom...", "custom")
 
@@ -241,31 +533,10 @@ class SettingsDialog(QtWidgets.QDialog):
         # Spacer
         layout.addStretch()
 
-        # Button box
-        button_box = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
-        )
-        button_box.accepted.connect(self.accept)
-        button_box.rejected.connect(self.reject)
-        layout.addWidget(button_box)
-
     def _on_dpi_slider_changed(self, value):
-        """Handle DPI slider value change - update label and apply preview to main app."""
-        # Update percentage label
+        """Handle DPI slider value change."""
         self.dpi_percentage_label.setText(f"{value}%")
-
-        # Apply real-time preview to the parent app (not this dialog)
-        if self.parent_app and hasattr(self.parent_app, '_apply_app_font_scaling'):
-            scale_factor = value / 100.0
-            self.parent_app._apply_app_font_scaling(scale_factor)
-
-    def reject(self):
-        """Handle Cancel - restore original DPI scale."""
-        # Restore original scaling to parent app
-        if self.parent_app and hasattr(self.parent_app, '_apply_app_font_scaling'):
-            self.parent_app._apply_app_font_scaling(self.original_dpi_scale)
-
-        super().reject()
+        self.dpiChanged.emit(value)
 
     def _toggle_custom_currency(self):
         """Show/hide custom currency input based on selection."""
@@ -402,3 +673,118 @@ class SettingsDialog(QtWidgets.QDialog):
             "Cache has been cleared. Thumbnails will be re-downloaded when you next load images.\n\n"
             "Close this dialog and refresh images to download fresh thumbnails."
         )
+
+
+class SettingsDialog(QtWidgets.QDialog):
+    """Dialog for configuring application settings."""
+
+    def __init__(self, app_settings, sg_client=None, project_id=None, parent=None):
+        """Initialize the settings dialog.
+
+        Args:
+            app_settings: AppSettings instance
+            sg_client: ShotGrid client instance (optional, required for Vendors tab)
+            project_id: Current project ID (optional, required for Vendors tab)
+            parent: Parent widget (should be the main app window)
+        """
+        super().__init__(parent)
+        self.app_settings = app_settings
+        self.sg_client = sg_client
+        self.project_id = project_id
+        self.parent_app = parent  # Store reference to main app
+        self.setWindowTitle("Application Settings")
+        self.setModal(True)
+        self.setMinimumWidth(550)
+        self.setMinimumHeight(500)
+
+        # Store original DPI scale to restore on cancel
+        self.original_dpi_scale = app_settings.get_dpi_scale()
+
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Title
+        title_label = QtWidgets.QLabel("Application Settings")
+        title_font = title_label.font()
+        title_font.setPointSize(14)
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        layout.addWidget(title_label)
+
+        # Separator
+        separator = QtWidgets.QFrame()
+        separator.setFrameShape(QtWidgets.QFrame.HLine)
+        separator.setFrameShadow(QtWidgets.QFrame.Sunken)
+        layout.addWidget(separator)
+
+        # Tab widget
+        self.tab_widget = QtWidgets.QTabWidget()
+
+        # General tab
+        self.general_tab = GeneralTab(self.app_settings, parent=self)
+        self.general_tab.dpiChanged.connect(self._on_dpi_slider_changed)
+        self.tab_widget.addTab(self.general_tab, "General")
+
+        # Vendors tab
+        self.vendors_tab = VendorsTab(self.sg_client, self.project_id, parent=self)
+        self.tab_widget.addTab(self.vendors_tab, "Vendors")
+
+        layout.addWidget(self.tab_widget)
+
+        # Button box
+        button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+    def _on_dpi_slider_changed(self, value):
+        """Handle DPI slider value change - apply preview to main app."""
+        # Apply real-time preview to the parent app (not this dialog)
+        if self.parent_app and hasattr(self.parent_app, '_apply_app_font_scaling'):
+            scale_factor = value / 100.0
+            self.parent_app._apply_app_font_scaling(scale_factor)
+
+    def reject(self):
+        """Handle Cancel - restore original DPI scale."""
+        # Restore original scaling to parent app
+        if self.parent_app and hasattr(self.parent_app, '_apply_app_font_scaling'):
+            self.parent_app._apply_app_font_scaling(self.original_dpi_scale)
+
+        super().reject()
+
+    def get_dpi_scale(self):
+        """Get the selected DPI scale factor.
+
+        Returns:
+            float: DPI scale factor
+        """
+        return self.general_tab.get_dpi_scale()
+
+    def get_currency(self):
+        """Get the selected currency symbol.
+
+        Returns:
+            str: Currency symbol
+        """
+        return self.general_tab.get_currency()
+
+    def get_thumbnail_cache_path(self):
+        """Get the thumbnail cache folder path.
+
+        Returns:
+            Path: Cache folder path
+        """
+        return self.general_tab.get_thumbnail_cache_path()
+
+    def get_thumbnail_cache_max_age_days(self):
+        """Get the cache max age in days.
+
+        Returns:
+            int: Max age in days
+        """
+        return self.general_tab.get_thumbnail_cache_max_age_days()
