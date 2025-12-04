@@ -11,17 +11,29 @@ from PySide6 import QtWidgets, QtCore, QtGui
 class VendorEditDialog(QtWidgets.QDialog):
     """Dialog for adding or editing a vendor."""
 
-    def __init__(self, vendor=None, categories=None, parent=None):
+    def __init__(self, vendor=None, available_client_users=None, parent=None):
         """Initialize the vendor edit dialog.
 
         Args:
             vendor: Existing vendor dict to edit, or None for new vendor
-            categories: List of existing category names for autocomplete
+            available_client_users: List of available ClientUser dicts for selection
             parent: Parent widget
         """
         super().__init__(parent)
         self.vendor = vendor
-        self.categories = categories or []
+        self.available_client_users = available_client_users or []
+        self.selected_recipients = []
+
+        # Initialize selected recipients from vendor's sg_members
+        if vendor:
+            members = vendor.get("sg_members") or []
+            for member in members:
+                if isinstance(member, dict) and member.get("id"):
+                    self.selected_recipients.append({
+                        "type": "ClientUser",
+                        "id": member["id"],
+                        "name": member.get("name", f"User {member['id']}")
+                    })
 
         if vendor:
             self.setWindowTitle("Edit Vendor")
@@ -29,7 +41,8 @@ class VendorEditDialog(QtWidgets.QDialog):
             self.setWindowTitle("Add Vendor")
 
         self.setModal(True)
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(500)
+        self.setMinimumHeight(400)
         self._build_ui()
 
     def _build_ui(self):
@@ -46,31 +59,73 @@ class VendorEditDialog(QtWidgets.QDialog):
             self.name_input.setText(self.vendor.get("code", ""))
         form_layout.addRow("Name:", self.name_input)
 
-        # Category (combo with editable)
-        self.category_combo = QtWidgets.QComboBox()
-        self.category_combo.setEditable(True)
-        self.category_combo.addItem("")  # Empty option
-        for cat in sorted(self.categories):
-            self.category_combo.addItem(cat)
-        if self.vendor:
-            current_cat = self.vendor.get("sg_vendor_category", "")
-            if current_cat:
-                idx = self.category_combo.findText(current_cat)
-                if idx >= 0:
-                    self.category_combo.setCurrentIndex(idx)
-                else:
-                    self.category_combo.setCurrentText(current_cat)
-        form_layout.addRow("Category:", self.category_combo)
-
         # Description
         self.description_input = QtWidgets.QTextEdit()
         self.description_input.setPlaceholderText("Enter vendor description (optional)")
-        self.description_input.setMaximumHeight(100)
+        self.description_input.setMaximumHeight(80)
         if self.vendor:
             self.description_input.setText(self.vendor.get("description", "") or "")
         form_layout.addRow("Description:", self.description_input)
 
         layout.addLayout(form_layout)
+
+        # Recipients section
+        recipients_group = QtWidgets.QGroupBox("Recipients")
+        recipients_layout = QtWidgets.QVBoxLayout(recipients_group)
+
+        recipients_desc = QtWidgets.QLabel("Select Client Users who will receive deliveries for this vendor.")
+        recipients_desc.setWordWrap(True)
+        recipients_desc.setStyleSheet("color: #888888; font-size: 11px;")
+        recipients_layout.addWidget(recipients_desc)
+
+        # Horizontal layout for available and selected lists
+        lists_layout = QtWidgets.QHBoxLayout()
+
+        # Available users list
+        available_layout = QtWidgets.QVBoxLayout()
+        available_label = QtWidgets.QLabel("Available:")
+        available_label.setStyleSheet("font-weight: bold;")
+        available_layout.addWidget(available_label)
+
+        self.available_list = QtWidgets.QListWidget()
+        self.available_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self._populate_available_list()
+        available_layout.addWidget(self.available_list)
+        lists_layout.addLayout(available_layout)
+
+        # Add/Remove buttons
+        buttons_layout = QtWidgets.QVBoxLayout()
+        buttons_layout.addStretch()
+
+        self.add_recipient_btn = QtWidgets.QPushButton(">")
+        self.add_recipient_btn.setFixedWidth(40)
+        self.add_recipient_btn.setToolTip("Add selected users as recipients")
+        self.add_recipient_btn.clicked.connect(self._add_recipients)
+        buttons_layout.addWidget(self.add_recipient_btn)
+
+        self.remove_recipient_btn = QtWidgets.QPushButton("<")
+        self.remove_recipient_btn.setFixedWidth(40)
+        self.remove_recipient_btn.setToolTip("Remove selected recipients")
+        self.remove_recipient_btn.clicked.connect(self._remove_recipients)
+        buttons_layout.addWidget(self.remove_recipient_btn)
+
+        buttons_layout.addStretch()
+        lists_layout.addLayout(buttons_layout)
+
+        # Selected recipients list
+        selected_layout = QtWidgets.QVBoxLayout()
+        selected_label = QtWidgets.QLabel("Recipients:")
+        selected_label.setStyleSheet("font-weight: bold;")
+        selected_layout.addWidget(selected_label)
+
+        self.selected_list = QtWidgets.QListWidget()
+        self.selected_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self._populate_selected_list()
+        selected_layout.addWidget(self.selected_list)
+        lists_layout.addLayout(selected_layout)
+
+        recipients_layout.addLayout(lists_layout)
+        layout.addWidget(recipients_group)
 
         # Button box
         button_box = QtWidgets.QDialogButtonBox(
@@ -79,6 +134,68 @@ class VendorEditDialog(QtWidgets.QDialog):
         button_box.accepted.connect(self._validate_and_accept)
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
+
+    def _populate_available_list(self):
+        """Populate the available users list."""
+        self.available_list.clear()
+        selected_ids = {r["id"] for r in self.selected_recipients}
+
+        for user in self.available_client_users:
+            if user.get("id") not in selected_ids:
+                display_text = user.get("name", "Unknown")
+                email = user.get("email", "")
+                if email:
+                    display_text += f" ({email})"
+
+                item = QtWidgets.QListWidgetItem(display_text)
+                item.setData(QtCore.Qt.UserRole, user)
+                self.available_list.addItem(item)
+
+    def _populate_selected_list(self):
+        """Populate the selected recipients list."""
+        self.selected_list.clear()
+
+        for recipient in self.selected_recipients:
+            # Try to find the full user info from available users
+            user_info = next(
+                (u for u in self.available_client_users if u.get("id") == recipient["id"]),
+                recipient
+            )
+            display_text = user_info.get("name", recipient.get("name", "Unknown"))
+            email = user_info.get("email", "")
+            if email:
+                display_text += f" ({email})"
+
+            item = QtWidgets.QListWidgetItem(display_text)
+            item.setData(QtCore.Qt.UserRole, recipient)
+            self.selected_list.addItem(item)
+
+    def _add_recipients(self):
+        """Add selected users to recipients list."""
+        for item in self.available_list.selectedItems():
+            user = item.data(QtCore.Qt.UserRole)
+            if user and user.get("id") not in {r["id"] for r in self.selected_recipients}:
+                self.selected_recipients.append({
+                    "type": "ClientUser",
+                    "id": user["id"],
+                    "name": user.get("name", f"User {user['id']}")
+                })
+
+        self._populate_available_list()
+        self._populate_selected_list()
+
+    def _remove_recipients(self):
+        """Remove selected recipients from the list."""
+        ids_to_remove = set()
+        for item in self.selected_list.selectedItems():
+            recipient = item.data(QtCore.Qt.UserRole)
+            if recipient:
+                ids_to_remove.add(recipient["id"])
+
+        self.selected_recipients = [r for r in self.selected_recipients if r["id"] not in ids_to_remove]
+
+        self._populate_available_list()
+        self._populate_selected_list()
 
     def _validate_and_accept(self):
         """Validate inputs and accept if valid."""
@@ -97,12 +214,15 @@ class VendorEditDialog(QtWidgets.QDialog):
         """Get the vendor data from the form.
 
         Returns:
-            dict: Vendor data with code, sg_vendor_category, description
+            dict: Vendor data with code, description, sg_members
         """
+        # Format sg_members as entity references
+        sg_members = [{"type": "ClientUser", "id": r["id"]} for r in self.selected_recipients]
+
         return {
             "code": self.name_input.text().strip(),
-            "sg_vendor_category": self.category_combo.currentText().strip() or None,
             "description": self.description_input.toPlainText().strip() or None,
+            "sg_members": sg_members if sg_members else None,
         }
 
 
@@ -121,10 +241,10 @@ class VendorsTab(QtWidgets.QWidget):
         self.sg_client = sg_client
         self.project_id = project_id
         self.vendors = []
-        self.categories = []
+        self.client_users = []
 
         self._build_ui()
-        self._load_vendors()
+        self._load_data()
 
     def _build_ui(self):
         """Build the tab UI."""
@@ -141,16 +261,14 @@ class VendorsTab(QtWidgets.QWidget):
 
         # Vendor table
         self.vendor_table = QtWidgets.QTableWidget()
-        self.vendor_table.setColumnCount(3)
-        self.vendor_table.setHorizontalHeaderLabels(["Name", "Category", "Description"])
+        self.vendor_table.setColumnCount(2)
+        self.vendor_table.setHorizontalHeaderLabels(["Name", "Recipients"])
         self.vendor_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.vendor_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.vendor_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.vendor_table.horizontalHeader().setStretchLastSection(True)
         self.vendor_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
-        self.vendor_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
         self.vendor_table.verticalHeader().setVisible(False)
-        self.vendor_table.setAlternatingRowColors(True)
         self.vendor_table.doubleClicked.connect(self._edit_selected_vendor)
         layout.addWidget(self.vendor_table)
 
@@ -174,7 +292,7 @@ class VendorsTab(QtWidgets.QWidget):
         button_layout.addStretch()
 
         self.refresh_btn = QtWidgets.QPushButton("Refresh")
-        self.refresh_btn.clicked.connect(self._load_vendors)
+        self.refresh_btn.clicked.connect(self._load_data)
         button_layout.addWidget(self.refresh_btn)
 
         layout.addLayout(button_layout)
@@ -182,20 +300,20 @@ class VendorsTab(QtWidgets.QWidget):
         # Connect selection change
         self.vendor_table.selectionModel().selectionChanged.connect(self._on_selection_changed)
 
-    def _load_vendors(self):
-        """Load vendors from ShotGrid."""
+    def _load_data(self):
+        """Load vendors and client users from ShotGrid."""
         if not self.sg_client or not self.project_id:
             return
 
         try:
             self.vendors = self.sg_client.get_vendors(self.project_id)
-            self.categories = self.sg_client.get_vendor_categories(self.project_id)
+            self.client_users = self.sg_client.get_all_client_users_for_project(self.project_id)
             self._populate_table()
         except Exception as e:
             QtWidgets.QMessageBox.critical(
                 self,
                 "Error",
-                f"Failed to load vendors:\n{str(e)}"
+                f"Failed to load data:\n{str(e)}"
             )
 
     def _populate_table(self):
@@ -208,15 +326,17 @@ class VendorsTab(QtWidgets.QWidget):
             name_item.setData(QtCore.Qt.UserRole, vendor.get("id"))
             self.vendor_table.setItem(row, 0, name_item)
 
-            category_item = QtWidgets.QTableWidgetItem(vendor.get("sg_vendor_category", "") or "")
-            self.vendor_table.setItem(row, 1, category_item)
+            # Build recipients display string
+            members = vendor.get("sg_members") or []
+            recipient_names = []
+            for member in members:
+                if isinstance(member, dict):
+                    name = member.get("name", f"User {member.get('id', '?')}")
+                    recipient_names.append(name)
 
-            description = vendor.get("description", "") or ""
-            # Truncate long descriptions for display
-            if len(description) > 100:
-                description = description[:100] + "..."
-            desc_item = QtWidgets.QTableWidgetItem(description)
-            self.vendor_table.setItem(row, 2, desc_item)
+            recipients_text = ", ".join(recipient_names) if recipient_names else "(none)"
+            recipients_item = QtWidgets.QTableWidgetItem(recipients_text)
+            self.vendor_table.setItem(row, 1, recipients_item)
 
     def _on_selection_changed(self):
         """Handle selection change in the table."""
@@ -244,17 +364,20 @@ class VendorsTab(QtWidgets.QWidget):
 
     def _add_vendor(self):
         """Add a new vendor."""
-        dialog = VendorEditDialog(categories=self.categories, parent=self)
+        dialog = VendorEditDialog(available_client_users=self.client_users, parent=self)
         if dialog.exec() == QtWidgets.QDialog.Accepted:
             data = dialog.get_vendor_data()
             try:
-                self.sg_client.create_vendor(
+                # Create vendor first
+                new_vendor = self.sg_client.create_vendor(
                     self.project_id,
                     data["code"],
-                    vendor_category=data.get("sg_vendor_category"),
                     description=data.get("description")
                 )
-                self._load_vendors()
+                # Update with sg_members if provided
+                if data.get("sg_members"):
+                    self.sg_client.update_vendor(new_vendor["id"], {"sg_members": data["sg_members"]})
+                self._load_data()
                 QtWidgets.QMessageBox.information(
                     self,
                     "Success",
@@ -273,12 +396,12 @@ class VendorsTab(QtWidgets.QWidget):
         if not vendor:
             return
 
-        dialog = VendorEditDialog(vendor=vendor, categories=self.categories, parent=self)
+        dialog = VendorEditDialog(vendor=vendor, available_client_users=self.client_users, parent=self)
         if dialog.exec() == QtWidgets.QDialog.Accepted:
             data = dialog.get_vendor_data()
             try:
                 self.sg_client.update_vendor(vendor["id"], data)
-                self._load_vendors()
+                self._load_data()
                 QtWidgets.QMessageBox.information(
                     self,
                     "Success",
@@ -309,7 +432,7 @@ class VendorsTab(QtWidgets.QWidget):
         if reply == QtWidgets.QMessageBox.Yes:
             try:
                 self.sg_client.delete_vendor(vendor["id"])
-                self._load_vendors()
+                self._load_data()
                 QtWidgets.QMessageBox.information(
                     self,
                     "Success",
