@@ -1577,7 +1577,13 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         sg_client = getattr(self, 'sg_session', None)
 
         dialog = SettingsDialog(self.app_settings, sg_client=sg_client, project_id=project_id, parent=self)
-        if dialog.exec() == QtWidgets.QDialog.Accepted:
+        result = dialog.exec()
+
+        # Refresh vendor data in delivery tab (changes may have been made to vendors/client users)
+        if hasattr(self, 'delivery_tab'):
+            self.delivery_tab.refresh_vendors()
+
+        if result == QtWidgets.QDialog.Accepted:
             # Get the new settings
             dpi_scale = dialog.get_dpi_scale()
             currency = dialog.get_currency()

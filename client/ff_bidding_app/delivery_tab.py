@@ -1186,6 +1186,15 @@ class DeliveryTab(QtWidgets.QWidget):
         if self.status_label:
             self.status_label.setText(message)
 
+    def refresh_vendors(self):
+        """Refresh vendor data from ShotGrid.
+
+        Call this after making changes to vendors or client users in settings.
+        """
+        if self.current_project_id:
+            self._load_vendors_for_project(self.current_project_id)
+            logger.info("Refreshed vendor data")
+
     def clear(self):
         """Clear the delivery tab data."""
         self.packages_list = []
