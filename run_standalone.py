@@ -99,4 +99,4 @@ except Exception as e:
 
 # Run event loop
 print("Starting event loop...")
-sys.exit(app.exec_())
+sys.exit(app.exec())
