@@ -62,6 +62,14 @@ class ClientUserEditDialog(QtWidgets.QDialog):
                 self.status_combo.setCurrentIndex(idx)
         form_layout.addRow("Status:", self.status_combo)
 
+        # Packages Recipient
+        self.packages_recipient_checkbox = QtWidgets.QCheckBox("This user can receive packages")
+        if self.client_user:
+            self.packages_recipient_checkbox.setChecked(
+                self.client_user.get("sg_packages_recipient", False) or False
+            )
+        form_layout.addRow("Packages Recipient:", self.packages_recipient_checkbox)
+
         layout.addLayout(form_layout)
 
         # Button box
@@ -100,12 +108,13 @@ class ClientUserEditDialog(QtWidgets.QDialog):
         """Get the client user data from the form.
 
         Returns:
-            dict: ClientUser data with name, email, sg_status_list
+            dict: ClientUser data with name, email, sg_status_list, sg_packages_recipient
         """
         return {
             "name": self.name_input.text().strip(),
             "email": self.email_input.text().strip(),
             "sg_status_list": self.status_combo.currentData(),
+            "sg_packages_recipient": self.packages_recipient_checkbox.isChecked(),
         }
 
 
@@ -145,8 +154,8 @@ class ManageClientUsersDialog(QtWidgets.QDialog):
 
         # Client Users table
         self.users_table = QtWidgets.QTableWidget()
-        self.users_table.setColumnCount(3)
-        self.users_table.setHorizontalHeaderLabels(["Name", "Email", "Status"])
+        self.users_table.setColumnCount(4)
+        self.users_table.setHorizontalHeaderLabels(["Name", "Email", "Packages Recipient", "Status"])
         self.users_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.users_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.users_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -154,6 +163,7 @@ class ManageClientUsersDialog(QtWidgets.QDialog):
         self.users_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
         self.users_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
         self.users_table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        self.users_table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
         self.users_table.verticalHeader().setVisible(False)
         self.users_table.doubleClicked.connect(self._edit_selected_user)
         layout.addWidget(self.users_table)
@@ -220,13 +230,22 @@ class ManageClientUsersDialog(QtWidgets.QDialog):
             email_item = QtWidgets.QTableWidgetItem(user.get("email", "") or "")
             self.users_table.setItem(row, 1, email_item)
 
+            # Packages Recipient
+            is_recipient = user.get("sg_packages_recipient", False) or False
+            recipient_item = QtWidgets.QTableWidgetItem("Yes" if is_recipient else "No")
+            if is_recipient:
+                recipient_item.setForeground(QtGui.QColor("#008000"))
+            else:
+                recipient_item.setForeground(QtGui.QColor("#999999"))
+            self.users_table.setItem(row, 2, recipient_item)
+
             # Status
             status = user.get("sg_status_list", "act")
             status_text = "Active" if status == "act" else "Inactive"
             status_item = QtWidgets.QTableWidgetItem(status_text)
             if status != "act":
                 status_item.setForeground(QtGui.QColor("#999999"))
-            self.users_table.setItem(row, 2, status_item)
+            self.users_table.setItem(row, 3, status_item)
 
     def _on_selection_changed(self):
         """Handle selection change in the table."""
@@ -257,7 +276,8 @@ class ManageClientUsersDialog(QtWidgets.QDialog):
                 self.sg_client.create_client_user(
                     data["name"],
                     data["email"],
-                    status=data["sg_status_list"]
+                    status=data["sg_status_list"],
+                    packages_recipient=data["sg_packages_recipient"]
                 )
                 self._load_data()
             except Exception as e:
@@ -441,12 +461,14 @@ class VendorEditDialog(QtWidgets.QDialog):
         layout.addWidget(button_box)
 
     def _populate_available_list(self):
-        """Populate the available users list."""
+        """Populate the available users list (only packages recipients)."""
         self.available_list.clear()
         selected_ids = {r["id"] for r in self.selected_recipients}
 
         for user in self.available_client_users:
-            if user.get("id") not in selected_ids:
+            # Only show users who are packages recipients and not already selected
+            is_packages_recipient = user.get("sg_packages_recipient", False) or False
+            if is_packages_recipient and user.get("id") not in selected_ids:
                 display_text = user.get("name", "Unknown")
                 email = user.get("email", "")
                 if email:

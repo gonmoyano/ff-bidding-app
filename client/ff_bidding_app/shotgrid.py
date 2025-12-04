@@ -2015,7 +2015,7 @@ class ShotgridClient:
             List of ClientUser dictionaries
         """
         if fields is None:
-            fields = ["id", "name", "email", "sg_status_list"]
+            fields = ["id", "name", "email", "sg_status_list", "sg_packages_recipient"]
 
         # Filter for active client users only unless include_inactive is True
         if include_inactive:
@@ -2024,7 +2024,7 @@ class ShotgridClient:
             filters = [["sg_status_list", "is", "act"]]
         return self.sg.find("ClientUser", filters, fields, order=[{"field_name": "name", "direction": "asc"}])
 
-    def create_client_user(self, name, email, status="act"):
+    def create_client_user(self, name, email, status="act", packages_recipient=False):
         """
         Create a new ClientUser.
 
@@ -2032,6 +2032,7 @@ class ShotgridClient:
             name: User's name
             email: User's email address
             status: Status ('act' for active, 'dis' for inactive)
+            packages_recipient: Whether this user is a packages recipient
 
         Returns:
             Created ClientUser entity dictionary
@@ -2040,6 +2041,7 @@ class ShotgridClient:
             "name": name,
             "email": email,
             "sg_status_list": status,
+            "sg_packages_recipient": packages_recipient,
         }
         return self.sg.create("ClientUser", data)
 
