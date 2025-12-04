@@ -549,7 +549,7 @@ class VendorEditDialog(QtWidgets.QDialog):
         return {
             "code": self.name_input.text().strip(),
             "description": self.description_input.toPlainText().strip() or None,
-            "sg_members": sg_members if sg_members else None,
+            "sg_members": sg_members,  # Empty list is valid, None causes API error
         }
 
 
