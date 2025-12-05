@@ -1561,35 +1561,16 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
     def _handle_manage_rfq_vendors(self, project_id, existing_rfqs):
         """Handle managing vendors for an RFQ."""
-        if not existing_rfqs:
+        # Use the currently selected RFQ from the combo box
+        rfq = self.rfq_combo.itemData(self.rfq_combo.currentIndex())
+
+        if not rfq:
             QtWidgets.QMessageBox.warning(
                 self,
-                "No RFQs",
-                "There are no RFQs to manage vendors for."
+                "No RFQ Selected",
+                "Please select an RFQ first."
             )
             return
-
-        # If only one RFQ, use it directly; otherwise ask user to select
-        if len(existing_rfqs) == 1:
-            rfq = existing_rfqs[0]
-        else:
-            # Show a selection dialog
-            rfq_names = [rfq.get('code', f"RFQ {rfq.get('id')}") for rfq in existing_rfqs]
-            selected_name, ok = QtWidgets.QInputDialog.getItem(
-                self,
-                "Select RFQ",
-                "Select the RFQ to manage vendors for:",
-                rfq_names,
-                0,
-                False
-            )
-            if not ok:
-                return
-
-            # Find the selected RFQ
-            rfq = next((r for r in existing_rfqs if r.get('code') == selected_name), None)
-            if not rfq:
-                return
 
         try:
             # Get all vendors for the project
@@ -1721,7 +1702,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             rfqs = self.sg_session.get_rfqs(project_id,
                                             fields=["id", "code", "sg_status_list",
                                                     "sg_current_bid", "sg_current_bid.code", "sg_current_bid.sg_bid_type",
-                                                    "created_at"])
+                                                    "sg_vendors", "created_at"])
 
             if rfqs:
                 pass
