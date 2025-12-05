@@ -2276,20 +2276,13 @@ class BidSelectorWidget(QtWidgets.QWidget):
             return
 
         try:
-            # Determine which field to update based on bid type
-            bid_type_value = bid.get('sg_bid_type', 'Early Bid')
-            if bid_type_value == 'Turnover Bid':
-                field_name = 'sg_turnover_bid'
-            else:
-                field_name = 'sg_early_bid'
-
-            # Update RFQ to link this bid
+            # Update RFQ to link this bid as the current bid
             rfq_id = rfq['id']
-            update_data = {field_name: {"type": "CustomEntity06", "id": bid['id']}}
+            update_data = {"sg_current_bid": {"type": "CustomEntity06", "id": bid['id']}}
 
             self.sg_session.sg.update("CustomEntity04", rfq_id, update_data)
 
-            logger.info(f"DEBUG: Successfully updated ShotGrid - RFQ {rfq_id} {field_name} = Bid {bid['id']}")
+            logger.info(f"DEBUG: Successfully updated ShotGrid - RFQ {rfq_id} sg_current_bid = Bid {bid['id']}")
             logger.info(f"DEBUG: self.parent_app = {self.parent_app}")
             logger.info(f"DEBUG: type(self.parent_app) = {type(self.parent_app)}")
             logger.info(f"DEBUG: hasattr(self.parent_app, 'parent_app') = {hasattr(self.parent_app, 'parent_app')}")
@@ -2325,7 +2318,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         main_app.rfq_combo.setCurrentIndex(current_rfq_index)
 
             self.statusMessageChanged.emit(f"✓ Set '{bid_name}' as current bid for RFQ", False)
-            QtWidgets.QMessageBox.information(self, "Success", f"'{bid_name}' is now the current {bid_type} for this RFQ.")
+            QtWidgets.QMessageBox.information(self, "Success", f"'{bid_name}' is now the current bid for this RFQ.")
 
         except Exception as e:
             logger.error(f"Failed to set current bid: {e}", exc_info=True)
