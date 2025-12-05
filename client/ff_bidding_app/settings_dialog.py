@@ -847,7 +847,8 @@ class VendorsTab(QtWidgets.QWidget):
 
         try:
             self.vendors = self.sg_client.get_vendors(self.project_id)
-            self.client_users = self.sg_client.get_all_client_users()
+            # Include inactive users - filtering is done by sg_packages_recipient in VendorEditDialog
+            self.client_users = self.sg_client.get_all_client_users(include_inactive=True)
             self._populate_table()
         except Exception as e:
             QtWidgets.QMessageBox.critical(
