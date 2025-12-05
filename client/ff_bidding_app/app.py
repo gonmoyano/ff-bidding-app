@@ -404,6 +404,183 @@ class RemoveRFQDialog(QtWidgets.QDialog):
         return self.delete_related_checkbox.isChecked()
 
 
+class ManageRFQVendorsDialog(QtWidgets.QDialog):
+    """Dialog for managing vendors assigned to an RFQ."""
+
+    def __init__(self, rfq, all_vendors, sg_session, parent=None):
+        """Initialize the dialog.
+
+        Args:
+            rfq: RFQ entity dict with sg_vendors field
+            all_vendors: List of all available vendor entities
+            sg_session: ShotGrid client instance
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.rfq = rfq
+        self.all_vendors = all_vendors
+        self.sg_session = sg_session
+        self.assigned_vendors = []
+
+        # Initialize assigned vendors from RFQ's sg_vendors
+        sg_vendors = rfq.get("sg_vendors") or []
+        for vendor in sg_vendors:
+            if isinstance(vendor, dict) and vendor.get("id"):
+                self.assigned_vendors.append({
+                    "type": "CustomEntity05",
+                    "id": vendor["id"],
+                    "name": vendor.get("name", f"Vendor {vendor['id']}")
+                })
+
+        self.setWindowTitle(f"Manage Vendors for RFQ: {rfq.get('code', 'Unknown')}")
+        self.setModal(True)
+        self.setMinimumWidth(600)
+        self.setMinimumHeight(400)
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Description
+        desc_label = QtWidgets.QLabel(
+            "Select vendors to assign to this RFQ. Only assigned vendors will appear in the Delivery tab."
+        )
+        desc_label.setWordWrap(True)
+        desc_label.setStyleSheet("color: #888888; font-size: 11px;")
+        layout.addWidget(desc_label)
+
+        # Horizontal layout for available and assigned lists
+        lists_layout = QtWidgets.QHBoxLayout()
+
+        # Available vendors list
+        available_layout = QtWidgets.QVBoxLayout()
+        available_label = QtWidgets.QLabel("Available Vendors:")
+        available_label.setStyleSheet("font-weight: bold;")
+        available_layout.addWidget(available_label)
+
+        self.available_list = QtWidgets.QListWidget()
+        self.available_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self._populate_available_list()
+        available_layout.addWidget(self.available_list)
+        lists_layout.addLayout(available_layout)
+
+        # Add/Remove buttons
+        buttons_layout = QtWidgets.QVBoxLayout()
+        buttons_layout.addStretch()
+
+        self.add_btn = QtWidgets.QPushButton(">")
+        self.add_btn.setFixedWidth(40)
+        self.add_btn.setToolTip("Add selected vendors to RFQ")
+        self.add_btn.clicked.connect(self._add_vendors)
+        buttons_layout.addWidget(self.add_btn)
+
+        self.remove_btn = QtWidgets.QPushButton("<")
+        self.remove_btn.setFixedWidth(40)
+        self.remove_btn.setToolTip("Remove selected vendors from RFQ")
+        self.remove_btn.clicked.connect(self._remove_vendors)
+        buttons_layout.addWidget(self.remove_btn)
+
+        buttons_layout.addStretch()
+        lists_layout.addLayout(buttons_layout)
+
+        # Assigned vendors list
+        assigned_layout = QtWidgets.QVBoxLayout()
+        assigned_label = QtWidgets.QLabel("Assigned to RFQ:")
+        assigned_label.setStyleSheet("font-weight: bold;")
+        assigned_layout.addWidget(assigned_label)
+
+        self.assigned_list = QtWidgets.QListWidget()
+        self.assigned_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self._populate_assigned_list()
+        assigned_layout.addWidget(self.assigned_list)
+        lists_layout.addLayout(assigned_layout)
+
+        layout.addLayout(lists_layout)
+
+        # Button box
+        button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Save | QtWidgets.QDialogButtonBox.Cancel
+        )
+        button_box.accepted.connect(self._save_and_close)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+    def _populate_available_list(self):
+        """Populate the available vendors list."""
+        self.available_list.clear()
+        assigned_ids = {v["id"] for v in self.assigned_vendors}
+
+        for vendor in self.all_vendors:
+            if vendor.get("id") not in assigned_ids:
+                item = QtWidgets.QListWidgetItem(vendor.get("code", f"Vendor {vendor.get('id')}"))
+                item.setData(QtCore.Qt.UserRole, vendor)
+                self.available_list.addItem(item)
+
+    def _populate_assigned_list(self):
+        """Populate the assigned vendors list."""
+        self.assigned_list.clear()
+
+        for vendor in self.assigned_vendors:
+            # Find full vendor info
+            full_vendor = next(
+                (v for v in self.all_vendors if v.get("id") == vendor["id"]),
+                vendor
+            )
+            item = QtWidgets.QListWidgetItem(full_vendor.get("code", vendor.get("name", "Unknown")))
+            item.setData(QtCore.Qt.UserRole, vendor)
+            self.assigned_list.addItem(item)
+
+    def _add_vendors(self):
+        """Add selected vendors to assigned list."""
+        for item in self.available_list.selectedItems():
+            vendor = item.data(QtCore.Qt.UserRole)
+            if vendor and vendor.get("id") not in {v["id"] for v in self.assigned_vendors}:
+                self.assigned_vendors.append({
+                    "type": "CustomEntity05",
+                    "id": vendor["id"],
+                    "name": vendor.get("code", f"Vendor {vendor['id']}")
+                })
+
+        self._populate_available_list()
+        self._populate_assigned_list()
+
+    def _remove_vendors(self):
+        """Remove selected vendors from assigned list."""
+        ids_to_remove = set()
+        for item in self.assigned_list.selectedItems():
+            vendor = item.data(QtCore.Qt.UserRole)
+            if vendor:
+                ids_to_remove.add(vendor["id"])
+
+        self.assigned_vendors = [v for v in self.assigned_vendors if v["id"] not in ids_to_remove]
+
+        self._populate_available_list()
+        self._populate_assigned_list()
+
+    def _save_and_close(self):
+        """Save the vendor assignments to ShotGrid and close."""
+        try:
+            # Format vendors as entity references
+            sg_vendors = [{"type": "CustomEntity05", "id": v["id"]} for v in self.assigned_vendors]
+
+            # Update RFQ with new vendor assignments
+            self.sg_session.update_rfq(self.rfq["id"], {"sg_vendors": sg_vendors})
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Success",
+                f"Vendors updated for RFQ '{self.rfq.get('code', 'Unknown')}'."
+            )
+            self.accept()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to update vendors:\n{str(e)}"
+            )
+
+
 class ConfigRFQsDialog(QtWidgets.QDialog):
     """Main dialog for configuring RFQs with create/rename/remove options."""
 
@@ -452,6 +629,11 @@ class ConfigRFQsDialog(QtWidgets.QDialog):
         remove_btn.setEnabled(len(self.existing_rfqs) > 0)
         layout.addWidget(remove_btn)
 
+        manage_vendors_btn = QtWidgets.QPushButton("Manage RFQ Vendors")
+        manage_vendors_btn.clicked.connect(self._on_manage_vendors_clicked)
+        manage_vendors_btn.setEnabled(len(self.existing_rfqs) > 0)
+        layout.addWidget(manage_vendors_btn)
+
         layout.addSpacing(20)
 
         # Close button
@@ -477,6 +659,11 @@ class ConfigRFQsDialog(QtWidgets.QDialog):
     def _on_remove_clicked(self):
         """Handle remove button click."""
         self.result_action = "remove"
+        self.accept()
+
+    def _on_manage_vendors_clicked(self):
+        """Handle manage vendors button click."""
+        self.result_action = "manage_vendors"
         self.accept()
 
     def get_action(self):
@@ -1216,6 +1403,8 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self._handle_rename_rfq(existing_rfqs)
         elif action == "remove":
             self._handle_remove_rfq(existing_rfqs)
+        elif action == "manage_vendors":
+            self._handle_manage_rfq_vendors(project['id'], existing_rfqs)
 
     def _handle_create_rfq(self, project_id):
         """Handle creating a new RFQ."""
@@ -1368,6 +1557,60 @@ class PackageManagerApp(QtWidgets.QMainWindow):
                 self,
                 "Error",
                 f"Failed to remove RFQ: {str(e)}"
+            )
+
+    def _handle_manage_rfq_vendors(self, project_id, existing_rfqs):
+        """Handle managing vendors for an RFQ."""
+        if not existing_rfqs:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No RFQs",
+                "There are no RFQs to manage vendors for."
+            )
+            return
+
+        # If only one RFQ, use it directly; otherwise ask user to select
+        if len(existing_rfqs) == 1:
+            rfq = existing_rfqs[0]
+        else:
+            # Show a selection dialog
+            rfq_names = [rfq.get('code', f"RFQ {rfq.get('id')}") for rfq in existing_rfqs]
+            selected_name, ok = QtWidgets.QInputDialog.getItem(
+                self,
+                "Select RFQ",
+                "Select the RFQ to manage vendors for:",
+                rfq_names,
+                0,
+                False
+            )
+            if not ok:
+                return
+
+            # Find the selected RFQ
+            rfq = next((r for r in existing_rfqs if r.get('code') == selected_name), None)
+            if not rfq:
+                return
+
+        try:
+            # Get all vendors for the project
+            all_vendors = self.sg_session.get_vendors(project_id)
+
+            # Show the manage vendors dialog
+            dialog = ManageRFQVendorsDialog(rfq, all_vendors, self.sg_session, parent=self)
+            if dialog.exec() == QtWidgets.QDialog.Accepted:
+                # Reload RFQs to get updated vendor assignments
+                self._load_rfqs(project_id)
+
+                # Refresh delivery tab if present
+                if hasattr(self, 'delivery_tab'):
+                    self.delivery_tab.refresh_vendors()
+
+        except Exception as e:
+            logger.error(f"Error managing RFQ vendors: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to manage vendors: {str(e)}"
             )
 
     def _create_packages_tab(self):

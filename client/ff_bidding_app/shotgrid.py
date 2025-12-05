@@ -236,6 +236,7 @@ class ShotgridClient:
                 "sg_status_list",
                 "created_at",
                 "sg_vfx_breakdown",  # include the link so UI stays in sync on reload
+                "sg_vendors",  # vendors assigned to this RFQ
             ]
 
         return self.sg.find(
@@ -1964,6 +1965,26 @@ class ShotgridClient:
 
         filters = [["project", "is", {"type": "Project", "id": int(project_id)}]]
         return self.sg.find("CustomEntity05", filters, fields, order=order)
+
+    def get_vendors_by_ids(self, vendor_ids, fields=None):
+        """
+        Get Vendors (CustomEntity05) by their IDs.
+
+        Args:
+            vendor_ids: List of vendor IDs
+            fields: List of fields to return
+
+        Returns:
+            List of Vendor dictionaries
+        """
+        if not vendor_ids:
+            return []
+
+        if fields is None:
+            fields = ["id", "code", "sg_vendor_category", "sg_status_list", "description", "sg_members", "created_at", "updated_at"]
+
+        filters = [["id", "in", [int(vid) for vid in vendor_ids]]]
+        return self.sg.find("CustomEntity05", filters, fields, order=[{"field_name": "code", "direction": "asc"}])
 
     def get_vendor_categories(self, project_id):
         """
