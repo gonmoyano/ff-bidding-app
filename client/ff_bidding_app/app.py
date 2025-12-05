@@ -1720,8 +1720,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         try:
             rfqs = self.sg_session.get_rfqs(project_id,
                                             fields=["id", "code", "sg_status_list",
-                                                    "sg_early_bid", "sg_early_bid.code", "sg_early_bid.sg_bid_type",
-                                                    "sg_turnover_bid", "sg_turnover_bid.code", "sg_turnover_bid.sg_bid_type",
+                                                    "sg_current_bid", "sg_current_bid.code", "sg_current_bid.sg_bid_type",
                                                     "created_at"])
 
             if rfqs:
@@ -1764,14 +1763,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
         if rfq:
             # Show currently linked Bid under the RFQ selector
-            # Check Early Bid first, then Turnover Bid
-            linked_bid = rfq.get("sg_early_bid")
-            if not linked_bid:
-                linked_bid = rfq.get("sg_turnover_bid")
-
-            if linked_bid:
-                if isinstance(linked_bid, dict):
-                    pass
+            linked_bid = rfq.get("sg_current_bid")
 
             if isinstance(linked_bid, dict):
                 # ShotGrid returns 'name' field for linked entities, not 'code'

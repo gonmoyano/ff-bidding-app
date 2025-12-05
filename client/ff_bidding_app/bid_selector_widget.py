@@ -2097,13 +2097,10 @@ class BidSelectorWidget(QtWidgets.QWidget):
         if bids:
             self._set_status(f"Loaded {len(bids)} Bid(s) for this RFQ.")
 
-            # Auto-select the bid linked to the RFQ if present
+            # Auto-select the current bid linked to the RFQ if present
             bid_was_selected = False
             if rfq and auto_select:
-                # Check Early Bid first, then Turnover Bid
-                linked_bid = rfq.get("sg_early_bid")
-                if not linked_bid:
-                    linked_bid = rfq.get("sg_turnover_bid")
+                linked_bid = rfq.get("sg_current_bid")
 
                 linked_bid_id = None
                 if isinstance(linked_bid, dict):
@@ -2112,12 +2109,12 @@ class BidSelectorWidget(QtWidgets.QWidget):
                     linked_bid_id = linked_bid[0].get("id") if linked_bid[0] else None
 
                 if linked_bid_id:
-                    # Try to select the linked bid
+                    # Try to select the current bid
                     if self._select_bid_by_id(linked_bid_id):
                         bid_was_selected = True
                     else:
-                        # Linked bid not found in list, don't auto-select anything
-                        logger.warning(f"Linked bid {linked_bid_id} not found in project bids")
+                        # Current bid not found in list, don't auto-select anything
+                        logger.warning(f"Current bid {linked_bid_id} not found in RFQ bids")
 
             # If no bid was selected (either no linked bid or linked bid not found),
             # manually trigger bidChanged with None to reset downstream components
@@ -2307,15 +2304,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
             else:
                 logger.warning("Could not update Current Bid label - main_app or rfq_bid_label not found")
 
-            # Refresh RFQ data in parent to keep everything in sync
-            if main_app and hasattr(main_app, '_load_rfqs') and hasattr(main_app, 'sg_project_combo'):
-                proj = main_app.sg_project_combo.itemData(main_app.sg_project_combo.currentIndex())
-                if proj:
-                    current_rfq_index = main_app.rfq_combo.currentIndex()
-                    main_app._load_rfqs(proj['id'])
-                    # Restore RFQ selection - this will trigger _on_rfq_changed
-                    if current_rfq_index > 0:  # Don't select the "-- Select RFQ --" item
-                        main_app.rfq_combo.setCurrentIndex(current_rfq_index)
+            # Update the current_rfq's sg_current_bid field in memory to stay in sync
+            if self.current_rfq:
+                self.current_rfq['sg_current_bid'] = {"type": "CustomEntity06", "id": bid['id'], "name": bid_display_name}
 
             self.statusMessageChanged.emit(f"✓ Set '{bid_name}' as current bid for RFQ", False)
             QtWidgets.QMessageBox.information(self, "Success", f"'{bid_name}' is now the current bid for this RFQ.")
