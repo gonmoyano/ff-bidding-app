@@ -1065,6 +1065,11 @@ class PackagesTab(QtWidgets.QWidget):
                 f"Location:\n{package_folder}"
             )
 
+            # Refresh the Delivery tab's package list so the new package appears in the dropdown
+            if self.parent_app and hasattr(self.parent_app, 'delivery_tab'):
+                self.parent_app.delivery_tab._load_packages_for_rfq(sg_rfq)
+                logger.info("Refreshed Delivery tab package list")
+
         except Exception as e:
             logger.error(f"Error creating package: {e}", exc_info=True)
             QtWidgets.QMessageBox.critical(
