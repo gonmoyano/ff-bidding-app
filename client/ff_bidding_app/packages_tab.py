@@ -307,13 +307,11 @@ class PackagesTab(QtWidgets.QWidget):
             return
 
         try:
-            # Get the bid linked to this RFQ (check Early Bid first, then Turnover Bid)
-            linked_bid = rfq.get("sg_early_bid")
-            if not linked_bid:
-                linked_bid = rfq.get("sg_turnover_bid")
+            # Get the current bid linked to this RFQ
+            linked_bid = rfq.get("sg_current_bid")
 
             if not linked_bid:
-                logger.info("No bid linked to this RFQ")
+                logger.info("No current bid linked to this RFQ")
                 self.breakdown_widget.load_bidding_scenes([])
                 return
 
