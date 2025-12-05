@@ -987,16 +987,21 @@ class DeliveryTab(QtWidgets.QWidget):
 
         if not rfq:
             self.package_share_widget.set_packages([])
+            self.vendor_category_view.set_vendors([])
+            self.package_share_widget.set_vendors([])
             self.status_label.setText("No RFQ selected")
             return
 
         # Load packages for this RFQ
         self._load_packages_for_rfq(rfq)
 
+        # Load vendors assigned to this RFQ
+        self._load_vendors_for_rfq(rfq)
+
         self.status_label.setText(f"Loaded packages for RFQ: {rfq.get('code', 'Unknown')}")
 
     def set_project(self, project_id):
-        """Set the current project and load vendors.
+        """Set the current project.
 
         Args:
             project_id: Project ID
@@ -1008,8 +1013,7 @@ class DeliveryTab(QtWidgets.QWidget):
             self.package_share_widget.set_vendors([])
             return
 
-        # Load vendors for this project
-        self._load_vendors_for_project(project_id)
+        # Vendors are loaded when RFQ is set (from RFQ's sg_vendors field)
 
     def _get_output_directory(self):
         """Get the current output directory path.
@@ -1107,12 +1111,52 @@ class DeliveryTab(QtWidgets.QWidget):
 
         return " | ".join(parts)
 
+    def _load_vendors_for_rfq(self, rfq):
+        """Load vendors assigned to the RFQ.
+
+        Args:
+            rfq: RFQ data dict with sg_vendors field
+        """
+        if not rfq:
+            self.vendors_list = []
+            self.vendor_category_view.set_vendors([])
+            self.package_share_widget.set_vendors([])
+            return
+
+        try:
+            # Get vendor IDs from RFQ's sg_vendors field
+            sg_vendors = rfq.get("sg_vendors") or []
+            vendor_ids = [v.get("id") for v in sg_vendors if isinstance(v, dict) and v.get("id")]
+
+            if not vendor_ids:
+                self.vendors_list = []
+                self.vendor_category_view.set_vendors([])
+                self.package_share_widget.set_vendors([])
+                logger.info(f"No vendors assigned to RFQ {rfq.get('code', 'Unknown')}")
+                return
+
+            # Fetch full vendor data for the assigned vendors
+            self.vendors_list = self.sg_session.get_vendors_by_ids(vendor_ids)
+            self.vendor_category_view.set_vendors(self.vendors_list)
+            self.package_share_widget.set_vendors(self.vendors_list)
+            logger.info(f"Loaded {len(self.vendors_list)} vendors for RFQ {rfq.get('code', 'Unknown')}")
+        except Exception as e:
+            logger.error(f"Error loading vendors for RFQ: {e}", exc_info=True)
+            self.vendors_list = []
+            self.vendor_category_view.set_vendors([])
+            self.package_share_widget.set_vendors([])
+
     def _load_vendors_for_project(self, project_id):
-        """Load vendors for the project.
+        """Load vendors for the project (used by refresh_vendors).
 
         Args:
             project_id: Project ID
         """
+        # If we have a current RFQ, load vendors from it instead
+        if self.current_rfq:
+            self._load_vendors_for_rfq(self.current_rfq)
+            return
+
         if not project_id:
             self.vendors_list = []
             self.vendor_category_view.set_vendors([])
@@ -1185,6 +1229,30 @@ class DeliveryTab(QtWidgets.QWidget):
         """
         if self.status_label:
             self.status_label.setText(message)
+
+    def refresh_vendors(self):
+        """Refresh vendor data from ShotGrid.
+
+        Call this after making changes to vendors, client users, or RFQ vendor assignments.
+        """
+        if self.current_rfq and self.current_rfq.get("id"):
+            # Reload the RFQ to get updated sg_vendors field
+            try:
+                rfq_id = self.current_rfq["id"]
+                updated_rfqs = self.sg_session.sg.find(
+                    "CustomEntity04",
+                    [["id", "is", rfq_id]],
+                    ["id", "code", "sg_status_list", "sg_vfx_breakdown", "sg_vendors"]
+                )
+                if updated_rfqs:
+                    self.current_rfq = updated_rfqs[0]
+                    self._load_vendors_for_rfq(self.current_rfq)
+                    logger.info("Refreshed vendor data from RFQ")
+            except Exception as e:
+                logger.error(f"Error refreshing RFQ vendor data: {e}", exc_info=True)
+        elif self.current_project_id:
+            self._load_vendors_for_project(self.current_project_id)
+            logger.info("Refreshed vendor data")
 
     def clear(self):
         """Clear the delivery tab data."""

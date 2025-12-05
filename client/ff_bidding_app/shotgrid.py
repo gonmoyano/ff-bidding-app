@@ -236,6 +236,7 @@ class ShotgridClient:
                 "sg_status_list",
                 "created_at",
                 "sg_vfx_breakdown",  # include the link so UI stays in sync on reload
+                "sg_vendors",  # vendors assigned to this RFQ
             ]
 
         return self.sg.find(
@@ -1965,6 +1966,26 @@ class ShotgridClient:
         filters = [["project", "is", {"type": "Project", "id": int(project_id)}]]
         return self.sg.find("CustomEntity05", filters, fields, order=order)
 
+    def get_vendors_by_ids(self, vendor_ids, fields=None):
+        """
+        Get Vendors (CustomEntity05) by their IDs.
+
+        Args:
+            vendor_ids: List of vendor IDs
+            fields: List of fields to return
+
+        Returns:
+            List of Vendor dictionaries
+        """
+        if not vendor_ids:
+            return []
+
+        if fields is None:
+            fields = ["id", "code", "sg_vendor_category", "sg_status_list", "description", "sg_members", "created_at", "updated_at"]
+
+        filters = [["id", "in", [int(vid) for vid in vendor_ids]]]
+        return self.sg.find("CustomEntity05", filters, fields, order=[{"field_name": "code", "direction": "asc"}])
+
     def get_vendor_categories(self, project_id):
         """
         Get unique vendor categories for a project.
@@ -2002,6 +2023,73 @@ class ShotgridClient:
 
         filters = [["id", "in", user_ids]]
         return self.sg.find("ClientUser", filters, fields)
+
+    def get_all_client_users(self, fields=None, include_inactive=False):
+        """
+        Get all ClientUser entities.
+
+        Args:
+            fields: List of fields to return
+            include_inactive: If True, include inactive users
+
+        Returns:
+            List of ClientUser dictionaries
+        """
+        if fields is None:
+            fields = ["id", "name", "email", "sg_status_list", "sg_packages_recipient"]
+
+        # Filter for active client users only unless include_inactive is True
+        if include_inactive:
+            filters = []
+        else:
+            filters = [["sg_status_list", "is", "act"]]
+        return self.sg.find("ClientUser", filters, fields, order=[{"field_name": "name", "direction": "asc"}])
+
+    def create_client_user(self, name, email, status="act", packages_recipient=False):
+        """
+        Create a new ClientUser.
+
+        Args:
+            name: User's name
+            email: User's email address
+            status: Status ('act' for active, 'dis' for inactive)
+            packages_recipient: Whether this user is a packages recipient
+
+        Returns:
+            Created ClientUser entity dictionary
+        """
+        data = {
+            "name": name,
+            "email": email,
+            "sg_status_list": status,
+            "sg_packages_recipient": packages_recipient,
+        }
+        return self.sg.create("ClientUser", data)
+
+    def update_client_user(self, user_id, data):
+        """
+        Update a ClientUser.
+
+        Args:
+            user_id: ClientUser ID
+            data: Dictionary of fields to update
+
+        Returns:
+            Updated ClientUser entity dictionary
+        """
+        return self.sg.update("ClientUser", int(user_id), data)
+
+    def delete_client_user(self, user_id):
+        """
+        Delete a ClientUser.
+
+        Args:
+            user_id: ClientUser ID
+
+        Returns:
+            bool: True if successful
+        """
+        return self.sg.delete("ClientUser", int(user_id))
 
     def create_vendor(self, project_id, code, vendor_category=None, description=None):
         """
