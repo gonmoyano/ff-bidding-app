@@ -322,14 +322,16 @@ class ShotgridClient:
         filters = [["project", "is", {"type": "Project", "id": int(project_id)}]]
         return self.sg.find(entity, filters, fields, order=order)
 
-    def get_bids(self, project_id, fields=None, order=None):
+    def get_bids(self, project_id, fields=None, order=None, rfq_id=None):
         """
-        Get Bids (CustomEntity06) for a project.
+        Get Bids (CustomEntity06) for a project, optionally filtered by RFQ.
 
         Args:
             project_id: Project ID
             fields: List of fields to return
             order: List of order dicts
+            rfq_id: RFQ ID to filter by (optional). If provided, only returns
+                    bids linked to this RFQ via sg_parent_rfq field.
 
         Returns:
             List of Bid dictionaries
@@ -340,9 +342,14 @@ class ShotgridClient:
             order = [{"field_name": "created_at", "direction": "desc"}]
 
         filters = [["project", "is", {"type": "Project", "id": int(project_id)}]]
+
+        # Filter by RFQ if provided
+        if rfq_id is not None:
+            filters.append(["sg_parent_rfq", "is", {"type": "CustomEntity04", "id": int(rfq_id)}])
+
         return self.sg.find("CustomEntity06", filters, fields, order=order)
 
-    def create_bid(self, project_id, code, bid_type="Early Bid", vfx_breakdown=None):
+    def create_bid(self, project_id, code, bid_type="Early Bid", vfx_breakdown=None, parent_rfq_id=None):
         """
         Create a new Bid (CustomEntity06).
 
@@ -351,6 +358,7 @@ class ShotgridClient:
             code: Bid name/code
             bid_type: Bid type (default: "Early Bid")
             vfx_breakdown: VFX Breakdown entity dict (optional)
+            parent_rfq_id: Parent RFQ ID to link the bid to (optional)
 
         Returns:
             Created Bid entity dictionary
@@ -363,6 +371,9 @@ class ShotgridClient:
 
         if vfx_breakdown:
             data["sg_vfx_breakdown"] = vfx_breakdown
+
+        if parent_rfq_id is not None:
+            data["sg_parent_rfq"] = {"type": "CustomEntity04", "id": int(parent_rfq_id)}
 
         result = self.sg.create("CustomEntity06", data)
         return result

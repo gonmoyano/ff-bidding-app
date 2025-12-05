@@ -2068,9 +2068,15 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         bids = []
         try:
-            logger.info(f"Loading Bids for Project ID {project_id}")
-            # Get all bids for the project
-            bids = self.sg_session.get_bids(project_id, fields=["id", "code", "name", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list"])
+            # Get RFQ ID for filtering bids
+            rfq_id = rfq.get("id") if rfq else None
+            logger.info(f"Loading Bids for Project ID {project_id}, RFQ ID {rfq_id}")
+            # Get bids filtered by RFQ (only bids linked to this RFQ via sg_parent_rfq)
+            bids = self.sg_session.get_bids(
+                project_id,
+                fields=["id", "code", "name", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list"],
+                rfq_id=rfq_id
+            )
         except Exception as e:
             logger.error(f"Error loading Bids: {e}", exc_info=True)
             bids = []
@@ -2089,7 +2095,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         # Status & selection
         if bids:
-            self._set_status(f"Loaded {len(bids)} Bid(s) in project.")
+            self._set_status(f"Loaded {len(bids)} Bid(s) for this RFQ.")
 
             # Auto-select the bid linked to the RFQ if present
             bid_was_selected = False
@@ -2119,7 +2125,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 logger.info("No bid linked to RFQ - resetting bid selection")
                 self._on_bid_changed(0)  # Trigger with index 0 (placeholder)
         else:
-            self._set_status("No Bids found in this project.")
+            self._set_status("No Bids found for this RFQ.")
             # No bids available - reset downstream components
             if auto_select:
                 self._on_bid_changed(0)  # Trigger with index 0 to reset
@@ -2332,6 +2338,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "No Project Selected", "Please select a project first.")
             return
 
+        # Require an RFQ to be selected
+        if not self.current_rfq:
+            QtWidgets.QMessageBox.warning(self, "No RFQ Selected", "Please select an RFQ first.")
+            return
+
         # Show dialog to get bid name and type
         dialog = AddBidDialog(parent=self)
         if dialog.exec_() == QtWidgets.QDialog.Accepted:
@@ -2343,8 +2354,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 return
 
             try:
-                # Create the bid
-                new_bid = self.sg_session.create_bid(self.current_project_id, bid_name, bid_type)
+                # Create the bid linked to the current RFQ
+                rfq_id = self.current_rfq.get("id")
+                new_bid = self.sg_session.create_bid(
+                    self.current_project_id, bid_name, bid_type, parent_rfq_id=rfq_id
+                )
 
                 logger.info(f"Created new bid: {bid_name} (ID: {new_bid['id']})")
 
