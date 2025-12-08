@@ -1694,49 +1694,71 @@ class DeliveryTab(QtWidgets.QWidget):
         Returns:
             List of tracking records with potentially updated statuses
         """
-        if not gdrive or not gdrive.is_available:
-            logger.debug("Google Drive service not available for access checking")
+        logger.info(f"=== Checking Google Drive access for {len(tracking_records)} tracking records ===")
+
+        if not gdrive:
+            logger.warning("Google Drive service is None")
             return tracking_records
+
+        if not gdrive.is_available:
+            logger.warning("Google Drive service not available (libraries not installed)")
+            return tracking_records
+
+        logger.info(f"Google Drive service available: {gdrive.is_available}")
+        logger.info(f"Google Drive authenticated: {gdrive.is_authenticated}")
 
         updated_records = []
 
         for record in tracking_records:
+            package_name = record.get('code', 'Unknown')
             current_status = record.get('sg_status_list', '')
+            logger.info(f"--- Checking package '{package_name}' (current status: {current_status}) ---")
 
             # Only check access for 'dlvr' (Delivered) status
             # Don't re-check records that are already 'acc' or 'dwnld'
             if current_status != 'dlvr':
+                logger.info(f"  Skipping: status is not 'dlvr' (is '{current_status}')")
                 updated_records.append(record)
                 continue
 
             # Extract share link URL
             share_link_data = record.get('sg_share_link', {})
+            logger.info(f"  Share link data: {share_link_data}")
             if isinstance(share_link_data, dict):
                 share_url = share_link_data.get('url', '')
             else:
                 share_url = share_link_data or ''
 
             if not share_url:
+                logger.warning(f"  No share URL found for package '{package_name}'")
                 updated_records.append(record)
                 continue
+
+            logger.info(f"  Share URL: {share_url}")
 
             # Extract file ID from URL
             file_id = gdrive.extract_file_id_from_url(share_url)
             if not file_id:
-                logger.debug(f"Could not extract file ID from share link for record {record.get('id')}")
+                logger.warning(f"  Could not extract file ID from share link for record {record.get('id')}")
                 updated_records.append(record)
                 continue
 
+            logger.info(f"  Extracted file ID: {file_id}")
+
             # Check if file has been accessed
             try:
+                logger.info(f"  Calling check_file_accessed({file_id})...")
                 access_info = gdrive.check_file_accessed(file_id)
+                logger.info(f"  Access check result: {access_info}")
 
                 if access_info and access_info.get('accessed'):
                     # Update status to 'acc' (Accessed) in ShotGrid
                     tracking_id = record.get('id')
-                    package_name = record.get('code', 'Unknown')
 
-                    logger.info(f"Package '{package_name}' has been accessed, updating status to 'acc'")
+                    logger.info(f"  Package '{package_name}' HAS BEEN ACCESSED!")
+                    logger.info(f"    Access count: {access_info.get('access_count', 0)}")
+                    logger.info(f"    Last access time: {access_info.get('access_time')}")
+                    logger.info(f"  Updating ShotGrid status to 'acc'...")
 
                     try:
                         self.sg_session.update_package_tracking(
@@ -1746,15 +1768,18 @@ class DeliveryTab(QtWidgets.QWidget):
                         # Update the local record to reflect the new status
                         record = dict(record)  # Make a copy to avoid modifying original
                         record['sg_status_list'] = 'acc'
-                        logger.info(f"Updated tracking record {tracking_id} status to 'acc'")
+                        logger.info(f"  SUCCESS: Updated tracking record {tracking_id} status to 'acc'")
                     except Exception as e:
-                        logger.error(f"Failed to update tracking status in ShotGrid: {e}")
+                        logger.error(f"  FAILED to update tracking status in ShotGrid: {e}")
+                else:
+                    logger.info(f"  Package '{package_name}' has NOT been accessed yet")
 
             except Exception as e:
-                logger.warning(f"Error checking Google Drive access for file {file_id}: {e}")
+                logger.error(f"  ERROR checking Google Drive access for file {file_id}: {e}", exc_info=True)
 
             updated_records.append(record)
 
+        logger.info(f"=== Finished checking Google Drive access ===")
         return updated_records
 
     def _load_vendors_for_project(self, project_id):
