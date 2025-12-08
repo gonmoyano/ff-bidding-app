@@ -1641,17 +1641,23 @@ class DeliveryTab(QtWidgets.QWidget):
         shared with each vendor, loaded from ShotGrid.
         Also checks Google Drive access and updates status to 'acc' if accessed.
         """
+        print("=== _load_package_tracking_for_vendors called ===")
+        print(f"  current_rfq: {self.current_rfq}")
+        print(f"  vendors_list count: {len(self.vendors_list) if self.vendors_list else 0}")
         logger.info("=== _load_package_tracking_for_vendors called ===")
         logger.info(f"  current_rfq: {self.current_rfq}")
         logger.info(f"  vendors_list count: {len(self.vendors_list) if self.vendors_list else 0}")
 
         if not self.current_rfq or not self.vendors_list:
+            print("  Returning early: no current_rfq or no vendors_list")
             logger.warning("  Returning early: no current_rfq or no vendors_list")
             return
 
         rfq_id = self.current_rfq.get('id')
+        print(f"  rfq_id: {rfq_id}")
         logger.info(f"  rfq_id: {rfq_id}")
         if not rfq_id:
+            print("  Returning early: no rfq_id")
             logger.warning("  Returning early: no rfq_id")
             return
 
@@ -1701,16 +1707,21 @@ class DeliveryTab(QtWidgets.QWidget):
         Returns:
             List of tracking records with potentially updated statuses
         """
+        print(f"=== Checking Google Drive access for {len(tracking_records)} tracking records ===")
         logger.info(f"=== Checking Google Drive access for {len(tracking_records)} tracking records ===")
 
         if not gdrive:
+            print("Google Drive service is None")
             logger.warning("Google Drive service is None")
             return tracking_records
 
         if not gdrive.is_available:
+            print("Google Drive service not available (libraries not installed)")
             logger.warning("Google Drive service not available (libraries not installed)")
             return tracking_records
 
+        print(f"Google Drive service available: {gdrive.is_available}")
+        print(f"Google Drive authenticated: {gdrive.is_authenticated}")
         logger.info(f"Google Drive service available: {gdrive.is_available}")
         logger.info(f"Google Drive authenticated: {gdrive.is_authenticated}")
 
@@ -1719,17 +1730,20 @@ class DeliveryTab(QtWidgets.QWidget):
         for record in tracking_records:
             package_name = record.get('code', 'Unknown')
             current_status = record.get('sg_status_list', '')
+            print(f"--- Checking package '{package_name}' (current status: {current_status}) ---")
             logger.info(f"--- Checking package '{package_name}' (current status: {current_status}) ---")
 
             # Only check access for 'dlvr' (Delivered) status
             # Don't re-check records that are already 'acc' or 'dwnld'
             if current_status != 'dlvr':
+                print(f"  Skipping: status is not 'dlvr' (is '{current_status}')")
                 logger.info(f"  Skipping: status is not 'dlvr' (is '{current_status}')")
                 updated_records.append(record)
                 continue
 
             # Extract share link URL
             share_link_data = record.get('sg_share_link', {})
+            print(f"  Share link data: {share_link_data}")
             logger.info(f"  Share link data: {share_link_data}")
             if isinstance(share_link_data, dict):
                 share_url = share_link_data.get('url', '')
@@ -1737,25 +1751,31 @@ class DeliveryTab(QtWidgets.QWidget):
                 share_url = share_link_data or ''
 
             if not share_url:
+                print(f"  No share URL found for package '{package_name}'")
                 logger.warning(f"  No share URL found for package '{package_name}'")
                 updated_records.append(record)
                 continue
 
+            print(f"  Share URL: {share_url}")
             logger.info(f"  Share URL: {share_url}")
 
             # Extract file ID from URL
             file_id = gdrive.extract_file_id_from_url(share_url)
             if not file_id:
+                print(f"  Could not extract file ID from share link for record {record.get('id')}")
                 logger.warning(f"  Could not extract file ID from share link for record {record.get('id')}")
                 updated_records.append(record)
                 continue
 
+            print(f"  Extracted file ID: {file_id}")
             logger.info(f"  Extracted file ID: {file_id}")
 
             # Check if file has been accessed
             try:
+                print(f"  Calling check_file_accessed({file_id})...")
                 logger.info(f"  Calling check_file_accessed({file_id})...")
                 access_info = gdrive.check_file_accessed(file_id)
+                print(f"  Access check result: {access_info}")
                 logger.info(f"  Access check result: {access_info}")
 
                 if access_info and access_info.get('accessed'):
