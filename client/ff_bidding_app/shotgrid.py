@@ -2235,7 +2235,7 @@ class ShotgridClient:
     # PackageTracking Management (CustomEntity14)
     # ------------------------------------------------------------------
 
-    def create_package_tracking(self, project_id, package_name, share_link, vendor, rfq, status="Delivered"):
+    def create_package_tracking(self, project_id, package_name, share_link, vendor, rfq, status="dlvr"):
         """
         Create a new PackageTracking (CustomEntity14) entity in ShotGrid.
 
@@ -2245,7 +2245,7 @@ class ShotgridClient:
             share_link: Google Drive share link (sg_share_link) - string URL
             vendor: Vendor entity dict or ID (sg_recipient)
             rfq: RFQ entity dict or ID (sg_rfq)
-            status: Status value (default: "Delivered")
+            status: Status code (default: "dlvr" for Delivered). Valid: 'dlvr', 'dwnld'
 
         Returns:
             Created PackageTracking entity dictionary

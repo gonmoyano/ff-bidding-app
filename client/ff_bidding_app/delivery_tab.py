@@ -598,13 +598,14 @@ class PackageShareWidget(QtWidgets.QWidget):
                 return
 
             # Create the PackageTracking entity
+            # Status codes: 'dlvr' = Delivered, 'dwnld' = Downloaded
             tracking = sg_session.create_package_tracking(
                 project_id=project_id,
                 package_name=package_name,
                 share_link=share_link,
                 vendor=vendor,
                 rfq=current_rfq,
-                status="Delivered"
+                status="dlvr"  # Delivered
             )
 
             if tracking:
@@ -681,15 +682,21 @@ class PackageTrackingDetailsDialog(QtWidgets.QDialog):
         header_layout.addWidget(name_label)
         header_layout.addStretch()
 
+        # Map status codes to display names
+        status_display = {
+            'dlvr': 'Delivered',
+            'dwnld': 'Downloaded',
+        }
+        status_name = status_display.get(status, status)
+
         # Status badge with color based on status
         status_colors = {
-            'Delivered': ('#2a4a2a', '#8fdf8f'),
-            'Pending': ('#4a4a2a', '#dfdf8f'),
-            'Failed': ('#4a2a2a', '#df8f8f'),
+            'dlvr': ('#2a4a2a', '#8fdf8f'),      # Delivered - green
+            'dwnld': ('#2a4a5a', '#8fdfdf'),     # Downloaded - cyan
         }
         bg_color, text_color = status_colors.get(status, ('#3a3a3a', '#aaa'))
 
-        status_badge = QtWidgets.QLabel(status)
+        status_badge = QtWidgets.QLabel(status_name)
         status_badge.setStyleSheet(f"""
             background-color: {bg_color};
             color: {text_color};
@@ -1160,22 +1167,25 @@ class DroppableVendorContainer(QtWidgets.QWidget):
             share_link = share_link_data or ''
         status = tracking_record.get('sg_status_list', 'Unknown')
 
-        # Status-based colors
+        # Map status codes to display names
+        status_display = {
+            'dlvr': 'Delivered',
+            'dwnld': 'Downloaded',
+        }
+        status_name = status_display.get(status, status)
+
+        # Status-based colors (using status codes)
         status_colors = {
-            'Delivered': {
+            'dlvr': {  # Delivered - green
                 'bg': '#3a5a3a', 'border': '#5a7a5a', 'hover_bg': '#456a45', 'hover_border': '#6a8a6a',
                 'badge_bg': '#2a4a2a', 'badge_text': '#8fdf8f'
             },
-            'Pending': {
-                'bg': '#5a5a3a', 'border': '#7a7a5a', 'hover_bg': '#6a6a45', 'hover_border': '#8a8a6a',
-                'badge_bg': '#4a4a2a', 'badge_text': '#dfdf8f'
-            },
-            'Failed': {
-                'bg': '#5a3a3a', 'border': '#7a5a5a', 'hover_bg': '#6a4545', 'hover_border': '#8a6a6a',
-                'badge_bg': '#4a2a2a', 'badge_text': '#df8f8f'
+            'dwnld': {  # Downloaded - cyan
+                'bg': '#3a5a5a', 'border': '#5a7a7a', 'hover_bg': '#456a6a', 'hover_border': '#6a8a8a',
+                'badge_bg': '#2a4a5a', 'badge_text': '#8fdfdf'
             },
         }
-        colors = status_colors.get(status, status_colors['Delivered'])
+        colors = status_colors.get(status, status_colors['dlvr'])
 
         # Create clickable package widget
         package_widget = ClickableFrame(tracking_record)
@@ -1212,7 +1222,7 @@ class DroppableVendorContainer(QtWidgets.QWidget):
         top_row.addStretch()
 
         # Status badge with dynamic colors
-        status_label = QtWidgets.QLabel(status)
+        status_label = QtWidgets.QLabel(status_name)
         status_label.setStyleSheet(f"""
             background-color: {colors['badge_bg']};
             color: {colors['badge_text']};
