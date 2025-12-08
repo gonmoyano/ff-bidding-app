@@ -367,6 +367,10 @@ class PackageShareWidget(QtWidgets.QWidget):
         if not self.current_package:
             return
 
+        # Check if package has already been shared to the selected vendor
+        if self._check_duplicate_share():
+            return  # Already shown warning to user
+
         package_path = self.current_package.get('path')
         if not package_path:
             logger.warning("No package path available")
@@ -385,6 +389,70 @@ class PackageShareWidget(QtWidgets.QWidget):
         else:
             # Need to create zip file
             self._start_zipping(package_dir, zip_path)
+
+    def _check_duplicate_share(self):
+        """Check if the package has already been shared to the selected vendor.
+
+        Returns:
+            bool: True if duplicate found (and warning shown), False otherwise
+        """
+        vendor = self.vendor_combo.currentData()
+        if not vendor:
+            return False  # No vendor selected, proceed
+
+        package_name = self.current_package.get('code')
+        if not package_name:
+            return False
+
+        try:
+            delivery_tab = self._get_delivery_tab()
+            if not delivery_tab or not hasattr(delivery_tab, 'sg_session'):
+                return False
+
+            sg_session = delivery_tab.sg_session
+            current_rfq = delivery_tab.current_rfq
+
+            if not current_rfq:
+                return False
+
+            rfq_id = current_rfq.get('id')
+            vendor_id = vendor.get('id')
+            vendor_name = vendor.get('code', 'Unknown')
+
+            if not rfq_id or not vendor_id:
+                return False
+
+            # Check for existing share
+            existing = sg_session.check_package_already_shared(
+                package_name=package_name,
+                vendor_id=vendor_id,
+                rfq_id=rfq_id
+            )
+
+            if existing:
+                # Format the date if available
+                created_at = existing.get('created_at', '')
+                if hasattr(created_at, 'strftime'):
+                    date_str = created_at.strftime('%Y-%m-%d %H:%M')
+                else:
+                    date_str = str(created_at) if created_at else 'unknown date'
+
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Package Already Shared",
+                    f"The package '{package_name}' has already been shared with "
+                    f"vendor '{vendor_name}' on {date_str}.\n\n"
+                    f"Each package can only be shared once per vendor."
+                )
+                logger.info(f"Duplicate share prevented: '{package_name}' already shared to '{vendor_name}'")
+                return True
+
+        except Exception as e:
+            logger.error(f"Error checking for duplicate share: {e}", exc_info=True)
+            # Don't block on error, proceed with share
+            return False
+
+        return False
 
     def _update_package_in_shotgrid(self):
         """Upload manifest to ShotGrid and set package status to closed."""
@@ -1174,14 +1242,14 @@ class DroppableVendorContainer(QtWidgets.QWidget):
         }
         status_name = status_display.get(status, status)
 
-        # Status-based colors (using status codes)
+        # Status-based colors (using status codes) - neutral background
         status_colors = {
-            'dlvr': {  # Delivered - green
-                'bg': '#3a5a3a', 'border': '#5a7a5a', 'hover_bg': '#456a45', 'hover_border': '#6a8a6a',
+            'dlvr': {  # Delivered - neutral with green badge
+                'bg': '#3a3a3a', 'border': '#555', 'hover_bg': '#454545', 'hover_border': '#666',
                 'badge_bg': '#2a4a2a', 'badge_text': '#8fdf8f'
             },
-            'dwnld': {  # Downloaded - cyan
-                'bg': '#3a5a5a', 'border': '#5a7a7a', 'hover_bg': '#456a6a', 'hover_border': '#6a8a8a',
+            'dwnld': {  # Downloaded - neutral with cyan badge
+                'bg': '#3a3a3a', 'border': '#555', 'hover_bg': '#454545', 'hover_border': '#666',
                 'badge_bg': '#2a4a5a', 'badge_text': '#8fdfdf'
             },
         }
@@ -1212,7 +1280,7 @@ class DroppableVendorContainer(QtWidgets.QWidget):
         top_row = QtWidgets.QHBoxLayout()
         icon_label = QtWidgets.QLabel()
         icon_label.setPixmap(self.style().standardIcon(
-            QtWidgets.QStyle.SP_DialogApplyButton
+            QtWidgets.QStyle.SP_DirIcon
         ).pixmap(20, 20))
         top_row.addWidget(icon_label)
 

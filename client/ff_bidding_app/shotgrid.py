@@ -2346,6 +2346,33 @@ class ShotgridClient:
             order=[{"field_name": "created_at", "direction": "desc"}]
         )
 
+    def check_package_already_shared(self, package_name, vendor_id, rfq_id):
+        """
+        Check if a package has already been shared with a vendor for an RFQ.
+
+        Args:
+            package_name: Name/code of the package
+            vendor_id: ID of the vendor (CustomEntity05)
+            rfq_id: ID of the RFQ (CustomEntity04)
+
+        Returns:
+            dict or None: The existing PackageTracking record if found, None otherwise
+        """
+        filters = [
+            ["code", "is", package_name],
+            ["sg_recipient", "is", {"type": "CustomEntity05", "id": int(vendor_id)}],
+            ["sg_rfq", "is", {"type": "CustomEntity04", "id": int(rfq_id)}]
+        ]
+
+        results = self.sg.find(
+            "CustomEntity14",
+            filters,
+            ["id", "code", "sg_share_link", "sg_recipient", "sg_status_list", "created_at"],
+            limit=1
+        )
+
+        return results[0] if results else None
+
     def update_package_tracking(self, tracking_id, data):
         """
         Update a PackageTracking (CustomEntity14) entity.
