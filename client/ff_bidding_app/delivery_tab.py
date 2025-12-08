@@ -946,19 +946,19 @@ class DeliveryTab(QtWidgets.QWidget):
         gdrive_status_layout.setContentsMargins(5, 2, 5, 2)
         gdrive_status_layout.setSpacing(10)
 
-        # Retry/Configure button (on the left)
-        self.gdrive_action_btn = QtWidgets.QPushButton("Configure")
-        self.gdrive_action_btn.setMaximumWidth(120)
-        self.gdrive_action_btn.setToolTip("Configure or retry Google Drive connection")
-        self.gdrive_action_btn.clicked.connect(self._on_gdrive_action_clicked)
-        gdrive_status_layout.addWidget(self.gdrive_action_btn)
-
-        # Status text label (to the right of the button)
+        # Status text label (on the left)
         self.gdrive_status_info_label = QtWidgets.QLabel("Checking Google Drive connection...")
         self.gdrive_status_info_label.setStyleSheet("color: #888;")
         gdrive_status_layout.addWidget(self.gdrive_status_info_label)
 
         gdrive_status_layout.addStretch()
+
+        # Retry/Configure button (on the right)
+        self.gdrive_action_btn = QtWidgets.QPushButton("Configure")
+        self.gdrive_action_btn.setMaximumWidth(120)
+        self.gdrive_action_btn.setToolTip("Configure or retry Google Drive connection")
+        self.gdrive_action_btn.clicked.connect(self._on_gdrive_action_clicked)
+        gdrive_status_layout.addWidget(self.gdrive_action_btn)
 
         details_pane_layout.addLayout(gdrive_status_layout)
 
