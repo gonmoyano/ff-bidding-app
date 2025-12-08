@@ -663,7 +663,12 @@ class PackageTrackingDetailsDialog(QtWidgets.QDialog):
         layout.setSpacing(15)
 
         package_name = self.tracking_record.get('code', 'Unknown Package')
-        share_link = self.tracking_record.get('sg_share_link', '')
+        # sg_share_link is a URL field stored as dict with 'url' and 'name' keys
+        share_link_data = self.tracking_record.get('sg_share_link', {})
+        if isinstance(share_link_data, dict):
+            share_link = share_link_data.get('url', '')
+        else:
+            share_link = share_link_data or ''
         status = self.tracking_record.get('sg_status_list', 'Unknown')
         created_at = self.tracking_record.get('created_at', '')
         recipient = self.tracking_record.get('sg_recipient', {})
@@ -794,9 +799,20 @@ class PackageTrackingDetailsDialog(QtWidgets.QDialog):
         close_layout.addWidget(close_btn)
         layout.addLayout(close_layout)
 
+    def _get_share_link_url(self):
+        """Extract the URL from the share_link field.
+
+        Returns:
+            str: The share link URL or empty string
+        """
+        share_link_data = self.tracking_record.get('sg_share_link', {})
+        if isinstance(share_link_data, dict):
+            return share_link_data.get('url', '')
+        return share_link_data or ''
+
     def _copy_link(self):
         """Copy the share link to clipboard."""
-        share_link = self.tracking_record.get('sg_share_link', '')
+        share_link = self._get_share_link_url()
         if share_link:
             QtWidgets.QApplication.clipboard().setText(share_link)
             self.copy_btn.setText("Copied!")
@@ -804,7 +820,7 @@ class PackageTrackingDetailsDialog(QtWidgets.QDialog):
 
     def _open_link(self):
         """Open the share link in the default browser."""
-        share_link = self.tracking_record.get('sg_share_link', '')
+        share_link = self._get_share_link_url()
         if share_link:
             from PySide6.QtGui import QDesktopServices
             from PySide6.QtCore import QUrl
@@ -1136,7 +1152,12 @@ class DroppableVendorContainer(QtWidgets.QWidget):
         self.placeholder_label.hide()
 
         package_name = tracking_record.get('code', 'Unknown Package')
-        share_link = tracking_record.get('sg_share_link', '')
+        # sg_share_link is a URL field stored as dict with 'url' and 'name' keys
+        share_link_data = tracking_record.get('sg_share_link', {})
+        if isinstance(share_link_data, dict):
+            share_link = share_link_data.get('url', '')
+        else:
+            share_link = share_link_data or ''
         status = tracking_record.get('sg_status_list', 'Unknown')
 
         # Status-based colors

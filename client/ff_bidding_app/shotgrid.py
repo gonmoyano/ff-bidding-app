@@ -2242,7 +2242,7 @@ class ShotgridClient:
         Args:
             project_id: ID of the project
             package_name: Name/code for the tracking record
-            share_link: Google Drive share link (sg_share_link)
+            share_link: Google Drive share link (sg_share_link) - string URL
             vendor: Vendor entity dict or ID (sg_recipient)
             rfq: RFQ entity dict or ID (sg_rfq)
             status: Status value (default: "Delivered")
@@ -2266,14 +2266,25 @@ class ShotgridClient:
         else:
             raise ValueError("Invalid rfq argument; expected id or SG link dict.")
 
+        # Format share_link as a URL field (ShotGrid expects a dict for URL fields)
+        share_link_data = None
+        if share_link:
+            share_link_data = {
+                "url": share_link,
+                "name": f"{package_name} - Google Drive"
+            }
+
         data = {
             "code": package_name,
             "project": {"type": "Project", "id": int(project_id)},
-            "sg_share_link": share_link,
             "sg_recipient": vendor_link,
             "sg_rfq": rfq_link,
             "sg_status_list": status,
         }
+
+        # Only add share_link if it exists
+        if share_link_data:
+            data["sg_share_link"] = share_link_data
 
         result = self.sg.create("CustomEntity14", data)
         logger.info(f"Created PackageTracking: {result.get('id')} for vendor {vendor_link['id']}, RFQ {rfq_link['id']}")
