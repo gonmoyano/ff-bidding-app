@@ -942,37 +942,25 @@ class DeliveryTab(QtWidgets.QWidget):
         details_pane_layout.addWidget(details_header)
 
         # Google Drive connection status bar
-        gdrive_status_frame = QtWidgets.QFrame()
-        gdrive_status_frame.setStyleSheet("""
-            QFrame {
-                background-color: #2d2d2d;
-                border: 1px solid #444;
-                border-radius: 4px;
-                padding: 2px;
-            }
-        """)
-        gdrive_status_layout = QtWidgets.QHBoxLayout(gdrive_status_frame)
-        gdrive_status_layout.setContentsMargins(10, 6, 10, 6)
+        gdrive_status_layout = QtWidgets.QHBoxLayout()
+        gdrive_status_layout.setContentsMargins(5, 2, 5, 2)
         gdrive_status_layout.setSpacing(10)
 
-        # Status icon (colored dot)
-        self.gdrive_status_icon = QtWidgets.QLabel("●")
-        self.gdrive_status_icon.setStyleSheet("color: #888; font-size: 12px;")
-        gdrive_status_layout.addWidget(self.gdrive_status_icon)
-
-        # Status text label
-        self.gdrive_status_info_label = QtWidgets.QLabel("Checking Google Drive connection...")
-        self.gdrive_status_info_label.setStyleSheet("color: #aaa;")
-        gdrive_status_layout.addWidget(self.gdrive_status_info_label, 1)
-
-        # Retry/Configure button
+        # Retry/Configure button (on the left)
         self.gdrive_action_btn = QtWidgets.QPushButton("Configure")
         self.gdrive_action_btn.setMaximumWidth(120)
         self.gdrive_action_btn.setToolTip("Configure or retry Google Drive connection")
         self.gdrive_action_btn.clicked.connect(self._on_gdrive_action_clicked)
         gdrive_status_layout.addWidget(self.gdrive_action_btn)
 
-        details_pane_layout.addWidget(gdrive_status_frame)
+        # Status text label (to the right of the button)
+        self.gdrive_status_info_label = QtWidgets.QLabel("Checking Google Drive connection...")
+        self.gdrive_status_info_label.setStyleSheet("color: #888;")
+        gdrive_status_layout.addWidget(self.gdrive_status_info_label)
+
+        gdrive_status_layout.addStretch()
+
+        details_pane_layout.addLayout(gdrive_status_layout)
 
         self.package_share_widget = PackageShareWidget(self)
         self.package_share_widget.packageSelected.connect(self._on_package_selected)
@@ -1349,15 +1337,12 @@ class DeliveryTab(QtWidgets.QWidget):
             tooltip: Tooltip for the status label
             button_text: Text for the action button
         """
-        # Update icon color based on status
+        # Update status label with color based on status
         if status == "connected":
-            self.gdrive_status_icon.setStyleSheet("color: #66cc66; font-size: 12px;")  # Green
-        elif status == "warning":
-            self.gdrive_status_icon.setStyleSheet("color: #cccc66; font-size: 12px;")  # Yellow
-        else:  # error
-            self.gdrive_status_icon.setStyleSheet("color: #cc6666; font-size: 12px;")  # Red
+            self.gdrive_status_info_label.setStyleSheet("color: #66cc66;")  # Green
+        else:  # warning or error
+            self.gdrive_status_info_label.setStyleSheet("color: #cc6666;")  # Red
 
-        # Update status label
         self.gdrive_status_info_label.setText(message)
         self.gdrive_status_info_label.setToolTip(tooltip)
 
