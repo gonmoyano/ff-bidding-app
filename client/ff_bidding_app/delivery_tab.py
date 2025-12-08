@@ -1641,11 +1641,18 @@ class DeliveryTab(QtWidgets.QWidget):
         shared with each vendor, loaded from ShotGrid.
         Also checks Google Drive access and updates status to 'acc' if accessed.
         """
+        logger.info("=== _load_package_tracking_for_vendors called ===")
+        logger.info(f"  current_rfq: {self.current_rfq}")
+        logger.info(f"  vendors_list count: {len(self.vendors_list) if self.vendors_list else 0}")
+
         if not self.current_rfq or not self.vendors_list:
+            logger.warning("  Returning early: no current_rfq or no vendors_list")
             return
 
         rfq_id = self.current_rfq.get('id')
+        logger.info(f"  rfq_id: {rfq_id}")
         if not rfq_id:
+            logger.warning("  Returning early: no rfq_id")
             return
 
         try:

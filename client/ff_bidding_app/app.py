@@ -1711,15 +1711,22 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         This reloads package tracking records and checks each one for
         Google Drive access, updating the status to 'Accessed' if detected.
         """
+        logger.info("=== _refresh_package_tracking_statuses called ===")
+
         if not hasattr(self, 'delivery_tab'):
+            logger.warning("  No delivery_tab attribute found")
             return
 
+        logger.info(f"  delivery_tab exists: {self.delivery_tab}")
+        logger.info(f"  current_rfq: {getattr(self.delivery_tab, 'current_rfq', None)}")
+        logger.info(f"  vendors_list: {len(getattr(self.delivery_tab, 'vendors_list', []))} vendors")
+
         try:
-            logger.info("Refreshing package tracking statuses...")
+            logger.info("  Calling _load_package_tracking_for_vendors...")
             self.delivery_tab._load_package_tracking_for_vendors()
-            logger.info("Package tracking statuses refreshed")
+            logger.info("  Package tracking statuses refreshed successfully")
         except Exception as e:
-            logger.error(f"Error refreshing package tracking statuses: {e}", exc_info=True)
+            logger.error(f"  Error refreshing package tracking statuses: {e}", exc_info=True)
 
     def _create_bidding_tab(self):
         """Create the Bidding tab content."""
