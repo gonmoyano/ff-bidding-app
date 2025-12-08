@@ -1407,7 +1407,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         else:
             self.gdrive_status_label.setText("Google Drive: Connected")
             self.gdrive_status_label.setStyleSheet("color: #66cc66;")  # Green
-            self.gdrive_action_btn.setText("Reconnect")
+            self.gdrive_action_btn.setText("Refresh Connection")
 
     def _on_gdrive_action_clicked(self):
         """Handle Google Drive action button click."""
@@ -1450,7 +1450,9 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             if success:
                 self.gdrive_status_label.setText("Google Drive: Connected")
                 self.gdrive_status_label.setStyleSheet("color: #66cc66;")  # Green
-                self.gdrive_action_btn.setText("Reconnect")
+                self.gdrive_action_btn.setText("Refresh Connection")
+                # Refresh package tracking statuses in the delivery tab
+                self._refresh_package_tracking_statuses()
             else:
                 self.gdrive_status_label.setText("Google Drive: Authentication failed")
                 self.gdrive_status_label.setStyleSheet("color: #cc6666;")  # Red
@@ -1702,6 +1704,22 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         """Create the Delivery tab content."""
         self.delivery_tab = DeliveryTab(self.sg_session, self.output_directory, parent=self)
         return self.delivery_tab
+
+    def _refresh_package_tracking_statuses(self):
+        """Refresh package tracking statuses by checking Google Drive access.
+
+        This reloads package tracking records and checks each one for
+        Google Drive access, updating the status to 'Accessed' if detected.
+        """
+        if not hasattr(self, 'delivery_tab'):
+            return
+
+        try:
+            logger.info("Refreshing package tracking statuses...")
+            self.delivery_tab._load_package_tracking_for_vendors()
+            logger.info("Package tracking statuses refreshed")
+        except Exception as e:
+            logger.error(f"Error refreshing package tracking statuses: {e}", exc_info=True)
 
     def _create_bidding_tab(self):
         """Create the Bidding tab content."""
