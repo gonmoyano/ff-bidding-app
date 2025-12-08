@@ -307,13 +307,11 @@ class PackagesTab(QtWidgets.QWidget):
             return
 
         try:
-            # Get the bid linked to this RFQ (check Early Bid first, then Turnover Bid)
-            linked_bid = rfq.get("sg_early_bid")
-            if not linked_bid:
-                linked_bid = rfq.get("sg_turnover_bid")
+            # Get the current bid linked to this RFQ
+            linked_bid = rfq.get("sg_current_bid")
 
             if not linked_bid:
-                logger.info("No bid linked to this RFQ")
+                logger.info("No current bid linked to this RFQ")
                 self.breakdown_widget.load_bidding_scenes([])
                 return
 
@@ -1066,6 +1064,11 @@ class PackagesTab(QtWidgets.QWidget):
                 f"\nVersions by category:\n{entity_summary if entity_summary else '  (none)'}\n\n"
                 f"Location:\n{package_folder}"
             )
+
+            # Refresh the Delivery tab's package list so the new package appears in the dropdown
+            if self.parent_app and hasattr(self.parent_app, 'delivery_tab'):
+                self.parent_app.delivery_tab._load_packages_for_rfq(sg_rfq)
+                logger.info("Refreshed Delivery tab package list")
 
         except Exception as e:
             logger.error(f"Error creating package: {e}", exc_info=True)

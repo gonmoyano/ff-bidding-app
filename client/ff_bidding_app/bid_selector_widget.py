@@ -2068,9 +2068,15 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         bids = []
         try:
-            logger.info(f"Loading Bids for Project ID {project_id}")
-            # Get all bids for the project
-            bids = self.sg_session.get_bids(project_id, fields=["id", "code", "name", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list"])
+            # Get RFQ ID for filtering bids
+            rfq_id = rfq.get("id") if rfq else None
+            logger.info(f"Loading Bids for Project ID {project_id}, RFQ ID {rfq_id}")
+            # Get bids filtered by RFQ (only bids linked to this RFQ via sg_parent_rfq)
+            bids = self.sg_session.get_bids(
+                project_id,
+                fields=["id", "code", "name", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list"],
+                rfq_id=rfq_id
+            )
         except Exception as e:
             logger.error(f"Error loading Bids: {e}", exc_info=True)
             bids = []
@@ -2089,15 +2095,12 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         # Status & selection
         if bids:
-            self._set_status(f"Loaded {len(bids)} Bid(s) in project.")
+            self._set_status(f"Loaded {len(bids)} Bid(s) for this RFQ.")
 
-            # Auto-select the bid linked to the RFQ if present
+            # Auto-select the current bid linked to the RFQ if present
             bid_was_selected = False
             if rfq and auto_select:
-                # Check Early Bid first, then Turnover Bid
-                linked_bid = rfq.get("sg_early_bid")
-                if not linked_bid:
-                    linked_bid = rfq.get("sg_turnover_bid")
+                linked_bid = rfq.get("sg_current_bid")
 
                 linked_bid_id = None
                 if isinstance(linked_bid, dict):
@@ -2106,12 +2109,12 @@ class BidSelectorWidget(QtWidgets.QWidget):
                     linked_bid_id = linked_bid[0].get("id") if linked_bid[0] else None
 
                 if linked_bid_id:
-                    # Try to select the linked bid
+                    # Try to select the current bid
                     if self._select_bid_by_id(linked_bid_id):
                         bid_was_selected = True
                     else:
-                        # Linked bid not found in list, don't auto-select anything
-                        logger.warning(f"Linked bid {linked_bid_id} not found in project bids")
+                        # Current bid not found in list, don't auto-select anything
+                        logger.warning(f"Current bid {linked_bid_id} not found in RFQ bids")
 
             # If no bid was selected (either no linked bid or linked bid not found),
             # manually trigger bidChanged with None to reset downstream components
@@ -2119,7 +2122,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 logger.info("No bid linked to RFQ - resetting bid selection")
                 self._on_bid_changed(0)  # Trigger with index 0 (placeholder)
         else:
-            self._set_status("No Bids found in this project.")
+            self._set_status("No Bids found for this RFQ.")
             # No bids available - reset downstream components
             if auto_select:
                 self._on_bid_changed(0)  # Trigger with index 0 to reset
@@ -2270,20 +2273,13 @@ class BidSelectorWidget(QtWidgets.QWidget):
             return
 
         try:
-            # Determine which field to update based on bid type
-            bid_type_value = bid.get('sg_bid_type', 'Early Bid')
-            if bid_type_value == 'Turnover Bid':
-                field_name = 'sg_turnover_bid'
-            else:
-                field_name = 'sg_early_bid'
-
-            # Update RFQ to link this bid
+            # Update RFQ to link this bid as the current bid
             rfq_id = rfq['id']
-            update_data = {field_name: {"type": "CustomEntity06", "id": bid['id']}}
+            update_data = {"sg_current_bid": {"type": "CustomEntity06", "id": bid['id']}}
 
             self.sg_session.sg.update("CustomEntity04", rfq_id, update_data)
 
-            logger.info(f"DEBUG: Successfully updated ShotGrid - RFQ {rfq_id} {field_name} = Bid {bid['id']}")
+            logger.info(f"DEBUG: Successfully updated ShotGrid - RFQ {rfq_id} sg_current_bid = Bid {bid['id']}")
             logger.info(f"DEBUG: self.parent_app = {self.parent_app}")
             logger.info(f"DEBUG: type(self.parent_app) = {type(self.parent_app)}")
             logger.info(f"DEBUG: hasattr(self.parent_app, 'parent_app') = {hasattr(self.parent_app, 'parent_app')}")
@@ -2308,18 +2304,12 @@ class BidSelectorWidget(QtWidgets.QWidget):
             else:
                 logger.warning("Could not update Current Bid label - main_app or rfq_bid_label not found")
 
-            # Refresh RFQ data in parent to keep everything in sync
-            if main_app and hasattr(main_app, '_load_rfqs') and hasattr(main_app, 'sg_project_combo'):
-                proj = main_app.sg_project_combo.itemData(main_app.sg_project_combo.currentIndex())
-                if proj:
-                    current_rfq_index = main_app.rfq_combo.currentIndex()
-                    main_app._load_rfqs(proj['id'])
-                    # Restore RFQ selection - this will trigger _on_rfq_changed
-                    if current_rfq_index > 0:  # Don't select the "-- Select RFQ --" item
-                        main_app.rfq_combo.setCurrentIndex(current_rfq_index)
+            # Update the current_rfq's sg_current_bid field in memory to stay in sync
+            if self.current_rfq:
+                self.current_rfq['sg_current_bid'] = {"type": "CustomEntity06", "id": bid['id'], "name": bid_display_name}
 
             self.statusMessageChanged.emit(f"✓ Set '{bid_name}' as current bid for RFQ", False)
-            QtWidgets.QMessageBox.information(self, "Success", f"'{bid_name}' is now the current {bid_type} for this RFQ.")
+            QtWidgets.QMessageBox.information(self, "Success", f"'{bid_name}' is now the current bid for this RFQ.")
 
         except Exception as e:
             logger.error(f"Failed to set current bid: {e}", exc_info=True)
@@ -2330,6 +2320,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
         # Get current project
         if not self.current_project_id:
             QtWidgets.QMessageBox.warning(self, "No Project Selected", "Please select a project first.")
+            return
+
+        # Require an RFQ to be selected
+        if not self.current_rfq:
+            QtWidgets.QMessageBox.warning(self, "No RFQ Selected", "Please select an RFQ first.")
             return
 
         # Show dialog to get bid name and type
@@ -2343,8 +2338,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 return
 
             try:
-                # Create the bid
-                new_bid = self.sg_session.create_bid(self.current_project_id, bid_name, bid_type)
+                # Create the bid linked to the current RFQ
+                rfq_id = self.current_rfq.get("id")
+                new_bid = self.sg_session.create_bid(
+                    self.current_project_id, bid_name, bid_type, parent_rfq_id=rfq_id
+                )
 
                 logger.info(f"Created new bid: {bid_name} (ID: {new_bid['id']})")
 
