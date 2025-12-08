@@ -540,11 +540,15 @@ class PackageShareWidget(QtWidgets.QWidget):
             )
 
             if result and result.get('webViewLink'):
-                self.result_link.setText(result['webViewLink'])
+                share_link = result['webViewLink']
+                self.result_link.setText(share_link)
                 self.copy_link_btn.setEnabled(True)
                 self.result_group.setVisible(True)
                 self.progress_label.setText("Upload complete!")
-                logger.info(f"File shared successfully: {result['webViewLink']}")
+                logger.info(f"File shared successfully: {share_link}")
+
+                # Create PackageTracking entity in ShotGrid
+                self._create_package_tracking(config, share_link)
             else:
                 self.progress_label.setText("Upload failed - check logs")
                 QtWidgets.QMessageBox.warning(
@@ -563,6 +567,55 @@ class PackageShareWidget(QtWidgets.QWidget):
             self.progress_bar.setValue(100)
             self._update_buttons()
             QtCore.QTimer.singleShot(2000, lambda: self.progress_group.setVisible(False))
+
+    def _create_package_tracking(self, config, share_link):
+        """Create a PackageTracking entity in ShotGrid after successful share.
+
+        Args:
+            config: Share configuration dictionary with package and vendor info
+            share_link: Google Drive share link
+        """
+        vendor = config.get('vendor')
+        package = config.get('package', {})
+        package_name = package.get('code', 'Unknown Package')
+
+        if not vendor:
+            logger.warning("No vendor selected, skipping PackageTracking creation")
+            return
+
+        try:
+            delivery_tab = self._get_delivery_tab()
+            if not delivery_tab:
+                logger.warning("Could not access DeliveryTab for PackageTracking creation")
+                return
+
+            sg_session = delivery_tab.sg_session
+            project_id = delivery_tab.current_project_id
+            current_rfq = delivery_tab.current_rfq
+
+            if not project_id or not current_rfq:
+                logger.warning("Missing project_id or current_rfq for PackageTracking creation")
+                return
+
+            # Create the PackageTracking entity
+            tracking = sg_session.create_package_tracking(
+                project_id=project_id,
+                package_name=package_name,
+                share_link=share_link,
+                vendor=vendor,
+                rfq=current_rfq,
+                status="Delivered"
+            )
+
+            if tracking:
+                logger.info(f"Created PackageTracking {tracking.get('id')} for package '{package_name}' to vendor '{vendor.get('code')}'")
+                # Refresh the vendor view to show the new tracking record
+                delivery_tab._load_package_tracking_for_vendors()
+            else:
+                logger.warning("PackageTracking creation returned None")
+
+        except Exception as e:
+            logger.error(f"Failed to create PackageTracking: {e}", exc_info=True)
 
     def _get_permission_value(self):
         """Get the permission value from the combo box."""
@@ -599,6 +652,7 @@ class VendorCategoryView(QtWidgets.QWidget):
         self.vendors = {}  # vendor_id -> vendor_data
         self.vendor_groups = {}  # vendor_code -> CollapsibleGroupBox with droppable container
         self.assigned_packages = {}  # vendor_code -> set of package_ids
+        self.package_tracking = {}  # vendor_code -> list of PackageTracking records
         self._selected_vendor_code = None
 
         self._setup_ui()
@@ -711,6 +765,33 @@ class VendorCategoryView(QtWidgets.QWidget):
                 mappings[vendor_code] = list(package_ids)
         return mappings
 
+    def set_package_tracking_for_vendor(self, vendor_code, tracking_records):
+        """Set package tracking records for a vendor.
+
+        Args:
+            vendor_code: Code of the vendor
+            tracking_records: List of PackageTracking dictionaries from ShotGrid
+        """
+        self.package_tracking[vendor_code] = tracking_records
+
+        if vendor_code in self.vendor_groups:
+            container = self.vendor_groups[vendor_code]['container']
+            container.set_package_tracking(tracking_records)
+
+            # Update group title with count
+            count = len(tracking_records)
+            self.vendor_groups[vendor_code]['group'].setTitle(
+                f"{vendor_code} ({count} package{'s' if count != 1 else ''})"
+            )
+
+    def clear_all_tracking(self):
+        """Clear all package tracking data from all vendors."""
+        self.package_tracking.clear()
+        for vendor_code, group_data in self.vendor_groups.items():
+            container = group_data['container']
+            container.clear_packages()
+            group_data['group'].setTitle(f"{vendor_code} (0 packages)")
+
 
 class DroppableVendorContainer(QtWidgets.QWidget):
     """Container widget inside a vendor group that accepts package drops."""
@@ -727,7 +808,8 @@ class DroppableVendorContainer(QtWidgets.QWidget):
         super().__init__(parent)
         self.vendor_data = vendor_data
         self.vendor_code = vendor_data.get('code', 'Unknown')
-        self.package_widgets = {}  # package_id -> QWidget
+        self.package_widgets = {}  # package_id/tracking_id -> QWidget
+        self.tracking_records = []  # List of PackageTracking records
         self._is_drag_over = False
 
         self.setAcceptDrops(True)
@@ -823,6 +905,164 @@ class DroppableVendorContainer(QtWidgets.QWidget):
             row = idx // columns
             col = idx % columns
             self.layout.addWidget(widget, row, col)
+
+    def set_package_tracking(self, tracking_records):
+        """Set and display package tracking records from ShotGrid.
+
+        Args:
+            tracking_records: List of PackageTracking dictionaries from ShotGrid
+        """
+        self.clear_packages()
+        self.tracking_records = tracking_records
+
+        for record in tracking_records:
+            self._add_tracking_widget(record)
+
+    def clear_packages(self):
+        """Clear all package widgets from the container."""
+        # Remove all widgets
+        for widget in list(self.package_widgets.values()):
+            widget.deleteLater()
+        self.package_widgets.clear()
+        self.tracking_records = []
+
+        # Show placeholder
+        self.placeholder_label.show()
+
+    def _add_tracking_widget(self, tracking_record):
+        """Add a widget for a PackageTracking record.
+
+        Args:
+            tracking_record: PackageTracking dictionary from ShotGrid
+        """
+        tracking_id = tracking_record.get('id')
+        if tracking_id in self.package_widgets:
+            return  # Already exists
+
+        # Hide placeholder
+        self.placeholder_label.hide()
+
+        package_name = tracking_record.get('code', 'Unknown Package')
+        share_link = tracking_record.get('sg_share_link', '')
+        status = tracking_record.get('sg_status_list', 'Unknown')
+
+        # Create package widget
+        package_widget = QtWidgets.QFrame()
+        package_widget.setStyleSheet("""
+            QFrame {
+                background-color: #3a5a3a;
+                border: 1px solid #5a7a5a;
+                border-radius: 4px;
+                padding: 5px;
+            }
+            QFrame:hover {
+                background-color: #456a45;
+                border: 1px solid #6a8a6a;
+            }
+        """)
+
+        widget_layout = QtWidgets.QVBoxLayout(package_widget)
+        widget_layout.setContentsMargins(8, 5, 8, 5)
+        widget_layout.setSpacing(3)
+
+        # Top row: icon and name
+        top_row = QtWidgets.QHBoxLayout()
+        icon_label = QtWidgets.QLabel()
+        icon_label.setPixmap(self.style().standardIcon(
+            QtWidgets.QStyle.SP_DialogApplyButton
+        ).pixmap(20, 20))
+        top_row.addWidget(icon_label)
+
+        name_label = QtWidgets.QLabel(package_name)
+        name_label.setStyleSheet("font-size: 11px; font-weight: bold; color: #ddd;")
+        top_row.addWidget(name_label)
+        top_row.addStretch()
+
+        # Status badge
+        status_label = QtWidgets.QLabel(status)
+        status_label.setStyleSheet("""
+            background-color: #2a4a2a;
+            color: #8fdf8f;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 9px;
+        """)
+        top_row.addWidget(status_label)
+
+        widget_layout.addLayout(top_row)
+
+        # Share link row
+        if share_link:
+            link_row = QtWidgets.QHBoxLayout()
+            link_label = QtWidgets.QLabel("Link:")
+            link_label.setStyleSheet("color: #aaa; font-size: 9px;")
+            link_row.addWidget(link_label)
+
+            # Copy link button
+            copy_btn = QtWidgets.QPushButton("Copy")
+            copy_btn.setFixedHeight(20)
+            copy_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4a6a4a;
+                    border: 1px solid #5a7a5a;
+                    border-radius: 3px;
+                    padding: 2px 8px;
+                    font-size: 9px;
+                    color: #ddd;
+                }
+                QPushButton:hover {
+                    background-color: #5a7a5a;
+                }
+            """)
+            copy_btn.clicked.connect(lambda checked, link=share_link, btn=copy_btn: self._copy_share_link(link, btn))
+            link_row.addWidget(copy_btn)
+
+            # Open link button
+            open_btn = QtWidgets.QPushButton("Open")
+            open_btn.setFixedHeight(20)
+            open_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4a6a4a;
+                    border: 1px solid #5a7a5a;
+                    border-radius: 3px;
+                    padding: 2px 8px;
+                    font-size: 9px;
+                    color: #ddd;
+                }
+                QPushButton:hover {
+                    background-color: #5a7a5a;
+                }
+            """)
+            open_btn.clicked.connect(lambda checked, link=share_link: self._open_share_link(link))
+            link_row.addWidget(open_btn)
+
+            link_row.addStretch()
+            widget_layout.addLayout(link_row)
+
+        self.package_widgets[tracking_id] = package_widget
+        self._relayout_packages()
+
+    def _copy_share_link(self, link, button):
+        """Copy share link to clipboard.
+
+        Args:
+            link: The share link to copy
+            button: The button that was clicked (for feedback)
+        """
+        QtWidgets.QApplication.clipboard().setText(link)
+        original_text = button.text()
+        button.setText("Copied!")
+        QtCore.QTimer.singleShot(1500, lambda: button.setText(original_text))
+
+    def _open_share_link(self, link):
+        """Open share link in default browser.
+
+        Args:
+            link: The share link to open
+        """
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        QDesktopServices.openUrl(QUrl(link))
 
     def dragEnterEvent(self, event):
         """Handle drag enter event."""
@@ -1112,11 +1352,52 @@ class DeliveryTab(QtWidgets.QWidget):
             self.vendor_category_view.set_vendors(self.vendors_list)
             self.package_share_widget.set_vendors(self.vendors_list)
             logger.info(f"Loaded {len(self.vendors_list)} vendors for RFQ {rfq.get('code', 'Unknown')}")
+
+            # Load package tracking records for each vendor
+            self._load_package_tracking_for_vendors()
         except Exception as e:
             logger.error(f"Error loading vendors for RFQ: {e}", exc_info=True)
             self.vendors_list = []
             self.vendor_category_view.set_vendors([])
             self.package_share_widget.set_vendors([])
+
+    def _load_package_tracking_for_vendors(self):
+        """Load PackageTracking records for each vendor and the current RFQ.
+
+        This populates the vendor view with package cards that have been
+        shared with each vendor, loaded from ShotGrid.
+        """
+        if not self.current_rfq or not self.vendors_list:
+            return
+
+        rfq_id = self.current_rfq.get('id')
+        if not rfq_id:
+            return
+
+        try:
+            # Clear existing tracking data
+            self.vendor_category_view.clear_all_tracking()
+
+            # Load tracking records for each vendor
+            for vendor in self.vendors_list:
+                vendor_id = vendor.get('id')
+                vendor_code = vendor.get('code', 'Unknown')
+
+                if not vendor_id:
+                    continue
+
+                # Get package tracking records for this vendor and RFQ
+                tracking_records = self.sg_session.get_package_tracking_for_vendor_and_rfq(
+                    vendor_id=vendor_id,
+                    rfq_id=rfq_id
+                )
+
+                if tracking_records:
+                    logger.info(f"Loaded {len(tracking_records)} tracking records for vendor '{vendor_code}'")
+                    self.vendor_category_view.set_package_tracking_for_vendor(vendor_code, tracking_records)
+
+        except Exception as e:
+            logger.error(f"Error loading package tracking records: {e}", exc_info=True)
 
     def _load_vendors_for_project(self, project_id):
         """Load vendors for the project (used by refresh_vendors).
