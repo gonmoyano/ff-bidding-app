@@ -193,12 +193,6 @@ class PackageShareWidget(QtWidgets.QWidget):
         btn_layout = QtWidgets.QHBoxLayout()
         btn_layout.addStretch()
 
-        # Google Drive connection status label
-        self.gdrive_status_label = QtWidgets.QLabel()
-        self.gdrive_status_label.setStyleSheet("color: gray;")
-        self._update_gdrive_status()
-        btn_layout.addWidget(self.gdrive_status_label)
-
         self.share_btn = QtWidgets.QPushButton("Share Package")
         self.share_btn.setEnabled(False)
         self.share_btn.setMinimumWidth(130)
@@ -230,27 +224,6 @@ class PackageShareWidget(QtWidgets.QWidget):
         self.link_check.toggled.connect(self._update_buttons)
         self.share_btn.clicked.connect(self._on_share_clicked)
         self.copy_link_btn.clicked.connect(self._copy_link)
-
-    def _update_gdrive_status(self):
-        """Update the Google Drive connection status label."""
-        gdrive = get_gdrive_service()
-
-        if not GOOGLE_API_AVAILABLE:
-            self.gdrive_status_label.setText("Google Drive: Libraries missing")
-            self.gdrive_status_label.setStyleSheet("color: #cc6666;")  # Red
-            self.gdrive_status_label.setToolTip("pip install google-auth google-auth-oauthlib google-api-python-client")
-        elif not gdrive.has_credentials:
-            self.gdrive_status_label.setText("Google Drive: Not configured")
-            self.gdrive_status_label.setStyleSheet("color: #cc6666;")  # Red
-            self.gdrive_status_label.setToolTip("credentials.json not found")
-        elif not gdrive.is_authenticated:
-            self.gdrive_status_label.setText("Google Drive: Not authenticated")
-            self.gdrive_status_label.setStyleSheet("color: #cccc66;")  # Yellow
-            self.gdrive_status_label.setToolTip("Click Share to authenticate with Google Drive")
-        else:
-            self.gdrive_status_label.setText("Google Drive: Connected")
-            self.gdrive_status_label.setStyleSheet("color: #66cc66;")  # Green
-            self.gdrive_status_label.setToolTip("Authenticated with Google Drive")
 
     def set_packages(self, packages_list):
         """Set the list of packages available for delivery.
@@ -589,7 +562,6 @@ class PackageShareWidget(QtWidgets.QWidget):
             self.progress_bar.setRange(0, 100)
             self.progress_bar.setValue(100)
             self._update_buttons()
-            self._update_gdrive_status()
             QtCore.QTimer.singleShot(2000, lambda: self.progress_group.setVisible(False))
 
     def _get_permission_value(self):
@@ -946,12 +918,12 @@ class DeliveryTab(QtWidgets.QWidget):
         gdrive_status_layout.setContentsMargins(5, 2, 5, 2)
         gdrive_status_layout.setSpacing(10)
 
-        # Status text label (on the left)
+        gdrive_status_layout.addStretch()
+
+        # Status text label (to the left of button)
         self.gdrive_status_info_label = QtWidgets.QLabel("Checking Google Drive connection...")
         self.gdrive_status_info_label.setStyleSheet("color: #888;")
         gdrive_status_layout.addWidget(self.gdrive_status_info_label)
-
-        gdrive_status_layout.addStretch()
 
         # Retry/Configure button (on the right)
         self.gdrive_action_btn = QtWidgets.QPushButton("Configure")
@@ -1325,9 +1297,6 @@ class DeliveryTab(QtWidgets.QWidget):
                 button_text="Reconnect"
             )
 
-        # Also update the PackageShareWidget status
-        self.package_share_widget._update_gdrive_status()
-
     def _update_gdrive_status_ui(self, status, message, tooltip, button_text):
         """Update the Google Drive status UI elements.
 
@@ -1422,5 +1391,3 @@ class DeliveryTab(QtWidgets.QWidget):
             self.status_label.setText(f"Google Drive error: {str(e)[:50]}")
         finally:
             self.gdrive_action_btn.setEnabled(True)
-            # Update PackageShareWidget status too
-            self.package_share_widget._update_gdrive_status()
