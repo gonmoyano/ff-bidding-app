@@ -18,6 +18,7 @@ try:
     from .settings import AppSettings
     from .settings_dialog import SettingsDialog
     from .logger import logger
+    from .gdrive_service import get_gdrive_service, GOOGLE_API_AVAILABLE
 except ImportError:
     # Standalone mode - add to path and import
     import os
@@ -34,6 +35,7 @@ except ImportError:
     from bid_selector_widget import CollapsibleGroupBox
     from settings import AppSettings
     from settings_dialog import SettingsDialog
+    from gdrive_service import get_gdrive_service, GOOGLE_API_AVAILABLE
 
     # Setup basic logger for standalone mode
     try:
@@ -1316,6 +1318,19 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         self.package_manager_btn.setVisible(False)  # Hidden by default
         bar_layout.addWidget(self.package_manager_btn)
 
+        # Google Drive connection status (shown only in Delivery view)
+        self.gdrive_status_label = QtWidgets.QLabel("Checking Google Drive...")
+        self.gdrive_status_label.setStyleSheet("color: #888;")
+        self.gdrive_status_label.setVisible(False)
+        bar_layout.addWidget(self.gdrive_status_label)
+
+        self.gdrive_action_btn = QtWidgets.QPushButton("Configure")
+        self.gdrive_action_btn.setMaximumWidth(120)
+        self.gdrive_action_btn.setToolTip("Configure or retry Google Drive connection")
+        self.gdrive_action_btn.clicked.connect(self._on_gdrive_action_clicked)
+        self.gdrive_action_btn.setVisible(False)
+        bar_layout.addWidget(self.gdrive_action_btn)
+
         # Settings button (cog icon)
         self.settings_button = QtWidgets.QPushButton()
         self.settings_button.setToolTip("Application Settings")
@@ -1360,11 +1375,93 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             # Show/hide Package Manager button based on selected view
             # view_index 1 = Packages view
             self.package_manager_btn.setVisible(view_index == 1)
+            # Show/hide Google Drive status based on selected view
+            # view_index 2 = Delivery view
+            is_delivery = view_index == 2
+            self.gdrive_status_label.setVisible(is_delivery)
+            self.gdrive_action_btn.setVisible(is_delivery)
+            if is_delivery:
+                self._check_gdrive_connection()
 
     def _toggle_package_manager_panel(self):
         """Toggle the Package Manager panel in the Packages tab."""
         if hasattr(self, 'packages_tab') and hasattr(self.packages_tab, '_toggle_package_manager_panel'):
             self.packages_tab._toggle_package_manager_panel()
+
+    def _check_gdrive_connection(self):
+        """Check Google Drive connection status and update the top bar UI."""
+        gdrive = get_gdrive_service()
+
+        if not GOOGLE_API_AVAILABLE:
+            self.gdrive_status_label.setText("Google Drive: Libraries not installed")
+            self.gdrive_status_label.setStyleSheet("color: #cc6666;")  # Red
+            self.gdrive_action_btn.setText("View Instructions")
+        elif not gdrive.has_credentials:
+            self.gdrive_status_label.setText("Google Drive: Not configured")
+            self.gdrive_status_label.setStyleSheet("color: #cc6666;")  # Red
+            self.gdrive_action_btn.setText("Configure")
+        elif not gdrive.is_authenticated:
+            self.gdrive_status_label.setText("Google Drive: Not authenticated")
+            self.gdrive_status_label.setStyleSheet("color: #cc6666;")  # Red
+            self.gdrive_action_btn.setText("Authenticate")
+        else:
+            self.gdrive_status_label.setText("Google Drive: Connected")
+            self.gdrive_status_label.setStyleSheet("color: #66cc66;")  # Green
+            self.gdrive_action_btn.setText("Reconnect")
+
+    def _on_gdrive_action_clicked(self):
+        """Handle Google Drive action button click."""
+        gdrive = get_gdrive_service()
+
+        if not GOOGLE_API_AVAILABLE:
+            QtWidgets.QMessageBox.information(
+                self,
+                "Google Drive Setup Required",
+                "Google Drive libraries are not installed.\n\n"
+                "To enable Google Drive integration, run the following command:\n\n"
+                "pip install google-auth google-auth-oauthlib google-api-python-client"
+            )
+            return
+
+        if not gdrive.has_credentials:
+            credentials_path = gdrive.credentials_file
+            QtWidgets.QMessageBox.information(
+                self,
+                "Google Drive Configuration Required",
+                f"Google Drive credentials file not found.\n\n"
+                f"To configure Google Drive:\n\n"
+                f"1. Go to Google Cloud Console\n"
+                f"2. Create OAuth 2.0 credentials\n"
+                f"3. Download the credentials.json file\n"
+                f"4. Place it in:\n   {credentials_path.parent}\n\n"
+                f"After adding the file, click 'Retry Connection' to check again."
+            )
+            self.gdrive_action_btn.setText("Retry Connection")
+            return
+
+        # Try to authenticate
+        self.gdrive_status_label.setText("Authenticating...")
+        self.gdrive_status_label.setStyleSheet("color: #cccc66;")  # Yellow
+        self.gdrive_action_btn.setEnabled(False)
+        QtWidgets.QApplication.processEvents()
+
+        try:
+            success = gdrive.authenticate()
+            if success:
+                self.gdrive_status_label.setText("Google Drive: Connected")
+                self.gdrive_status_label.setStyleSheet("color: #66cc66;")  # Green
+                self.gdrive_action_btn.setText("Reconnect")
+            else:
+                self.gdrive_status_label.setText("Google Drive: Authentication failed")
+                self.gdrive_status_label.setStyleSheet("color: #cc6666;")  # Red
+                self.gdrive_action_btn.setText("Retry")
+        except Exception as e:
+            logger.error(f"Google Drive authentication error: {e}")
+            self.gdrive_status_label.setText("Google Drive: Error")
+            self.gdrive_status_label.setStyleSheet("color: #cc6666;")  # Red
+            self.gdrive_action_btn.setText("Retry")
+        finally:
+            self.gdrive_action_btn.setEnabled(True)
 
     def _show_config_rfqs_dialog(self):
         """Show the RFQ configuration dialog."""
