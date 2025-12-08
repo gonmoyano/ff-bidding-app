@@ -640,6 +640,177 @@ class PackageShareWidget(QtWidgets.QWidget):
         return self.current_package
 
 
+class PackageTrackingDetailsDialog(QtWidgets.QDialog):
+    """Dialog for displaying package tracking details and allowing link copying."""
+
+    def __init__(self, tracking_record, parent=None):
+        """Initialize the dialog.
+
+        Args:
+            tracking_record: PackageTracking dictionary from ShotGrid
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.tracking_record = tracking_record
+        self.setWindowTitle("Package Details")
+        self.setMinimumWidth(450)
+        self.setModal(True)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        """Setup the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(15)
+
+        package_name = self.tracking_record.get('code', 'Unknown Package')
+        share_link = self.tracking_record.get('sg_share_link', '')
+        status = self.tracking_record.get('sg_status_list', 'Unknown')
+        created_at = self.tracking_record.get('created_at', '')
+        recipient = self.tracking_record.get('sg_recipient', {})
+        recipient_name = recipient.get('name', 'Unknown') if isinstance(recipient, dict) else 'Unknown'
+
+        # Header with package name and status
+        header_layout = QtWidgets.QHBoxLayout()
+
+        name_label = QtWidgets.QLabel(f"<b style='font-size: 16px;'>{package_name}</b>")
+        header_layout.addWidget(name_label)
+        header_layout.addStretch()
+
+        # Status badge with color based on status
+        status_colors = {
+            'Delivered': ('#2a4a2a', '#8fdf8f'),
+            'Pending': ('#4a4a2a', '#dfdf8f'),
+            'Failed': ('#4a2a2a', '#df8f8f'),
+        }
+        bg_color, text_color = status_colors.get(status, ('#3a3a3a', '#aaa'))
+
+        status_badge = QtWidgets.QLabel(status)
+        status_badge.setStyleSheet(f"""
+            background-color: {bg_color};
+            color: {text_color};
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        """)
+        header_layout.addWidget(status_badge)
+        layout.addLayout(header_layout)
+
+        # Details section
+        details_group = QtWidgets.QGroupBox("Details")
+        details_layout = QtWidgets.QFormLayout(details_group)
+        details_layout.setSpacing(8)
+
+        # Recipient
+        details_layout.addRow("Recipient:", QtWidgets.QLabel(recipient_name))
+
+        # Created date
+        if created_at:
+            if hasattr(created_at, 'strftime'):
+                date_str = created_at.strftime('%Y-%m-%d %H:%M')
+            else:
+                date_str = str(created_at)
+            details_layout.addRow("Shared on:", QtWidgets.QLabel(date_str))
+
+        layout.addWidget(details_group)
+
+        # Share link section
+        if share_link:
+            link_group = QtWidgets.QGroupBox("Google Drive Share Link")
+            link_layout = QtWidgets.QVBoxLayout(link_group)
+
+            # Link display
+            self.link_edit = QtWidgets.QLineEdit(share_link)
+            self.link_edit.setReadOnly(True)
+            self.link_edit.setStyleSheet("""
+                QLineEdit {
+                    background-color: #2a2a2a;
+                    border: 1px solid #555;
+                    border-radius: 4px;
+                    padding: 8px;
+                    color: #4a9eff;
+                    font-size: 11px;
+                }
+            """)
+            link_layout.addWidget(self.link_edit)
+
+            # Button row
+            btn_layout = QtWidgets.QHBoxLayout()
+            btn_layout.addStretch()
+
+            # Copy button
+            self.copy_btn = QtWidgets.QPushButton("Copy Link")
+            self.copy_btn.setMinimumWidth(100)
+            self.copy_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4a6a4a;
+                    border: 1px solid #5a7a5a;
+                    border-radius: 4px;
+                    padding: 8px 16px;
+                    color: #ddd;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #5a7a5a;
+                }
+            """)
+            self.copy_btn.clicked.connect(self._copy_link)
+            btn_layout.addWidget(self.copy_btn)
+
+            # Open button
+            open_btn = QtWidgets.QPushButton("Open in Browser")
+            open_btn.setMinimumWidth(120)
+            open_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4a5a6a;
+                    border: 1px solid #5a6a7a;
+                    border-radius: 4px;
+                    padding: 8px 16px;
+                    color: #ddd;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #5a6a7a;
+                }
+            """)
+            open_btn.clicked.connect(self._open_link)
+            btn_layout.addWidget(open_btn)
+
+            link_layout.addLayout(btn_layout)
+            layout.addWidget(link_group)
+        else:
+            no_link_label = QtWidgets.QLabel("No share link available")
+            no_link_label.setStyleSheet("color: #888; font-style: italic;")
+            layout.addWidget(no_link_label)
+
+        # Close button
+        layout.addStretch()
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.setMinimumWidth(80)
+        close_btn.clicked.connect(self.accept)
+
+        close_layout = QtWidgets.QHBoxLayout()
+        close_layout.addStretch()
+        close_layout.addWidget(close_btn)
+        layout.addLayout(close_layout)
+
+    def _copy_link(self):
+        """Copy the share link to clipboard."""
+        share_link = self.tracking_record.get('sg_share_link', '')
+        if share_link:
+            QtWidgets.QApplication.clipboard().setText(share_link)
+            self.copy_btn.setText("Copied!")
+            QtCore.QTimer.singleShot(1500, lambda: self.copy_btn.setText("Copy Link"))
+
+    def _open_link(self):
+        """Open the share link in the default browser."""
+        share_link = self.tracking_record.get('sg_share_link', '')
+        if share_link:
+            from PySide6.QtGui import QDesktopServices
+            from PySide6.QtCore import QUrl
+            QDesktopServices.openUrl(QUrl(share_link))
+
+
 class VendorCategoryView(QtWidgets.QWidget):
     """View widget for displaying vendors as collapsible groups."""
 
@@ -791,6 +962,28 @@ class VendorCategoryView(QtWidgets.QWidget):
             container = group_data['container']
             container.clear_packages()
             group_data['group'].setTitle(f"{vendor_code} (0 packages)")
+
+
+class ClickableFrame(QtWidgets.QFrame):
+    """A QFrame that emits a clicked signal when clicked."""
+
+    clicked = QtCore.Signal(object)  # Emits the tracking_record when clicked
+
+    def __init__(self, tracking_record, parent=None):
+        """Initialize the clickable frame.
+
+        Args:
+            tracking_record: PackageTracking dictionary to emit on click
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.tracking_record = tracking_record
+
+    def mousePressEvent(self, event):
+        """Handle mouse press events."""
+        if event.button() == QtCore.Qt.LeftButton:
+            self.clicked.emit(self.tracking_record)
+        super().mousePressEvent(event)
 
 
 class DroppableVendorContainer(QtWidgets.QWidget):
@@ -946,20 +1139,39 @@ class DroppableVendorContainer(QtWidgets.QWidget):
         share_link = tracking_record.get('sg_share_link', '')
         status = tracking_record.get('sg_status_list', 'Unknown')
 
-        # Create package widget
-        package_widget = QtWidgets.QFrame()
-        package_widget.setStyleSheet("""
-            QFrame {
-                background-color: #3a5a3a;
-                border: 1px solid #5a7a5a;
+        # Status-based colors
+        status_colors = {
+            'Delivered': {
+                'bg': '#3a5a3a', 'border': '#5a7a5a', 'hover_bg': '#456a45', 'hover_border': '#6a8a6a',
+                'badge_bg': '#2a4a2a', 'badge_text': '#8fdf8f'
+            },
+            'Pending': {
+                'bg': '#5a5a3a', 'border': '#7a7a5a', 'hover_bg': '#6a6a45', 'hover_border': '#8a8a6a',
+                'badge_bg': '#4a4a2a', 'badge_text': '#dfdf8f'
+            },
+            'Failed': {
+                'bg': '#5a3a3a', 'border': '#7a5a5a', 'hover_bg': '#6a4545', 'hover_border': '#8a6a6a',
+                'badge_bg': '#4a2a2a', 'badge_text': '#df8f8f'
+            },
+        }
+        colors = status_colors.get(status, status_colors['Delivered'])
+
+        # Create clickable package widget
+        package_widget = ClickableFrame(tracking_record)
+        package_widget.clicked.connect(self._on_card_clicked)
+        package_widget.setStyleSheet(f"""
+            ClickableFrame {{
+                background-color: {colors['bg']};
+                border: 1px solid {colors['border']};
                 border-radius: 4px;
                 padding: 5px;
-            }
-            QFrame:hover {
-                background-color: #456a45;
-                border: 1px solid #6a8a6a;
-            }
+            }}
+            ClickableFrame:hover {{
+                background-color: {colors['hover_bg']};
+                border: 1px solid {colors['hover_border']};
+            }}
         """)
+        package_widget.setCursor(QtCore.Qt.PointingHandCursor)
 
         widget_layout = QtWidgets.QVBoxLayout(package_widget)
         widget_layout.setContentsMargins(8, 5, 8, 5)
@@ -978,91 +1190,46 @@ class DroppableVendorContainer(QtWidgets.QWidget):
         top_row.addWidget(name_label)
         top_row.addStretch()
 
-        # Status badge
+        # Status badge with dynamic colors
         status_label = QtWidgets.QLabel(status)
-        status_label.setStyleSheet("""
-            background-color: #2a4a2a;
-            color: #8fdf8f;
+        status_label.setStyleSheet(f"""
+            background-color: {colors['badge_bg']};
+            color: {colors['badge_text']};
             padding: 2px 6px;
             border-radius: 3px;
             font-size: 9px;
+            font-weight: bold;
         """)
         top_row.addWidget(status_label)
 
         widget_layout.addLayout(top_row)
 
-        # Share link row
+        # Info row: click hint
+        info_row = QtWidgets.QHBoxLayout()
+        click_hint = QtWidgets.QLabel("Click for details")
+        click_hint.setStyleSheet("color: #888; font-size: 9px; font-style: italic;")
+        info_row.addWidget(click_hint)
+        info_row.addStretch()
+
+        # Share link indicator
         if share_link:
-            link_row = QtWidgets.QHBoxLayout()
-            link_label = QtWidgets.QLabel("Link:")
-            link_label.setStyleSheet("color: #aaa; font-size: 9px;")
-            link_row.addWidget(link_label)
+            link_indicator = QtWidgets.QLabel("🔗 Link available")
+            link_indicator.setStyleSheet("color: #8fb8df; font-size: 9px;")
+            info_row.addWidget(link_indicator)
 
-            # Copy link button
-            copy_btn = QtWidgets.QPushButton("Copy")
-            copy_btn.setFixedHeight(20)
-            copy_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #4a6a4a;
-                    border: 1px solid #5a7a5a;
-                    border-radius: 3px;
-                    padding: 2px 8px;
-                    font-size: 9px;
-                    color: #ddd;
-                }
-                QPushButton:hover {
-                    background-color: #5a7a5a;
-                }
-            """)
-            copy_btn.clicked.connect(lambda checked, link=share_link, btn=copy_btn: self._copy_share_link(link, btn))
-            link_row.addWidget(copy_btn)
-
-            # Open link button
-            open_btn = QtWidgets.QPushButton("Open")
-            open_btn.setFixedHeight(20)
-            open_btn.setStyleSheet("""
-                QPushButton {
-                    background-color: #4a6a4a;
-                    border: 1px solid #5a7a5a;
-                    border-radius: 3px;
-                    padding: 2px 8px;
-                    font-size: 9px;
-                    color: #ddd;
-                }
-                QPushButton:hover {
-                    background-color: #5a7a5a;
-                }
-            """)
-            open_btn.clicked.connect(lambda checked, link=share_link: self._open_share_link(link))
-            link_row.addWidget(open_btn)
-
-            link_row.addStretch()
-            widget_layout.addLayout(link_row)
+        widget_layout.addLayout(info_row)
 
         self.package_widgets[tracking_id] = package_widget
         self._relayout_packages()
 
-    def _copy_share_link(self, link, button):
-        """Copy share link to clipboard.
+    def _on_card_clicked(self, tracking_record):
+        """Handle package card click - open details dialog.
 
         Args:
-            link: The share link to copy
-            button: The button that was clicked (for feedback)
+            tracking_record: PackageTracking dictionary from ShotGrid
         """
-        QtWidgets.QApplication.clipboard().setText(link)
-        original_text = button.text()
-        button.setText("Copied!")
-        QtCore.QTimer.singleShot(1500, lambda: button.setText(original_text))
-
-    def _open_share_link(self, link):
-        """Open share link in default browser.
-
-        Args:
-            link: The share link to open
-        """
-        from PySide6.QtGui import QDesktopServices
-        from PySide6.QtCore import QUrl
-        QDesktopServices.openUrl(QUrl(link))
+        dialog = PackageTrackingDetailsDialog(tracking_record, self)
+        dialog.exec()
 
     def dragEnterEvent(self, event):
         """Handle drag enter event."""
