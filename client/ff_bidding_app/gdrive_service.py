@@ -17,8 +17,11 @@ except ImportError:
     GOOGLE_API_AVAILABLE = False
     logger.warning("Google API libraries not installed. Run: pip install google-auth google-auth-oauthlib google-api-python-client")
 
-# Scopes required for Google Drive file upload and sharing
-SCOPES = ['https://www.googleapis.com/auth/drive.file']
+# Scopes required for Google Drive file upload, sharing, and activity tracking
+SCOPES = [
+    'https://www.googleapis.com/auth/drive.file',
+    'https://www.googleapis.com/auth/drive.activity.readonly'
+]
 
 
 class GoogleDriveService:
@@ -37,6 +40,7 @@ class GoogleDriveService:
         self.credentials_file = self.credentials_dir / "credentials.json"
         self.token_file = self.credentials_dir / "token.json"
         self._service = None
+        self._activity_service = None
         self._creds = None
 
         # Debug logging
@@ -148,6 +152,122 @@ class GoogleDriveService:
             if not self.authenticate():
                 return None
         return self._service
+
+    def get_activity_service(self):
+        """Get the Drive Activity API service, authenticating if needed.
+
+        Returns:
+            Drive Activity service object or None if authentication fails.
+        """
+        if self._activity_service is None:
+            if not self.authenticate():
+                return None
+            try:
+                self._activity_service = build('driveactivity', 'v2', credentials=self._creds)
+            except Exception as e:
+                logger.error(f"Failed to build Drive Activity service: {e}")
+                return None
+        return self._activity_service
+
+    def check_file_accessed(self, file_id):
+        """Check if a file has been accessed (viewed or downloaded) by anyone.
+
+        Uses the Drive Activity API to check for view/download activity on the file.
+
+        Args:
+            file_id: Google Drive file ID.
+
+        Returns:
+            dict with:
+                'accessed': bool - True if file has been accessed
+                'access_time': datetime or None - Time of most recent access
+                'access_count': int - Number of access events
+            Returns None on error.
+        """
+        activity_service = self.get_activity_service()
+        if not activity_service:
+            logger.warning("Drive Activity service not available")
+            return None
+
+        try:
+            # Query for activity on this specific file
+            # We look for any action that indicates the file was accessed
+            request_body = {
+                'itemName': f'items/{file_id}',
+                'pageSize': 100,
+                'filter': 'detail.action_detail_case:(DOWNLOAD OR VIEW)'
+            }
+
+            response = activity_service.activity().query(body=request_body).execute()
+            activities = response.get('activities', [])
+
+            if not activities:
+                logger.debug(f"No access activity found for file {file_id}")
+                return {
+                    'accessed': False,
+                    'access_time': None,
+                    'access_count': 0
+                }
+
+            # Parse the activities to get access info
+            access_count = len(activities)
+            most_recent_time = None
+
+            for activity in activities:
+                # Get timestamp from the activity
+                timestamp = activity.get('timestamp')
+                if timestamp:
+                    from datetime import datetime
+                    try:
+                        # Parse ISO format timestamp
+                        if timestamp.endswith('Z'):
+                            timestamp = timestamp[:-1] + '+00:00'
+                        activity_time = datetime.fromisoformat(timestamp)
+                        if most_recent_time is None or activity_time > most_recent_time:
+                            most_recent_time = activity_time
+                    except (ValueError, TypeError) as e:
+                        logger.debug(f"Could not parse timestamp {timestamp}: {e}")
+
+            logger.info(f"File {file_id} has been accessed {access_count} times, most recent: {most_recent_time}")
+            return {
+                'accessed': True,
+                'access_time': most_recent_time,
+                'access_count': access_count
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to check file access: {e}")
+            return None
+
+    def extract_file_id_from_url(self, share_url):
+        """Extract the Google Drive file ID from a share URL.
+
+        Args:
+            share_url: Google Drive share URL (e.g., https://drive.google.com/file/d/FILE_ID/view)
+
+        Returns:
+            str: The file ID, or None if it couldn't be extracted.
+        """
+        if not share_url:
+            return None
+
+        import re
+
+        # Pattern for various Google Drive URL formats
+        patterns = [
+            r'/file/d/([a-zA-Z0-9_-]+)',  # /file/d/FILE_ID/view
+            r'/open\?id=([a-zA-Z0-9_-]+)',  # /open?id=FILE_ID
+            r'id=([a-zA-Z0-9_-]+)',  # ?id=FILE_ID
+            r'/folders/([a-zA-Z0-9_-]+)',  # /folders/FOLDER_ID
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, share_url)
+            if match:
+                return match.group(1)
+
+        logger.warning(f"Could not extract file ID from URL: {share_url}")
+        return None
 
     def upload_file(self, file_path, folder_id=None, mime_type=None):
         """Upload a file to Google Drive.

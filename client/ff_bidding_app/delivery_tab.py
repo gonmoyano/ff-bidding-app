@@ -754,6 +754,7 @@ class PackageTrackingDetailsDialog(QtWidgets.QDialog):
         status_display = {
             'dlvr': 'Delivered',
             'dwnld': 'Downloaded',
+            'acc': 'Accessed',
         }
         status_name = status_display.get(status, status)
 
@@ -761,6 +762,7 @@ class PackageTrackingDetailsDialog(QtWidgets.QDialog):
         status_colors = {
             'dlvr': ('#2a4a2a', '#8fdf8f'),      # Delivered - green
             'dwnld': ('#2a4a5a', '#8fdfdf'),     # Downloaded - cyan
+            'acc': ('#4a2a5a', '#df8fdf'),       # Accessed - purple
         }
         bg_color, text_color = status_colors.get(status, ('#3a3a3a', '#aaa'))
 
@@ -1239,6 +1241,7 @@ class DroppableVendorContainer(QtWidgets.QWidget):
         status_display = {
             'dlvr': 'Delivered',
             'dwnld': 'Downloaded',
+            'acc': 'Accessed',
         }
         status_name = status_display.get(status, status)
 
@@ -1251,6 +1254,10 @@ class DroppableVendorContainer(QtWidgets.QWidget):
             'dwnld': {  # Downloaded - neutral with cyan badge
                 'bg': '#3a3a3a', 'border': '#555', 'hover_bg': '#454545', 'hover_border': '#666',
                 'badge_bg': '#2a4a5a', 'badge_text': '#8fdfdf'
+            },
+            'acc': {  # Accessed - neutral with purple badge
+                'bg': '#3a3a3a', 'border': '#555', 'hover_bg': '#454545', 'hover_border': '#666',
+                'badge_bg': '#4a2a5a', 'badge_text': '#df8fdf'
             },
         }
         colors = status_colors.get(status, status_colors['dlvr'])
@@ -1632,6 +1639,7 @@ class DeliveryTab(QtWidgets.QWidget):
 
         This populates the vendor view with package cards that have been
         shared with each vendor, loaded from ShotGrid.
+        Also checks Google Drive access and updates status to 'acc' if accessed.
         """
         if not self.current_rfq or not self.vendors_list:
             return
@@ -1643,6 +1651,9 @@ class DeliveryTab(QtWidgets.QWidget):
         try:
             # Clear existing tracking data
             self.vendor_category_view.clear_all_tracking()
+
+            # Get Google Drive service for access checking
+            gdrive = get_gdrive_service()
 
             # Load tracking records for each vendor
             for vendor in self.vendors_list:
@@ -1659,11 +1670,92 @@ class DeliveryTab(QtWidgets.QWidget):
                 )
 
                 if tracking_records:
-                    logger.info(f"Loaded {len(tracking_records)} tracking records for vendor '{vendor_code}'")
-                    self.vendor_category_view.set_package_tracking_for_vendor(vendor_code, tracking_records)
+                    # Check Google Drive access for each record and update status if needed
+                    updated_records = self._check_and_update_access_status(
+                        tracking_records, gdrive
+                    )
+                    logger.info(f"Loaded {len(updated_records)} tracking records for vendor '{vendor_code}'")
+                    self.vendor_category_view.set_package_tracking_for_vendor(vendor_code, updated_records)
 
         except Exception as e:
             logger.error(f"Error loading package tracking records: {e}", exc_info=True)
+
+    def _check_and_update_access_status(self, tracking_records, gdrive):
+        """Check Google Drive access for tracking records and update status.
+
+        For each record with status 'dlvr' (Delivered), checks if the shared
+        file has been accessed via Google Drive API. If accessed, updates
+        the status to 'acc' (Accessed) in ShotGrid.
+
+        Args:
+            tracking_records: List of PackageTracking dictionaries
+            gdrive: GoogleDriveService instance
+
+        Returns:
+            List of tracking records with potentially updated statuses
+        """
+        if not gdrive or not gdrive.is_available:
+            logger.debug("Google Drive service not available for access checking")
+            return tracking_records
+
+        updated_records = []
+
+        for record in tracking_records:
+            current_status = record.get('sg_status_list', '')
+
+            # Only check access for 'dlvr' (Delivered) status
+            # Don't re-check records that are already 'acc' or 'dwnld'
+            if current_status != 'dlvr':
+                updated_records.append(record)
+                continue
+
+            # Extract share link URL
+            share_link_data = record.get('sg_share_link', {})
+            if isinstance(share_link_data, dict):
+                share_url = share_link_data.get('url', '')
+            else:
+                share_url = share_link_data or ''
+
+            if not share_url:
+                updated_records.append(record)
+                continue
+
+            # Extract file ID from URL
+            file_id = gdrive.extract_file_id_from_url(share_url)
+            if not file_id:
+                logger.debug(f"Could not extract file ID from share link for record {record.get('id')}")
+                updated_records.append(record)
+                continue
+
+            # Check if file has been accessed
+            try:
+                access_info = gdrive.check_file_accessed(file_id)
+
+                if access_info and access_info.get('accessed'):
+                    # Update status to 'acc' (Accessed) in ShotGrid
+                    tracking_id = record.get('id')
+                    package_name = record.get('code', 'Unknown')
+
+                    logger.info(f"Package '{package_name}' has been accessed, updating status to 'acc'")
+
+                    try:
+                        self.sg_session.update_package_tracking(
+                            tracking_id,
+                            {'sg_status_list': 'acc'}
+                        )
+                        # Update the local record to reflect the new status
+                        record = dict(record)  # Make a copy to avoid modifying original
+                        record['sg_status_list'] = 'acc'
+                        logger.info(f"Updated tracking record {tracking_id} status to 'acc'")
+                    except Exception as e:
+                        logger.error(f"Failed to update tracking status in ShotGrid: {e}")
+
+            except Exception as e:
+                logger.warning(f"Error checking Google Drive access for file {file_id}: {e}")
+
+            updated_records.append(record)
+
+        return updated_records
 
     def _load_vendors_for_project(self, project_id):
         """Load vendors for the project (used by refresh_vendors).
