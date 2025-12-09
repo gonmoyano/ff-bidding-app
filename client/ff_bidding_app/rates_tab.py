@@ -3,7 +3,7 @@ Rates Tab
 Contains UI and logic for managing Price Lists (CustomEntity10).
 """
 
-from PySide6 import QtWidgets, QtCore
+from PySide6 import QtWidgets, QtCore, QtGui
 
 try:
     from .logger import logger
@@ -18,6 +18,160 @@ except ImportError:
     from bid_selector_widget import CollapsibleGroupBox
     from vfx_breakdown_widget import VFXBreakdownWidget, FormulaDelegate
     from formula_evaluator import FormulaEvaluator
+
+
+class CreatePriceListDialog(QtWidgets.QDialog):
+    """Dialog for creating a new Price List with options to copy from existing or create new."""
+
+    def __init__(self, sg_session, project_id, parent=None):
+        """Initialize the dialog.
+
+        Args:
+            sg_session: ShotgridClient instance
+            project_id: ID of the current project
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.sg_session = sg_session
+        self.project_id = project_id
+        self.existing_price_lists = []
+
+        self.setWindowTitle("Create New Price List")
+        self.setModal(True)
+        self.setMinimumWidth(450)
+
+        self._load_existing_price_lists()
+        self._build_ui()
+
+    def _load_existing_price_lists(self):
+        """Load existing Price Lists for the copy option."""
+        try:
+            if self.project_id:
+                filters = [["project", "is", {"type": "Project", "id": self.project_id}]]
+                self.existing_price_lists = self.sg_session.sg.find(
+                    "CustomEntity10",
+                    filters,
+                    ["id", "code", "sg_line_items"]
+                )
+                # Sort by name
+                self.existing_price_lists.sort(key=lambda x: x.get("code", "").lower())
+        except Exception as e:
+            logger.error(f"Failed to load existing Price Lists: {e}")
+            self.existing_price_lists = []
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Name field
+        name_layout = QtWidgets.QHBoxLayout()
+        name_label = QtWidgets.QLabel("Price List Name:")
+        name_layout.addWidget(name_label)
+
+        self.name_field = QtWidgets.QLineEdit()
+        self.name_field.setPlaceholderText("Enter name for new Price List...")
+        name_layout.addWidget(self.name_field, stretch=1)
+
+        layout.addLayout(name_layout)
+
+        # Creation options group
+        options_group = QtWidgets.QGroupBox("Creation Options")
+        options_layout = QtWidgets.QVBoxLayout(options_group)
+
+        # Radio button: Create new (empty)
+        self.create_new_radio = QtWidgets.QRadioButton("Create new (empty)")
+        self.create_new_radio.setToolTip(
+            "Create a new Price List with a single empty Line Item row"
+        )
+        self.create_new_radio.setChecked(True)
+        self.create_new_radio.toggled.connect(self._on_radio_toggled)
+        options_layout.addWidget(self.create_new_radio)
+
+        # Radio button: Copy from existing
+        self.copy_from_radio = QtWidgets.QRadioButton("Copy from existing Price List")
+        self.copy_from_radio.setToolTip(
+            "Copy all Line Items from an existing Price List"
+        )
+        self.copy_from_radio.toggled.connect(self._on_radio_toggled)
+        options_layout.addWidget(self.copy_from_radio)
+
+        # ComboBox for selecting source Price List (only visible when copy option selected)
+        self.source_combo_layout = QtWidgets.QHBoxLayout()
+        self.source_combo_layout.setContentsMargins(20, 0, 0, 0)  # Indent
+
+        self.source_label = QtWidgets.QLabel("Source:")
+        self.source_combo_layout.addWidget(self.source_label)
+
+        self.source_combo = QtWidgets.QComboBox()
+        self.source_combo.setMinimumWidth(250)
+        for price_list in self.existing_price_lists:
+            line_items_count = 0
+            sg_line_items = price_list.get("sg_line_items")
+            if sg_line_items:
+                if isinstance(sg_line_items, list):
+                    line_items_count = len(sg_line_items)
+                elif isinstance(sg_line_items, dict):
+                    line_items_count = 1
+            display_text = f"{price_list.get('code', 'Unnamed')} ({line_items_count} items)"
+            self.source_combo.addItem(display_text, price_list["id"])
+        self.source_combo_layout.addWidget(self.source_combo, stretch=1)
+
+        options_layout.addLayout(self.source_combo_layout)
+
+        # Initially hide source combo since "Create new" is selected
+        self.source_label.setVisible(False)
+        self.source_combo.setVisible(False)
+
+        # Disable copy option if no existing Price Lists
+        if not self.existing_price_lists:
+            self.copy_from_radio.setEnabled(False)
+            self.copy_from_radio.setToolTip("No existing Price Lists to copy from")
+
+        layout.addWidget(options_group)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        self.ok_button = QtWidgets.QPushButton("Create")
+        self.ok_button.clicked.connect(self.accept)
+        self.ok_button.setDefault(True)
+        button_layout.addWidget(self.ok_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+    def _on_radio_toggled(self, checked):
+        """Handle radio button toggle."""
+        is_copy = self.copy_from_radio.isChecked()
+        self.source_label.setVisible(is_copy)
+        self.source_combo.setVisible(is_copy)
+
+    def get_price_list_name(self):
+        """Get the entered Price List name."""
+        return self.name_field.text().strip()
+
+    def is_copy_mode(self):
+        """Check if copy mode is selected."""
+        return self.copy_from_radio.isChecked()
+
+    def get_source_price_list_id(self):
+        """Get the selected source Price List ID for copying."""
+        if self.is_copy_mode():
+            return self.source_combo.currentData()
+        return None
+
+    def get_source_price_list_data(self):
+        """Get the full data for the selected source Price List."""
+        source_id = self.get_source_price_list_id()
+        if source_id:
+            for pl in self.existing_price_lists:
+                if pl["id"] == source_id:
+                    return pl
+        return None
 
 
 class RatesTab(QtWidgets.QWidget):
@@ -556,19 +710,19 @@ class RatesTab(QtWidgets.QWidget):
             )
 
     def _on_add_price_list(self):
-        """Add a new Price List."""
+        """Add a new Price List using dialog with copy/new options."""
         if not self.current_project_id:
             QtWidgets.QMessageBox.warning(self, "No Project Selected", "Please select a project first.")
             return
 
-        # Prompt for name
-        name, ok = QtWidgets.QInputDialog.getText(
-            self,
-            "Add Price List",
-            "Enter name for new Price List:"
-        )
+        # Show creation dialog
+        dialog = CreatePriceListDialog(self.sg_session, self.current_project_id, self)
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
 
-        if not ok or not name:
+        name = dialog.get_price_list_name()
+        if not name:
+            QtWidgets.QMessageBox.warning(self, "Invalid Name", "Please enter a name for the Price List.")
             return
 
         try:
@@ -579,16 +733,29 @@ class RatesTab(QtWidgets.QWidget):
             }
 
             new_price_list = self.sg_session.sg.create("CustomEntity10", price_list_data)
+            new_price_list_id = new_price_list['id']
 
-            logger.info(f"Created Price List: {name} (ID: {new_price_list['id']})")
-            self._set_price_lists_status(f"Created Price List '{name}'.")
+            logger.info(f"Created Price List: {name} (ID: {new_price_list_id})")
+
+            if dialog.is_copy_mode():
+                # Copy Line Items from source Price List
+                source_id = dialog.get_source_price_list_id()
+                if source_id:
+                    self._copy_line_items_from_price_list(source_id, new_price_list_id)
+                    self._set_price_lists_status(f"Created Price List '{name}' (copied from existing).")
+                else:
+                    self._set_price_lists_status(f"Created Price List '{name}'.")
+            else:
+                # Create new with initial empty Line Item
+                self._create_initial_line_item(new_price_list_id)
+                self._set_price_lists_status(f"Created Price List '{name}' with initial Line Item.")
 
             # Refresh list and select new one
             self._refresh_price_lists()
 
             # Find and select the new price list
             for i in range(self.price_lists_combo.count()):
-                if self.price_lists_combo.itemData(i) == new_price_list['id']:
+                if self.price_lists_combo.itemData(i) == new_price_list_id:
                     self.price_lists_combo.setCurrentIndex(i)
                     break
 
@@ -599,6 +766,157 @@ class RatesTab(QtWidgets.QWidget):
                 "Error",
                 f"Failed to create Price List:\n{str(e)}"
             )
+
+    def _create_initial_line_item(self, price_list_id):
+        """Create an initial empty Line Item for a new Price List.
+
+        Args:
+            price_list_id: ID of the Price List to add the Line Item to
+        """
+        try:
+            # Create initial Line Item
+            line_item_data = {
+                "code": "New Line Item",
+                "project": {"type": "Project", "id": self.current_project_id}
+            }
+
+            new_line_item = self.sg_session.sg.create("CustomEntity03", line_item_data)
+
+            # Link the Line Item to the Price List
+            self.sg_session.sg.update(
+                "CustomEntity10",
+                price_list_id,
+                {"sg_line_items": [{"type": "CustomEntity03", "id": new_line_item["id"]}]}
+            )
+
+            logger.info(f"Created initial Line Item (ID: {new_line_item['id']}) for Price List {price_list_id}")
+
+            # Notify other tabs that Line Items have changed
+            self._notify_line_items_changed()
+
+        except Exception as e:
+            logger.error(f"Failed to create initial Line Item: {e}", exc_info=True)
+
+    def _copy_line_items_from_price_list(self, source_price_list_id, target_price_list_id):
+        """Copy Line Items from a source Price List to a target Price List.
+
+        Args:
+            source_price_list_id: ID of the source Price List to copy from
+            target_price_list_id: ID of the target Price List to copy to
+        """
+        try:
+            # Get source Price List's Line Items
+            source_data = self.sg_session.sg.find_one(
+                "CustomEntity10",
+                [["id", "is", source_price_list_id]],
+                ["sg_line_items"]
+            )
+
+            if not source_data or not source_data.get("sg_line_items"):
+                logger.info(f"No Line Items to copy from Price List {source_price_list_id}")
+                return
+
+            # Get source Line Item IDs
+            source_line_items = source_data["sg_line_items"]
+            if not isinstance(source_line_items, list):
+                source_line_items = [source_line_items] if source_line_items else []
+
+            source_ids = [item["id"] for item in source_line_items if isinstance(item, dict) and item.get("id")]
+
+            if not source_ids:
+                logger.info(f"No valid Line Item IDs to copy from Price List {source_price_list_id}")
+                return
+
+            # Query the source Line Items to get their data
+            # Get all fields to copy
+            if not self.line_items_field_schema:
+                self._fetch_line_items_schema()
+
+            fields_to_query = [f for f in self.line_items_field_allowlist if f not in ["id", "_calc_price"]]
+
+            source_line_item_data = self.sg_session.sg.find(
+                "CustomEntity03",
+                [["id", "in", source_ids]],
+                fields_to_query
+            )
+
+            # Create new Line Items as copies
+            new_line_item_refs = []
+            for item in source_line_item_data:
+                # Build data for the new Line Item (copy all fields except id)
+                new_item_data = {
+                    "project": {"type": "Project", "id": self.current_project_id}
+                }
+
+                for field in fields_to_query:
+                    if field in item and item[field] is not None:
+                        value = item[field]
+                        # Handle entity references
+                        if isinstance(value, dict) and "type" in value and "id" in value:
+                            new_item_data[field] = {"type": value["type"], "id": value["id"]}
+                        elif isinstance(value, list):
+                            # Multi-entity reference
+                            new_item_data[field] = [
+                                {"type": v["type"], "id": v["id"]}
+                                for v in value
+                                if isinstance(v, dict) and "type" in v and "id" in v
+                            ]
+                        else:
+                            new_item_data[field] = value
+
+                # Create the new Line Item
+                new_line_item = self.sg_session.sg.create("CustomEntity03", new_item_data)
+                new_line_item_refs.append({"type": "CustomEntity03", "id": new_line_item["id"]})
+
+            # Link all new Line Items to the target Price List
+            if new_line_item_refs:
+                self.sg_session.sg.update(
+                    "CustomEntity10",
+                    target_price_list_id,
+                    {"sg_line_items": new_line_item_refs}
+                )
+
+            logger.info(f"Copied {len(new_line_item_refs)} Line Items from Price List {source_price_list_id} to {target_price_list_id}")
+
+            # Notify other tabs that Line Items have changed
+            self._notify_line_items_changed()
+
+        except Exception as e:
+            logger.error(f"Failed to copy Line Items: {e}", exc_info=True)
+            raise
+
+    def _notify_line_items_changed(self):
+        """Notify other tabs that Line Items have changed so they can update their dropdowns."""
+        try:
+            # Get the main app reference
+            main_app = self.parent_app
+            if not main_app:
+                return
+
+            # Update Assets tab's Bid Asset Type dropdown
+            if hasattr(main_app, 'assets_tab') and main_app.assets_tab:
+                assets_tab = main_app.assets_tab
+                # Reload Line Item names and update delegate
+                assets_tab.line_item_names = assets_tab._load_line_item_names()
+                if assets_tab.asset_type_delegate:
+                    assets_tab.asset_type_delegate.update_valid_values(assets_tab.line_item_names)
+                    if hasattr(assets_tab, 'assets_widget') and assets_tab.assets_widget:
+                        assets_tab.assets_widget.table_view.viewport().update()
+                logger.info(f"Updated Assets tab Bid Asset Type dropdown with {len(assets_tab.line_item_names)} Line Items")
+
+            # Update VFX Breakdown tab's VFX Shot Work dropdown
+            if hasattr(main_app, 'vfx_breakdown_tab') and main_app.vfx_breakdown_tab:
+                vfx_tab = main_app.vfx_breakdown_tab
+                # Reload Line Item names and update delegate
+                vfx_tab.line_item_names = vfx_tab._load_line_item_names()
+                if vfx_tab.vfx_shot_work_delegate:
+                    vfx_tab.vfx_shot_work_delegate.update_valid_values(vfx_tab.line_item_names)
+                    if hasattr(vfx_tab, 'breakdown_widget') and vfx_tab.breakdown_widget:
+                        vfx_tab.breakdown_widget.table_view.viewport().update()
+                logger.info(f"Updated VFX Breakdown tab VFX Shot Work dropdown with {len(vfx_tab.line_item_names)} Line Items")
+
+        except Exception as e:
+            logger.error(f"Failed to notify Line Items changed: {e}", exc_info=True)
 
     def _on_remove_price_list(self):
         """Remove the selected Price List."""

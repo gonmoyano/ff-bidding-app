@@ -122,16 +122,44 @@ class CollapsibleGroupBox(QtWidgets.QWidget):
 
 
 class AddBidDialog(QtWidgets.QDialog):
-    """Dialog for adding a new Bid."""
+    """Dialog for adding a new Bid with option to copy from existing."""
 
-    def __init__(self, parent=None):
-        """Initialize the dialog."""
+    def __init__(self, sg_session, project_id, rfq_id, parent=None):
+        """Initialize the dialog.
+
+        Args:
+            sg_session: ShotgridClient instance
+            project_id: ID of the current project
+            rfq_id: ID of the current RFQ
+            parent: Parent widget
+        """
         super().__init__(parent)
+        self.sg_session = sg_session
+        self.project_id = project_id
+        self.rfq_id = rfq_id
+        self.existing_bids = []
+
         self.setWindowTitle("Add New Bid")
         self.setModal(True)
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(500)
 
+        self._load_existing_bids()
         self._build_ui()
+
+    def _load_existing_bids(self):
+        """Load existing Bids for the copy option."""
+        try:
+            if self.project_id:
+                # Get all bids for this project (not just this RFQ)
+                self.existing_bids = self.sg_session.get_bids(
+                    self.project_id,
+                    fields=["id", "code", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list"]
+                )
+                # Sort by name
+                self.existing_bids.sort(key=lambda x: x.get("code", "").lower())
+        except Exception as e:
+            logger.error(f"Failed to load existing Bids: {e}")
+            self.existing_bids = []
 
     def _build_ui(self):
         """Build the dialog UI."""
@@ -160,6 +188,78 @@ class AddBidDialog(QtWidgets.QDialog):
 
         layout.addLayout(type_layout)
 
+        # Creation options group
+        options_group = QtWidgets.QGroupBox("Creation Options")
+        options_layout = QtWidgets.QVBoxLayout(options_group)
+
+        # Radio button: Create new (empty)
+        self.create_new_radio = QtWidgets.QRadioButton("Create new (empty)")
+        self.create_new_radio.setToolTip(
+            "Create a new Bid without any linked entities"
+        )
+        self.create_new_radio.setChecked(True)
+        self.create_new_radio.toggled.connect(self._on_radio_toggled)
+        options_layout.addWidget(self.create_new_radio)
+
+        # Radio button: Copy from existing
+        self.copy_from_radio = QtWidgets.QRadioButton("Copy from existing Bid")
+        self.copy_from_radio.setToolTip(
+            "Copy VFX Breakdown, Bid Assets, and Price List from an existing Bid"
+        )
+        self.copy_from_radio.toggled.connect(self._on_radio_toggled)
+        options_layout.addWidget(self.copy_from_radio)
+
+        # ComboBox for selecting source Bid (only visible when copy option selected)
+        self.source_combo_layout = QtWidgets.QHBoxLayout()
+        self.source_combo_layout.setContentsMargins(20, 0, 0, 0)  # Indent
+
+        self.source_label = QtWidgets.QLabel("Source Bid:")
+        self.source_combo_layout.addWidget(self.source_label)
+
+        self.source_combo = QtWidgets.QComboBox()
+        self.source_combo.setMinimumWidth(300)
+        for bid in self.existing_bids:
+            bid_type = bid.get("sg_bid_type", "")
+            display_text = f"{bid.get('code', 'Unnamed')}"
+            if bid_type:
+                display_text += f" ({bid_type})"
+            self.source_combo.addItem(display_text, bid["id"])
+        self.source_combo_layout.addWidget(self.source_combo, stretch=1)
+
+        options_layout.addLayout(self.source_combo_layout)
+
+        # Checkboxes for what to copy (only visible when copy option selected)
+        self.copy_options_layout = QtWidgets.QVBoxLayout()
+        self.copy_options_layout.setContentsMargins(20, 5, 0, 0)  # Indent
+
+        self.copy_vfx_breakdown_checkbox = QtWidgets.QCheckBox("Copy VFX Breakdown (with Bidding Scenes)")
+        self.copy_vfx_breakdown_checkbox.setChecked(True)
+        self.copy_options_layout.addWidget(self.copy_vfx_breakdown_checkbox)
+
+        self.copy_bid_assets_checkbox = QtWidgets.QCheckBox("Copy Bid Assets (with Asset Items)")
+        self.copy_bid_assets_checkbox.setChecked(True)
+        self.copy_options_layout.addWidget(self.copy_bid_assets_checkbox)
+
+        self.copy_price_list_checkbox = QtWidgets.QCheckBox("Copy Price List (with Line Items)")
+        self.copy_price_list_checkbox.setChecked(True)
+        self.copy_options_layout.addWidget(self.copy_price_list_checkbox)
+
+        options_layout.addLayout(self.copy_options_layout)
+
+        # Initially hide copy options since "Create new" is selected
+        self.source_label.setVisible(False)
+        self.source_combo.setVisible(False)
+        self.copy_vfx_breakdown_checkbox.setVisible(False)
+        self.copy_bid_assets_checkbox.setVisible(False)
+        self.copy_price_list_checkbox.setVisible(False)
+
+        # Disable copy option if no existing Bids
+        if not self.existing_bids:
+            self.copy_from_radio.setEnabled(False)
+            self.copy_from_radio.setToolTip("No existing Bids to copy from")
+
+        layout.addWidget(options_group)
+
         # Buttons
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addStretch()
@@ -175,6 +275,15 @@ class AddBidDialog(QtWidgets.QDialog):
 
         layout.addLayout(button_layout)
 
+    def _on_radio_toggled(self, checked):
+        """Handle radio button toggle."""
+        is_copy = self.copy_from_radio.isChecked()
+        self.source_label.setVisible(is_copy)
+        self.source_combo.setVisible(is_copy)
+        self.copy_vfx_breakdown_checkbox.setVisible(is_copy)
+        self.copy_bid_assets_checkbox.setVisible(is_copy)
+        self.copy_price_list_checkbox.setVisible(is_copy)
+
     def get_bid_name(self):
         """Get the bid name from the dialog."""
         return self.name_field.text().strip()
@@ -182,6 +291,37 @@ class AddBidDialog(QtWidgets.QDialog):
     def get_bid_type(self):
         """Get the selected bid type."""
         return self.type_combo.currentText()
+
+    def is_copy_mode(self):
+        """Check if copy mode is selected."""
+        return self.copy_from_radio.isChecked()
+
+    def get_source_bid_id(self):
+        """Get the selected source Bid ID for copying."""
+        if self.is_copy_mode():
+            return self.source_combo.currentData()
+        return None
+
+    def get_source_bid_data(self):
+        """Get the full data for the selected source Bid."""
+        source_id = self.get_source_bid_id()
+        if source_id:
+            for bid in self.existing_bids:
+                if bid["id"] == source_id:
+                    return bid
+        return None
+
+    def should_copy_vfx_breakdown(self):
+        """Check if VFX Breakdown should be copied."""
+        return self.is_copy_mode() and self.copy_vfx_breakdown_checkbox.isChecked()
+
+    def should_copy_bid_assets(self):
+        """Check if Bid Assets should be copied."""
+        return self.is_copy_mode() and self.copy_bid_assets_checkbox.isChecked()
+
+    def should_copy_price_list(self):
+        """Check if Price List should be copied."""
+        return self.is_copy_mode() and self.copy_price_list_checkbox.isChecked()
 
 
 class RenameBidDialog(QtWidgets.QDialog):
@@ -2327,37 +2467,337 @@ class BidSelectorWidget(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "No RFQ Selected", "Please select an RFQ first.")
             return
 
-        # Show dialog to get bid name and type
-        dialog = AddBidDialog(parent=self)
-        if dialog.exec_() == QtWidgets.QDialog.Accepted:
-            bid_name = dialog.get_bid_name()
-            bid_type = dialog.get_bid_type()
+        rfq_id = self.current_rfq.get("id")
 
-            if not bid_name:
-                QtWidgets.QMessageBox.warning(self, "Invalid Input", "Please enter a bid name.")
-                return
+        # Show dialog to get bid name, type, and copy options
+        dialog = AddBidDialog(self.sg_session, self.current_project_id, rfq_id, parent=self)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
 
-            try:
-                # Create the bid linked to the current RFQ
-                rfq_id = self.current_rfq.get("id")
-                new_bid = self.sg_session.create_bid(
-                    self.current_project_id, bid_name, bid_type, parent_rfq_id=rfq_id
+        bid_name = dialog.get_bid_name()
+        bid_type = dialog.get_bid_type()
+
+        if not bid_name:
+            QtWidgets.QMessageBox.warning(self, "Invalid Input", "Please enter a bid name.")
+            return
+
+        try:
+            # Create the bid linked to the current RFQ
+            new_bid = self.sg_session.create_bid(
+                self.current_project_id, bid_name, bid_type, parent_rfq_id=rfq_id
+            )
+            new_bid_id = new_bid['id']
+
+            logger.info(f"Created new bid: {bid_name} (ID: {new_bid_id})")
+
+            # Handle copy mode
+            if dialog.is_copy_mode():
+                source_bid_data = dialog.get_source_bid_data()
+                if source_bid_data:
+                    copied_items = []
+
+                    # Copy VFX Breakdown if selected
+                    if dialog.should_copy_vfx_breakdown():
+                        source_vfx_breakdown = source_bid_data.get("sg_vfx_breakdown")
+                        if source_vfx_breakdown:
+                            source_vfx_id = source_vfx_breakdown.get("id") if isinstance(source_vfx_breakdown, dict) else None
+                            if source_vfx_id:
+                                new_vfx_breakdown = self._copy_vfx_breakdown(source_vfx_id, f"{bid_name} - VFX Breakdown")
+                                if new_vfx_breakdown:
+                                    # Link to the new Bid
+                                    self.sg_session.sg.update(
+                                        "CustomEntity06",
+                                        new_bid_id,
+                                        {"sg_vfx_breakdown": {"type": "CustomEntity01", "id": new_vfx_breakdown["id"]}}
+                                    )
+                                    copied_items.append("VFX Breakdown")
+                                    logger.info(f"Linked VFX Breakdown {new_vfx_breakdown['id']} to Bid {new_bid_id}")
+
+                    # Copy Bid Assets if selected
+                    if dialog.should_copy_bid_assets():
+                        source_bid_assets = source_bid_data.get("sg_bid_assets")
+                        if source_bid_assets:
+                            source_assets_id = source_bid_assets.get("id") if isinstance(source_bid_assets, dict) else None
+                            if source_assets_id:
+                                new_bid_assets = self._copy_bid_assets(source_assets_id, f"{bid_name} - Assets")
+                                if new_bid_assets:
+                                    # Link to the new Bid
+                                    self.sg_session.sg.update(
+                                        "CustomEntity06",
+                                        new_bid_id,
+                                        {"sg_bid_assets": {"type": "CustomEntity08", "id": new_bid_assets["id"]}}
+                                    )
+                                    copied_items.append("Bid Assets")
+                                    logger.info(f"Linked Bid Assets {new_bid_assets['id']} to Bid {new_bid_id}")
+
+                    # Copy Price List if selected
+                    if dialog.should_copy_price_list():
+                        source_price_list = source_bid_data.get("sg_price_list")
+                        if source_price_list:
+                            source_price_list_id = source_price_list.get("id") if isinstance(source_price_list, dict) else None
+                            if source_price_list_id:
+                                new_price_list = self._copy_price_list(source_price_list_id, f"{bid_name} - Price List")
+                                if new_price_list:
+                                    # Link to the new Bid
+                                    self.sg_session.sg.update(
+                                        "CustomEntity06",
+                                        new_bid_id,
+                                        {"sg_price_list": {"type": "CustomEntity10", "id": new_price_list["id"]}}
+                                    )
+                                    copied_items.append("Price List")
+                                    logger.info(f"Linked Price List {new_price_list['id']} to Bid {new_bid_id}")
+
+                    if copied_items:
+                        self._set_status(f"Created bid '{bid_name}' with copied: {', '.join(copied_items)}")
+                    else:
+                        self._set_status(f"Created bid '{bid_name}' (nothing to copy from source)")
+                else:
+                    self._set_status(f"Created bid '{bid_name}'")
+            else:
+                self._set_status(f"Created bid '{bid_name}'")
+
+            # Refresh the bid list
+            self._refresh_bids()
+
+            # Select the newly created bid
+            self._select_bid_by_id(new_bid_id)
+
+            self.statusMessageChanged.emit(f"✓ Created bid '{bid_name}'", False)
+            QtWidgets.QMessageBox.information(self, "Success", f"Bid '{bid_name}' created successfully.")
+
+        except Exception as e:
+            logger.error(f"Failed to create bid: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to create bid:\n{str(e)}")
+
+    def _copy_vfx_breakdown(self, source_id, new_name):
+        """Copy a VFX Breakdown with all its Bidding Scenes.
+
+        Args:
+            source_id: ID of the VFX Breakdown to copy from
+            new_name: Name for the new VFX Breakdown
+
+        Returns:
+            dict: The created VFX Breakdown entity, or None on failure
+        """
+        try:
+            entity_type = self.sg_session.get_vfx_breakdown_entity_type()
+
+            # Create the new VFX Breakdown
+            new_breakdown = self.sg_session.sg.create(entity_type, {
+                "code": new_name,
+                "project": {"type": "Project", "id": self.current_project_id}
+            })
+            new_breakdown_id = new_breakdown["id"]
+
+            logger.info(f"Created VFX Breakdown copy: {new_name} (ID: {new_breakdown_id})")
+
+            # Fetch all bidding scenes from the source breakdown
+            source_scenes = self.sg_session.get_beats_for_vfx_breakdown(
+                source_id,
+                fields=[
+                    "code", "sg_beat_id", "sg_vfx_breakdown_scene", "sg_page",
+                    "sg_script_excerpt", "description", "sg_vfx_type", "sg_complexity",
+                    "sg_category", "sg_vfx_description", "sg_number_of_shots",
+                    "sg_sorting_priority", "sg_vfx_shot_work"
+                ]
+            )
+
+            logger.info(f"Found {len(source_scenes)} bidding scenes to copy")
+
+            # Copy each bidding scene
+            copy_fields = [
+                "code", "sg_beat_id", "sg_vfx_breakdown_scene", "sg_page",
+                "sg_script_excerpt", "description", "sg_vfx_type", "sg_complexity",
+                "sg_category", "sg_vfx_description", "sg_number_of_shots",
+                "sg_sorting_priority", "sg_vfx_shot_work"
+            ]
+
+            for scene in source_scenes:
+                new_scene_data = {
+                    "project": {"type": "Project", "id": self.current_project_id},
+                    "sg_parent": {"type": entity_type, "id": new_breakdown_id}
+                }
+
+                for field in copy_fields:
+                    if field in scene and scene[field] is not None:
+                        new_scene_data[field] = scene[field]
+
+                self.sg_session.sg.create("CustomEntity02", new_scene_data)
+
+            logger.info(f"Successfully copied {len(source_scenes)} bidding scenes to VFX Breakdown {new_breakdown_id}")
+
+            return new_breakdown
+
+        except Exception as e:
+            logger.error(f"Failed to copy VFX Breakdown: {e}", exc_info=True)
+            return None
+
+    def _copy_bid_assets(self, source_id, new_name):
+        """Copy Bid Assets with all its Asset Items.
+
+        Args:
+            source_id: ID of the Bid Assets to copy from
+            new_name: Name for the new Bid Assets
+
+        Returns:
+            dict: The created Bid Assets entity, or None on failure
+        """
+        try:
+            # Create the new Bid Assets
+            new_bid_assets = self.sg_session.sg.create("CustomEntity08", {
+                "code": new_name,
+                "project": {"type": "Project", "id": self.current_project_id}
+            })
+            new_bid_assets_id = new_bid_assets["id"]
+
+            logger.info(f"Created Bid Assets copy: {new_name} (ID: {new_bid_assets_id})")
+
+            # Fetch all Asset Items from the source Bid Assets
+            source_items = self.sg_session.sg.find(
+                "CustomEntity07",
+                [["sg_bid_assets", "is", {"type": "CustomEntity08", "id": source_id}]],
+                ["code", "sg_bid_asset_type", "sg_bidding_notes"]
+            )
+
+            logger.info(f"Found {len(source_items)} asset items to copy")
+
+            # Copy each Asset Item
+            copy_fields = ["code", "sg_bid_asset_type", "sg_bidding_notes"]
+
+            for item in source_items:
+                new_item_data = {
+                    "project": {"type": "Project", "id": self.current_project_id},
+                    "sg_bid_assets": {"type": "CustomEntity08", "id": new_bid_assets_id}
+                }
+
+                for field in copy_fields:
+                    if field in item and item[field] is not None:
+                        new_item_data[field] = item[field]
+
+                self.sg_session.sg.create("CustomEntity07", new_item_data)
+
+            logger.info(f"Successfully copied {len(source_items)} asset items to Bid Assets {new_bid_assets_id}")
+
+            return new_bid_assets
+
+        except Exception as e:
+            logger.error(f"Failed to copy Bid Assets: {e}", exc_info=True)
+            return None
+
+    def _copy_price_list(self, source_id, new_name):
+        """Copy a Price List with all its Line Items.
+
+        Args:
+            source_id: ID of the Price List to copy from
+            new_name: Name for the new Price List
+
+        Returns:
+            dict: The created Price List entity, or None on failure
+        """
+        try:
+            # Get source Price List data including Rate Card
+            source_data = self.sg_session.sg.find_one(
+                "CustomEntity10",
+                [["id", "is", source_id]],
+                ["sg_line_items", "sg_rate_card"]
+            )
+
+            # Create the new Price List
+            new_price_list = self.sg_session.sg.create("CustomEntity10", {
+                "code": new_name,
+                "project": {"type": "Project", "id": self.current_project_id}
+            })
+            new_price_list_id = new_price_list["id"]
+
+            logger.info(f"Created Price List copy: {new_name} (ID: {new_price_list_id})")
+
+            # Copy Rate Card link if exists (Rate Cards are shared, not copied)
+            if source_data and source_data.get("sg_rate_card"):
+                rate_card = source_data["sg_rate_card"]
+                if isinstance(rate_card, dict) and rate_card.get("id"):
+                    self.sg_session.sg.update(
+                        "CustomEntity10",
+                        new_price_list_id,
+                        {"sg_rate_card": {"type": "CustomNonProjectEntity01", "id": rate_card["id"]}}
+                    )
+                    logger.info(f"Linked Rate Card {rate_card['id']} to new Price List")
+
+            # Get source Line Items
+            if not source_data or not source_data.get("sg_line_items"):
+                logger.info(f"No Line Items to copy from Price List {source_id}")
+                return new_price_list
+
+            source_line_items = source_data["sg_line_items"]
+            if not isinstance(source_line_items, list):
+                source_line_items = [source_line_items] if source_line_items else []
+
+            source_ids = [item["id"] for item in source_line_items if isinstance(item, dict) and item.get("id")]
+
+            if not source_ids:
+                return new_price_list
+
+            # Query source Line Items with their fields
+            source_items = self.sg_session.sg.find(
+                "CustomEntity03",
+                [["id", "in", source_ids]],
+                ["code", "sg_price_static", "sg_price_formula"] + [f for f in self._get_line_item_mandays_fields()]
+            )
+
+            logger.info(f"Found {len(source_items)} line items to copy")
+
+            # Copy each Line Item
+            new_line_item_refs = []
+            for item in source_items:
+                new_item_data = {
+                    "project": {"type": "Project", "id": self.current_project_id}
+                }
+
+                # Copy all fields except id
+                for field, value in item.items():
+                    if field != "id" and field != "type" and value is not None:
+                        # Handle entity references
+                        if isinstance(value, dict) and "type" in value and "id" in value:
+                            new_item_data[field] = {"type": value["type"], "id": value["id"]}
+                        elif isinstance(value, list):
+                            new_item_data[field] = [
+                                {"type": v["type"], "id": v["id"]}
+                                for v in value
+                                if isinstance(v, dict) and "type" in v and "id" in v
+                            ]
+                        else:
+                            new_item_data[field] = value
+
+                new_line_item = self.sg_session.sg.create("CustomEntity03", new_item_data)
+                new_line_item_refs.append({"type": "CustomEntity03", "id": new_line_item["id"]})
+
+            # Link all new Line Items to the Price List
+            if new_line_item_refs:
+                self.sg_session.sg.update(
+                    "CustomEntity10",
+                    new_price_list_id,
+                    {"sg_line_items": new_line_item_refs}
                 )
 
-                logger.info(f"Created new bid: {bid_name} (ID: {new_bid['id']})")
+            logger.info(f"Successfully copied {len(new_line_item_refs)} line items to Price List {new_price_list_id}")
 
-                # Refresh the bid list
-                self._refresh_bids()
+            return new_price_list
 
-                # Select the newly created bid
-                self._select_bid_by_id(new_bid['id'])
+        except Exception as e:
+            logger.error(f"Failed to copy Price List: {e}", exc_info=True)
+            return None
 
-                self.statusMessageChanged.emit(f"✓ Created bid '{bid_name}'", False)
-                QtWidgets.QMessageBox.information(self, "Success", f"Bid '{bid_name}' created successfully.")
+    def _get_line_item_mandays_fields(self):
+        """Get the list of mandays fields for Line Items.
 
-            except Exception as e:
-                logger.error(f"Failed to create bid: {e}", exc_info=True)
-                QtWidgets.QMessageBox.critical(self, "Error", f"Failed to create bid:\n{str(e)}")
+        Returns:
+            list: List of field names ending with '_mandays'
+        """
+        try:
+            schema = self.sg_session.sg.schema_field_read("CustomEntity03")
+            return [f for f in schema.keys() if f.endswith("_mandays")]
+        except Exception as e:
+            logger.error(f"Failed to get Line Item schema: {e}")
+            return []
 
     def _on_remove_bid(self):
         """Handle Remove Bid button click."""
