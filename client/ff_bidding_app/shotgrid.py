@@ -2231,6 +2231,175 @@ class ShotgridClient:
         else:
             return 1
 
+    # ------------------------------------------------------------------
+    # PackageTracking Management (CustomEntity14)
+    # ------------------------------------------------------------------
+
+    def create_package_tracking(self, project_id, package_name, share_link, vendor, rfq, status="dlvr"):
+        """
+        Create a new PackageTracking (CustomEntity14) entity in ShotGrid.
+
+        Args:
+            project_id: ID of the project
+            package_name: Name/code for the tracking record
+            share_link: Google Drive share link (sg_share_link) - string URL
+            vendor: Vendor entity dict or ID (sg_recipient)
+            rfq: RFQ entity dict or ID (sg_rfq)
+            status: Status code (default: "dlvr" for Delivered). Valid: 'dlvr', 'dwnld'
+
+        Returns:
+            Created PackageTracking entity dictionary
+        """
+        # Normalize vendor link
+        if isinstance(vendor, int):
+            vendor_link = {"type": "CustomEntity05", "id": int(vendor)}
+        elif isinstance(vendor, dict) and "id" in vendor:
+            vendor_link = {"type": vendor.get("type", "CustomEntity05"), "id": int(vendor["id"])}
+        else:
+            raise ValueError("Invalid vendor argument; expected id or SG link dict.")
+
+        # Normalize RFQ link
+        if isinstance(rfq, int):
+            rfq_link = {"type": "CustomEntity04", "id": int(rfq)}
+        elif isinstance(rfq, dict) and "id" in rfq:
+            rfq_link = {"type": rfq.get("type", "CustomEntity04"), "id": int(rfq["id"])}
+        else:
+            raise ValueError("Invalid rfq argument; expected id or SG link dict.")
+
+        # Format share_link as a URL field (ShotGrid expects a dict for URL fields)
+        share_link_data = None
+        if share_link:
+            share_link_data = {
+                "url": share_link,
+                "name": f"{package_name} - Google Drive"
+            }
+
+        data = {
+            "code": package_name,
+            "project": {"type": "Project", "id": int(project_id)},
+            "sg_recipient": vendor_link,
+            "sg_rfq": rfq_link,
+            "sg_status_list": status,
+        }
+
+        # Only add share_link if it exists
+        if share_link_data:
+            data["sg_share_link"] = share_link_data
+
+        result = self.sg.create("CustomEntity14", data)
+        logger.info(f"Created PackageTracking: {result.get('id')} for vendor {vendor_link['id']}, RFQ {rfq_link['id']}")
+        return result
+
+    def get_package_tracking_for_rfq(self, rfq_id, fields=None):
+        """
+        Get all PackageTracking (CustomEntity14) records for a specific RFQ.
+
+        Args:
+            rfq_id: ID of the RFQ to filter by
+            fields: List of fields to return
+
+        Returns:
+            List of PackageTracking dictionaries
+        """
+        if fields is None:
+            fields = [
+                "id", "code", "sg_share_link", "sg_recipient", "sg_rfq",
+                "sg_status_list", "created_at", "updated_at"
+            ]
+
+        filters = [["sg_rfq", "is", {"type": "CustomEntity04", "id": int(rfq_id)}]]
+
+        return self.sg.find(
+            "CustomEntity14",
+            filters,
+            fields,
+            order=[{"field_name": "created_at", "direction": "desc"}]
+        )
+
+    def get_package_tracking_for_vendor_and_rfq(self, vendor_id, rfq_id, fields=None):
+        """
+        Get PackageTracking (CustomEntity14) records filtered by vendor and RFQ.
+
+        Args:
+            vendor_id: ID of the vendor (CustomEntity05)
+            rfq_id: ID of the RFQ (CustomEntity04)
+            fields: List of fields to return
+
+        Returns:
+            List of PackageTracking dictionaries
+        """
+        if fields is None:
+            fields = [
+                "id", "code", "sg_share_link", "sg_recipient", "sg_rfq",
+                "sg_status_list", "created_at", "updated_at"
+            ]
+
+        filters = [
+            ["sg_recipient", "is", {"type": "CustomEntity05", "id": int(vendor_id)}],
+            ["sg_rfq", "is", {"type": "CustomEntity04", "id": int(rfq_id)}]
+        ]
+
+        return self.sg.find(
+            "CustomEntity14",
+            filters,
+            fields,
+            order=[{"field_name": "created_at", "direction": "desc"}]
+        )
+
+    def check_package_already_shared(self, package_name, vendor_id, rfq_id):
+        """
+        Check if a package has already been shared with a vendor for an RFQ.
+
+        Args:
+            package_name: Name/code of the package
+            vendor_id: ID of the vendor (CustomEntity05)
+            rfq_id: ID of the RFQ (CustomEntity04)
+
+        Returns:
+            dict or None: The existing PackageTracking record if found, None otherwise
+        """
+        filters = [
+            ["code", "is", package_name],
+            ["sg_recipient", "is", {"type": "CustomEntity05", "id": int(vendor_id)}],
+            ["sg_rfq", "is", {"type": "CustomEntity04", "id": int(rfq_id)}]
+        ]
+
+        results = self.sg.find(
+            "CustomEntity14",
+            filters,
+            ["id", "code", "sg_share_link", "sg_recipient", "sg_status_list", "created_at"],
+            limit=1
+        )
+
+        return results[0] if results else None
+
+    def update_package_tracking(self, tracking_id, data):
+        """
+        Update a PackageTracking (CustomEntity14) entity.
+
+        Args:
+            tracking_id: PackageTracking ID
+            data: Dictionary of fields to update
+
+        Returns:
+            Updated PackageTracking entity dictionary
+        """
+        result = self.sg.update("CustomEntity14", int(tracking_id), data)
+        return result
+
+    def delete_package_tracking(self, tracking_id):
+        """
+        Delete a PackageTracking (CustomEntity14) entity.
+
+        Args:
+            tracking_id: PackageTracking ID
+
+        Returns:
+            bool: True if successful
+        """
+        result = self.sg.delete("CustomEntity14", int(tracking_id))
+        return result
+
     def __enter__(self):
         """Context manager entry."""
         self.connect()

@@ -367,6 +367,10 @@ class PackageShareWidget(QtWidgets.QWidget):
         if not self.current_package:
             return
 
+        # Check if package has already been shared to the selected vendor
+        if self._check_duplicate_share():
+            return  # Already shown warning to user
+
         package_path = self.current_package.get('path')
         if not package_path:
             logger.warning("No package path available")
@@ -385,6 +389,70 @@ class PackageShareWidget(QtWidgets.QWidget):
         else:
             # Need to create zip file
             self._start_zipping(package_dir, zip_path)
+
+    def _check_duplicate_share(self):
+        """Check if the package has already been shared to the selected vendor.
+
+        Returns:
+            bool: True if duplicate found (and warning shown), False otherwise
+        """
+        vendor = self.vendor_combo.currentData()
+        if not vendor:
+            return False  # No vendor selected, proceed
+
+        package_name = self.current_package.get('code')
+        if not package_name:
+            return False
+
+        try:
+            delivery_tab = self._get_delivery_tab()
+            if not delivery_tab or not hasattr(delivery_tab, 'sg_session'):
+                return False
+
+            sg_session = delivery_tab.sg_session
+            current_rfq = delivery_tab.current_rfq
+
+            if not current_rfq:
+                return False
+
+            rfq_id = current_rfq.get('id')
+            vendor_id = vendor.get('id')
+            vendor_name = vendor.get('code', 'Unknown')
+
+            if not rfq_id or not vendor_id:
+                return False
+
+            # Check for existing share
+            existing = sg_session.check_package_already_shared(
+                package_name=package_name,
+                vendor_id=vendor_id,
+                rfq_id=rfq_id
+            )
+
+            if existing:
+                # Format the date if available
+                created_at = existing.get('created_at', '')
+                if hasattr(created_at, 'strftime'):
+                    date_str = created_at.strftime('%Y-%m-%d %H:%M')
+                else:
+                    date_str = str(created_at) if created_at else 'unknown date'
+
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Package Already Shared",
+                    f"The package '{package_name}' has already been shared with "
+                    f"vendor '{vendor_name}' on {date_str}.\n\n"
+                    f"Each package can only be shared once per vendor."
+                )
+                logger.info(f"Duplicate share prevented: '{package_name}' already shared to '{vendor_name}'")
+                return True
+
+        except Exception as e:
+            logger.error(f"Error checking for duplicate share: {e}", exc_info=True)
+            # Don't block on error, proceed with share
+            return False
+
+        return False
 
     def _update_package_in_shotgrid(self):
         """Upload manifest to ShotGrid and set package status to closed."""
@@ -540,11 +608,15 @@ class PackageShareWidget(QtWidgets.QWidget):
             )
 
             if result and result.get('webViewLink'):
-                self.result_link.setText(result['webViewLink'])
+                share_link = result['webViewLink']
+                self.result_link.setText(share_link)
                 self.copy_link_btn.setEnabled(True)
                 self.result_group.setVisible(True)
                 self.progress_label.setText("Upload complete!")
-                logger.info(f"File shared successfully: {result['webViewLink']}")
+                logger.info(f"File shared successfully: {share_link}")
+
+                # Create PackageTracking entity in ShotGrid
+                self._create_package_tracking(config, share_link)
             else:
                 self.progress_label.setText("Upload failed - check logs")
                 QtWidgets.QMessageBox.warning(
@@ -563,6 +635,56 @@ class PackageShareWidget(QtWidgets.QWidget):
             self.progress_bar.setValue(100)
             self._update_buttons()
             QtCore.QTimer.singleShot(2000, lambda: self.progress_group.setVisible(False))
+
+    def _create_package_tracking(self, config, share_link):
+        """Create a PackageTracking entity in ShotGrid after successful share.
+
+        Args:
+            config: Share configuration dictionary with package and vendor info
+            share_link: Google Drive share link
+        """
+        vendor = config.get('vendor')
+        package = config.get('package', {})
+        package_name = package.get('code', 'Unknown Package')
+
+        if not vendor:
+            logger.warning("No vendor selected, skipping PackageTracking creation")
+            return
+
+        try:
+            delivery_tab = self._get_delivery_tab()
+            if not delivery_tab:
+                logger.warning("Could not access DeliveryTab for PackageTracking creation")
+                return
+
+            sg_session = delivery_tab.sg_session
+            project_id = delivery_tab.current_project_id
+            current_rfq = delivery_tab.current_rfq
+
+            if not project_id or not current_rfq:
+                logger.warning("Missing project_id or current_rfq for PackageTracking creation")
+                return
+
+            # Create the PackageTracking entity
+            # Status codes: 'dlvr' = Delivered, 'dwnld' = Downloaded
+            tracking = sg_session.create_package_tracking(
+                project_id=project_id,
+                package_name=package_name,
+                share_link=share_link,
+                vendor=vendor,
+                rfq=current_rfq,
+                status="dlvr"  # Delivered
+            )
+
+            if tracking:
+                logger.info(f"Created PackageTracking {tracking.get('id')} for package '{package_name}' to vendor '{vendor.get('code')}'")
+                # Refresh the vendor view to show the new tracking record
+                delivery_tab._load_package_tracking_for_vendors()
+            else:
+                logger.warning("PackageTracking creation returned None")
+
+        except Exception as e:
+            logger.error(f"Failed to create PackageTracking: {e}", exc_info=True)
 
     def _get_permission_value(self):
         """Get the permission value from the combo box."""
@@ -587,6 +709,201 @@ class PackageShareWidget(QtWidgets.QWidget):
         return self.current_package
 
 
+class PackageTrackingDetailsDialog(QtWidgets.QDialog):
+    """Dialog for displaying package tracking details and allowing link copying."""
+
+    def __init__(self, tracking_record, parent=None):
+        """Initialize the dialog.
+
+        Args:
+            tracking_record: PackageTracking dictionary from ShotGrid
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.tracking_record = tracking_record
+        self.setWindowTitle("Package Details")
+        self.setMinimumWidth(450)
+        self.setModal(True)
+        self._setup_ui()
+
+    def _setup_ui(self):
+        """Setup the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(15)
+
+        package_name = self.tracking_record.get('code', 'Unknown Package')
+        # sg_share_link is a URL field stored as dict with 'url' and 'name' keys
+        share_link_data = self.tracking_record.get('sg_share_link', {})
+        if isinstance(share_link_data, dict):
+            share_link = share_link_data.get('url', '')
+        else:
+            share_link = share_link_data or ''
+        status = self.tracking_record.get('sg_status_list', 'Unknown')
+        created_at = self.tracking_record.get('created_at', '')
+        recipient = self.tracking_record.get('sg_recipient', {})
+        recipient_name = recipient.get('name', 'Unknown') if isinstance(recipient, dict) else 'Unknown'
+
+        # Header with package name and status
+        header_layout = QtWidgets.QHBoxLayout()
+
+        name_label = QtWidgets.QLabel(f"<b style='font-size: 16px;'>{package_name}</b>")
+        header_layout.addWidget(name_label)
+        header_layout.addStretch()
+
+        # Map status codes to display names
+        status_display = {
+            'dlvr': 'Delivered',
+            'dwnld': 'Downloaded',
+            'acc': 'Accessed',
+        }
+        status_name = status_display.get(status, status)
+
+        # Status badge with color based on status
+        status_colors = {
+            'dlvr': ('#2a4a2a', '#8fdf8f'),      # Delivered - green
+            'dwnld': ('#2a4a5a', '#8fdfdf'),     # Downloaded - cyan
+            'acc': ('#4a2a5a', '#df8fdf'),       # Accessed - purple
+        }
+        bg_color, text_color = status_colors.get(status, ('#3a3a3a', '#aaa'))
+
+        status_badge = QtWidgets.QLabel(status_name)
+        status_badge.setStyleSheet(f"""
+            background-color: {bg_color};
+            color: {text_color};
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        """)
+        header_layout.addWidget(status_badge)
+        layout.addLayout(header_layout)
+
+        # Details section
+        details_group = QtWidgets.QGroupBox("Details")
+        details_layout = QtWidgets.QFormLayout(details_group)
+        details_layout.setSpacing(8)
+
+        # Recipient
+        details_layout.addRow("Recipient:", QtWidgets.QLabel(recipient_name))
+
+        # Created date
+        if created_at:
+            if hasattr(created_at, 'strftime'):
+                date_str = created_at.strftime('%Y-%m-%d %H:%M')
+            else:
+                date_str = str(created_at)
+            details_layout.addRow("Shared on:", QtWidgets.QLabel(date_str))
+
+        layout.addWidget(details_group)
+
+        # Share link section
+        if share_link:
+            link_group = QtWidgets.QGroupBox("Google Drive Share Link")
+            link_layout = QtWidgets.QVBoxLayout(link_group)
+
+            # Link display
+            self.link_edit = QtWidgets.QLineEdit(share_link)
+            self.link_edit.setReadOnly(True)
+            self.link_edit.setStyleSheet("""
+                QLineEdit {
+                    background-color: #2a2a2a;
+                    border: 1px solid #555;
+                    border-radius: 4px;
+                    padding: 8px;
+                    color: #4a9eff;
+                    font-size: 11px;
+                }
+            """)
+            link_layout.addWidget(self.link_edit)
+
+            # Button row
+            btn_layout = QtWidgets.QHBoxLayout()
+            btn_layout.addStretch()
+
+            # Copy button
+            self.copy_btn = QtWidgets.QPushButton("Copy Link")
+            self.copy_btn.setMinimumWidth(100)
+            self.copy_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4a6a4a;
+                    border: 1px solid #5a7a5a;
+                    border-radius: 4px;
+                    padding: 8px 16px;
+                    color: #ddd;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #5a7a5a;
+                }
+            """)
+            self.copy_btn.clicked.connect(self._copy_link)
+            btn_layout.addWidget(self.copy_btn)
+
+            # Open button
+            open_btn = QtWidgets.QPushButton("Open in Browser")
+            open_btn.setMinimumWidth(120)
+            open_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #4a5a6a;
+                    border: 1px solid #5a6a7a;
+                    border-radius: 4px;
+                    padding: 8px 16px;
+                    color: #ddd;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #5a6a7a;
+                }
+            """)
+            open_btn.clicked.connect(self._open_link)
+            btn_layout.addWidget(open_btn)
+
+            link_layout.addLayout(btn_layout)
+            layout.addWidget(link_group)
+        else:
+            no_link_label = QtWidgets.QLabel("No share link available")
+            no_link_label.setStyleSheet("color: #888; font-style: italic;")
+            layout.addWidget(no_link_label)
+
+        # Close button
+        layout.addStretch()
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.setMinimumWidth(80)
+        close_btn.clicked.connect(self.accept)
+
+        close_layout = QtWidgets.QHBoxLayout()
+        close_layout.addStretch()
+        close_layout.addWidget(close_btn)
+        layout.addLayout(close_layout)
+
+    def _get_share_link_url(self):
+        """Extract the URL from the share_link field.
+
+        Returns:
+            str: The share link URL or empty string
+        """
+        share_link_data = self.tracking_record.get('sg_share_link', {})
+        if isinstance(share_link_data, dict):
+            return share_link_data.get('url', '')
+        return share_link_data or ''
+
+    def _copy_link(self):
+        """Copy the share link to clipboard."""
+        share_link = self._get_share_link_url()
+        if share_link:
+            QtWidgets.QApplication.clipboard().setText(share_link)
+            self.copy_btn.setText("Copied!")
+            QtCore.QTimer.singleShot(1500, lambda: self.copy_btn.setText("Copy Link"))
+
+    def _open_link(self):
+        """Open the share link in the default browser."""
+        share_link = self._get_share_link_url()
+        if share_link:
+            from PySide6.QtGui import QDesktopServices
+            from PySide6.QtCore import QUrl
+            QDesktopServices.openUrl(QUrl(share_link))
+
+
 class VendorCategoryView(QtWidgets.QWidget):
     """View widget for displaying vendors as collapsible groups."""
 
@@ -599,6 +916,7 @@ class VendorCategoryView(QtWidgets.QWidget):
         self.vendors = {}  # vendor_id -> vendor_data
         self.vendor_groups = {}  # vendor_code -> CollapsibleGroupBox with droppable container
         self.assigned_packages = {}  # vendor_code -> set of package_ids
+        self.package_tracking = {}  # vendor_code -> list of PackageTracking records
         self._selected_vendor_code = None
 
         self._setup_ui()
@@ -711,6 +1029,55 @@ class VendorCategoryView(QtWidgets.QWidget):
                 mappings[vendor_code] = list(package_ids)
         return mappings
 
+    def set_package_tracking_for_vendor(self, vendor_code, tracking_records):
+        """Set package tracking records for a vendor.
+
+        Args:
+            vendor_code: Code of the vendor
+            tracking_records: List of PackageTracking dictionaries from ShotGrid
+        """
+        self.package_tracking[vendor_code] = tracking_records
+
+        if vendor_code in self.vendor_groups:
+            container = self.vendor_groups[vendor_code]['container']
+            container.set_package_tracking(tracking_records)
+
+            # Update group title with count
+            count = len(tracking_records)
+            self.vendor_groups[vendor_code]['group'].setTitle(
+                f"{vendor_code} ({count} package{'s' if count != 1 else ''})"
+            )
+
+    def clear_all_tracking(self):
+        """Clear all package tracking data from all vendors."""
+        self.package_tracking.clear()
+        for vendor_code, group_data in self.vendor_groups.items():
+            container = group_data['container']
+            container.clear_packages()
+            group_data['group'].setTitle(f"{vendor_code} (0 packages)")
+
+
+class ClickableFrame(QtWidgets.QFrame):
+    """A QFrame that emits a clicked signal when clicked."""
+
+    clicked = QtCore.Signal(object)  # Emits the tracking_record when clicked
+
+    def __init__(self, tracking_record, parent=None):
+        """Initialize the clickable frame.
+
+        Args:
+            tracking_record: PackageTracking dictionary to emit on click
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.tracking_record = tracking_record
+
+    def mousePressEvent(self, event):
+        """Handle mouse press events."""
+        if event.button() == QtCore.Qt.LeftButton:
+            self.clicked.emit(self.tracking_record)
+        super().mousePressEvent(event)
+
 
 class DroppableVendorContainer(QtWidgets.QWidget):
     """Container widget inside a vendor group that accepts package drops."""
@@ -727,7 +1094,8 @@ class DroppableVendorContainer(QtWidgets.QWidget):
         super().__init__(parent)
         self.vendor_data = vendor_data
         self.vendor_code = vendor_data.get('code', 'Unknown')
-        self.package_widgets = {}  # package_id -> QWidget
+        self.package_widgets = {}  # package_id/tracking_id -> QWidget
+        self.tracking_records = []  # List of PackageTracking records
         self._is_drag_over = False
 
         self.setAcceptDrops(True)
@@ -823,6 +1191,151 @@ class DroppableVendorContainer(QtWidgets.QWidget):
             row = idx // columns
             col = idx % columns
             self.layout.addWidget(widget, row, col)
+
+    def set_package_tracking(self, tracking_records):
+        """Set and display package tracking records from ShotGrid.
+
+        Args:
+            tracking_records: List of PackageTracking dictionaries from ShotGrid
+        """
+        self.clear_packages()
+        self.tracking_records = tracking_records
+
+        for record in tracking_records:
+            self._add_tracking_widget(record)
+
+    def clear_packages(self):
+        """Clear all package widgets from the container."""
+        # Remove all widgets
+        for widget in list(self.package_widgets.values()):
+            widget.deleteLater()
+        self.package_widgets.clear()
+        self.tracking_records = []
+
+        # Show placeholder
+        self.placeholder_label.show()
+
+    def _add_tracking_widget(self, tracking_record):
+        """Add a widget for a PackageTracking record.
+
+        Args:
+            tracking_record: PackageTracking dictionary from ShotGrid
+        """
+        tracking_id = tracking_record.get('id')
+        if tracking_id in self.package_widgets:
+            return  # Already exists
+
+        # Hide placeholder
+        self.placeholder_label.hide()
+
+        package_name = tracking_record.get('code', 'Unknown Package')
+        # sg_share_link is a URL field stored as dict with 'url' and 'name' keys
+        share_link_data = tracking_record.get('sg_share_link', {})
+        if isinstance(share_link_data, dict):
+            share_link = share_link_data.get('url', '')
+        else:
+            share_link = share_link_data or ''
+        status = tracking_record.get('sg_status_list', 'Unknown')
+
+        # Map status codes to display names
+        status_display = {
+            'dlvr': 'Delivered',
+            'dwnld': 'Downloaded',
+            'acc': 'Accessed',
+        }
+        status_name = status_display.get(status, status)
+
+        # Status-based colors (using status codes) - neutral background
+        status_colors = {
+            'dlvr': {  # Delivered - neutral with green badge
+                'bg': '#3a3a3a', 'border': '#555', 'hover_bg': '#454545', 'hover_border': '#666',
+                'badge_bg': '#2a4a2a', 'badge_text': '#8fdf8f'
+            },
+            'dwnld': {  # Downloaded - neutral with cyan badge
+                'bg': '#3a3a3a', 'border': '#555', 'hover_bg': '#454545', 'hover_border': '#666',
+                'badge_bg': '#2a4a5a', 'badge_text': '#8fdfdf'
+            },
+            'acc': {  # Accessed - neutral with purple badge
+                'bg': '#3a3a3a', 'border': '#555', 'hover_bg': '#454545', 'hover_border': '#666',
+                'badge_bg': '#4a2a5a', 'badge_text': '#df8fdf'
+            },
+        }
+        colors = status_colors.get(status, status_colors['dlvr'])
+
+        # Create clickable package widget
+        package_widget = ClickableFrame(tracking_record)
+        package_widget.clicked.connect(self._on_card_clicked)
+        package_widget.setStyleSheet(f"""
+            ClickableFrame {{
+                background-color: {colors['bg']};
+                border: 1px solid {colors['border']};
+                border-radius: 4px;
+                padding: 5px;
+            }}
+            ClickableFrame:hover {{
+                background-color: {colors['hover_bg']};
+                border: 1px solid {colors['hover_border']};
+            }}
+        """)
+        package_widget.setCursor(QtCore.Qt.PointingHandCursor)
+
+        widget_layout = QtWidgets.QVBoxLayout(package_widget)
+        widget_layout.setContentsMargins(8, 5, 8, 5)
+        widget_layout.setSpacing(3)
+
+        # Top row: icon and name
+        top_row = QtWidgets.QHBoxLayout()
+        icon_label = QtWidgets.QLabel()
+        icon_label.setPixmap(self.style().standardIcon(
+            QtWidgets.QStyle.SP_DirIcon
+        ).pixmap(20, 20))
+        top_row.addWidget(icon_label)
+
+        name_label = QtWidgets.QLabel(package_name)
+        name_label.setStyleSheet("font-size: 11px; font-weight: bold; color: #ddd;")
+        top_row.addWidget(name_label)
+        top_row.addStretch()
+
+        # Status badge with dynamic colors
+        status_label = QtWidgets.QLabel(status_name)
+        status_label.setStyleSheet(f"""
+            background-color: {colors['badge_bg']};
+            color: {colors['badge_text']};
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 9px;
+            font-weight: bold;
+        """)
+        top_row.addWidget(status_label)
+
+        widget_layout.addLayout(top_row)
+
+        # Info row: click hint
+        info_row = QtWidgets.QHBoxLayout()
+        click_hint = QtWidgets.QLabel("Click for details")
+        click_hint.setStyleSheet("color: #888; font-size: 9px; font-style: italic;")
+        info_row.addWidget(click_hint)
+        info_row.addStretch()
+
+        # Share link indicator
+        if share_link:
+            link_indicator = QtWidgets.QLabel("🔗 Link available")
+            link_indicator.setStyleSheet("color: #8fb8df; font-size: 9px;")
+            info_row.addWidget(link_indicator)
+
+        widget_layout.addLayout(info_row)
+
+        self.package_widgets[tracking_id] = package_widget
+        self._relayout_packages()
+
+    def _on_card_clicked(self, tracking_record):
+        """Handle package card click - open details dialog.
+
+        Args:
+            tracking_record: PackageTracking dictionary from ShotGrid
+        """
+        dialog = PackageTrackingDetailsDialog(tracking_record, self)
+        dialog.exec()
 
     def dragEnterEvent(self, event):
         """Handle drag enter event."""
@@ -1112,11 +1625,189 @@ class DeliveryTab(QtWidgets.QWidget):
             self.vendor_category_view.set_vendors(self.vendors_list)
             self.package_share_widget.set_vendors(self.vendors_list)
             logger.info(f"Loaded {len(self.vendors_list)} vendors for RFQ {rfq.get('code', 'Unknown')}")
+
+            # Load package tracking records for each vendor
+            self._load_package_tracking_for_vendors()
         except Exception as e:
             logger.error(f"Error loading vendors for RFQ: {e}", exc_info=True)
             self.vendors_list = []
             self.vendor_category_view.set_vendors([])
             self.package_share_widget.set_vendors([])
+
+    def _load_package_tracking_for_vendors(self):
+        """Load PackageTracking records for each vendor and the current RFQ.
+
+        This populates the vendor view with package cards that have been
+        shared with each vendor, loaded from ShotGrid.
+        Also checks Google Drive access and updates status to 'acc' if accessed.
+        """
+        print("=== _load_package_tracking_for_vendors called ===")
+        print(f"  current_rfq: {self.current_rfq}")
+        print(f"  vendors_list count: {len(self.vendors_list) if self.vendors_list else 0}")
+        logger.info("=== _load_package_tracking_for_vendors called ===")
+        logger.info(f"  current_rfq: {self.current_rfq}")
+        logger.info(f"  vendors_list count: {len(self.vendors_list) if self.vendors_list else 0}")
+
+        if not self.current_rfq or not self.vendors_list:
+            print("  Returning early: no current_rfq or no vendors_list")
+            logger.warning("  Returning early: no current_rfq or no vendors_list")
+            return
+
+        rfq_id = self.current_rfq.get('id')
+        print(f"  rfq_id: {rfq_id}")
+        logger.info(f"  rfq_id: {rfq_id}")
+        if not rfq_id:
+            print("  Returning early: no rfq_id")
+            logger.warning("  Returning early: no rfq_id")
+            return
+
+        try:
+            # Clear existing tracking data
+            self.vendor_category_view.clear_all_tracking()
+
+            # Get Google Drive service for access checking
+            gdrive = get_gdrive_service()
+
+            # Load tracking records for each vendor
+            for vendor in self.vendors_list:
+                vendor_id = vendor.get('id')
+                vendor_code = vendor.get('code', 'Unknown')
+
+                if not vendor_id:
+                    continue
+
+                # Get package tracking records for this vendor and RFQ
+                tracking_records = self.sg_session.get_package_tracking_for_vendor_and_rfq(
+                    vendor_id=vendor_id,
+                    rfq_id=rfq_id
+                )
+
+                if tracking_records:
+                    # Check Google Drive access for each record and update status if needed
+                    updated_records = self._check_and_update_access_status(
+                        tracking_records, gdrive
+                    )
+                    logger.info(f"Loaded {len(updated_records)} tracking records for vendor '{vendor_code}'")
+                    self.vendor_category_view.set_package_tracking_for_vendor(vendor_code, updated_records)
+
+        except Exception as e:
+            logger.error(f"Error loading package tracking records: {e}", exc_info=True)
+
+    def _check_and_update_access_status(self, tracking_records, gdrive):
+        """Check Google Drive access for tracking records and update status.
+
+        For each record with status 'dlvr' (Delivered), checks if the shared
+        file has been accessed via Google Drive API. If accessed, updates
+        the status to 'acc' (Accessed) in ShotGrid.
+
+        Args:
+            tracking_records: List of PackageTracking dictionaries
+            gdrive: GoogleDriveService instance
+
+        Returns:
+            List of tracking records with potentially updated statuses
+        """
+        print(f"=== Checking Google Drive access for {len(tracking_records)} tracking records ===")
+        logger.info(f"=== Checking Google Drive access for {len(tracking_records)} tracking records ===")
+
+        if not gdrive:
+            print("Google Drive service is None")
+            logger.warning("Google Drive service is None")
+            return tracking_records
+
+        if not gdrive.is_available:
+            print("Google Drive service not available (libraries not installed)")
+            logger.warning("Google Drive service not available (libraries not installed)")
+            return tracking_records
+
+        print(f"Google Drive service available: {gdrive.is_available}")
+        print(f"Google Drive authenticated: {gdrive.is_authenticated}")
+        logger.info(f"Google Drive service available: {gdrive.is_available}")
+        logger.info(f"Google Drive authenticated: {gdrive.is_authenticated}")
+
+        updated_records = []
+
+        for record in tracking_records:
+            package_name = record.get('code', 'Unknown')
+            current_status = record.get('sg_status_list', '')
+            print(f"--- Checking package '{package_name}' (current status: {current_status}) ---")
+            logger.info(f"--- Checking package '{package_name}' (current status: {current_status}) ---")
+
+            # Only check access for 'dlvr' (Delivered) status
+            # Don't re-check records that are already 'acc' or 'dwnld'
+            if current_status != 'dlvr':
+                print(f"  Skipping: status is not 'dlvr' (is '{current_status}')")
+                logger.info(f"  Skipping: status is not 'dlvr' (is '{current_status}')")
+                updated_records.append(record)
+                continue
+
+            # Extract share link URL
+            share_link_data = record.get('sg_share_link', {})
+            print(f"  Share link data: {share_link_data}")
+            logger.info(f"  Share link data: {share_link_data}")
+            if isinstance(share_link_data, dict):
+                share_url = share_link_data.get('url', '')
+            else:
+                share_url = share_link_data or ''
+
+            if not share_url:
+                print(f"  No share URL found for package '{package_name}'")
+                logger.warning(f"  No share URL found for package '{package_name}'")
+                updated_records.append(record)
+                continue
+
+            print(f"  Share URL: {share_url}")
+            logger.info(f"  Share URL: {share_url}")
+
+            # Extract file ID from URL
+            file_id = gdrive.extract_file_id_from_url(share_url)
+            if not file_id:
+                print(f"  Could not extract file ID from share link for record {record.get('id')}")
+                logger.warning(f"  Could not extract file ID from share link for record {record.get('id')}")
+                updated_records.append(record)
+                continue
+
+            print(f"  Extracted file ID: {file_id}")
+            logger.info(f"  Extracted file ID: {file_id}")
+
+            # Check if file has been accessed
+            try:
+                print(f"  Calling check_file_accessed({file_id})...")
+                logger.info(f"  Calling check_file_accessed({file_id})...")
+                access_info = gdrive.check_file_accessed(file_id)
+                print(f"  Access check result: {access_info}")
+                logger.info(f"  Access check result: {access_info}")
+
+                if access_info and access_info.get('accessed'):
+                    # Update status to 'acc' (Accessed) in ShotGrid
+                    tracking_id = record.get('id')
+
+                    logger.info(f"  Package '{package_name}' HAS BEEN ACCESSED!")
+                    logger.info(f"    Access count: {access_info.get('access_count', 0)}")
+                    logger.info(f"    Last access time: {access_info.get('access_time')}")
+                    logger.info(f"  Updating ShotGrid status to 'acc'...")
+
+                    try:
+                        self.sg_session.update_package_tracking(
+                            tracking_id,
+                            {'sg_status_list': 'acc'}
+                        )
+                        # Update the local record to reflect the new status
+                        record = dict(record)  # Make a copy to avoid modifying original
+                        record['sg_status_list'] = 'acc'
+                        logger.info(f"  SUCCESS: Updated tracking record {tracking_id} status to 'acc'")
+                    except Exception as e:
+                        logger.error(f"  FAILED to update tracking status in ShotGrid: {e}")
+                else:
+                    logger.info(f"  Package '{package_name}' has NOT been accessed yet")
+
+            except Exception as e:
+                logger.error(f"  ERROR checking Google Drive access for file {file_id}: {e}", exc_info=True)
+
+            updated_records.append(record)
+
+        logger.info(f"=== Finished checking Google Drive access ===")
+        return updated_records
 
     def _load_vendors_for_project(self, project_id):
         """Load vendors for the project (used by refresh_vendors).
