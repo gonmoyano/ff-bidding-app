@@ -726,6 +726,14 @@ class ShotgridClient:
             if "expected Hash" in msg:
                 log.info(f"Retrying RFQ {rfq_id} sg_vfx_breakdown -> single {payload_single}")
                 return self.sg.update("CustomEntity04", int(rfq_id), payload_single)
+            if "doesn't exist" in msg:
+                # Field sg_vfx_breakdown is not configured on RFQ entity - skip silently
+                log.warning(
+                    f"Field sg_vfx_breakdown does not exist on RFQ (CustomEntity04). "
+                    "Skipping VFX Breakdown link on RFQ. The VFX Breakdown was still created "
+                    "and is linked to the Bid if one was created."
+                )
+                return None
             raise
 
     def create_vfx_breakdown(self, project_id, code):

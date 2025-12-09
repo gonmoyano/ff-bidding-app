@@ -1611,8 +1611,8 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             if init_vfx_breakdown:
                 breakdown_name = f"{rfq_name} - VFX Breakdown"
                 new_vfx_breakdown = self.sg_session.create_vfx_breakdown(project_id, breakdown_name)
-                # Set as current VFX Breakdown for the RFQ
-                self.sg_session.update_rfq_vfx_breakdown(rfq_id, new_vfx_breakdown)
+                # Set as current VFX Breakdown for the RFQ (may return None if field doesn't exist)
+                rfq_link_result = self.sg_session.update_rfq_vfx_breakdown(rfq_id, new_vfx_breakdown)
                 # If Bid was created, also link VFX Breakdown to Bid
                 if new_bid:
                     self.sg_session.update_bid_vfx_breakdown(new_bid['id'], new_vfx_breakdown)
@@ -1622,7 +1622,10 @@ class PackageManagerApp(QtWidgets.QMainWindow):
                     new_vfx_breakdown['id'],
                     code="New Bidding Scene"
                 )
-                created_entities.append(f"VFX Breakdown '{breakdown_name}' with initial row")
+                if rfq_link_result is None:
+                    created_entities.append(f"VFX Breakdown '{breakdown_name}' with initial row (not linked to RFQ)")
+                else:
+                    created_entities.append(f"VFX Breakdown '{breakdown_name}' with initial row")
                 logger.info(f"Created VFX Breakdown '{breakdown_name}' (ID: {new_vfx_breakdown['id']}) with initial Bidding Scene")
 
             # Create and link Bid Assets if requested (requires Bid)
