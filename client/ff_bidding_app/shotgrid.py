@@ -728,6 +728,132 @@ class ShotgridClient:
                 return self.sg.update("CustomEntity04", int(rfq_id), payload_single)
             raise
 
+    def create_vfx_breakdown(self, project_id, code):
+        """
+        Create a new VFX Breakdown (CustomEntity01).
+
+        Args:
+            project_id: Project ID
+            code: VFX Breakdown name/code
+
+        Returns:
+            Created VFX Breakdown entity dictionary
+        """
+        data = {
+            "code": code,
+            "project": {"type": "Project", "id": int(project_id)}
+        }
+
+        result = self.sg.create("CustomEntity01", data)
+        return result
+
+    def create_bidding_scene(self, project_id, vfx_breakdown_id, code="New Bidding Scene"):
+        """
+        Create a new Bidding Scene (CustomEntity02) linked to a VFX Breakdown.
+
+        Args:
+            project_id: Project ID
+            vfx_breakdown_id: Parent VFX Breakdown ID
+            code: Bidding Scene name/code (default: "New Bidding Scene")
+
+        Returns:
+            Created Bidding Scene entity dictionary
+        """
+        data = {
+            "code": code,
+            "project": {"type": "Project", "id": int(project_id)},
+            "sg_parent": {"type": "CustomEntity01", "id": int(vfx_breakdown_id)}
+        }
+
+        result = self.sg.create("CustomEntity02", data)
+        return result
+
+    def create_bid_assets(self, project_id, code):
+        """
+        Create a new Bid Assets (CustomEntity08).
+
+        Args:
+            project_id: Project ID
+            code: Bid Assets name/code
+
+        Returns:
+            Created Bid Assets entity dictionary
+        """
+        data = {
+            "code": code,
+            "project": {"type": "Project", "id": int(project_id)}
+        }
+
+        result = self.sg.create("CustomEntity08", data)
+        return result
+
+    def create_asset_item(self, project_id, bid_assets_id, code="New Asset"):
+        """
+        Create a new Asset Item (CustomEntity07) linked to Bid Assets.
+
+        Args:
+            project_id: Project ID
+            bid_assets_id: Parent Bid Assets ID
+            code: Asset item name/code (default: "New Asset")
+
+        Returns:
+            Created Asset Item entity dictionary
+        """
+        data = {
+            "code": code,
+            "project": {"type": "Project", "id": int(project_id)},
+            "sg_parent_bid_assets": {"type": "CustomEntity08", "id": int(bid_assets_id)}
+        }
+
+        result = self.sg.create("CustomEntity07", data)
+        return result
+
+    def update_bid_bid_assets(self, bid_id, bid_assets):
+        """
+        Set sg_bid_assets on Bid (CustomEntity06) to the given Bid Assets link.
+
+        Args:
+            bid_id: Bid ID
+            bid_assets: Bid Assets entity dict or ID
+
+        Returns:
+            Updated Bid entity dictionary
+        """
+        # Normalize link
+        if isinstance(bid_assets, int):
+            ba_link = {"type": "CustomEntity08", "id": int(bid_assets)}
+        elif isinstance(bid_assets, dict) and "id" in bid_assets:
+            ba_link = {"type": bid_assets.get("type", "CustomEntity08"), "id": int(bid_assets["id"])}
+        else:
+            raise ValueError("Invalid bid_assets argument; expected id or SG link dict.")
+
+        data = {"sg_bid_assets": ba_link}
+        result = self.sg.update("CustomEntity06", int(bid_id), data)
+        return result
+
+    def update_rfq_early_bid(self, rfq_id, bid):
+        """
+        Set sg_early_bid on RFQ (CustomEntity04) to the given Bid link.
+
+        Args:
+            rfq_id: RFQ ID
+            bid: Bid entity dict or ID
+
+        Returns:
+            Updated RFQ entity dictionary
+        """
+        # Normalize link
+        if isinstance(bid, int):
+            bid_link = {"type": "CustomEntity06", "id": int(bid)}
+        elif isinstance(bid, dict) and "id" in bid:
+            bid_link = {"type": bid.get("type", "CustomEntity06"), "id": int(bid["id"])}
+        else:
+            raise ValueError("Invalid bid argument; expected id or SG link dict.")
+
+        data = {"sg_early_bid": bid_link}
+        result = self.sg.update("CustomEntity04", int(rfq_id), data)
+        return result
+
     def get_entity_fields_with_labels(self, entity_type):
         """Return a tuple of (field_names, display_labels) for an entity type."""
 

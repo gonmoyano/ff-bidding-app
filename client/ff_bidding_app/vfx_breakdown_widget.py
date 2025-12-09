@@ -2226,6 +2226,15 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             self.statusMessageChanged.emit("Cannot delete asset: missing ID", True)
             return
 
+        # Prevent deleting the last row - at least one Asset must remain
+        if len(self.model.all_bidding_scenes_data) <= 1:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Cannot Delete",
+                "Cannot delete the last Asset item. At least one Asset must remain in the Bid Assets."
+            )
+            return
+
         # Confirm deletion
         reply = QtWidgets.QMessageBox.question(
             self,
