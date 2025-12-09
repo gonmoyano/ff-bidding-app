@@ -238,6 +238,14 @@ class CreateRFQDialog(QtWidgets.QDialog):
         self.init_bid_assets_checkbox.setChecked(True)
         init_layout.addWidget(self.init_bid_assets_checkbox)
 
+        # Price List checkbox
+        self.init_price_list_checkbox = QtWidgets.QCheckBox("Create new Price List")
+        self.init_price_list_checkbox.setToolTip(
+            "Create a new Price List with the base Rate Card and link it to the Bid"
+        )
+        self.init_price_list_checkbox.setChecked(True)
+        init_layout.addWidget(self.init_price_list_checkbox)
+
         layout.addWidget(init_group)
 
         # Buttons
@@ -256,13 +264,16 @@ class CreateRFQDialog(QtWidgets.QDialog):
         layout.addLayout(button_layout)
 
     def _on_bid_checkbox_changed(self, state):
-        """Handle Bid checkbox state change - Bid Assets requires Bid."""
+        """Handle Bid checkbox state change - Bid Assets and Price List require Bid."""
         if state != QtCore.Qt.Checked:
-            # If Bid is unchecked, also uncheck Bid Assets (it requires a Bid)
+            # If Bid is unchecked, also uncheck Bid Assets and Price List (they require a Bid)
             self.init_bid_assets_checkbox.setChecked(False)
             self.init_bid_assets_checkbox.setEnabled(False)
+            self.init_price_list_checkbox.setChecked(False)
+            self.init_price_list_checkbox.setEnabled(False)
         else:
             self.init_bid_assets_checkbox.setEnabled(True)
+            self.init_price_list_checkbox.setEnabled(True)
 
     def get_rfq_name(self):
         """Get the entered RFQ name."""
@@ -279,6 +290,10 @@ class CreateRFQDialog(QtWidgets.QDialog):
     def get_init_bid_assets(self):
         """Get whether to initialize with Bid Assets."""
         return self.init_bid_assets_checkbox.isChecked()
+
+    def get_init_price_list(self):
+        """Get whether to initialize with a Price List."""
+        return self.init_price_list_checkbox.isChecked()
 
 
 class RenameRFQDialog(QtWidgets.QDialog):
@@ -1583,6 +1598,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         init_bid = dialog.get_init_bid()
         init_vfx_breakdown = dialog.get_init_vfx_breakdown()
         init_bid_assets = dialog.get_init_bid_assets()
+        init_price_list = dialog.get_init_price_list()
 
         try:
             # Create the RFQ in ShotGrid
@@ -1594,6 +1610,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             new_bid = None
             new_vfx_breakdown = None
             new_bid_assets = None
+            new_price_list = None
 
             # Create and link Bid if requested
             if init_bid:
@@ -1643,6 +1660,65 @@ class PackageManagerApp(QtWidgets.QMainWindow):
                 created_entities.append(f"Bid Assets '{bid_assets_name}' with initial row")
                 logger.info(f"Created Bid Assets '{bid_assets_name}' (ID: {new_bid_assets['id']}) with initial Asset Item")
 
+            # Create and link Price List if requested (requires Bid)
+            if init_price_list and new_bid:
+                price_list_name = f"{rfq_name} - Price List"
+                # Create Price List
+                price_list_data = {
+                    "code": price_list_name,
+                    "project": {"type": "Project", "id": project_id}
+                }
+                new_price_list = self.sg_session.sg.create("CustomEntity10", price_list_data)
+                new_price_list_id = new_price_list['id']
+                logger.info(f"Created Price List '{price_list_name}' (ID: {new_price_list_id})")
+
+                # Find and set the base Rate Card (first available Rate Card)
+                try:
+                    rate_cards = self.sg_session.sg.find(
+                        "CustomNonProjectEntity01",
+                        [],
+                        ["id", "code"],
+                        order=[{"field_name": "code", "direction": "asc"}]
+                    )
+                    if rate_cards:
+                        base_rate_card = rate_cards[0]
+                        self.sg_session.sg.update(
+                            "CustomEntity10",
+                            new_price_list_id,
+                            {"sg_rate_card": {"type": "CustomNonProjectEntity01", "id": base_rate_card['id']}}
+                        )
+                        logger.info(f"Set Rate Card '{base_rate_card.get('code')}' (ID: {base_rate_card['id']}) on Price List")
+                except Exception as e:
+                    logger.warning(f"Could not set base Rate Card on Price List: {e}")
+
+                # Link Price List to Bid
+                self.sg_session.sg.update(
+                    "CustomEntity06",
+                    new_bid['id'],
+                    {"sg_price_list": {"type": "CustomEntity10", "id": new_price_list_id}}
+                )
+                logger.info(f"Linked Price List to Bid {new_bid['id']}")
+
+                # Create initial empty Line Item row
+                try:
+                    line_item_data = {
+                        "code": "New Line Item",
+                        "project": {"type": "Project", "id": project_id},
+                        "sg_parent_price_list": {"type": "CustomEntity10", "id": new_price_list_id}
+                    }
+                    new_line_item = self.sg_session.sg.create("CustomEntity03", line_item_data)
+                    # Link Line Item to Price List via sg_line_items field
+                    self.sg_session.sg.update(
+                        "CustomEntity10",
+                        new_price_list_id,
+                        {"sg_line_items": [{"type": "CustomEntity03", "id": new_line_item['id']}]}
+                    )
+                    created_entities.append(f"Price List '{price_list_name}' with initial row")
+                    logger.info(f"Created initial Line Item for Price List")
+                except Exception as e:
+                    logger.warning(f"Could not create initial Line Item for Price List: {e}")
+                    created_entities.append(f"Price List '{price_list_name}'")
+
             # Reload RFQs
             self._load_rfqs(project_id)
 
@@ -1652,6 +1728,12 @@ class PackageManagerApp(QtWidgets.QMainWindow):
                 if rfq_data and rfq_data.get('id') == new_rfq['id']:
                     self.rfq_combo.setCurrentIndex(index)
                     break
+
+            # If a Bid was created, select it in the Bid dropdown
+            # This will cascade to select the VFX Breakdown, Bid Assets, and Price List
+            if new_bid and hasattr(self, 'bidding_tab') and hasattr(self.bidding_tab, 'bid_selector'):
+                # Wait a moment for the RFQ selection to propagate and load bids
+                QtCore.QTimer.singleShot(100, lambda: self._select_newly_created_bid(new_bid['id']))
 
             # Build success message
             success_msg = f"RFQ '{rfq_name}' created successfully."
@@ -1671,6 +1753,25 @@ class PackageManagerApp(QtWidgets.QMainWindow):
                 "Error",
                 f"Failed to create RFQ: {str(e)}"
             )
+
+    def _select_newly_created_bid(self, bid_id):
+        """Select a newly created bid in the bid selector dropdown.
+
+        This method is called after RFQ creation to auto-select the new bid,
+        which cascades to select the VFX Breakdown, Bid Assets, and Price List.
+
+        Args:
+            bid_id: ID of the bid to select
+        """
+        try:
+            if hasattr(self, 'bidding_tab') and hasattr(self.bidding_tab, 'bid_selector'):
+                bid_selector = self.bidding_tab.bid_selector
+                if bid_selector._select_bid_by_id(bid_id):
+                    logger.info(f"Auto-selected newly created Bid {bid_id}")
+                else:
+                    logger.warning(f"Could not find newly created Bid {bid_id} in dropdown")
+        except Exception as e:
+            logger.warning(f"Error selecting newly created bid: {e}")
 
     def _handle_rename_rfq(self, existing_rfqs):
         """Handle renaming an existing RFQ."""
