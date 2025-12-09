@@ -1602,10 +1602,8 @@ class PackageManagerApp(QtWidgets.QMainWindow):
                     project_id,
                     bid_name,
                     bid_type="Early Bid",
-                    parent_rfq_id=rfq_id
+                    parent_rfq_id=rfq_id  # This links the Bid to the RFQ via sg_parent_rfq
                 )
-                # Set as current Early Bid for the RFQ
-                self.sg_session.update_rfq_early_bid(rfq_id, new_bid)
                 created_entities.append(f"Bid '{bid_name}'")
                 logger.info(f"Created and linked Bid '{bid_name}' (ID: {new_bid['id']}) to RFQ")
 
