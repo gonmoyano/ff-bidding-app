@@ -2354,6 +2354,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 context._load_line_items()
             self.statusMessageChanged.emit(f"Added new Line Item", False)
 
+            # Notify other tabs that Line Items have changed
+            self._notify_line_items_changed()
+
         except Exception as e:
             logger.error(f"Failed to add Line Item: {e}", exc_info=True)
             QtWidgets.QMessageBox.critical(
@@ -2511,6 +2514,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
             self.statusMessageChanged.emit(f"Created Line Item '{name}'", False)
 
+            # Notify other tabs that Line Items have changed
+            self._notify_line_items_changed()
+
         except Exception as e:
             logger.error(f"Failed to save Line Item: {e}", exc_info=True)
             QtWidgets.QMessageBox.critical(
@@ -2595,6 +2601,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 context._load_line_items()
             self.statusMessageChanged.emit(f"Deleted Line Item '{line_item_code}'.", False)
 
+            # Notify other tabs that Line Items have changed
+            self._notify_line_items_changed()
+
         except Exception as e:
             logger.error(f"Failed to delete Line Item: {e}", exc_info=True)
             QtWidgets.QMessageBox.critical(
@@ -2603,6 +2612,20 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 f"Failed to delete Line Item:\n{str(e)}"
             )
             self.statusMessageChanged.emit(f"Failed to delete Line Item: {str(e)}", True)
+
+    def _notify_line_items_changed(self):
+        """Notify other tabs that Line Items have changed so they can update their dropdowns.
+
+        This method delegates to the context provider (RatesTab) which has access to the main app.
+        """
+        try:
+            # Get context from context_provider (preferred) or parent widget (fallback)
+            context = self.context_provider if self.context_provider else self.parent()
+
+            if context and hasattr(context, '_notify_line_items_changed'):
+                context._notify_line_items_changed()
+        except Exception as e:
+            logger.error(f"Failed to notify Line Items changed: {e}", exc_info=True)
 
     def _autosize_columns(self, min_px=80, max_px=700, extra_padding=28):
         """Auto-size columns to fit content.
