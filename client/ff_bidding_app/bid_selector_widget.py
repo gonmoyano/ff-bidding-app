@@ -2749,12 +2749,13 @@ class BidSelectorWidget(QtWidgets.QWidget):
             new_line_item_refs = []
             for item in source_items:
                 new_item_data = {
-                    "project": {"type": "Project", "id": self.current_project_id}
+                    "project": {"type": "Project", "id": self.current_project_id},
+                    "sg_parent_pricelist": {"type": "CustomEntity10", "id": new_price_list_id}
                 }
 
-                # Copy all fields except id
+                # Copy all fields except id and sg_parent_pricelist (which we set above)
                 for field, value in item.items():
-                    if field != "id" and field != "type" and value is not None:
+                    if field not in ("id", "type", "sg_parent_pricelist") and value is not None:
                         # Handle entity references
                         if isinstance(value, dict) and "type" in value and "id" in value:
                             new_item_data[field] = {"type": value["type"], "id": value["id"]}
@@ -3885,6 +3886,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 # Build SG data from mapping
                 sg_data = {
                     "project": {"type": "Project", "id": self.current_project_id},
+                    "sg_parent_pricelist": {"type": "CustomEntity10", "id": price_list_id},
                 }
 
                 for sg_field, excel_col in column_mapping.items():

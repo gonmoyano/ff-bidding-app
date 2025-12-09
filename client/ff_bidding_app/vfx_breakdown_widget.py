@@ -2305,10 +2305,11 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             return
 
         try:
-            # Create new Line Item in ShotGrid
+            # Create new Line Item in ShotGrid with link to Price List
             sg_data = {
                 "project": {"type": "Project", "id": project_id},
-                "code": "New Line Item"
+                "code": "New Line Item",
+                "sg_parent_pricelist": {"type": "CustomEntity10", "id": price_list_id}
             }
 
             new_line_item = self.sg_session.sg.create("CustomEntity03", sg_data)
@@ -2480,10 +2481,11 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                         break
                 return
 
-            # Name is unique - create in ShotGrid
+            # Name is unique - create in ShotGrid with link to Price List
             sg_data = {
                 "project": {"type": "Project", "id": project_id},
-                "code": name
+                "code": name,
+                "sg_parent_pricelist": {"type": "CustomEntity10", "id": price_list_id}
             }
 
             new_line_item = self.sg_session.sg.create("CustomEntity03", sg_data)
@@ -2555,6 +2557,25 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             self.statusMessageChanged.emit(f"Removed unsaved Line Item", False)
             return
 
+        # Get context from context_provider (preferred) or parent widget (fallback)
+        context = self.context_provider if self.context_provider else self.parent()
+
+        if not context or not hasattr(context, 'current_price_list_id'):
+            QtWidgets.QMessageBox.warning(self, "No Context", "Cannot delete Line Item: no Price List context found.")
+            return
+
+        price_list_id = context.current_price_list_id
+
+        # Check if this is the last Line Item - prevent deletion if so
+        line_item_count = len(self.model.all_bidding_scenes_data)
+        if line_item_count <= 1:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Cannot Delete",
+                "Cannot delete the last Line Item. A Price List must have at least one Line Item."
+            )
+            return
+
         # Confirm deletion
         reply = QtWidgets.QMessageBox.question(
             self,
@@ -2567,13 +2588,6 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             return
 
         try:
-            # Get context from context_provider (preferred) or parent widget (fallback)
-            context = self.context_provider if self.context_provider else self.parent()
-
-            if not context or not hasattr(context, 'current_price_list_id'):
-                raise Exception("No Price List context found")
-
-            price_list_id = context.current_price_list_id
 
             # Remove from Price List's sg_line_items
             current_line_items = []

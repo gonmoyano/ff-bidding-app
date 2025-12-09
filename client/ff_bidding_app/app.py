@@ -1704,7 +1704,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
                     line_item_data = {
                         "code": "New Line Item",
                         "project": {"type": "Project", "id": project_id},
-                        "sg_parent_price_list": {"type": "CustomEntity10", "id": new_price_list_id}
+                        "sg_parent_pricelist": {"type": "CustomEntity10", "id": new_price_list_id}
                     }
                     new_line_item = self.sg_session.sg.create("CustomEntity03", line_item_data)
                     # Link Line Item to Price List via sg_line_items field
