@@ -178,13 +178,13 @@ class ProjectDetailsDialog(QtWidgets.QDialog):
 
 
 class CreateRFQDialog(QtWidgets.QDialog):
-    """Dialog for creating a new RFQ."""
+    """Dialog for creating a new RFQ with initialization options."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Create New RFQ")
         self.setModal(True)
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(450)
 
         self._build_ui()
 
@@ -202,6 +202,44 @@ class CreateRFQDialog(QtWidgets.QDialog):
 
         layout.addLayout(name_layout)
 
+        # Initialization options group
+        init_group = QtWidgets.QGroupBox("Initialization Options")
+        init_layout = QtWidgets.QVBoxLayout(init_group)
+
+        init_info = QtWidgets.QLabel(
+            "Select which entities to create and set as current for this RFQ:"
+        )
+        init_info.setStyleSheet("color: #a0a0a0; font-size: 11px;")
+        init_info.setWordWrap(True)
+        init_layout.addWidget(init_info)
+
+        # Bid checkbox
+        self.init_bid_checkbox = QtWidgets.QCheckBox("Create new Bid")
+        self.init_bid_checkbox.setToolTip(
+            "Create a new Bid and set it as the current Early Bid for this RFQ"
+        )
+        self.init_bid_checkbox.setChecked(True)
+        self.init_bid_checkbox.stateChanged.connect(self._on_bid_checkbox_changed)
+        init_layout.addWidget(self.init_bid_checkbox)
+
+        # VFX Breakdown checkbox
+        self.init_vfx_breakdown_checkbox = QtWidgets.QCheckBox("Create new VFX Breakdown")
+        self.init_vfx_breakdown_checkbox.setToolTip(
+            "Create a new VFX Breakdown with an initial empty row and set it as current for the RFQ"
+        )
+        self.init_vfx_breakdown_checkbox.setChecked(True)
+        init_layout.addWidget(self.init_vfx_breakdown_checkbox)
+
+        # Bid Assets checkbox
+        self.init_bid_assets_checkbox = QtWidgets.QCheckBox("Create new Bid Assets")
+        self.init_bid_assets_checkbox.setToolTip(
+            "Create new Bid Assets with an initial empty row and link it to the Bid"
+        )
+        self.init_bid_assets_checkbox.setChecked(True)
+        init_layout.addWidget(self.init_bid_assets_checkbox)
+
+        layout.addWidget(init_group)
+
         # Buttons
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addStretch()
@@ -217,9 +255,30 @@ class CreateRFQDialog(QtWidgets.QDialog):
 
         layout.addLayout(button_layout)
 
+    def _on_bid_checkbox_changed(self, state):
+        """Handle Bid checkbox state change - Bid Assets requires Bid."""
+        if state != QtCore.Qt.Checked:
+            # If Bid is unchecked, also uncheck Bid Assets (it requires a Bid)
+            self.init_bid_assets_checkbox.setChecked(False)
+            self.init_bid_assets_checkbox.setEnabled(False)
+        else:
+            self.init_bid_assets_checkbox.setEnabled(True)
+
     def get_rfq_name(self):
         """Get the entered RFQ name."""
         return self.name_field.text().strip()
+
+    def get_init_bid(self):
+        """Get whether to initialize with a Bid."""
+        return self.init_bid_checkbox.isChecked()
+
+    def get_init_vfx_breakdown(self):
+        """Get whether to initialize with a VFX Breakdown."""
+        return self.init_vfx_breakdown_checkbox.isChecked()
+
+    def get_init_bid_assets(self):
+        """Get whether to initialize with Bid Assets."""
+        return self.init_bid_assets_checkbox.isChecked()
 
 
 class RenameRFQDialog(QtWidgets.QDialog):
@@ -1506,7 +1565,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self._handle_manage_rfq_vendors(project['id'], existing_rfqs)
 
     def _handle_create_rfq(self, project_id):
-        """Handle creating a new RFQ."""
+        """Handle creating a new RFQ with optional initialization entities."""
         dialog = CreateRFQDialog(parent=self)
         if dialog.exec() != QtWidgets.QDialog.Accepted:
             return
@@ -1520,9 +1579,66 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             )
             return
 
+        # Get initialization options
+        init_bid = dialog.get_init_bid()
+        init_vfx_breakdown = dialog.get_init_vfx_breakdown()
+        init_bid_assets = dialog.get_init_bid_assets()
+
         try:
             # Create the RFQ in ShotGrid
             new_rfq = self.sg_session.create_rfq(project_id, rfq_name)
+            rfq_id = new_rfq['id']
+            logger.info(f"Created RFQ '{rfq_name}' with ID {rfq_id}")
+
+            created_entities = []
+            new_bid = None
+            new_vfx_breakdown = None
+            new_bid_assets = None
+
+            # Create and link Bid if requested
+            if init_bid:
+                bid_name = f"{rfq_name} - Bid"
+                new_bid = self.sg_session.create_bid(
+                    project_id,
+                    bid_name,
+                    bid_type="Early Bid",
+                    parent_rfq_id=rfq_id  # This links the Bid to the RFQ via sg_parent_rfq
+                )
+                created_entities.append(f"Bid '{bid_name}'")
+                logger.info(f"Created and linked Bid '{bid_name}' (ID: {new_bid['id']}) to RFQ")
+
+            # Create and link VFX Breakdown if requested
+            if init_vfx_breakdown:
+                breakdown_name = f"{rfq_name} - VFX Breakdown"
+                new_vfx_breakdown = self.sg_session.create_vfx_breakdown(project_id, breakdown_name)
+                # Set as current VFX Breakdown for the RFQ
+                self.sg_session.update_rfq_vfx_breakdown(rfq_id, new_vfx_breakdown)
+                # If Bid was created, also link VFX Breakdown to Bid
+                if new_bid:
+                    self.sg_session.update_bid_vfx_breakdown(new_bid['id'], new_vfx_breakdown)
+                # Create initial empty Bidding Scene row
+                self.sg_session.create_bidding_scene(
+                    project_id,
+                    new_vfx_breakdown['id'],
+                    code="New Bidding Scene"
+                )
+                created_entities.append(f"VFX Breakdown '{breakdown_name}' with initial row")
+                logger.info(f"Created VFX Breakdown '{breakdown_name}' (ID: {new_vfx_breakdown['id']}) with initial Bidding Scene")
+
+            # Create and link Bid Assets if requested (requires Bid)
+            if init_bid_assets and new_bid:
+                bid_assets_name = f"{rfq_name} - Bid Assets"
+                new_bid_assets = self.sg_session.create_bid_assets(project_id, bid_assets_name)
+                # Link Bid Assets to Bid
+                self.sg_session.update_bid_bid_assets(new_bid['id'], new_bid_assets)
+                # Create initial empty Asset Item row
+                self.sg_session.create_asset_item(
+                    project_id,
+                    new_bid_assets['id'],
+                    code="New Asset"
+                )
+                created_entities.append(f"Bid Assets '{bid_assets_name}' with initial row")
+                logger.info(f"Created Bid Assets '{bid_assets_name}' (ID: {new_bid_assets['id']}) with initial Asset Item")
 
             # Reload RFQs
             self._load_rfqs(project_id)
@@ -1534,10 +1650,15 @@ class PackageManagerApp(QtWidgets.QMainWindow):
                     self.rfq_combo.setCurrentIndex(index)
                     break
 
+            # Build success message
+            success_msg = f"RFQ '{rfq_name}' created successfully."
+            if created_entities:
+                success_msg += "\n\nAlso created:\n• " + "\n• ".join(created_entities)
+
             QtWidgets.QMessageBox.information(
                 self,
                 "Success",
-                f"RFQ '{rfq_name}' created successfully."
+                success_msg
             )
 
         except Exception as e:

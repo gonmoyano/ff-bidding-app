@@ -1832,8 +1832,17 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.warning(self, "No Bidding Scene", "No bidding scene found at this row.")
                 return
 
+            # Prevent deleting the last row - at least one Bidding Scene must remain
+            if self.vfx_breakdown_table.rowCount() <= 1:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Cannot Delete",
+                    "Cannot delete the last Bidding Scene. At least one Bidding Scene must remain in the VFX Breakdown."
+                )
+                return
+
             beat_id = beat_data.get("id")
-            bidding_scene_name = bidding_scene_data.get("code") or f"Bidding Scene ID {bidding_scene_id}"
+            bidding_scene_name = beat_data.get("code") or f"Bidding Scene ID {beat_id}"
 
             # Confirmation dialog
             reply = QtWidgets.QMessageBox.question(
@@ -1849,7 +1858,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
             # Delete from ShotGrid
             self.sg_session.sg.delete("CustomEntity02", beat_id)
-            logger.info(f"Deleted bidding scene {bidding_scene_id} from ShotGrid")
+            logger.info(f"Deleted bidding scene {beat_id} from ShotGrid")
 
             # Remove from table
             self.vfx_breakdown_table.blockSignals(True)
