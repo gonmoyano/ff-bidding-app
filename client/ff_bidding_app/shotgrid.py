@@ -802,7 +802,7 @@ class ShotgridClient:
         data = {
             "code": code,
             "project": {"type": "Project", "id": int(project_id)},
-            "sg_parent_bid_assets": {"type": "CustomEntity08", "id": int(bid_assets_id)}
+            "sg_bid_assets": {"type": "CustomEntity08", "id": int(bid_assets_id)}
         }
 
         result = self.sg.create("CustomEntity07", data)
