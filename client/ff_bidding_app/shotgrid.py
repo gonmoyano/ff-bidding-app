@@ -833,7 +833,8 @@ class ShotgridClient:
 
     def update_rfq_early_bid(self, rfq_id, bid):
         """
-        Set sg_early_bid on RFQ (CustomEntity04) to the given Bid link.
+        Set sg_bid on RFQ (CustomEntity04) to the given Bid link.
+        This is an alias for update_rfq_bid for clarity when setting the current bid.
 
         Args:
             rfq_id: RFQ ID
@@ -842,17 +843,7 @@ class ShotgridClient:
         Returns:
             Updated RFQ entity dictionary
         """
-        # Normalize link
-        if isinstance(bid, int):
-            bid_link = {"type": "CustomEntity06", "id": int(bid)}
-        elif isinstance(bid, dict) and "id" in bid:
-            bid_link = {"type": bid.get("type", "CustomEntity06"), "id": int(bid["id"])}
-        else:
-            raise ValueError("Invalid bid argument; expected id or SG link dict.")
-
-        data = {"sg_early_bid": bid_link}
-        result = self.sg.update("CustomEntity04", int(rfq_id), data)
-        return result
+        return self.update_rfq_bid(rfq_id, bid)
 
     def get_entity_fields_with_labels(self, entity_type):
         """Return a tuple of (field_names, display_labels) for an entity type."""
