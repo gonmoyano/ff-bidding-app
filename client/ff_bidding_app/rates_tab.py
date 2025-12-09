@@ -732,6 +732,10 @@ class RatesTab(QtWidgets.QWidget):
                 "project": {"type": "Project", "id": self.current_project_id}
             }
 
+            # Link to current Bid if one is selected
+            if self.current_bid_id:
+                price_list_data["sg_parent_bid"] = {"type": "CustomEntity06", "id": self.current_bid_id}
+
             new_price_list = self.sg_session.sg.create("CustomEntity10", price_list_data)
             new_price_list_id = new_price_list['id']
 
