@@ -439,22 +439,35 @@ class AddVFXBreakdownDialog(QtWidgets.QDialog):
         """Handle mode change."""
         is_copy_mode = (index == 1)
         self.copy_combo.setEnabled(is_copy_mode)
+        # Apply visual styling to make disabled state more obvious
+        if is_copy_mode:
+            self.copy_combo.setStyleSheet("")
+        else:
+            self.copy_combo.setStyleSheet("QComboBox:disabled { color: #666666; background-color: #1a1a1a; }")
         # If switching to copy mode and a breakdown is already selected, update name
         if is_copy_mode and self.copy_combo.currentIndex() > 0:
             self._on_copy_selection_changed(self.copy_combo.currentIndex())
 
     def _on_copy_selection_changed(self, index):
         """Handle copy source selection change - prefill name with next version."""
-        if self.mode_combo.currentIndex() != 1:  # Not in copy mode
+        # Only process in copy mode
+        if self.mode_combo.currentIndex() != 1:
+            return
+
+        # Skip if no valid selection (first item is placeholder)
+        if index <= 0:
             return
 
         breakdown = self.copy_combo.currentData()
         if not breakdown:
+            logger.warning("No breakdown data found for selected index")
             return
 
         source_name = breakdown.get("code") or breakdown.get("name") or ""
+        logger.info(f"Copy selection changed: source_name='{source_name}'")
         if source_name:
             next_name = self._get_next_version_name(source_name)
+            logger.info(f"Prefilling name field with: '{next_name}'")
             self.name_field.setText(next_name)
 
     def _get_next_version_name(self, base_name):
@@ -473,10 +486,13 @@ class AddVFXBreakdownDialog(QtWidgets.QDialog):
         """
         import re
 
+        logger.debug(f"_get_next_version_name called with base_name='{base_name}'")
+
         # Try to match version pattern at the end: -v### or v### or -v## or v##
         # Pattern matches: optional separator, 'v' or 'V', and digits
         version_pattern = re.compile(r'^(.+?)[-\s]?[vV](\d+)$')
         match = version_pattern.match(base_name)
+        logger.debug(f"Version pattern match: {match}")
 
         if match:
             name_without_version = match.group(1)
