@@ -2321,7 +2321,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         # Bid info label (breakdown and asset)
         self.bid_info_label = QtWidgets.QLabel("")
-        self.bid_info_label.setStyleSheet("color: #6b9bd1; font-weight: bold; padding: 2px 0;")
+        self.bid_info_label.setStyleSheet("padding: 2px 0;")
         self.bid_info_label.setWordWrap(True)
         group.addWidget(self.bid_info_label)
 
@@ -2458,6 +2458,10 @@ class BidSelectorWidget(QtWidgets.QWidget):
             self.group_box.setAdditionalInfo("")
             return
 
+        # Colors for formatting
+        label_color = "#6b9bd1"  # Blue for labels
+        value_color = "#a0a0a0"  # Light gray for values
+
         info_parts = []
 
         # Get bid name for title bar
@@ -2475,9 +2479,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 breakdown_name = breakdown[0].get("name") or breakdown[0].get("code") or f"ID {breakdown[0].get('id', 'N/A')}"
             else:
                 breakdown_name = str(breakdown)
-            info_parts.append(f"VFX BREAKDOWN: {breakdown_name}")
         else:
-            info_parts.append("VFX BREAKDOWN: None")
+            breakdown_name = "None"
+        info_parts.append(f'<span style="color:{label_color}; font-weight:bold;">Vfx Breakdown:</span> <span style="color:{value_color};">{breakdown_name}</span>')
 
         # Add Bid Assets info
         bid_assets = bid.get("sg_bid_assets")
@@ -2489,9 +2493,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 asset_name = bid_assets[0].get("name") or bid_assets[0].get("code") or f"ID {bid_assets[0].get('id', 'N/A')}"
             else:
                 asset_name = str(bid_assets)
-            info_parts.append(f"BID ASSETS: {asset_name}")
         else:
-            info_parts.append("BID ASSETS: None")
+            asset_name = "None"
+        info_parts.append(f'<span style="color:{label_color}; font-weight:bold;">Bid Assets:</span> <span style="color:{value_color};">{asset_name}</span>')
 
         # Add Price List info
         price_list = bid.get("sg_price_list")
@@ -2503,9 +2507,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 price_list_name = price_list[0].get("name") or price_list[0].get("code") or f"ID {price_list[0].get('id', 'N/A')}"
             else:
                 price_list_name = str(price_list)
-            info_parts.append(f"PRICE LIST: {price_list_name}")
         else:
-            info_parts.append("PRICE LIST: None")
+            price_list_name = "None"
+        info_parts.append(f'<span style="color:{label_color}; font-weight:bold;">Price List:</span> <span style="color:{value_color};">{price_list_name}</span>')
 
         # Add Description info
         description = bid.get("description")
@@ -2513,11 +2517,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
             # Truncate long descriptions for display
             if len(description) > 50:
                 description = description[:50] + "..."
-            info_parts.append(f"DESCRIPTION: {description}")
         else:
-            info_parts.append("DESCRIPTION: None")
+            description = "None"
+        info_parts.append(f'<span style="color:{label_color}; font-weight:bold;">Description:</span> <span style="color:{value_color};">{description}</span>')
 
-        # Update the label with the info (for display under dropdown)
+        # Update the label with HTML formatted info (for display under dropdown)
         self.bid_info_label.setText(" · ".join(info_parts))
 
         # Update the group box title with bid name and info (for collapsed state)
