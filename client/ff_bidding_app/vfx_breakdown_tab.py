@@ -356,15 +356,19 @@ class DeleteBiddingSceneCommand:
 class AddVFXBreakdownDialog(QtWidgets.QDialog):
     """Dialog for creating a new VFX Breakdown."""
 
-    def __init__(self, existing_breakdowns, parent=None):
+    def __init__(self, existing_breakdowns, sg_session=None, project_id=None, parent=None):
         """Initialize the dialog.
 
         Args:
             existing_breakdowns: List of existing VFX Breakdown dicts with 'id' and 'code'
+            sg_session: ShotgridClient instance for version checking
+            project_id: Project ID for version checking
             parent: Parent widget
         """
         super().__init__(parent)
         self.existing_breakdowns = existing_breakdowns
+        self.sg_session = sg_session
+        self.project_id = project_id
         self.setWindowTitle("Add VFX Breakdown")
         self.setModal(True)
         self.setMinimumWidth(400)
@@ -409,6 +413,7 @@ class AddVFXBreakdownDialog(QtWidgets.QDialog):
         for breakdown in self.existing_breakdowns:
             label = breakdown.get("code") or breakdown.get("name") or f"ID {breakdown.get('id', 'N/A')}"
             self.copy_combo.addItem(label, breakdown)
+        self.copy_combo.currentIndexChanged.connect(self._on_copy_selection_changed)
         copy_layout.addWidget(self.copy_combo, stretch=1)
 
         layout.addLayout(copy_layout)
@@ -434,6 +439,102 @@ class AddVFXBreakdownDialog(QtWidgets.QDialog):
         """Handle mode change."""
         is_copy_mode = (index == 1)
         self.copy_combo.setEnabled(is_copy_mode)
+        # If switching to copy mode and a breakdown is already selected, update name
+        if is_copy_mode and self.copy_combo.currentIndex() > 0:
+            self._on_copy_selection_changed(self.copy_combo.currentIndex())
+
+    def _on_copy_selection_changed(self, index):
+        """Handle copy source selection change - prefill name with next version."""
+        if self.mode_combo.currentIndex() != 1:  # Not in copy mode
+            return
+
+        breakdown = self.copy_combo.currentData()
+        if not breakdown:
+            return
+
+        source_name = breakdown.get("code") or breakdown.get("name") or ""
+        if source_name:
+            next_name = self._get_next_version_name(source_name)
+            self.name_field.setText(next_name)
+
+    def _get_next_version_name(self, base_name):
+        """Calculate the next version name based on existing breakdowns.
+
+        Handles formats like:
+        - "Name v1" -> "Name v2"
+        - "Name-v001" -> "Name-v002"
+        - "Puzzle Box - v002-VFX Breakdown-v001" -> "Puzzle Box - v002-VFX Breakdown-v002"
+
+        Args:
+            base_name: The source name to version
+
+        Returns:
+            str: The next version name
+        """
+        import re
+
+        # Try to match version pattern at the end: -v### or v### or -v## or v##
+        # Pattern matches: optional separator, 'v' or 'V', and digits
+        version_pattern = re.compile(r'^(.+?)[-\s]?[vV](\d+)$')
+        match = version_pattern.match(base_name)
+
+        if match:
+            name_without_version = match.group(1)
+            current_version = int(match.group(2))
+            version_digits = len(match.group(2))  # Preserve digit count (e.g., 001 vs 1)
+
+            # Determine the separator used (-, space, or none)
+            # Check original name for the separator before 'v'
+            sep_match = re.search(r'([-\s])?[vV]\d+$', base_name)
+            separator = sep_match.group(1) if sep_match and sep_match.group(1) else ''
+        else:
+            # No version found, treat whole name as base and start at v0
+            name_without_version = base_name
+            current_version = 0
+            version_digits = 3  # Default to 3 digits like v001
+            separator = '-'
+
+        # Find the highest version number for this base name pattern
+        highest_version = current_version
+
+        if self.sg_session and self.project_id:
+            try:
+                existing = self.sg_session.sg.find(
+                    "CustomEntity01",
+                    [["project", "is", {"type": "Project", "id": int(self.project_id)}]],
+                    ["code"]
+                )
+
+                # Build pattern to match similar names with versions
+                escaped_base = re.escape(name_without_version)
+                pattern = re.compile(rf'^{escaped_base}[-\s]?[vV](\d+)$', re.IGNORECASE)
+
+                for entity in existing:
+                    code = entity.get("code", "")
+                    m = pattern.match(code)
+                    if m:
+                        version = int(m.group(1))
+                        if version > highest_version:
+                            highest_version = version
+            except Exception as e:
+                logger.error(f"Failed to check existing versions: {e}")
+        else:
+            # Fallback: check against existing_breakdowns list
+            escaped_base = re.escape(name_without_version)
+            pattern = re.compile(rf'^{escaped_base}[-\s]?[vV](\d+)$', re.IGNORECASE)
+
+            for breakdown in self.existing_breakdowns:
+                code = breakdown.get("code", "")
+                m = pattern.match(code)
+                if m:
+                    version = int(m.group(1))
+                    if version > highest_version:
+                        highest_version = version
+
+        # Return the next version with proper formatting
+        next_version = highest_version + 1
+        version_str = str(next_version).zfill(version_digits)
+        return f"{name_without_version}{separator}v{version_str}"
 
     def get_result(self):
         """Get the dialog result.
@@ -2144,7 +2245,12 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             existing_breakdowns = []
 
         # Show dialog
-        dialog = AddVFXBreakdownDialog(existing_breakdowns, parent=self)
+        dialog = AddVFXBreakdownDialog(
+            existing_breakdowns,
+            sg_session=self.sg_session,
+            project_id=proj["id"],
+            parent=self
+        )
         if dialog.exec() != QtWidgets.QDialog.Accepted:
             return
 
