@@ -1063,7 +1063,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             background-color: #4a4a4a;
         }
 
-        /* Scroll Bar */
+        /* Scroll Bar - Blue theme for better visibility */
         QScrollBar:vertical {
             background-color: #2b2b2b;
             width: 14px;
@@ -1071,13 +1071,13 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         }
 
         QScrollBar::handle:vertical {
-            background-color: #555555;
+            background-color: #4a9eff;
             border-radius: 7px;
             min-height: 30px;
         }
 
         QScrollBar::handle:vertical:hover {
-            background-color: #666666;
+            background-color: #6ab0ff;
         }
 
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
@@ -1091,13 +1091,13 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         }
 
         QScrollBar::handle:horizontal {
-            background-color: #555555;
+            background-color: #4a9eff;
             border-radius: 7px;
             min-width: 30px;
         }
 
         QScrollBar::handle:horizontal:hover {
-            background-color: #666666;
+            background-color: #6ab0ff;
         }
 
         QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
