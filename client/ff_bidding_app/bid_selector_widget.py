@@ -3345,7 +3345,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             logger.info(f"Created VFX Breakdown copy: {new_name} (ID: {new_breakdown_id})")
 
             # Fetch all bidding scenes from the source breakdown
-            source_scenes = self.sg_session.get_beats_for_vfx_breakdown(
+            source_scenes = self.sg_session.get_bidding_scenes_for_vfx_breakdown(
                 source_id,
                 fields=[
                     "code", "sg_beat_id", "sg_vfx_breakdown_scene", "sg_page",
@@ -3514,9 +3514,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
                     "sg_parent_pricelist": {"type": "CustomEntity10", "id": new_price_list_id}
                 }
 
-                # Copy all fields except id and sg_parent_pricelist (which we set above)
+                # Copy all fields except id, sg_parent_pricelist (which we set above),
+                # and read-only computed fields like sg_total_mandays
+                skip_fields = ("id", "type", "sg_parent_pricelist", "sg_total_mandays")
                 for field, value in item.items():
-                    if field not in ("id", "type", "sg_parent_pricelist") and value is not None:
+                    if field not in skip_fields and value is not None:
                         # Handle entity references
                         if isinstance(value, dict) and "type" in value and "id" in value:
                             new_item_data[field] = {"type": value["type"], "id": value["id"]}

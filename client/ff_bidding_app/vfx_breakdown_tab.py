@@ -2435,7 +2435,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         # Fetch all bidding scenes from the source breakdown
         try:
-            source_beats = self.sg_session.get_beats_for_vfx_breakdown(
+            source_bidding_scenes = self.sg_session.get_bidding_scenes_for_vfx_breakdown(
                 source_id,
                 fields=[
                     "code", "sg_beat_id", "sg_vfx_breakdown_scene", "sg_page",
@@ -2461,7 +2461,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             for i, bidding_scene in enumerate(source_bidding_scenes):
                 # Check for cancellation
                 if progress_callback:
-                    current_progress = 20 + int((i / total_beats) * 80)
+                    current_progress = 20 + int((i / total_bidding_scenes) * 80)
                     if not progress_callback(
                         current_progress,
                         100,
