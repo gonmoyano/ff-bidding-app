@@ -2794,6 +2794,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         bid_name = dialog.get_bid_name()
         bid_type = dialog.get_bid_type()
+        description = dialog.get_description()
 
         if not bid_name:
             QtWidgets.QMessageBox.warning(self, "Invalid Input", "Please enter a bid name.")
@@ -2812,7 +2813,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         try:
             # Create the bid linked to the current RFQ
             new_bid = self.sg_session.create_bid(
-                self.current_project_id, bid_name, bid_type, parent_rfq_id=rfq_id
+                self.current_project_id, bid_name, bid_type, parent_rfq_id=rfq_id, description=description
             )
             new_bid_id = new_bid['id']
 

@@ -361,7 +361,7 @@ class ShotgridClient:
 
         return self.sg.find("CustomEntity06", filters, fields, order=order)
 
-    def create_bid(self, project_id, code, bid_type="Early Bid", vfx_breakdown=None, parent_rfq_id=None):
+    def create_bid(self, project_id, code, bid_type="Early Bid", vfx_breakdown=None, parent_rfq_id=None, description=None):
         """
         Create a new Bid (CustomEntity06).
 
@@ -371,6 +371,7 @@ class ShotgridClient:
             bid_type: Bid type (default: "Early Bid")
             vfx_breakdown: VFX Breakdown entity dict (optional)
             parent_rfq_id: Parent RFQ ID to link the bid to (optional)
+            description: Bid description (optional)
 
         Returns:
             Created Bid entity dictionary
@@ -386,6 +387,9 @@ class ShotgridClient:
 
         if parent_rfq_id is not None:
             data["sg_parent_rfq"] = {"type": "CustomEntity04", "id": int(parent_rfq_id)}
+
+        if description:
+            data["description"] = description
 
         result = self.sg.create("CustomEntity06", data)
         return result
