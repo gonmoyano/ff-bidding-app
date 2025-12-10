@@ -2321,7 +2321,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         # Bid info label (breakdown and asset)
         self.bid_info_label = QtWidgets.QLabel("")
-        self.bid_info_label.setStyleSheet("color: #7fb3d5; padding: 2px 0; font-style: italic;")
+        self.bid_info_label.setStyleSheet("color: #6b9bd1; font-weight: bold; padding: 2px 0;")
         self.bid_info_label.setWordWrap(True)
         group.addWidget(self.bid_info_label)
 
@@ -2366,7 +2366,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             # Get bids filtered by RFQ (only bids linked to this RFQ via sg_parent_rfq)
             bids = self.sg_session.get_bids(
                 project_id,
-                fields=["id", "code", "name", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list"],
+                fields=["id", "code", "name", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list", "description"],
                 rfq_id=rfq_id
             )
         except Exception as e:
@@ -2447,7 +2447,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         return self.bid_combo.currentData()
 
     def _update_bid_info_label(self, bid):
-        """Update the bid info label and group box title with breakdown and bid asset info.
+        """Update the bid info label and group box title with breakdown, bid asset, price list and description info.
 
         Args:
             bid: Bid data dict or None
@@ -2465,7 +2465,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         # Start with "Current Bid: (bid name)"
         title_text = f"Current Bid: {bid_name}"
 
-        # Add breakdown info
+        # Add VFX Breakdown info
         breakdown = bid.get("sg_vfx_breakdown")
         if breakdown:
             # Extract breakdown name/code
@@ -2475,10 +2475,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 breakdown_name = breakdown[0].get("name") or breakdown[0].get("code") or f"ID {breakdown[0].get('id', 'N/A')}"
             else:
                 breakdown_name = str(breakdown)
-            info_parts.append(f"Bid Breakdown: {breakdown_name}")
-            title_text += f" Bid Breakdown: {breakdown_name}"
+            info_parts.append(f"VFX BREAKDOWN: {breakdown_name}")
+        else:
+            info_parts.append("VFX BREAKDOWN: None")
 
-        # Add bid asset info
+        # Add Bid Assets info
         bid_assets = bid.get("sg_bid_assets")
         if bid_assets:
             # Extract bid asset name/code
@@ -2488,14 +2489,36 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 asset_name = bid_assets[0].get("name") or bid_assets[0].get("code") or f"ID {bid_assets[0].get('id', 'N/A')}"
             else:
                 asset_name = str(bid_assets)
-            info_parts.append(f"Bid Asset: {asset_name}")
-            title_text += f" Bid Asset: {asset_name}"
+            info_parts.append(f"BID ASSETS: {asset_name}")
+        else:
+            info_parts.append("BID ASSETS: None")
+
+        # Add Price List info
+        price_list = bid.get("sg_price_list")
+        if price_list:
+            # Extract price list name/code
+            if isinstance(price_list, dict):
+                price_list_name = price_list.get("name") or price_list.get("code") or f"ID {price_list.get('id', 'N/A')}"
+            elif isinstance(price_list, list) and price_list:
+                price_list_name = price_list[0].get("name") or price_list[0].get("code") or f"ID {price_list[0].get('id', 'N/A')}"
+            else:
+                price_list_name = str(price_list)
+            info_parts.append(f"PRICE LIST: {price_list_name}")
+        else:
+            info_parts.append("PRICE LIST: None")
+
+        # Add Description info
+        description = bid.get("description")
+        if description:
+            # Truncate long descriptions for display
+            if len(description) > 50:
+                description = description[:50] + "..."
+            info_parts.append(f"DESCRIPTION: {description}")
+        else:
+            info_parts.append("DESCRIPTION: None")
 
         # Update the label with the info (for display under dropdown)
-        if info_parts:
-            self.bid_info_label.setText("  ".join(info_parts))
-        else:
-            self.bid_info_label.setText("")
+        self.bid_info_label.setText(" · ".join(info_parts))
 
         # Update the group box title with bid name and info (for collapsed state)
         self.group_box.setAdditionalInfo(title_text)
