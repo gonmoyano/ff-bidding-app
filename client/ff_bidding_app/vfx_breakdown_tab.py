@@ -2606,8 +2606,14 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         try:
             proj = self.parent_app.sg_project_combo.itemData(self.parent_app.sg_project_combo.currentIndex())
             if proj:
-                logger.info(f"Loading ALL VFX Breakdowns in Project {proj.get('code')} (ID {proj.get('id')})")
-                breakdowns = self.sg_session.get_vfx_breakdowns(proj["id"], fields=["id", "code", "name", "updated_at"])
+                # Get current bid to filter VFX Breakdowns by sg_parent_bid
+                current_bid = getattr(self.parent_app.bidding_tab, 'current_bid', None) if hasattr(self.parent_app, 'bidding_tab') else None
+                bid_id = current_bid.get('id') if current_bid else None
+                if bid_id:
+                    logger.info(f"Loading VFX Breakdowns for Bid {bid_id} in Project {proj.get('code')} (ID {proj.get('id')})")
+                    breakdowns = self.sg_session.get_vfx_breakdowns(proj["id"], fields=["id", "code", "name", "updated_at"], bid_id=bid_id)
+                else:
+                    logger.info("No Bid selected; cannot load VFX Breakdowns.")
             else:
                 logger.info("No project selected; cannot load project breakdowns.")
         except Exception as e:
@@ -2625,7 +2631,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         # Status & selection
         if breakdowns:
-            self._set_vfx_breakdown_status(f"Loaded {len(breakdowns)} VFX Breakdown(s) in project.")
+            self._set_vfx_breakdown_status(f"Found {len(breakdowns)} VFX Breakdown(s) for this Bid.")
             # Optionally auto-select the currently linked one if RFQ has it
             linked = rfq.get("sg_vfx_breakdown")
             linked_id = linked.get("id") if isinstance(linked, dict) else None
@@ -2643,7 +2649,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             # Update info label to show linked VFX Breakdown from current Bid
             self._update_vfx_breakdown_info_label()
         else:
-            self._set_vfx_breakdown_status("No VFX Breakdowns found in this project.")
+            self._set_vfx_breakdown_status("No VFX Breakdowns found for this Bid.")
             self._clear_vfx_breakdown_table()
             self.vfx_breakdown_info_label.setText("")
 

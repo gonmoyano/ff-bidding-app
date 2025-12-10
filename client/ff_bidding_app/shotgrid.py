@@ -309,9 +309,19 @@ class ShotgridClient:
         # 2) Fallback (env or known default)
         return os.getenv("FF_VFX_BREAKDOWN_ENTITY", "CustomEntity01")
 
-    def get_vfx_breakdowns(self, project_id, fields=None, order=None):
+    def get_vfx_breakdowns(self, project_id, fields=None, order=None, bid_id=None):
         """
-        Return all VFX Breakdowns (CustomEntity01) for a project.
+        Return VFX Breakdowns (CustomEntity01) for a project.
+
+        Args:
+            project_id: Project ID
+            fields: List of fields to return
+            order: List of order dicts
+            bid_id: Bid ID to filter by (optional). If provided, only returns
+                    VFX Breakdowns linked to this Bid via sg_parent_bid field.
+
+        Returns:
+            List of VFX Breakdown dictionaries
         """
         entity = "CustomEntity01"
         if fields is None:
@@ -320,6 +330,8 @@ class ShotgridClient:
             order = [{"field_name": "created_at", "direction": "desc"}]
 
         filters = [["project", "is", {"type": "Project", "id": int(project_id)}]]
+        if bid_id:
+            filters.append(["sg_parent_bid", "is", {"type": "CustomEntity06", "id": int(bid_id)}])
         return self.sg.find(entity, filters, fields, order=order)
 
     def get_bids(self, project_id, fields=None, order=None, rfq_id=None):

@@ -406,9 +406,10 @@ class RatesTab(QtWidgets.QWidget):
             return
 
         try:
-            # Query CustomEntity10 (Price Lists) filtered by project
+            # Query CustomEntity10 (Price Lists) filtered by parent bid
             filters = [
-                ["project", "is", {"type": "Project", "id": self.current_project_id}]
+                ["project", "is", {"type": "Project", "id": self.current_project_id}],
+                ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": self.current_bid_id}]
             ]
 
             price_lists_list = self.sg_session.sg.find(
