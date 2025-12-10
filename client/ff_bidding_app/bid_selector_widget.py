@@ -2459,8 +2459,8 @@ class BidSelectorWidget(QtWidgets.QWidget):
             return
 
         # Colors for formatting
-        label_color = "#6b9bd1"  # Blue for labels
-        value_color = "#a0a0a0"  # Light gray for values
+        label_color = "#a0a0a0"  # Light gray for labels (normal weight)
+        value_color = "#6b9bd1"  # Blue for values (bold)
 
         info_parts = []
 
@@ -2481,7 +2481,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 breakdown_name = str(breakdown)
         else:
             breakdown_name = "None"
-        info_parts.append(f'<span style="color:{label_color}; font-weight:bold;">Vfx Breakdown:</span> <span style="color:{value_color};">{breakdown_name}</span>')
+        info_parts.append(f'<span style="color:{label_color};">Vfx Breakdown:</span> <span style="color:{value_color}; font-weight:bold;">{breakdown_name}</span>')
 
         # Add Bid Assets info
         bid_assets = bid.get("sg_bid_assets")
@@ -2495,7 +2495,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 asset_name = str(bid_assets)
         else:
             asset_name = "None"
-        info_parts.append(f'<span style="color:{label_color}; font-weight:bold;">Bid Assets:</span> <span style="color:{value_color};">{asset_name}</span>')
+        info_parts.append(f'<span style="color:{label_color};">Bid Assets:</span> <span style="color:{value_color}; font-weight:bold;">{asset_name}</span>')
 
         # Add Price List info
         price_list = bid.get("sg_price_list")
@@ -2509,7 +2509,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 price_list_name = str(price_list)
         else:
             price_list_name = "None"
-        info_parts.append(f'<span style="color:{label_color}; font-weight:bold;">Price List:</span> <span style="color:{value_color};">{price_list_name}</span>')
+        info_parts.append(f'<span style="color:{label_color};">Price List:</span> <span style="color:{value_color}; font-weight:bold;">{price_list_name}</span>')
 
         # Add Description info
         description = bid.get("description")
@@ -2519,7 +2519,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 description = description[:50] + "..."
         else:
             description = "None"
-        info_parts.append(f'<span style="color:{label_color}; font-weight:bold;">Description:</span> <span style="color:{value_color};">{description}</span>')
+        info_parts.append(f'<span style="color:{label_color};">Description:</span> <span style="color:{value_color}; font-weight:bold;">{description}</span>')
 
         # Update the label with HTML formatted info (for display under dropdown)
         self.bid_info_label.setText(" · ".join(info_parts))
