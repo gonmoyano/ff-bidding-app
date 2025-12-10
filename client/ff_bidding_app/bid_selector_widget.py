@@ -690,7 +690,7 @@ class ConfigBidDialog(QtWidgets.QDialog):
         for price_list in self.price_lists:
             name = price_list.get("code") or price_list.get("name") or f"ID {price_list['id']}"
             self.price_combo.addItem(name, price_list["id"])
-        self.price_combo.currentIndexChanged.connect(self._on_price_list_changed)
+        # Note: Signal connection moved after rate_combo creation to avoid AttributeError
         price_layout.addWidget(self.price_combo, stretch=1)
         layout.addLayout(price_layout)
 
@@ -724,6 +724,9 @@ class ConfigBidDialog(QtWidgets.QDialog):
 
         # Pre-select current Rate Card from Price List, or default to Base Rates
         self._select_rate_card(base_rates_index)
+
+        # Connect price list change signal now that rate_combo exists
+        self.price_combo.currentIndexChanged.connect(self._on_price_list_changed)
 
         # Add some spacing
         layout.addSpacing(10)
@@ -3162,7 +3165,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             self._set_status(f"Bid '{bid_name}' configuration saved.")
 
             # Refresh bids to update the info label
-            self.load_bids(self.current_project_id, self.current_rfq, auto_select=False)
+            self.populate_bids(self.current_rfq, self.current_project_id, auto_select=False)
 
             # Re-select the current bid
             self._select_bid_by_id(bid_id)
