@@ -121,6 +121,57 @@ class CollapsibleGroupBox(QtWidgets.QWidget):
         self.content_layout.addLayout(layout)
 
 
+class TickCheckBox(QtWidgets.QCheckBox):
+    """Custom checkbox that draws a tick mark instead of a solid indicator when checked."""
+
+    def __init__(self, text="", parent=None):
+        """Initialize the tick checkbox.
+
+        Args:
+            text: Label text for the checkbox
+            parent: Parent widget
+        """
+        super().__init__(text, parent)
+
+    def paintEvent(self, event):
+        """Custom paint to draw tick mark when checked."""
+        super().paintEvent(event)
+
+        if self.isChecked():
+            painter = QtGui.QPainter(self)
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+            # Get the indicator rect (checkbox square area)
+            style = self.style()
+            opt = QtWidgets.QStyleOptionButton()
+            self.initStyleOption(opt)
+            indicator_rect = style.subElementRect(
+                QtWidgets.QStyle.SE_CheckBoxIndicator, opt, self
+            )
+
+            # Draw the tick mark
+            pen = QtGui.QPen(QtGui.QColor("#4a9eff"))
+            pen.setWidth(2)
+            pen.setCapStyle(QtCore.Qt.RoundCap)
+            painter.setPen(pen)
+
+            # Calculate tick mark points within the indicator
+            x = indicator_rect.x()
+            y = indicator_rect.y()
+            w = indicator_rect.width()
+            h = indicator_rect.height()
+
+            # Tick mark coordinates (checkmark shape)
+            start_point = QtCore.QPointF(x + w * 0.2, y + h * 0.5)
+            mid_point = QtCore.QPointF(x + w * 0.4, y + h * 0.7)
+            end_point = QtCore.QPointF(x + w * 0.8, y + h * 0.3)
+
+            painter.drawLine(start_point, mid_point)
+            painter.drawLine(mid_point, end_point)
+
+            painter.end()
+
+
 class AddBidDialog(QtWidgets.QDialog):
     """Dialog for adding a new Bid with option to copy from existing."""
 
@@ -192,8 +243,38 @@ class AddBidDialog(QtWidgets.QDialog):
         options_group = QtWidgets.QGroupBox("Creation Options")
         options_layout = QtWidgets.QVBoxLayout(options_group)
 
+        # Custom stylesheet for radio buttons (radial style with inner circle)
+        radio_style = """
+            QRadioButton {
+                spacing: 8px;
+                font-weight: normal;
+            }
+            QRadioButton::indicator {
+                width: 16px;
+                height: 16px;
+                border-radius: 9px;
+                border: 2px solid #666666;
+                background-color: #2b2b2b;
+            }
+            QRadioButton::indicator:checked {
+                border: 2px solid #4a9eff;
+                background-color: qradialgradient(
+                    cx:0.5, cy:0.5, radius:0.4,
+                    fx:0.5, fy:0.5,
+                    stop:0 #4a9eff, stop:0.6 #4a9eff, stop:0.7 #2b2b2b, stop:1 #2b2b2b
+                );
+            }
+            QRadioButton::indicator:hover {
+                border: 2px solid #888888;
+            }
+            QRadioButton::indicator:checked:hover {
+                border: 2px solid #6ab0ff;
+            }
+        """
+
         # Radio button: Create new (with child entities)
         self.create_new_radio = QtWidgets.QRadioButton("Create new")
+        self.create_new_radio.setStyleSheet(radio_style)
         self.create_new_radio.setToolTip(
             "Create a new Bid with VFX Breakdown, Bid Assets, and Price List"
         )
@@ -203,15 +284,22 @@ class AddBidDialog(QtWidgets.QDialog):
 
         # Radio button: Copy from existing
         self.copy_from_radio = QtWidgets.QRadioButton("Copy from existing Bid")
+        self.copy_from_radio.setStyleSheet(radio_style)
         self.copy_from_radio.setToolTip(
             "Copy VFX Breakdown, Bid Assets, and Price List from an existing Bid"
         )
         self.copy_from_radio.toggled.connect(self._on_radio_toggled)
         options_layout.addWidget(self.copy_from_radio)
 
+        # Container widget for copy options (for smooth show/hide)
+        self.copy_options_container = QtWidgets.QWidget()
+        copy_container_layout = QtWidgets.QVBoxLayout(self.copy_options_container)
+        copy_container_layout.setContentsMargins(0, 0, 0, 0)
+        copy_container_layout.setSpacing(5)
+
         # ComboBox for selecting source Bid (only visible when copy option selected)
         self.source_combo_layout = QtWidgets.QHBoxLayout()
-        self.source_combo_layout.setContentsMargins(20, 0, 0, 0)  # Indent
+        self.source_combo_layout.setContentsMargins(20, 5, 0, 0)  # Indent
 
         self.source_label = QtWidgets.QLabel("Source Bid:")
         self.source_combo_layout.addWidget(self.source_label)
@@ -226,32 +314,62 @@ class AddBidDialog(QtWidgets.QDialog):
             self.source_combo.addItem(display_text, bid["id"])
         self.source_combo_layout.addWidget(self.source_combo, stretch=1)
 
-        options_layout.addLayout(self.source_combo_layout)
+        copy_container_layout.addLayout(self.source_combo_layout)
+
+        # Custom stylesheet for checkboxes (tick icon style - transparent with tick mark)
+        checkbox_style = """
+            QCheckBox {
+                spacing: 8px;
+                font-weight: normal;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border-radius: 3px;
+                border: 2px solid #666666;
+                background-color: transparent;
+            }
+            QCheckBox::indicator:unchecked {
+                border: 2px solid #666666;
+                background-color: transparent;
+            }
+            QCheckBox::indicator:checked {
+                border: 2px solid #4a9eff;
+                background-color: transparent;
+            }
+            QCheckBox::indicator:hover {
+                border: 2px solid #888888;
+            }
+            QCheckBox::indicator:checked:hover {
+                border: 2px solid #6ab0ff;
+            }
+        """
 
         # Checkboxes for what to copy (only visible when copy option selected)
         self.copy_options_layout = QtWidgets.QVBoxLayout()
         self.copy_options_layout.setContentsMargins(20, 5, 0, 0)  # Indent
 
-        self.copy_vfx_breakdown_checkbox = QtWidgets.QCheckBox("Copy VFX Breakdown (with Bidding Scenes)")
+        self.copy_vfx_breakdown_checkbox = TickCheckBox("Copy VFX Breakdown (with Bidding Scenes)")
+        self.copy_vfx_breakdown_checkbox.setStyleSheet(checkbox_style)
         self.copy_vfx_breakdown_checkbox.setChecked(True)
         self.copy_options_layout.addWidget(self.copy_vfx_breakdown_checkbox)
 
-        self.copy_bid_assets_checkbox = QtWidgets.QCheckBox("Copy Bid Assets (with Asset Items)")
+        self.copy_bid_assets_checkbox = TickCheckBox("Copy Bid Assets (with Asset Items)")
+        self.copy_bid_assets_checkbox.setStyleSheet(checkbox_style)
         self.copy_bid_assets_checkbox.setChecked(True)
         self.copy_options_layout.addWidget(self.copy_bid_assets_checkbox)
 
-        self.copy_price_list_checkbox = QtWidgets.QCheckBox("Copy Price List (with Line Items)")
+        self.copy_price_list_checkbox = TickCheckBox("Copy Price List (with Line Items)")
+        self.copy_price_list_checkbox.setStyleSheet(checkbox_style)
         self.copy_price_list_checkbox.setChecked(True)
         self.copy_options_layout.addWidget(self.copy_price_list_checkbox)
 
-        options_layout.addLayout(self.copy_options_layout)
+        copy_container_layout.addLayout(self.copy_options_layout)
 
-        # Initially hide copy options since "Create new" is selected
-        self.source_label.setVisible(False)
-        self.source_combo.setVisible(False)
-        self.copy_vfx_breakdown_checkbox.setVisible(False)
-        self.copy_bid_assets_checkbox.setVisible(False)
-        self.copy_price_list_checkbox.setVisible(False)
+        options_layout.addWidget(self.copy_options_container)
+
+        # Initially hide copy options container since "Create new" is selected
+        self.copy_options_container.setVisible(False)
 
         # Disable copy option if no existing Bids
         if not self.existing_bids:
@@ -278,11 +396,17 @@ class AddBidDialog(QtWidgets.QDialog):
     def _on_radio_toggled(self, checked):
         """Handle radio button toggle."""
         is_copy = self.copy_from_radio.isChecked()
-        self.source_label.setVisible(is_copy)
-        self.source_combo.setVisible(is_copy)
-        self.copy_vfx_breakdown_checkbox.setVisible(is_copy)
-        self.copy_bid_assets_checkbox.setVisible(is_copy)
-        self.copy_price_list_checkbox.setVisible(is_copy)
+        self.copy_options_container.setVisible(is_copy)
+
+        # Adjust dialog size when toggling
+        if is_copy:
+            # Expand to fit copy options
+            self.adjustSize()
+        else:
+            # Reset to minimum size when "Create new" is selected
+            self.adjustSize()
+            # Force the dialog to shrink back to its minimum size
+            QtCore.QTimer.singleShot(0, lambda: self.resize(self.minimumSizeHint()))
 
     def get_bid_name(self):
         """Get the bid name from the dialog."""
