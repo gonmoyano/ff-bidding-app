@@ -309,9 +309,19 @@ class ShotgridClient:
         # 2) Fallback (env or known default)
         return os.getenv("FF_VFX_BREAKDOWN_ENTITY", "CustomEntity01")
 
-    def get_vfx_breakdowns(self, project_id, fields=None, order=None):
+    def get_vfx_breakdowns(self, project_id, fields=None, order=None, bid_id=None):
         """
-        Return all VFX Breakdowns (CustomEntity01) for a project.
+        Return VFX Breakdowns (CustomEntity01) for a project.
+
+        Args:
+            project_id: Project ID
+            fields: List of fields to return
+            order: List of order dicts
+            bid_id: Bid ID to filter by (optional). If provided, only returns
+                    VFX Breakdowns linked to this Bid via sg_parent_bid field.
+
+        Returns:
+            List of VFX Breakdown dictionaries
         """
         entity = "CustomEntity01"
         if fields is None:
@@ -320,6 +330,8 @@ class ShotgridClient:
             order = [{"field_name": "created_at", "direction": "desc"}]
 
         filters = [["project", "is", {"type": "Project", "id": int(project_id)}]]
+        if bid_id:
+            filters.append(["sg_parent_bid", "is", {"type": "CustomEntity06", "id": int(bid_id)}])
         return self.sg.find(entity, filters, fields, order=order)
 
     def get_bids(self, project_id, fields=None, order=None, rfq_id=None):
@@ -726,15 +738,24 @@ class ShotgridClient:
             if "expected Hash" in msg:
                 log.info(f"Retrying RFQ {rfq_id} sg_vfx_breakdown -> single {payload_single}")
                 return self.sg.update("CustomEntity04", int(rfq_id), payload_single)
+            if "doesn't exist" in msg:
+                # Field sg_vfx_breakdown is not configured on RFQ entity - skip silently
+                log.warning(
+                    f"Field sg_vfx_breakdown does not exist on RFQ (CustomEntity04). "
+                    "Skipping VFX Breakdown link on RFQ. The VFX Breakdown was still created "
+                    "and is linked to the Bid if one was created."
+                )
+                return None
             raise
 
-    def create_vfx_breakdown(self, project_id, code):
+    def create_vfx_breakdown(self, project_id, code, bid_id=None):
         """
         Create a new VFX Breakdown (CustomEntity01).
 
         Args:
             project_id: Project ID
             code: VFX Breakdown name/code
+            bid_id: Optional Bid ID to link via sg_parent_bid
 
         Returns:
             Created VFX Breakdown entity dictionary
@@ -743,6 +764,9 @@ class ShotgridClient:
             "code": code,
             "project": {"type": "Project", "id": int(project_id)}
         }
+
+        if bid_id:
+            data["sg_parent_bid"] = {"type": "CustomEntity06", "id": int(bid_id)}
 
         result = self.sg.create("CustomEntity01", data)
         return result
@@ -768,13 +792,14 @@ class ShotgridClient:
         result = self.sg.create("CustomEntity02", data)
         return result
 
-    def create_bid_assets(self, project_id, code):
+    def create_bid_assets(self, project_id, code, bid_id=None):
         """
         Create a new Bid Assets (CustomEntity08).
 
         Args:
             project_id: Project ID
             code: Bid Assets name/code
+            bid_id: Optional Bid ID to link via sg_parent_bid
 
         Returns:
             Created Bid Assets entity dictionary
@@ -783,6 +808,9 @@ class ShotgridClient:
             "code": code,
             "project": {"type": "Project", "id": int(project_id)}
         }
+
+        if bid_id:
+            data["sg_parent_bid"] = {"type": "CustomEntity06", "id": int(bid_id)}
 
         result = self.sg.create("CustomEntity08", data)
         return result

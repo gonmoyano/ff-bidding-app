@@ -262,9 +262,10 @@ class AssetsTab(QtWidgets.QWidget):
             return
 
         try:
-            # Query CustomEntity08 (Bid Assets) filtered by project
+            # Query CustomEntity08 (Bid Assets) filtered by parent bid
             filters = [
-                ["project", "is", {"type": "Project", "id": self.current_project_id}]
+                ["project", "is", {"type": "Project", "id": self.current_project_id}],
+                ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": self.current_bid_id}]
             ]
 
             bid_assets_list = self.sg_session.sg.find(
@@ -525,6 +526,10 @@ class AssetsTab(QtWidgets.QWidget):
                 "code": name,
                 "project": {"type": "Project", "id": self.current_project_id}
             }
+
+            # Link to current Bid if one is selected
+            if self.current_bid_id:
+                bid_assets_data["sg_parent_bid"] = {"type": "CustomEntity06", "id": self.current_bid_id}
 
             new_bid_assets = self.sg_session.sg.create("CustomEntity08", bid_assets_data)
 

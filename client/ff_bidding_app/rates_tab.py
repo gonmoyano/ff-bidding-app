@@ -406,16 +406,21 @@ class RatesTab(QtWidgets.QWidget):
             return
 
         try:
-            # Query CustomEntity10 (Price Lists) filtered by project
+            # Query CustomEntity10 (Price Lists) filtered by parent bid
             filters = [
-                ["project", "is", {"type": "Project", "id": self.current_project_id}]
+                ["project", "is", {"type": "Project", "id": self.current_project_id}],
+                ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": self.current_bid_id}]
             ]
+
+            logger.info(f"Querying Price Lists with filters: {filters}")
 
             price_lists_list = self.sg_session.sg.find(
                 "CustomEntity10",
                 filters,
                 ["code", "id", "description"]
             )
+
+            logger.info(f"Found {len(price_lists_list)} Price List(s) for Bid {self.current_bid_id}")
 
             # Update combo box
             self.price_lists_combo.blockSignals(True)
@@ -454,7 +459,7 @@ class RatesTab(QtWidgets.QWidget):
                 # Update info label to show linked Price List
                 self._update_price_list_info_label()
             else:
-                self._set_price_lists_status("No Price Lists found for this project.")
+                self._set_price_lists_status("No Price Lists found for this Bid.")
                 self.price_lists_set_btn.setEnabled(False)
                 # Trigger cascade to clear downstream
                 self._on_price_lists_changed(0)
@@ -732,6 +737,10 @@ class RatesTab(QtWidgets.QWidget):
                 "project": {"type": "Project", "id": self.current_project_id}
             }
 
+            # Link to current Bid if one is selected
+            if self.current_bid_id:
+                price_list_data["sg_parent_bid"] = {"type": "CustomEntity06", "id": self.current_bid_id}
+
             new_price_list = self.sg_session.sg.create("CustomEntity10", price_list_data)
             new_price_list_id = new_price_list['id']
 
@@ -773,29 +782,26 @@ class RatesTab(QtWidgets.QWidget):
         Args:
             price_list_id: ID of the Price List to add the Line Item to
         """
-        try:
-            # Create initial Line Item
-            line_item_data = {
-                "code": "New Line Item",
-                "project": {"type": "Project", "id": self.current_project_id}
-            }
+        # Create initial Line Item with link to Price List
+        line_item_data = {
+            "code": "New Line Item",
+            "project": {"type": "Project", "id": self.current_project_id},
+            "sg_parent_pricelist": {"type": "CustomEntity10", "id": price_list_id}
+        }
 
-            new_line_item = self.sg_session.sg.create("CustomEntity03", line_item_data)
+        new_line_item = self.sg_session.sg.create("CustomEntity03", line_item_data)
 
-            # Link the Line Item to the Price List
-            self.sg_session.sg.update(
-                "CustomEntity10",
-                price_list_id,
-                {"sg_line_items": [{"type": "CustomEntity03", "id": new_line_item["id"]}]}
-            )
+        # Also link the Line Item to the Price List via sg_line_items
+        self.sg_session.sg.update(
+            "CustomEntity10",
+            price_list_id,
+            {"sg_line_items": [{"type": "CustomEntity03", "id": new_line_item["id"]}]}
+        )
 
-            logger.info(f"Created initial Line Item (ID: {new_line_item['id']}) for Price List {price_list_id}")
+        logger.info(f"Created initial Line Item (ID: {new_line_item['id']}) for Price List {price_list_id}")
 
-            # Notify other tabs that Line Items have changed
-            self._notify_line_items_changed()
-
-        except Exception as e:
-            logger.error(f"Failed to create initial Line Item: {e}", exc_info=True)
+        # Notify other tabs that Line Items have changed
+        self._notify_line_items_changed()
 
     def _copy_line_items_from_price_list(self, source_price_list_id, target_price_list_id):
         """Copy Line Items from a source Price List to a target Price List.
@@ -845,10 +851,14 @@ class RatesTab(QtWidgets.QWidget):
             for item in source_line_item_data:
                 # Build data for the new Line Item (copy all fields except id)
                 new_item_data = {
-                    "project": {"type": "Project", "id": self.current_project_id}
+                    "project": {"type": "Project", "id": self.current_project_id},
+                    "sg_parent_pricelist": {"type": "CustomEntity10", "id": target_price_list_id}
                 }
 
                 for field in fields_to_query:
+                    # Skip sg_parent_pricelist since we set it above
+                    if field == "sg_parent_pricelist":
+                        continue
                     if field in item and item[field] is not None:
                         value = item[field]
                         # Handle entity references
@@ -1026,7 +1036,7 @@ class RatesTab(QtWidgets.QWidget):
         logger.info("Line Items tab cleared - cleared Line Items table")
 
     def _load_line_items(self):
-        """Load Line Items linked to the current Price List."""
+        """Load Line Items linked to the current Price List via sg_parent_pricelist."""
         if not self.current_price_list_id or not self.current_price_list_data:
             self._clear_line_items_tab()
             return
@@ -1039,33 +1049,10 @@ class RatesTab(QtWidgets.QWidget):
                 logger.info("Fetching Line Items schema...")
                 self._fetch_line_items_schema()
 
-            # Get Line Items from the Price List's sg_line_items field
-            sg_line_items = self.current_price_list_data.get("sg_line_items")
-
-            # Build filters for querying Line Items
-            filters = []
-            line_item_ids = []
-
-            if sg_line_items:
-                # sg_line_items could be a list of entity references or a single entity reference
-                if isinstance(sg_line_items, list):
-                    # Multi-entity reference
-                    line_item_ids = [item.get("id") for item in sg_line_items if isinstance(item, dict) and item.get("id")]
-                elif isinstance(sg_line_items, dict):
-                    # Single entity reference
-                    if sg_line_items.get("id"):
-                        line_item_ids = [sg_line_items.get("id")]
-
-                if line_item_ids:
-                    # Query specific Line Items by IDs
-                    filters = [["id", "in", line_item_ids]]
-                else:
-                    logger.info("sg_line_items present but no valid IDs found")
-
-            # Fallback: if no Line Items linked via sg_line_items, query all Line Items in project
-            if not filters:
-                logger.info("No Line Items linked to Price List - querying all Line Items in project as fallback")
-                filters = [["project", "is", {"type": "Project", "id": self.current_project_id}]]
+            # Query Line Items where sg_parent_pricelist equals this Price List
+            filters = [
+                ["sg_parent_pricelist", "is", {"type": "CustomEntity10", "id": self.current_price_list_id}]
+            ]
 
             fields = self.line_items_field_allowlist.copy()
 
@@ -1084,6 +1071,20 @@ class RatesTab(QtWidgets.QWidget):
                 query_fields
             )
 
+            logger.info(f"Query returned {len(line_items_list) if line_items_list else 0} Line Item(s)")
+
+            # If no Line Items exist, create an initial empty one
+            if not line_items_list and self.current_project_id:
+                logger.info("No Line Items found - creating initial empty Line Item")
+                self._create_initial_line_item(self.current_price_list_id)
+                # Re-query to get the newly created Line Item
+                line_items_list = self.sg_session.sg.find(
+                    "CustomEntity03",
+                    filters,
+                    query_fields
+                )
+                logger.info(f"After creating initial Line Item, query returned {len(line_items_list) if line_items_list else 0} Line Item(s)")
+
             # Add virtual fields to the returned data with default values
             if line_items_list:
                 # Get default formula for Price column from settings
@@ -1097,8 +1098,6 @@ class RatesTab(QtWidgets.QWidget):
                                 item[virtual_field] = default_price_formula
                             else:
                                 item[virtual_field] = ""  # Initialize with empty string
-
-            logger.info(f"Query returned {len(line_items_list) if line_items_list else 0} Line Item(s)")
 
             if line_items_list:
                 self.line_items_widget.load_bidding_scenes(line_items_list, field_schema=self.line_items_field_schema)
