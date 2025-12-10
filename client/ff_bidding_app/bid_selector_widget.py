@@ -2558,19 +2558,19 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self.bid_combo.currentIndexChanged.connect(self._on_bid_changed)
         selector_row.addWidget(self.bid_combo, stretch=1)
 
-        # Config Bid button (icon only)
+        # Config Bid button (icon only) - match height to combobox
         self.config_bid_btn = QtWidgets.QPushButton()
         self.config_bid_btn.setToolTip("Configure Bid")
         self.config_bid_btn.setIcon(create_icon_from_svg_path(FILE_COG_SVG_PATH, size=16, color="#e0e0e0"))
         self.config_bid_btn.setIconSize(QtCore.QSize(16, 16))
-        self.config_bid_btn.setFixedWidth(28)
+        # Match size to the combobox height
+        combo_height = self.bid_combo.sizeHint().height()
+        self.config_bid_btn.setFixedSize(combo_height, combo_height)
         self.config_bid_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
                 border: 1px solid #555555;
                 border-radius: 4px;
-                padding: 0px;
-                margin: 0px;
             }
             QPushButton:hover {
                 background-color: #3a3a3a;
