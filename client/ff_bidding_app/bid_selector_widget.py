@@ -4,6 +4,24 @@ Reusable widget component for selecting and managing Bids (CustomEntity06).
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6.QtSvg import QSvgRenderer
+
+# File cog icon (from Material Design Icons - https://pictogrammers.com/library/mdi/icon/file-cog/)
+FILE_COG_SVG_PATH = "M6 2C4.89 2 4 2.9 4 4V20C4 21.11 4.89 22 6 22H12.68A7 7 0 0 1 12 19A7 7 0 0 1 19 12A7 7 0 0 1 22 12.68V8L15 2H6M13 3.5L19.5 10H13V3.5M18 14C17.87 14 17.76 14.09 17.74 14.21L17.55 15.53C17.25 15.66 16.96 15.82 16.7 16L15.46 15.5C15.35 15.5 15.22 15.5 15.15 15.63L14.15 17.36C14.09 17.47 14.11 17.6 14.21 17.68L15.27 18.5C15.25 18.67 15.24 18.83 15.24 19C15.24 19.17 15.25 19.33 15.27 19.5L14.21 20.32C14.12 20.4 14.09 20.53 14.15 20.64L15.15 22.37C15.21 22.5 15.34 22.5 15.46 22.5L16.7 22C16.96 22.18 17.24 22.35 17.55 22.47L17.74 23.79C17.76 23.91 17.86 24 18 24H20C20.11 24 20.22 23.91 20.24 23.79L20.43 22.47C20.73 22.34 21 22.18 21.27 22L22.5 22.5C22.63 22.5 22.76 22.5 22.83 22.37L23.83 20.64C23.89 20.53 23.86 20.4 23.77 20.32L22.7 19.5C22.72 19.33 22.74 19.17 22.74 19C22.74 18.83 22.73 18.67 22.7 18.5L23.76 17.68C23.85 17.6 23.88 17.47 23.82 17.36L22.82 15.63C22.76 15.5 22.63 15.5 22.5 15.5L21.27 16C21 15.82 20.73 15.65 20.42 15.53L20.23 14.21C20.22 14.09 20.11 14 20 14H18M19 17.5C19.83 17.5 20.5 18.17 20.5 19C20.5 19.83 19.83 20.5 19 20.5C18.16 20.5 17.5 19.83 17.5 19C17.5 18.17 18.17 17.5 19 17.5Z"
+
+
+def create_icon_from_svg_path(svg_path, size=24, color="#e0e0e0"):
+    """Create a QIcon from an SVG path string."""
+    svg_content = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="{size}" height="{size}">
+        <path fill="{color}" d="{svg_path}"/>
+    </svg>'''
+    renderer = QSvgRenderer(svg_content.encode('utf-8'))
+    pixmap = QtGui.QPixmap(size, size)
+    pixmap.fill(QtCore.Qt.transparent)
+    painter = QtGui.QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    return QtGui.QIcon(pixmap)
 
 try:
     from .logger import logger
@@ -524,6 +542,257 @@ class RenameBidDialog(QtWidgets.QDialog):
     def get_new_name(self):
         """Get the new name from the dialog."""
         return self.name_field.text().strip()
+
+
+class ConfigBidDialog(QtWidgets.QDialog):
+    """Dialog for configuring Bid children entities (VFX Breakdown, Bid Assets, Price List, Rate Card)."""
+
+    def __init__(self, sg_session, project_id, bid_id, bid_data, parent=None):
+        """Initialize the dialog.
+
+        Args:
+            sg_session: ShotgridClient instance
+            project_id: ID of the current project
+            bid_id: ID of the current Bid
+            bid_data: Current bid data dict
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.sg_session = sg_session
+        self.project_id = project_id
+        self.bid_id = bid_id
+        self.bid_data = bid_data
+
+        self.setWindowTitle("Configure Bid")
+        self.setModal(True)
+        self.setMinimumWidth(500)
+
+        self._load_available_items()
+        self._build_ui()
+
+    def _load_available_items(self):
+        """Load available items for each dropdown."""
+        try:
+            # Load VFX Breakdowns for this bid
+            self.vfx_breakdowns = self.sg_session.sg.find(
+                "CustomEntity01",
+                [
+                    ["project", "is", {"type": "Project", "id": int(self.project_id)}],
+                    ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": int(self.bid_id)}]
+                ],
+                ["id", "code", "name"]
+            )
+            self.vfx_breakdowns.sort(key=lambda x: x.get("code", "").lower())
+        except Exception as e:
+            logger.error(f"Failed to load VFX Breakdowns: {e}")
+            self.vfx_breakdowns = []
+
+        try:
+            # Load Bid Assets for this bid
+            self.bid_assets = self.sg_session.sg.find(
+                "CustomEntity08",
+                [
+                    ["project", "is", {"type": "Project", "id": int(self.project_id)}],
+                    ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": int(self.bid_id)}]
+                ],
+                ["id", "code", "name"]
+            )
+            self.bid_assets.sort(key=lambda x: x.get("code", "").lower())
+        except Exception as e:
+            logger.error(f"Failed to load Bid Assets: {e}")
+            self.bid_assets = []
+
+        try:
+            # Load Price Lists for this bid
+            self.price_lists = self.sg_session.sg.find(
+                "CustomEntity10",
+                [
+                    ["project", "is", {"type": "Project", "id": int(self.project_id)}],
+                    ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": int(self.bid_id)}]
+                ],
+                ["id", "code", "name", "sg_rate_card"]
+            )
+            self.price_lists.sort(key=lambda x: x.get("code", "").lower())
+        except Exception as e:
+            logger.error(f"Failed to load Price Lists: {e}")
+            self.price_lists = []
+
+        try:
+            # Load Rate Cards (non-project entity)
+            self.rate_cards = self.sg_session.sg.find(
+                "CustomNonProjectEntity01",
+                [],
+                ["id", "code", "name"]
+            )
+            self.rate_cards.sort(key=lambda x: x.get("code", "").lower())
+        except Exception as e:
+            logger.error(f"Failed to load Rate Cards: {e}")
+            self.rate_cards = []
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # VFX Breakdown dropdown
+        vfx_layout = QtWidgets.QHBoxLayout()
+        vfx_label = QtWidgets.QLabel("VFX Breakdown:")
+        vfx_label.setMinimumWidth(100)
+        vfx_layout.addWidget(vfx_label)
+
+        self.vfx_combo = QtWidgets.QComboBox()
+        self.vfx_combo.addItem("-- None --", None)
+        for breakdown in self.vfx_breakdowns:
+            name = breakdown.get("code") or breakdown.get("name") or f"ID {breakdown['id']}"
+            self.vfx_combo.addItem(name, breakdown["id"])
+        vfx_layout.addWidget(self.vfx_combo, stretch=1)
+        layout.addLayout(vfx_layout)
+
+        # Pre-select current VFX Breakdown
+        current_vfx = self.bid_data.get("sg_vfx_breakdown")
+        if current_vfx and isinstance(current_vfx, dict):
+            current_vfx_id = current_vfx.get("id")
+            for i in range(self.vfx_combo.count()):
+                if self.vfx_combo.itemData(i) == current_vfx_id:
+                    self.vfx_combo.setCurrentIndex(i)
+                    break
+
+        # Bid Assets dropdown
+        assets_layout = QtWidgets.QHBoxLayout()
+        assets_label = QtWidgets.QLabel("Bid Assets:")
+        assets_label.setMinimumWidth(100)
+        assets_layout.addWidget(assets_label)
+
+        self.assets_combo = QtWidgets.QComboBox()
+        self.assets_combo.addItem("-- None --", None)
+        for assets in self.bid_assets:
+            name = assets.get("code") or assets.get("name") or f"ID {assets['id']}"
+            self.assets_combo.addItem(name, assets["id"])
+        assets_layout.addWidget(self.assets_combo, stretch=1)
+        layout.addLayout(assets_layout)
+
+        # Pre-select current Bid Assets
+        current_assets = self.bid_data.get("sg_bid_assets")
+        if current_assets and isinstance(current_assets, dict):
+            current_assets_id = current_assets.get("id")
+            for i in range(self.assets_combo.count()):
+                if self.assets_combo.itemData(i) == current_assets_id:
+                    self.assets_combo.setCurrentIndex(i)
+                    break
+
+        # Price List dropdown
+        price_layout = QtWidgets.QHBoxLayout()
+        price_label = QtWidgets.QLabel("Price List:")
+        price_label.setMinimumWidth(100)
+        price_layout.addWidget(price_label)
+
+        self.price_combo = QtWidgets.QComboBox()
+        self.price_combo.addItem("-- None --", None)
+        for price_list in self.price_lists:
+            name = price_list.get("code") or price_list.get("name") or f"ID {price_list['id']}"
+            self.price_combo.addItem(name, price_list["id"])
+        self.price_combo.currentIndexChanged.connect(self._on_price_list_changed)
+        price_layout.addWidget(self.price_combo, stretch=1)
+        layout.addLayout(price_layout)
+
+        # Pre-select current Price List
+        current_price = self.bid_data.get("sg_price_list")
+        if current_price and isinstance(current_price, dict):
+            current_price_id = current_price.get("id")
+            for i in range(self.price_combo.count()):
+                if self.price_combo.itemData(i) == current_price_id:
+                    self.price_combo.setCurrentIndex(i)
+                    break
+
+        # Rate Card dropdown
+        rate_layout = QtWidgets.QHBoxLayout()
+        rate_label = QtWidgets.QLabel("Rate Card:")
+        rate_label.setMinimumWidth(100)
+        rate_layout.addWidget(rate_label)
+
+        self.rate_combo = QtWidgets.QComboBox()
+        self.rate_combo.addItem("-- None --", None)
+        base_rates_index = 0
+        for idx, rate_card in enumerate(self.rate_cards):
+            name = rate_card.get("code") or rate_card.get("name") or f"ID {rate_card['id']}"
+            self.rate_combo.addItem(name, rate_card["id"])
+            # Track Base Rates index
+            if name.lower() == "base rates":
+                base_rates_index = idx + 1  # +1 for "-- None --" item
+
+        rate_layout.addWidget(self.rate_combo, stretch=1)
+        layout.addLayout(rate_layout)
+
+        # Pre-select current Rate Card from Price List, or default to Base Rates
+        self._select_rate_card(base_rates_index)
+
+        # Add some spacing
+        layout.addSpacing(10)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        self.ok_button = QtWidgets.QPushButton("Save")
+        self.ok_button.clicked.connect(self.accept)
+        self.ok_button.setDefault(True)
+        button_layout.addWidget(self.ok_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+    def _on_price_list_changed(self, index):
+        """Handle price list selection change to update rate card."""
+        price_list_id = self.price_combo.currentData()
+        if price_list_id:
+            # Find the rate card linked to this price list
+            for price_list in self.price_lists:
+                if price_list["id"] == price_list_id:
+                    rate_card = price_list.get("sg_rate_card")
+                    if rate_card and isinstance(rate_card, dict):
+                        rate_card_id = rate_card.get("id")
+                        for i in range(self.rate_combo.count()):
+                            if self.rate_combo.itemData(i) == rate_card_id:
+                                self.rate_combo.setCurrentIndex(i)
+                                return
+                    break
+
+    def _select_rate_card(self, default_index=0):
+        """Select the rate card based on current price list or default."""
+        current_price = self.bid_data.get("sg_price_list")
+        if current_price and isinstance(current_price, dict):
+            current_price_id = current_price.get("id")
+            for price_list in self.price_lists:
+                if price_list["id"] == current_price_id:
+                    rate_card = price_list.get("sg_rate_card")
+                    if rate_card and isinstance(rate_card, dict):
+                        rate_card_id = rate_card.get("id")
+                        for i in range(self.rate_combo.count()):
+                            if self.rate_combo.itemData(i) == rate_card_id:
+                                self.rate_combo.setCurrentIndex(i)
+                                return
+                    break
+        # Default to Base Rates if available
+        if default_index > 0:
+            self.rate_combo.setCurrentIndex(default_index)
+
+    def get_vfx_breakdown_id(self):
+        """Get selected VFX Breakdown ID."""
+        return self.vfx_combo.currentData()
+
+    def get_bid_assets_id(self):
+        """Get selected Bid Assets ID."""
+        return self.assets_combo.currentData()
+
+    def get_price_list_id(self):
+        """Get selected Price List ID."""
+        return self.price_combo.currentData()
+
+    def get_rate_card_id(self):
+        """Get selected Rate Card ID."""
+        return self.rate_combo.currentData()
 
 
 class CreateBidDialog(QtWidgets.QDialog):
@@ -2286,6 +2555,33 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self.bid_combo.currentIndexChanged.connect(self._on_bid_changed)
         selector_row.addWidget(self.bid_combo, stretch=1)
 
+        # Config Bid button (icon only)
+        self.config_bid_btn = QtWidgets.QPushButton()
+        self.config_bid_btn.setToolTip("Configure Bid")
+        self.config_bid_btn.setIcon(create_icon_from_svg_path(FILE_COG_SVG_PATH, size=16, color="#e0e0e0"))
+        self.config_bid_btn.setIconSize(QtCore.QSize(16, 16))
+        self.config_bid_btn.setFixedSize(28, 28)
+        self.config_bid_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: 1px solid #555555;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #3a3a3a;
+                border: 1px solid #666666;
+            }
+            QPushButton:pressed {
+                background-color: #2a2a2a;
+            }
+            QPushButton:disabled {
+                opacity: 0.5;
+            }
+        """)
+        self.config_bid_btn.setEnabled(False)
+        self.config_bid_btn.clicked.connect(self._on_config_bid)
+        selector_row.addWidget(self.config_bid_btn)
+
         self.set_current_btn = QtWidgets.QPushButton("Set as Current")
         self.set_current_btn.setEnabled(False)
         self.set_current_btn.clicked.connect(self._on_set_current_bid)
@@ -2355,6 +2651,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         if not project_id:
             self.bid_combo.blockSignals(False)
             self.set_current_btn.setEnabled(False)
+            self.config_bid_btn.setEnabled(False)
             self._set_status("Select an RFQ to view Bids.")
             return
 
@@ -2382,8 +2679,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         self.bid_combo.blockSignals(False)
 
-        # Enable Set button only if there are bids and an RFQ is selected
+        # Enable Set and Config buttons only if there are bids and an RFQ is selected
         self.set_current_btn.setEnabled(len(bids) > 0 and rfq is not None)
+        self.config_bid_btn.setEnabled(len(bids) > 0 and rfq is not None)
 
         # Status & selection
         if bids:
@@ -2538,6 +2836,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self.bid_info_label.setText("")
         self.group_box.setAdditionalInfo("")
         self.set_current_btn.setEnabled(False)
+        self.config_bid_btn.setEnabled(False)
         self._set_status("Select an RFQ to view Bids.")
 
     def _on_bid_changed(self, index):
@@ -2799,6 +3098,82 @@ class BidSelectorWidget(QtWidgets.QWidget):
             raise
 
         return created
+
+    def _on_config_bid(self):
+        """Handle Config Bid button click - show dialog to configure bid children."""
+        bid = self.get_current_bid()
+        if not bid:
+            QtWidgets.QMessageBox.warning(self, "No Bid Selected", "Please select a Bid from the list.")
+            return
+
+        bid_id = bid.get("id")
+        bid_name = bid.get("code", f"Bid {bid_id}")
+
+        # Show config dialog
+        dialog = ConfigBidDialog(
+            self.sg_session,
+            self.current_project_id,
+            bid_id,
+            bid,
+            parent=self
+        )
+
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+
+        # Get selected values
+        vfx_breakdown_id = dialog.get_vfx_breakdown_id()
+        bid_assets_id = dialog.get_bid_assets_id()
+        price_list_id = dialog.get_price_list_id()
+        rate_card_id = dialog.get_rate_card_id()
+
+        try:
+            # Update bid with selected children
+            update_data = {}
+
+            if vfx_breakdown_id:
+                update_data["sg_vfx_breakdown"] = {"type": "CustomEntity01", "id": vfx_breakdown_id}
+            else:
+                update_data["sg_vfx_breakdown"] = None
+
+            if bid_assets_id:
+                update_data["sg_bid_assets"] = {"type": "CustomEntity08", "id": bid_assets_id}
+            else:
+                update_data["sg_bid_assets"] = None
+
+            if price_list_id:
+                update_data["sg_price_list"] = {"type": "CustomEntity10", "id": price_list_id}
+            else:
+                update_data["sg_price_list"] = None
+
+            # Update bid
+            self.sg_session.sg.update("CustomEntity06", bid_id, update_data)
+            logger.info(f"Updated Bid {bid_id} with config: {update_data}")
+
+            # Update rate card on price list if both are selected
+            if price_list_id and rate_card_id:
+                self.sg_session.sg.update(
+                    "CustomEntity10",
+                    price_list_id,
+                    {"sg_rate_card": {"type": "CustomNonProjectEntity01", "id": rate_card_id}}
+                )
+                logger.info(f"Updated Price List {price_list_id} with Rate Card {rate_card_id}")
+
+            self._set_status(f"Bid '{bid_name}' configuration saved.")
+
+            # Refresh bids to update the info label
+            self.load_bids(self.current_project_id, self.current_rfq, auto_select=False)
+
+            # Re-select the current bid
+            self._select_bid_by_id(bid_id)
+
+        except Exception as e:
+            logger.error(f"Failed to update Bid configuration: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to save Bid configuration: {str(e)}"
+            )
 
     def _on_add_bid(self):
         """Handle Add Bid button click."""
