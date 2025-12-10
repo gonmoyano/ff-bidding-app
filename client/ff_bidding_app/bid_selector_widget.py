@@ -3,6 +3,9 @@ Bid Selector Widget
 Reusable widget component for selecting and managing Bids (CustomEntity06).
 """
 
+import random
+import string
+
 from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtSvg import QSvgRenderer
 
@@ -545,7 +548,10 @@ class RenameBidDialog(QtWidgets.QDialog):
 
 
 class ConfigBidDialog(QtWidgets.QDialog):
-    """Dialog for configuring Bid children entities (VFX Breakdown, Bid Assets, Price List, Rate Card)."""
+    """Dialog for configuring Bid properties and children entities."""
+
+    # Signal emitted when bid is deleted (bid_id)
+    bidDeleted = QtCore.Signal(int)
 
     def __init__(self, sg_session, project_id, bid_id, bid_data, parent=None):
         """Initialize the dialog.
@@ -562,6 +568,10 @@ class ConfigBidDialog(QtWidgets.QDialog):
         self.project_id = project_id
         self.bid_id = bid_id
         self.bid_data = bid_data
+        self._bid_was_deleted = False
+
+        # Generate random confirmation string for delete
+        self.confirmation_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
         self.setWindowTitle("Configure Bid")
         self.setModal(True)
@@ -633,6 +643,40 @@ class ConfigBidDialog(QtWidgets.QDialog):
         """Build the dialog UI."""
         layout = QtWidgets.QVBoxLayout(self)
 
+        # Bid Name field
+        name_layout = QtWidgets.QHBoxLayout()
+        name_label = QtWidgets.QLabel("Bid Name:")
+        name_label.setMinimumWidth(100)
+        name_layout.addWidget(name_label)
+
+        self.name_field = QtWidgets.QLineEdit()
+        self.name_field.setText(self.bid_data.get("code", ""))
+        self.name_field.setPlaceholderText("Enter bid name")
+        name_layout.addWidget(self.name_field, stretch=1)
+        layout.addLayout(name_layout)
+
+        # Description field
+        desc_layout = QtWidgets.QHBoxLayout()
+        desc_label = QtWidgets.QLabel("Description:")
+        desc_label.setMinimumWidth(100)
+        desc_label.setAlignment(QtCore.Qt.AlignTop)
+        desc_layout.addWidget(desc_label)
+
+        self.description_field = QtWidgets.QTextEdit()
+        self.description_field.setPlainText(self.bid_data.get("description", "") or "")
+        self.description_field.setPlaceholderText("Enter bid description")
+        self.description_field.setMaximumHeight(60)
+        desc_layout.addWidget(self.description_field, stretch=1)
+        layout.addLayout(desc_layout)
+
+        # Separator
+        layout.addSpacing(10)
+        separator = QtWidgets.QFrame()
+        separator.setFrameShape(QtWidgets.QFrame.HLine)
+        separator.setFrameShadow(QtWidgets.QFrame.Sunken)
+        layout.addWidget(separator)
+        layout.addSpacing(5)
+
         # VFX Breakdown dropdown
         vfx_layout = QtWidgets.QHBoxLayout()
         vfx_label = QtWidgets.QLabel("VFX Breakdown:")
@@ -690,7 +734,6 @@ class ConfigBidDialog(QtWidgets.QDialog):
         for price_list in self.price_lists:
             name = price_list.get("code") or price_list.get("name") or f"ID {price_list['id']}"
             self.price_combo.addItem(name, price_list["id"])
-        # Note: Signal connection moved after rate_combo creation to avoid AttributeError
         price_layout.addWidget(self.price_combo, stretch=1)
         layout.addLayout(price_layout)
 
@@ -715,9 +758,8 @@ class ConfigBidDialog(QtWidgets.QDialog):
         for idx, rate_card in enumerate(self.rate_cards):
             name = rate_card.get("code") or rate_card.get("name") or f"ID {rate_card['id']}"
             self.rate_combo.addItem(name, rate_card["id"])
-            # Track Base Rates index
             if name.lower() == "base rates":
-                base_rates_index = idx + 1  # +1 for "-- None --" item
+                base_rates_index = idx + 1
 
         rate_layout.addWidget(self.rate_combo, stretch=1)
         layout.addLayout(rate_layout)
@@ -728,11 +770,18 @@ class ConfigBidDialog(QtWidgets.QDialog):
         # Connect price list change signal now that rate_combo exists
         self.price_combo.currentIndexChanged.connect(self._on_price_list_changed)
 
-        # Add some spacing
-        layout.addSpacing(10)
+        # Add spacing before buttons
+        layout.addSpacing(15)
 
-        # Buttons
+        # Buttons row
         button_layout = QtWidgets.QHBoxLayout()
+
+        # Remove button on the left
+        self.remove_button = QtWidgets.QPushButton("Remove Bid...")
+        self.remove_button.setStyleSheet("color: #ff6666;")
+        self.remove_button.clicked.connect(self._on_remove_bid)
+        button_layout.addWidget(self.remove_button)
+
         button_layout.addStretch()
 
         self.ok_button = QtWidgets.QPushButton("Save")
@@ -750,7 +799,6 @@ class ConfigBidDialog(QtWidgets.QDialog):
         """Handle price list selection change to update rate card."""
         price_list_id = self.price_combo.currentData()
         if price_list_id:
-            # Find the rate card linked to this price list
             for price_list in self.price_lists:
                 if price_list["id"] == price_list_id:
                     rate_card = price_list.get("sg_rate_card")
@@ -777,9 +825,175 @@ class ConfigBidDialog(QtWidgets.QDialog):
                                 self.rate_combo.setCurrentIndex(i)
                                 return
                     break
-        # Default to Base Rates if available
         if default_index > 0:
             self.rate_combo.setCurrentIndex(default_index)
+
+    def _on_remove_bid(self):
+        """Handle Remove Bid button click - show confirmation dialog."""
+        bid_name = self.bid_data.get("code", f"Bid {self.bid_id}")
+
+        # Build summary of children that will be deleted
+        children_summary = []
+        if self.vfx_breakdowns:
+            names = [b.get("code") or b.get("name") or f"ID {b['id']}" for b in self.vfx_breakdowns]
+            children_summary.append(f"• {len(self.vfx_breakdowns)} VFX Breakdown(s): {', '.join(names)}")
+        if self.bid_assets:
+            names = [a.get("code") or a.get("name") or f"ID {a['id']}" for a in self.bid_assets]
+            children_summary.append(f"• {len(self.bid_assets)} Bid Assets: {', '.join(names)}")
+        if self.price_lists:
+            names = [p.get("code") or p.get("name") or f"ID {p['id']}" for p in self.price_lists]
+            children_summary.append(f"• {len(self.price_lists)} Price List(s): {', '.join(names)}")
+
+        # Create confirmation dialog
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Remove Bid")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(450)
+
+        layout = QtWidgets.QVBoxLayout(dialog)
+
+        # Warning message
+        warning_label = QtWidgets.QLabel(
+            f"⚠️ WARNING: This action cannot be undone!\n\n"
+            f"Deleting bid '{bid_name}' will also delete all linked children:"
+        )
+        warning_label.setStyleSheet("color: #ff6666; font-weight: bold; padding: 10px;")
+        warning_label.setWordWrap(True)
+        layout.addWidget(warning_label)
+
+        # Children summary
+        if children_summary:
+            summary_text = "\n".join(children_summary)
+            summary_label = QtWidgets.QLabel(summary_text)
+            summary_label.setStyleSheet("padding: 10px; background-color: #2a2a2a; border-radius: 4px;")
+            summary_label.setWordWrap(True)
+            layout.addWidget(summary_label)
+        else:
+            no_children_label = QtWidgets.QLabel("(No linked children found)")
+            no_children_label.setStyleSheet("padding: 10px; color: #888888;")
+            layout.addWidget(no_children_label)
+
+        # Confirmation section
+        layout.addSpacing(20)
+
+        confirm_label = QtWidgets.QLabel(
+            f"To confirm deletion, type the following string:\n\n{self.confirmation_string}"
+        )
+        confirm_label.setStyleSheet("font-weight: bold; padding: 10px;")
+        confirm_label.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(confirm_label)
+
+        # Confirmation input
+        confirm_layout = QtWidgets.QHBoxLayout()
+        confirm_input_label = QtWidgets.QLabel("Confirmation:")
+        confirm_layout.addWidget(confirm_input_label)
+
+        confirmation_field = QtWidgets.QLineEdit()
+        confirmation_field.setPlaceholderText("Type confirmation string here...")
+        confirm_layout.addWidget(confirmation_field, stretch=1)
+        layout.addLayout(confirm_layout)
+
+        # Buttons
+        layout.addSpacing(20)
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        delete_button = QtWidgets.QPushButton("Delete")
+        delete_button.setEnabled(False)
+        delete_button.setStyleSheet("background-color: #ff6666; color: white; font-weight: bold;")
+        button_layout.addWidget(delete_button)
+
+        cancel_button = QtWidgets.QPushButton("Cancel")
+        button_layout.addWidget(cancel_button)
+
+        layout.addLayout(button_layout)
+
+        # Connect signals
+        def on_confirmation_changed(text):
+            delete_button.setEnabled(text == self.confirmation_string)
+
+        confirmation_field.textChanged.connect(on_confirmation_changed)
+        delete_button.clicked.connect(dialog.accept)
+        cancel_button.clicked.connect(dialog.reject)
+
+        # Show dialog
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+
+        # Perform deletion
+        try:
+            # Delete children first
+            for breakdown in self.vfx_breakdowns:
+                # Also delete bidding scenes for each breakdown
+                bidding_scenes = self.sg_session.sg.find(
+                    "CustomEntity02",
+                    [["sg_parent", "is", {"type": "CustomEntity01", "id": breakdown["id"]}]],
+                    ["id"]
+                )
+                for scene in bidding_scenes:
+                    self.sg_session.sg.delete("CustomEntity02", scene["id"])
+                self.sg_session.sg.delete("CustomEntity01", breakdown["id"])
+                logger.info(f"Deleted VFX Breakdown {breakdown['id']} with {len(bidding_scenes)} bidding scenes")
+
+            for assets in self.bid_assets:
+                # Also delete asset items
+                asset_items = self.sg_session.sg.find(
+                    "CustomEntity07",
+                    [["sg_bid_assets", "is", {"type": "CustomEntity08", "id": assets["id"]}]],
+                    ["id"]
+                )
+                for item in asset_items:
+                    self.sg_session.sg.delete("CustomEntity07", item["id"])
+                self.sg_session.sg.delete("CustomEntity08", assets["id"])
+                logger.info(f"Deleted Bid Assets {assets['id']} with {len(asset_items)} asset items")
+
+            for price_list in self.price_lists:
+                # Also delete line items
+                line_items = self.sg_session.sg.find(
+                    "CustomEntity03",
+                    [["sg_parent_pricelist", "is", {"type": "CustomEntity10", "id": price_list["id"]}]],
+                    ["id"]
+                )
+                for item in line_items:
+                    self.sg_session.sg.delete("CustomEntity03", item["id"])
+                self.sg_session.sg.delete("CustomEntity10", price_list["id"])
+                logger.info(f"Deleted Price List {price_list['id']} with {len(line_items)} line items")
+
+            # Delete the bid itself
+            self.sg_session.sg.delete("CustomEntity06", self.bid_id)
+            logger.info(f"Deleted Bid {self.bid_id}")
+
+            self._bid_was_deleted = True
+            self.bidDeleted.emit(self.bid_id)
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Success",
+                f"Bid '{bid_name}' and all linked children have been deleted."
+            )
+
+            # Close the dialog
+            self.reject()
+
+        except Exception as e:
+            logger.error(f"Failed to delete bid: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to delete bid:\n{str(e)}"
+            )
+
+    def was_bid_deleted(self):
+        """Check if the bid was deleted during this dialog session."""
+        return self._bid_was_deleted
+
+    def get_bid_name(self):
+        """Get the bid name from the text field."""
+        return self.name_field.text().strip()
+
+    def get_description(self):
+        """Get the description from the text field."""
+        return self.description_field.toPlainText().strip()
 
     def get_vfx_breakdown_id(self):
         """Get selected VFX Breakdown ID."""
@@ -2598,16 +2812,6 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self.add_btn.setToolTip("Create a new Bid")
         selector_row.addWidget(self.add_btn)
 
-        self.remove_btn = QtWidgets.QPushButton("Remove")
-        self.remove_btn.clicked.connect(self._on_remove_bid)
-        self.remove_btn.setToolTip("Delete the selected Bid")
-        selector_row.addWidget(self.remove_btn)
-
-        self.rename_btn = QtWidgets.QPushButton("Rename")
-        self.rename_btn.clicked.connect(self._on_rename_bid)
-        self.rename_btn.setToolTip("Rename the selected Bid")
-        selector_row.addWidget(self.rename_btn)
-
         self.refresh_btn = QtWidgets.QPushButton("Refresh")
         self.refresh_btn.clicked.connect(self._on_refresh_bids)
         self.refresh_btn.setToolTip("Refresh the Bid list")
@@ -3123,18 +3327,36 @@ class BidSelectorWidget(QtWidgets.QWidget):
             parent=self
         )
 
-        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+        result = dialog.exec_()
+
+        # Check if bid was deleted
+        if dialog.was_bid_deleted():
+            # Refresh bids list after deletion
+            self._refresh_bids()
+            self.statusMessageChanged.emit(f"✓ Deleted bid '{bid_name}'", False)
             return
 
-        # Get selected values
+        if result != QtWidgets.QDialog.Accepted:
+            return
+
+        # Get values from dialog
+        new_name = dialog.get_bid_name()
+        description = dialog.get_description()
         vfx_breakdown_id = dialog.get_vfx_breakdown_id()
         bid_assets_id = dialog.get_bid_assets_id()
         price_list_id = dialog.get_price_list_id()
         rate_card_id = dialog.get_rate_card_id()
 
         try:
-            # Update bid with selected children
+            # Update bid with name, description and selected children
             update_data = {}
+
+            # Update name if changed
+            if new_name and new_name != bid_name:
+                update_data["code"] = new_name
+
+            # Update description
+            update_data["description"] = description if description else None
 
             if vfx_breakdown_id:
                 update_data["sg_vfx_breakdown"] = {"type": "CustomEntity01", "id": vfx_breakdown_id}
@@ -3164,7 +3386,8 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 )
                 logger.info(f"Updated Price List {price_list_id} with Rate Card {rate_card_id}")
 
-            self._set_status(f"Bid '{bid_name}' configuration saved.")
+            display_name = new_name if new_name else bid_name
+            self._set_status(f"Bid '{display_name}' configuration saved.")
 
             # Refresh bids to update the info label
             self.populate_bids(self.current_rfq, self.current_project_id, auto_select=False)
