@@ -412,11 +412,15 @@ class RatesTab(QtWidgets.QWidget):
                 ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": self.current_bid_id}]
             ]
 
+            logger.info(f"Querying Price Lists with filters: {filters}")
+
             price_lists_list = self.sg_session.sg.find(
                 "CustomEntity10",
                 filters,
                 ["code", "id", "description"]
             )
+
+            logger.info(f"Found {len(price_lists_list)} Price List(s) for Bid {self.current_bid_id}")
 
             # Update combo box
             self.price_lists_combo.blockSignals(True)
@@ -455,7 +459,7 @@ class RatesTab(QtWidgets.QWidget):
                 # Update info label to show linked Price List
                 self._update_price_list_info_label()
             else:
-                self._set_price_lists_status("No Price Lists found for this project.")
+                self._set_price_lists_status("No Price Lists found for this Bid.")
                 self.price_lists_set_btn.setEnabled(False)
                 # Trigger cascade to clear downstream
                 self._on_price_lists_changed(0)
