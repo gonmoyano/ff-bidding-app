@@ -398,15 +398,26 @@ class AddBidDialog(QtWidgets.QDialog):
         is_copy = self.copy_from_radio.isChecked()
         self.copy_options_container.setVisible(is_copy)
 
+        # Force layout to recalculate
+        self.layout().invalidate()
+        self.layout().activate()
+
         # Adjust dialog size when toggling
         if is_copy:
             # Expand to fit copy options
             self.adjustSize()
         else:
             # Reset to minimum size when "Create new" is selected
-            self.adjustSize()
-            # Force the dialog to shrink back to its minimum size
-            QtCore.QTimer.singleShot(0, lambda: self.resize(self.minimumSizeHint()))
+            # Set size constraint to allow shrinking
+            self.setMinimumHeight(0)
+            self.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
+
+            # Process pending layout events
+            QtWidgets.QApplication.processEvents()
+
+            # Get the new minimum size hint and resize
+            new_size = self.sizeHint()
+            self.resize(self.width(), new_size.height())
 
     def get_bid_name(self):
         """Get the bid name from the dialog."""
