@@ -1627,7 +1627,9 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             # Create and link VFX Breakdown if requested
             if init_vfx_breakdown:
                 breakdown_name = f"{rfq_name} - VFX Breakdown"
-                new_vfx_breakdown = self.sg_session.create_vfx_breakdown(project_id, breakdown_name)
+                # Pass bid_id to link VFX Breakdown to Bid via sg_parent_bid
+                bid_id_for_link = new_bid['id'] if new_bid else None
+                new_vfx_breakdown = self.sg_session.create_vfx_breakdown(project_id, breakdown_name, bid_id=bid_id_for_link)
                 # Set as current VFX Breakdown for the RFQ (may return None if field doesn't exist)
                 rfq_link_result = self.sg_session.update_rfq_vfx_breakdown(rfq_id, new_vfx_breakdown)
                 # If Bid was created, also link VFX Breakdown to Bid
@@ -1648,7 +1650,8 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             # Create and link Bid Assets if requested (requires Bid)
             if init_bid_assets and new_bid:
                 bid_assets_name = f"{rfq_name} - Bid Assets"
-                new_bid_assets = self.sg_session.create_bid_assets(project_id, bid_assets_name)
+                # Pass bid_id to link Bid Assets to Bid via sg_parent_bid
+                new_bid_assets = self.sg_session.create_bid_assets(project_id, bid_assets_name, bid_id=new_bid['id'])
                 # Link Bid Assets to Bid
                 self.sg_session.update_bid_bid_assets(new_bid['id'], new_bid_assets)
                 # Create initial empty Asset Item row
@@ -1663,10 +1666,11 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             # Create and link Price List if requested (requires Bid)
             if init_price_list and new_bid:
                 price_list_name = f"{rfq_name} - Price List"
-                # Create Price List
+                # Create Price List with sg_parent_bid link
                 price_list_data = {
                     "code": price_list_name,
-                    "project": {"type": "Project", "id": project_id}
+                    "project": {"type": "Project", "id": project_id},
+                    "sg_parent_bid": {"type": "CustomEntity06", "id": new_bid['id']}
                 }
                 new_price_list = self.sg_session.sg.create("CustomEntity10", price_list_data)
                 new_price_list_id = new_price_list['id']

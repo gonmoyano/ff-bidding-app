@@ -736,13 +736,14 @@ class ShotgridClient:
                 return None
             raise
 
-    def create_vfx_breakdown(self, project_id, code):
+    def create_vfx_breakdown(self, project_id, code, bid_id=None):
         """
         Create a new VFX Breakdown (CustomEntity01).
 
         Args:
             project_id: Project ID
             code: VFX Breakdown name/code
+            bid_id: Optional Bid ID to link via sg_parent_bid
 
         Returns:
             Created VFX Breakdown entity dictionary
@@ -751,6 +752,9 @@ class ShotgridClient:
             "code": code,
             "project": {"type": "Project", "id": int(project_id)}
         }
+
+        if bid_id:
+            data["sg_parent_bid"] = {"type": "CustomEntity06", "id": int(bid_id)}
 
         result = self.sg.create("CustomEntity01", data)
         return result
@@ -776,13 +780,14 @@ class ShotgridClient:
         result = self.sg.create("CustomEntity02", data)
         return result
 
-    def create_bid_assets(self, project_id, code):
+    def create_bid_assets(self, project_id, code, bid_id=None):
         """
         Create a new Bid Assets (CustomEntity08).
 
         Args:
             project_id: Project ID
             code: Bid Assets name/code
+            bid_id: Optional Bid ID to link via sg_parent_bid
 
         Returns:
             Created Bid Assets entity dictionary
@@ -791,6 +796,9 @@ class ShotgridClient:
             "code": code,
             "project": {"type": "Project", "id": int(project_id)}
         }
+
+        if bid_id:
+            data["sg_parent_bid"] = {"type": "CustomEntity06", "id": int(bid_id)}
 
         result = self.sg.create("CustomEntity08", data)
         return result

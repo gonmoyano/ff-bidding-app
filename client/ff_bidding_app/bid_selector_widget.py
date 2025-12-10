@@ -2502,7 +2502,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         if source_vfx_breakdown:
                             source_vfx_id = source_vfx_breakdown.get("id") if isinstance(source_vfx_breakdown, dict) else None
                             if source_vfx_id:
-                                new_vfx_breakdown = self._copy_vfx_breakdown(source_vfx_id, f"{bid_name} - VFX Breakdown")
+                                new_vfx_breakdown = self._copy_vfx_breakdown(source_vfx_id, f"{bid_name} - VFX Breakdown", bid_id=new_bid_id)
                                 if new_vfx_breakdown:
                                     # Link to the new Bid
                                     self.sg_session.sg.update(
@@ -2519,7 +2519,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         if source_bid_assets:
                             source_assets_id = source_bid_assets.get("id") if isinstance(source_bid_assets, dict) else None
                             if source_assets_id:
-                                new_bid_assets = self._copy_bid_assets(source_assets_id, f"{bid_name} - Assets")
+                                new_bid_assets = self._copy_bid_assets(source_assets_id, f"{bid_name} - Assets", bid_id=new_bid_id)
                                 if new_bid_assets:
                                     # Link to the new Bid
                                     self.sg_session.sg.update(
@@ -2536,7 +2536,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         if source_price_list:
                             source_price_list_id = source_price_list.get("id") if isinstance(source_price_list, dict) else None
                             if source_price_list_id:
-                                new_price_list = self._copy_price_list(source_price_list_id, f"{bid_name} - Price List")
+                                new_price_list = self._copy_price_list(source_price_list_id, f"{bid_name} - Price List", bid_id=new_bid_id)
                                 if new_price_list:
                                     # Link to the new Bid
                                     self.sg_session.sg.update(
@@ -2569,12 +2569,13 @@ class BidSelectorWidget(QtWidgets.QWidget):
             logger.error(f"Failed to create bid: {e}", exc_info=True)
             QtWidgets.QMessageBox.critical(self, "Error", f"Failed to create bid:\n{str(e)}")
 
-    def _copy_vfx_breakdown(self, source_id, new_name):
+    def _copy_vfx_breakdown(self, source_id, new_name, bid_id=None):
         """Copy a VFX Breakdown with all its Bidding Scenes.
 
         Args:
             source_id: ID of the VFX Breakdown to copy from
             new_name: Name for the new VFX Breakdown
+            bid_id: Optional Bid ID to link via sg_parent_bid
 
         Returns:
             dict: The created VFX Breakdown entity, or None on failure
@@ -2583,10 +2584,13 @@ class BidSelectorWidget(QtWidgets.QWidget):
             entity_type = self.sg_session.get_vfx_breakdown_entity_type()
 
             # Create the new VFX Breakdown
-            new_breakdown = self.sg_session.sg.create(entity_type, {
+            breakdown_data = {
                 "code": new_name,
                 "project": {"type": "Project", "id": self.current_project_id}
-            })
+            }
+            if bid_id:
+                breakdown_data["sg_parent_bid"] = {"type": "CustomEntity06", "id": bid_id}
+            new_breakdown = self.sg_session.sg.create(entity_type, breakdown_data)
             new_breakdown_id = new_breakdown["id"]
 
             logger.info(f"Created VFX Breakdown copy: {new_name} (ID: {new_breakdown_id})")
@@ -2632,22 +2636,26 @@ class BidSelectorWidget(QtWidgets.QWidget):
             logger.error(f"Failed to copy VFX Breakdown: {e}", exc_info=True)
             return None
 
-    def _copy_bid_assets(self, source_id, new_name):
+    def _copy_bid_assets(self, source_id, new_name, bid_id=None):
         """Copy Bid Assets with all its Asset Items.
 
         Args:
             source_id: ID of the Bid Assets to copy from
             new_name: Name for the new Bid Assets
+            bid_id: Optional Bid ID to link via sg_parent_bid
 
         Returns:
             dict: The created Bid Assets entity, or None on failure
         """
         try:
             # Create the new Bid Assets
-            new_bid_assets = self.sg_session.sg.create("CustomEntity08", {
+            bid_assets_data = {
                 "code": new_name,
                 "project": {"type": "Project", "id": self.current_project_id}
-            })
+            }
+            if bid_id:
+                bid_assets_data["sg_parent_bid"] = {"type": "CustomEntity06", "id": bid_id}
+            new_bid_assets = self.sg_session.sg.create("CustomEntity08", bid_assets_data)
             new_bid_assets_id = new_bid_assets["id"]
 
             logger.info(f"Created Bid Assets copy: {new_name} (ID: {new_bid_assets_id})")
@@ -2684,12 +2692,13 @@ class BidSelectorWidget(QtWidgets.QWidget):
             logger.error(f"Failed to copy Bid Assets: {e}", exc_info=True)
             return None
 
-    def _copy_price_list(self, source_id, new_name):
+    def _copy_price_list(self, source_id, new_name, bid_id=None):
         """Copy a Price List with all its Line Items.
 
         Args:
             source_id: ID of the Price List to copy from
             new_name: Name for the new Price List
+            bid_id: Optional Bid ID to link via sg_parent_bid
 
         Returns:
             dict: The created Price List entity, or None on failure
@@ -2703,10 +2712,13 @@ class BidSelectorWidget(QtWidgets.QWidget):
             )
 
             # Create the new Price List
-            new_price_list = self.sg_session.sg.create("CustomEntity10", {
+            price_list_data = {
                 "code": new_name,
                 "project": {"type": "Project", "id": self.current_project_id}
-            })
+            }
+            if bid_id:
+                price_list_data["sg_parent_bid"] = {"type": "CustomEntity06", "id": bid_id}
+            new_price_list = self.sg_session.sg.create("CustomEntity10", price_list_data)
             new_price_list_id = new_price_list["id"]
 
             logger.info(f"Created Price List copy: {new_name} (ID: {new_price_list_id})")
@@ -3342,7 +3354,8 @@ class BidSelectorWidget(QtWidgets.QWidget):
         try:
             breakdown_data = {
                 "code": breakdown_name,
-                "project": {"type": "Project", "id": self.current_project_id}
+                "project": {"type": "Project", "id": self.current_project_id},
+                "sg_parent_bid": {"type": "CustomEntity06", "id": bid_id}
             }
             vfx_breakdown = self.sg_session.sg.create("CustomEntity01", breakdown_data)
             breakdown_id = vfx_breakdown["id"]
@@ -3574,7 +3587,8 @@ class BidSelectorWidget(QtWidgets.QWidget):
         try:
             bid_assets_data = {
                 "code": bid_assets_name,
-                "project": {"type": "Project", "id": self.current_project_id}
+                "project": {"type": "Project", "id": self.current_project_id},
+                "sg_parent_bid": {"type": "CustomEntity06", "id": bid_id}
             }
             bid_assets = self.sg_session.sg.create("CustomEntity08", bid_assets_data)
             bid_assets_id = bid_assets["id"]
@@ -3835,7 +3849,8 @@ class BidSelectorWidget(QtWidgets.QWidget):
         try:
             price_list_data = {
                 "code": price_list_name,
-                "project": {"type": "Project", "id": self.current_project_id}
+                "project": {"type": "Project", "id": self.current_project_id},
+                "sg_parent_bid": {"type": "CustomEntity06", "id": bid_id}
             }
             price_list = self.sg_session.sg.create("CustomEntity10", price_list_data)
             price_list_id = price_list["id"]

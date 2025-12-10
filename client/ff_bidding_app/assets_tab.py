@@ -526,6 +526,10 @@ class AssetsTab(QtWidgets.QWidget):
                 "project": {"type": "Project", "id": self.current_project_id}
             }
 
+            # Link to current Bid if one is selected
+            if self.current_bid_id:
+                bid_assets_data["sg_parent_bid"] = {"type": "CustomEntity06", "id": self.current_bid_id}
+
             new_bid_assets = self.sg_session.sg.create("CustomEntity08", bid_assets_data)
 
             logger.info(f"Created Bid Assets: {name} (ID: {new_bid_assets['id']})")
