@@ -1283,7 +1283,9 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         load_sg_btn.setToolTip("Load from ShotGrid")
         load_sg_btn.setIcon(create_icon_from_svg_path(CLOUD_DOWNLOAD_SVG_PATH, size=20, color="#e0e0e0"))
         load_sg_btn.setIconSize(QtCore.QSize(20, 20))
-        load_sg_btn.setFixedSize(32, 32)
+        # Match size to the project combobox height
+        project_combo_height = self.sg_project_combo.sizeHint().height()
+        load_sg_btn.setFixedSize(project_combo_height, project_combo_height)
         load_sg_btn.setStyleSheet("""
             QPushButton {
                 border: 1px solid #555555;
@@ -1306,7 +1308,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         details_btn.setToolTip("Project Details")
         details_btn.setIcon(create_icon_from_svg_path(FILE_CHART_OUTLINE_SVG_PATH, size=20, color="#e0e0e0"))
         details_btn.setIconSize(QtCore.QSize(20, 20))
-        details_btn.setFixedSize(32, 32)
+        details_btn.setFixedSize(project_combo_height, project_combo_height)
         details_btn.setStyleSheet("""
             QPushButton {
                 border: 1px solid #555555;
@@ -1339,7 +1341,9 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         config_rfqs_btn.setToolTip("Config RFQs")
         config_rfqs_btn.setIcon(create_icon_from_svg_path(FILE_COG_SVG_PATH, size=20, color="#e0e0e0"))
         config_rfqs_btn.setIconSize(QtCore.QSize(20, 20))
-        config_rfqs_btn.setFixedSize(32, 32)
+        # Match size to the RFQ combobox height
+        rfq_combo_height = self.rfq_combo.sizeHint().height()
+        config_rfqs_btn.setFixedSize(rfq_combo_height, rfq_combo_height)
         config_rfqs_btn.setStyleSheet("""
             QPushButton {
                 border: 1px solid #555555;
@@ -1410,7 +1414,7 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         self.settings_button.setToolTip("Application Settings")
         self.settings_button.setIcon(create_icon_from_svg_path(COG_OUTLINE_SVG_PATH, size=20, color="#e0e0e0"))
         self.settings_button.setIconSize(QtCore.QSize(20, 20))
-        self.settings_button.setFixedSize(32, 32)
+        self.settings_button.setFixedSize(rfq_combo_height, rfq_combo_height)
         self.settings_button.setStyleSheet("""
             QPushButton {
                 border: 1px solid #555555;
