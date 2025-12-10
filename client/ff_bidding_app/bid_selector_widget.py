@@ -239,6 +239,19 @@ class AddBidDialog(QtWidgets.QDialog):
 
         layout.addLayout(type_layout)
 
+        # Description field
+        desc_layout = QtWidgets.QHBoxLayout()
+        desc_label = QtWidgets.QLabel("Description:")
+        desc_label.setAlignment(QtCore.Qt.AlignTop)
+        desc_layout.addWidget(desc_label)
+
+        self.description_field = QtWidgets.QPlainTextEdit()
+        self.description_field.setPlaceholderText("Enter bid description...")
+        self.description_field.setMaximumHeight(60)
+        desc_layout.addWidget(self.description_field, stretch=1)
+
+        layout.addLayout(desc_layout)
+
         # Creation options group
         options_group = QtWidgets.QGroupBox("Creation Options")
         options_layout = QtWidgets.QVBoxLayout(options_group)
@@ -426,6 +439,10 @@ class AddBidDialog(QtWidgets.QDialog):
     def get_bid_type(self):
         """Get the selected bid type."""
         return self.type_combo.currentText()
+
+    def get_description(self):
+        """Get the bid description from the dialog."""
+        return self.description_field.toPlainText().strip()
 
     def is_copy_mode(self):
         """Check if copy mode is selected."""
