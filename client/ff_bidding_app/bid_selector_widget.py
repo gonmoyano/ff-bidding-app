@@ -639,6 +639,17 @@ class ConfigBidDialog(QtWidgets.QDialog):
             logger.error(f"Failed to load Rate Cards: {e}")
             self.rate_cards = []
 
+        try:
+            # Load all existing bids for duplicate name validation
+            self.existing_bids = self.sg_session.sg.find(
+                "CustomEntity06",
+                [["project", "is", {"type": "Project", "id": int(self.project_id)}]],
+                ["id", "code"]
+            )
+        except Exception as e:
+            logger.error(f"Failed to load existing bids: {e}")
+            self.existing_bids = []
+
     def _build_ui(self):
         """Build the dialog UI."""
         layout = QtWidgets.QVBoxLayout(self)
@@ -785,7 +796,7 @@ class ConfigBidDialog(QtWidgets.QDialog):
         button_layout.addStretch()
 
         self.ok_button = QtWidgets.QPushButton("Save")
-        self.ok_button.clicked.connect(self.accept)
+        self.ok_button.clicked.connect(self._validate_and_accept)
         self.ok_button.setDefault(True)
         button_layout.addWidget(self.ok_button)
 
@@ -794,6 +805,37 @@ class ConfigBidDialog(QtWidgets.QDialog):
         button_layout.addWidget(self.cancel_button)
 
         layout.addLayout(button_layout)
+
+    def _validate_and_accept(self):
+        """Validate bid name and accept if valid."""
+        new_name = self.name_field.text().strip()
+        current_name = self.bid_data.get("code", "")
+
+        # Check if name is empty
+        if not new_name:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Validation Error",
+                "Bid name cannot be empty."
+            )
+            self.name_field.setFocus()
+            return
+
+        # Check for duplicate name (only if name changed)
+        if new_name.lower() != current_name.lower():
+            for bid in self.existing_bids:
+                if bid["id"] != self.bid_id and bid.get("code", "").lower() == new_name.lower():
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Duplicate Name",
+                        f"A bid with the name '{bid.get('code')}' already exists.\n\n"
+                        "Please choose a different name."
+                    )
+                    self.name_field.setFocus()
+                    self.name_field.selectAll()
+                    return
+
+        self.accept()
 
     def _on_price_list_changed(self, index):
         """Handle price list selection change to update rate card."""
