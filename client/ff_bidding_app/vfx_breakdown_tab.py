@@ -356,24 +356,27 @@ class DeleteBiddingSceneCommand:
 class AddVFXBreakdownDialog(QtWidgets.QDialog):
     """Dialog for creating a new VFX Breakdown."""
 
-    def __init__(self, existing_breakdowns, sg_session=None, project_id=None, parent=None):
+    def __init__(self, existing_breakdowns, sg_session=None, project_id=None, current_breakdown=None, parent=None):
         """Initialize the dialog.
 
         Args:
             existing_breakdowns: List of existing VFX Breakdown dicts with 'id' and 'code'
             sg_session: ShotgridClient instance for version checking
             project_id: Project ID for version checking
+            current_breakdown: Currently selected VFX Breakdown dict for name prefill
             parent: Parent widget
         """
         super().__init__(parent)
         self.existing_breakdowns = existing_breakdowns
         self.sg_session = sg_session
         self.project_id = project_id
+        self.current_breakdown = current_breakdown
         self.setWindowTitle("Add VFX Breakdown")
         self.setModal(True)
         self.setMinimumWidth(400)
 
         self._build_ui()
+        self._prefill_name_from_current()
 
     def _build_ui(self):
         """Build the dialog UI."""
@@ -447,6 +450,17 @@ class AddVFXBreakdownDialog(QtWidgets.QDialog):
         # If switching to copy mode and a breakdown is already selected, update name
         if is_copy_mode and self.copy_combo.currentIndex() > 0:
             self._on_copy_selection_changed(self.copy_combo.currentIndex())
+
+    def _prefill_name_from_current(self):
+        """Prefill the Name field with the next version of the current breakdown's name."""
+        if not self.current_breakdown:
+            return
+
+        source_name = self.current_breakdown.get("code") or self.current_breakdown.get("name") or ""
+        if source_name:
+            next_name = self._get_next_version_name(source_name)
+            logger.info(f"Prefilling name field from current breakdown '{source_name}' -> '{next_name}'")
+            self.name_field.setText(next_name)
 
     def _on_copy_selection_changed(self, index):
         """Handle copy source selection change - prefill name with next version."""
@@ -2253,6 +2267,13 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "No Project Selected", "Please select a project first.")
             return
 
+        # Get current bid ID to link the new VFX Breakdown
+        current_bid = getattr(self.parent_app.bidding_tab, 'current_bid', None) if hasattr(self.parent_app, 'bidding_tab') else None
+        bid_id = current_bid.get('id') if current_bid else None
+        if not bid_id:
+            QtWidgets.QMessageBox.warning(self, "No Bid Selected", "Please select a Bid first.")
+            return
+
         # Get existing breakdowns for the dialog
         try:
             existing_breakdowns = self.sg_session.get_vfx_breakdowns(proj["id"], fields=["id", "code", "name"])
@@ -2260,11 +2281,15 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             logger.error(f"Failed to fetch existing breakdowns: {e}", exc_info=True)
             existing_breakdowns = []
 
+        # Get current breakdown for name prefill
+        current_breakdown = self.vfx_breakdown_combo.currentData() if self.vfx_breakdown_combo else None
+
         # Show dialog
         dialog = AddVFXBreakdownDialog(
             existing_breakdowns,
             sg_session=self.sg_session,
             project_id=proj["id"],
+            current_breakdown=current_breakdown,
             parent=self
         )
         if dialog.exec() != QtWidgets.QDialog.Accepted:
@@ -2286,10 +2311,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "No Source Selected", "Please select a VFX Breakdown to copy from.")
             return
 
-        # Create the VFX Breakdown
+        # Create the VFX Breakdown (linked to current bid)
         try:
             if mode == "empty":
-                new_breakdown = self._create_empty_vfx_breakdown(proj["id"], name)
+                new_breakdown = self._create_empty_vfx_breakdown(proj["id"], name, bid_id=bid_id)
             else:  # copy
                 # Show progress dialog for copy operation
                 progress = QtWidgets.QProgressDialog(
@@ -2319,6 +2344,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     source["id"],
                     name,
                     proj["id"],
+                    bid_id=bid_id,
                     progress_callback=update_progress
                 )
 
@@ -2502,12 +2528,13 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 f"Failed to rename VFX Breakdown:\n{str(e)}"
             )
 
-    def _create_empty_vfx_breakdown(self, project_id, name):
+    def _create_empty_vfx_breakdown(self, project_id, name, bid_id=None):
         """Create an empty VFX Breakdown.
 
         Args:
             project_id: Project ID
             name: Name for the new VFX Breakdown
+            bid_id: Optional Bid ID to link via sg_parent_bid
 
         Returns:
             dict: The created VFX Breakdown entity
@@ -2519,19 +2546,24 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             "project": {"type": "Project", "id": project_id}
         }
 
+        # Link to parent bid if provided
+        if bid_id:
+            data["sg_parent_bid"] = {"type": "CustomEntity06", "id": int(bid_id)}
+
         logger.info(f"Creating empty VFX Breakdown: {data}")
         result = self.sg_session.sg.create(entity_type, data)
         logger.info(f"Created VFX Breakdown: {result}")
 
         return result
 
-    def _copy_vfx_breakdown(self, source_id, new_name, project_id, progress_callback=None):
+    def _copy_vfx_breakdown(self, source_id, new_name, project_id, bid_id=None, progress_callback=None):
         """Copy an existing VFX Breakdown with all its Bidding Scenes.
 
         Args:
             source_id: ID of the VFX Breakdown to copy from
             new_name: Name for the new VFX Breakdown
             project_id: Project ID
+            bid_id: Optional Bid ID to link via sg_parent_bid
             progress_callback: Optional callback function(current, total, message) -> bool
 
         Returns:
@@ -2544,8 +2576,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             if not progress_callback(0, 100, "Creating VFX Breakdown..."):
                 raise Exception("Operation cancelled by user")
 
-        # First, create the new VFX Breakdown
-        new_breakdown = self._create_empty_vfx_breakdown(project_id, new_name)
+        # First, create the new VFX Breakdown (linked to bid if provided)
+        new_breakdown = self._create_empty_vfx_breakdown(project_id, new_name, bid_id=bid_id)
         new_breakdown_id = new_breakdown["id"]
 
         logger.info(f"Copying bidding scenes from VFX Breakdown {source_id} to {new_breakdown_id}")
@@ -2604,10 +2636,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
                 for field in copy_fields:
                     if field in bidding_scene and bidding_scene[field] is not None:
-                        new_bidding_scene_data[field] = bidding_scene[field]
+                        new_beat_data[field] = bidding_scene[field]
 
                 # Create the new bidding scene
-                self.sg_session.sg.create("CustomEntity02", new_bidding_scene_data)
+                self.sg_session.sg.create("CustomEntity02", new_beat_data)
 
             # Report completion
             if progress_callback:
