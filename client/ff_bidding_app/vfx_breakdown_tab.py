@@ -1133,12 +1133,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
         selector_group.addWidget(self.vfx_breakdown_status_label)
 
-        # Add info label for linked VFX Breakdown
-        self.vfx_breakdown_info_label = QtWidgets.QLabel("")
-        self.vfx_breakdown_info_label.setObjectName("vfxBreakdownInfoLabel")
-        self.vfx_breakdown_info_label.setStyleSheet("color: #6b9bd1; font-weight: bold; padding: 2px 0;")
-        selector_group.addWidget(self.vfx_breakdown_info_label)
-
         # Create reusable VFX Breakdown widget before adding selector_group to layout
         self.breakdown_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
 
@@ -2823,12 +2817,12 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             # If no linked breakdown, leave at placeholder (index 0)
             # Don't auto-select the first breakdown - user must explicitly choose
 
-            # Update info label to show linked VFX Breakdown from current Bid
-            self._update_vfx_breakdown_info_label()
+            # Update group box additional info to show linked VFX Breakdown from current Bid
+            self._update_vfx_breakdown_group_info()
         else:
             self._set_vfx_breakdown_status("No VFX Breakdowns found for this Bid.")
             self._clear_vfx_breakdown_table()
-            self.vfx_breakdown_info_label.setText("")
+            self.vfx_breakdown_selector_group.setAdditionalInfo("")
 
     def _set_vfx_breakdown_status(self, message, is_error=False):
         """Set the status message.
@@ -2841,24 +2835,21 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_status_label.setStyleSheet(f"color: {color}; padding: 2px 0;")
         self.vfx_breakdown_status_label.setText(message)
 
-    def _update_vfx_breakdown_info_label(self):
-        """Update the info label to show linked VFX Breakdown from current Bid."""
+    def _update_vfx_breakdown_group_info(self):
+        """Update the group box additional info to show linked VFX Breakdown from current Bid."""
         if not self.parent_app or not hasattr(self.parent_app, 'bidding_tab'):
-            self.vfx_breakdown_info_label.setText("")
             self.vfx_breakdown_selector_group.setAdditionalInfo("")
             return
 
         # Get current bid from bidding tab
         bid = getattr(self.parent_app.bidding_tab, 'current_bid', None)
         if not bid:
-            self.vfx_breakdown_info_label.setText("")
             self.vfx_breakdown_selector_group.setAdditionalInfo("")
             return
 
         # Get linked VFX Breakdown from Bid
         linked_breakdown = bid.get("sg_vfx_breakdown")
         if not linked_breakdown:
-            self.vfx_breakdown_info_label.setText("")
             self.vfx_breakdown_selector_group.setAdditionalInfo("")
             return
 
@@ -2873,10 +2864,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 breakdown_name = first_breakdown.get("name") or first_breakdown.get("code") or f"ID {first_breakdown.get('id', 'N/A')}"
 
         if breakdown_name:
-            self.vfx_breakdown_info_label.setText(f"Linked to current Bid: {breakdown_name}")
             self.vfx_breakdown_selector_group.setAdditionalInfo(f"Linked to current Bid: {breakdown_name}")
         else:
-            self.vfx_breakdown_info_label.setText("")
             self.vfx_breakdown_selector_group.setAdditionalInfo("")
 
     def _clear_vfx_breakdown_table(self):

@@ -203,7 +203,6 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_set_btn = None
         self.price_lists_refresh_btn = None
         self.price_lists_status_label = None
-        self.price_lists_info_label = None  # Info label for Rate Card
         self.price_lists_group_box = None  # CollapsibleGroupBox for Price Lists
 
         # Rate Card widgets and data
@@ -274,12 +273,6 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_status_label.setObjectName("priceListsStatusLabel")
         self.price_lists_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
         selector_group.addWidget(self.price_lists_status_label)
-
-        # Add info label for Rate Card
-        self.price_lists_info_label = QtWidgets.QLabel("")
-        self.price_lists_info_label.setObjectName("priceListsInfoLabel")
-        self.price_lists_info_label.setStyleSheet("color: #6b9bd1; font-weight: bold; padding: 2px 0;")
-        selector_group.addWidget(self.price_lists_info_label)
 
         # Create Line Items widget before adding selector_group to layout
         line_items_content = self._create_line_items_tab()
@@ -457,21 +450,19 @@ class RatesTab(QtWidgets.QWidget):
                     self._on_price_lists_changed(0)  # Manually trigger cascade
 
                 # Update info label to show linked Price List
-                self._update_price_list_info_label()
+                self._update_price_list_group_info()
             else:
                 self._set_price_lists_status("No Price Lists found for this Bid.")
                 self.price_lists_set_btn.setEnabled(False)
                 # Trigger cascade to clear downstream
                 self._on_price_lists_changed(0)
-                # Clear info label
-                self.price_lists_info_label.setText("")
+                # Clear group info
                 self.price_lists_selector_group.setAdditionalInfo("")
 
         except Exception as e:
             logger.error(f"Failed to refresh Price Lists: {e}", exc_info=True)
             self._set_price_lists_status("Failed to load Price Lists.", is_error=True)
-            # Clear info label on error
-            self.price_lists_info_label.setText("")
+            # Clear group info on error
             self.price_lists_selector_group.setAdditionalInfo("")
 
     def _on_price_lists_changed(self, index):
@@ -484,7 +475,7 @@ class RatesTab(QtWidgets.QWidget):
         if index < 0:
             self.current_price_list_id = None
             self.current_price_list_data = None
-            self._update_price_list_info_label()
+            self._update_price_list_group_info()
             # Ensure cascade happens even for invalid index
             if hasattr(self, 'line_items_widget'):
                 self._clear_line_items_tab()
@@ -529,27 +520,23 @@ class RatesTab(QtWidgets.QWidget):
             logger.error(f"Failed to fetch Price List data: {e}", exc_info=True)
             self.current_price_list_data = None
 
-    def _update_price_list_info_label(self):
-        """Update the info label to show linked Price List from current Bid."""
+    def _update_price_list_group_info(self):
+        """Update the group box additional info to show linked Price List from current Bid."""
         if not self.current_bid_data:
-            self.price_lists_info_label.setText("")
             self.price_lists_selector_group.setAdditionalInfo("")
             return
 
         # Get linked Price List from Bid
         linked_price_list = self.current_bid_data.get("sg_price_list")
         if not linked_price_list:
-            self.price_lists_info_label.setText("")
             self.price_lists_selector_group.setAdditionalInfo("")
             return
 
         # Extract price list name
         if isinstance(linked_price_list, dict):
             price_list_name = linked_price_list.get("code") or linked_price_list.get("name") or f"ID {linked_price_list.get('id', 'N/A')}"
-            self.price_lists_info_label.setText(f"Linked to current Bid: {price_list_name}")
             self.price_lists_selector_group.setAdditionalInfo(f"Linked to current Bid: {price_list_name}")
         else:
-            self.price_lists_info_label.setText("")
             self.price_lists_selector_group.setAdditionalInfo("")
 
     def _load_rate_card_for_formula_evaluator(self):
