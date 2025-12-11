@@ -202,8 +202,6 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_combo = None
         self.price_lists_set_btn = None
         self.price_lists_refresh_btn = None
-        self.price_lists_status_label = None
-        self.price_lists_info_label = None  # Info label for Rate Card
         self.price_lists_group_box = None  # CollapsibleGroupBox for Price Lists
 
         # Rate Card widgets and data
@@ -223,6 +221,9 @@ class RatesTab(QtWidgets.QWidget):
         self._line_items_data_changed_connected = False
 
         self._build_ui()
+
+        # Fetch schema early to populate column headers with user-friendly names
+        self._fetch_line_items_schema()
 
     def _build_ui(self):
         """Build the Rates tab UI."""
@@ -252,7 +253,7 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_rate_cards_btn.clicked.connect(self._on_open_rate_cards_dialog)
         selector_row.addWidget(self.price_lists_rate_cards_btn)
 
-        self.price_lists_add_btn = QtWidgets.QPushButton("Add")
+        self.price_lists_add_btn = QtWidgets.QPushButton("Create")
         self.price_lists_add_btn.clicked.connect(self._on_add_price_list)
         selector_row.addWidget(self.price_lists_add_btn)
 
@@ -269,17 +270,6 @@ class RatesTab(QtWidgets.QWidget):
         selector_row.addWidget(self.price_lists_refresh_btn)
 
         selector_group.addLayout(selector_row)
-
-        self.price_lists_status_label = QtWidgets.QLabel("Select a Bid to view Price Lists.")
-        self.price_lists_status_label.setObjectName("priceListsStatusLabel")
-        self.price_lists_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        selector_group.addWidget(self.price_lists_status_label)
-
-        # Add info label for Rate Card
-        self.price_lists_info_label = QtWidgets.QLabel("")
-        self.price_lists_info_label.setObjectName("priceListsInfoLabel")
-        self.price_lists_info_label.setStyleSheet("color: #6b9bd1; font-weight: bold; padding: 2px 0;")
-        selector_group.addWidget(self.price_lists_info_label)
 
         # Create Line Items widget before adding selector_group to layout
         line_items_content = self._create_line_items_tab()
@@ -327,17 +317,16 @@ class RatesTab(QtWidgets.QWidget):
         return widget
 
     def _set_price_lists_status(self, message, is_error=False):
-        """Set the status message for price lists.
+        """Log the status message for price lists.
 
         Args:
-            message: Status message
+            message: Status message to log
             is_error: Whether this is an error message
         """
         if is_error:
-            self.price_lists_status_label.setStyleSheet("color: #ff6b6b; padding: 2px 0;")
+            logger.warning(f"Price Lists status: {message}")
         else:
-            self.price_lists_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        self.price_lists_status_label.setText(message)
+            logger.info(f"Price Lists status: {message}")
 
     def set_bid(self, bid_data, project_id):
         """Set the current bid and load associated price lists.
@@ -457,21 +446,19 @@ class RatesTab(QtWidgets.QWidget):
                     self._on_price_lists_changed(0)  # Manually trigger cascade
 
                 # Update info label to show linked Price List
-                self._update_price_list_info_label()
+                self._update_price_list_group_info()
             else:
                 self._set_price_lists_status("No Price Lists found for this Bid.")
                 self.price_lists_set_btn.setEnabled(False)
                 # Trigger cascade to clear downstream
                 self._on_price_lists_changed(0)
-                # Clear info label
-                self.price_lists_info_label.setText("")
+                # Clear group info
                 self.price_lists_selector_group.setAdditionalInfo("")
 
         except Exception as e:
             logger.error(f"Failed to refresh Price Lists: {e}", exc_info=True)
             self._set_price_lists_status("Failed to load Price Lists.", is_error=True)
-            # Clear info label on error
-            self.price_lists_info_label.setText("")
+            # Clear group info on error
             self.price_lists_selector_group.setAdditionalInfo("")
 
     def _on_price_lists_changed(self, index):
@@ -484,7 +471,7 @@ class RatesTab(QtWidgets.QWidget):
         if index < 0:
             self.current_price_list_id = None
             self.current_price_list_data = None
-            self._update_price_list_info_label()
+            self._update_price_list_group_info()
             # Ensure cascade happens even for invalid index
             if hasattr(self, 'line_items_widget'):
                 self._clear_line_items_tab()
@@ -529,27 +516,23 @@ class RatesTab(QtWidgets.QWidget):
             logger.error(f"Failed to fetch Price List data: {e}", exc_info=True)
             self.current_price_list_data = None
 
-    def _update_price_list_info_label(self):
-        """Update the info label to show linked Price List from current Bid."""
+    def _update_price_list_group_info(self):
+        """Update the group box additional info to show linked Price List from current Bid."""
         if not self.current_bid_data:
-            self.price_lists_info_label.setText("")
             self.price_lists_selector_group.setAdditionalInfo("")
             return
 
         # Get linked Price List from Bid
         linked_price_list = self.current_bid_data.get("sg_price_list")
         if not linked_price_list:
-            self.price_lists_info_label.setText("")
             self.price_lists_selector_group.setAdditionalInfo("")
             return
 
         # Extract price list name
         if isinstance(linked_price_list, dict):
             price_list_name = linked_price_list.get("code") or linked_price_list.get("name") or f"ID {linked_price_list.get('id', 'N/A')}"
-            self.price_lists_info_label.setText(f"Linked to current Bid: {price_list_name}")
             self.price_lists_selector_group.setAdditionalInfo(f"Linked to current Bid: {price_list_name}")
         else:
-            self.price_lists_info_label.setText("")
             self.price_lists_selector_group.setAdditionalInfo("")
 
     def _load_rate_card_for_formula_evaluator(self):
@@ -698,6 +681,10 @@ class RatesTab(QtWidgets.QWidget):
 
             price_list_name = self.price_lists_combo.currentText()
             self._set_price_lists_status(f"Set '{price_list_name}' as current Price List.")
+
+            # Refresh the bid data and update the bid info label
+            self._refresh_bid_info_label()
+
             QtWidgets.QMessageBox.information(
                 self,
                 "Success",
@@ -713,6 +700,41 @@ class RatesTab(QtWidgets.QWidget):
                 "Error",
                 f"Failed to set current Price List:\n{str(e)}"
             )
+
+    def _refresh_bid_info_label(self):
+        """Refresh the bid data from ShotGrid and update the bid info label in the Bids group."""
+        if not self.current_bid_id or not self.parent_app:
+            return
+
+        try:
+            # Fetch updated bid data from ShotGrid
+            updated_bid = self.sg_session.sg.find_one(
+                "CustomEntity06",
+                [["id", "is", self.current_bid_id]],
+                ["id", "code", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list", "description"]
+            )
+            if not updated_bid:
+                return
+
+            # Update current bid in bidding tab
+            if hasattr(self.parent_app, 'bidding_tab'):
+                self.parent_app.bidding_tab.current_bid = updated_bid
+                # Update bid selector's combo box data and info label
+                if hasattr(self.parent_app.bidding_tab, 'bid_selector'):
+                    bid_selector = self.parent_app.bidding_tab.bid_selector
+                    # Find and update the item in the combo
+                    combo = bid_selector.bid_combo
+                    for i in range(combo.count()):
+                        item_bid = combo.itemData(i)
+                        if isinstance(item_bid, dict) and item_bid.get('id') == self.current_bid_id:
+                            combo.setItemData(i, updated_bid)
+                            break
+                    # Update the bid info label
+                    bid_selector._update_bid_info_label(updated_bid)
+
+            logger.info(f"Bid {self.current_bid_id} refreshed with latest data.")
+        except Exception as e:
+            logger.warning(f"Failed to refresh Bid info label: {e}")
 
     def _on_add_price_list(self):
         """Add a new Price List using dialog with copy/new options."""
@@ -950,6 +972,22 @@ class RatesTab(QtWidgets.QWidget):
             return
 
         try:
+            # Check if this price list is assigned to the current bid and clear the reference
+            should_refresh_info_label = False
+            if self.current_bid_id and self.current_bid_data:
+                price_list_ref = self.current_bid_data.get("sg_price_list")
+                price_list_ref_id = None
+                if isinstance(price_list_ref, dict):
+                    price_list_ref_id = price_list_ref.get("id")
+                elif isinstance(price_list_ref, list) and price_list_ref:
+                    price_list_ref_id = price_list_ref[0].get("id") if price_list_ref[0] else None
+
+                if price_list_ref_id == price_list_id:
+                    # Clear the reference in the Bid
+                    self.sg_session.sg.update("CustomEntity06", self.current_bid_id, {"sg_price_list": None})
+                    logger.info(f"Cleared sg_price_list reference from Bid {self.current_bid_id}")
+                    should_refresh_info_label = True
+
             # Delete the Price List (CustomEntity10)
             self.sg_session.sg.delete("CustomEntity10", price_list_id)
 
@@ -958,6 +996,10 @@ class RatesTab(QtWidgets.QWidget):
 
             # Refresh list
             self._refresh_price_lists()
+
+            # Update the bid info label if the price list was assigned to current bid
+            if should_refresh_info_label:
+                self._refresh_bid_info_label()
 
         except Exception as e:
             logger.error(f"Failed to delete Price List: {e}", exc_info=True)
@@ -987,6 +1029,27 @@ class RatesTab(QtWidgets.QWidget):
         if not ok or not new_name or new_name == current_name:
             return
 
+        # Check for name clash with existing Price Lists
+        try:
+            filters = [
+                ["project", "is", {"type": "Project", "id": self.current_project_id}],
+                ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": self.current_bid_id}],
+                ["code", "is", new_name],
+                ["id", "is_not", price_list_id]
+            ]
+            existing = self.sg_session.sg.find("CustomEntity10", filters, ["id", "code"])
+
+            if existing:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Name Already Exists",
+                    f"A Price List with the name '{new_name}' already exists.\n\nPlease choose a different name."
+                )
+                return
+        except Exception as e:
+            logger.error(f"Failed to check for name clash: {e}", exc_info=True)
+            # Continue with rename attempt - let ShotGrid handle any conflict
+
         try:
             # Update the Price List name
             self.sg_session.sg.update("CustomEntity10", price_list_id, {"code": new_name})
@@ -994,11 +1057,28 @@ class RatesTab(QtWidgets.QWidget):
             logger.info(f"Renamed Price List from '{current_name}' to '{new_name}' (ID: {price_list_id})")
             self._set_price_lists_status(f"Renamed to '{new_name}'.")
 
+            # Check if this price list is assigned to the current bid
+            should_refresh_info_label = False
+            if self.current_bid_data:
+                price_list_ref = self.current_bid_data.get("sg_price_list")
+                price_list_ref_id = None
+                if isinstance(price_list_ref, dict):
+                    price_list_ref_id = price_list_ref.get("id")
+                elif isinstance(price_list_ref, list) and price_list_ref:
+                    price_list_ref_id = price_list_ref[0].get("id") if price_list_ref[0] else None
+
+                if price_list_ref_id == price_list_id:
+                    should_refresh_info_label = True
+
             # Refresh list and maintain selection
             current_index = self.price_lists_combo.currentIndex()
             self._refresh_price_lists()
             if current_index < self.price_lists_combo.count():
                 self.price_lists_combo.setCurrentIndex(current_index)
+
+            # Update the bid info label if the renamed price list is assigned to current bid
+            if should_refresh_info_label:
+                self._refresh_bid_info_label()
 
         except Exception as e:
             logger.error(f"Failed to rename Price List: {e}", exc_info=True)

@@ -356,27 +356,27 @@ class DeleteBiddingSceneCommand:
 class AddVFXBreakdownDialog(QtWidgets.QDialog):
     """Dialog for creating a new VFX Breakdown."""
 
-    def __init__(self, existing_breakdowns, sg_session=None, project_id=None, current_breakdown=None, parent=None):
+    def __init__(self, existing_breakdowns, sg_session=None, project_id=None, current_bid=None, parent=None):
         """Initialize the dialog.
 
         Args:
             existing_breakdowns: List of existing VFX Breakdown dicts with 'id' and 'code'
             sg_session: ShotgridClient instance for version checking
             project_id: Project ID for version checking
-            current_breakdown: Currently selected VFX Breakdown dict for name prefill
+            current_bid: Currently selected Bid dict for name prefill
             parent: Parent widget
         """
         super().__init__(parent)
         self.existing_breakdowns = existing_breakdowns
         self.sg_session = sg_session
         self.project_id = project_id
-        self.current_breakdown = current_breakdown
+        self.current_bid = current_bid
         self.setWindowTitle("Add VFX Breakdown")
         self.setModal(True)
         self.setMinimumWidth(400)
 
         self._build_ui()
-        self._prefill_name_from_current()
+        self._prefill_name_from_bid()
 
     def _build_ui(self):
         """Build the dialog UI."""
@@ -446,20 +446,22 @@ class AddVFXBreakdownDialog(QtWidgets.QDialog):
         if is_copy_mode:
             self.copy_combo.setStyleSheet("")
         else:
-            self.copy_combo.setStyleSheet("QComboBox:disabled { color: #666666; background-color: #1a1a1a; }")
+            self.copy_combo.setStyleSheet("QComboBox:disabled { color: #666666; background-color: #2d2d2d; }")
         # If switching to copy mode and a breakdown is already selected, update name
         if is_copy_mode and self.copy_combo.currentIndex() > 0:
             self._on_copy_selection_changed(self.copy_combo.currentIndex())
 
-    def _prefill_name_from_current(self):
-        """Prefill the Name field with the next version of the current breakdown's name."""
-        if not self.current_breakdown:
+    def _prefill_name_from_bid(self):
+        """Prefill the Name field with BidName-VFX Breakdown-v### format."""
+        if not self.current_bid:
             return
 
-        source_name = self.current_breakdown.get("code") or self.current_breakdown.get("name") or ""
-        if source_name:
-            next_name = self._get_next_version_name(source_name)
-            logger.info(f"Prefilling name field from current breakdown '{source_name}' -> '{next_name}'")
+        bid_name = self.current_bid.get("code") or self.current_bid.get("name") or ""
+        if bid_name:
+            # Build base name as "BidName-VFX Breakdown"
+            base_name = f"{bid_name}-VFX Breakdown"
+            next_name = self._get_next_vfx_breakdown_version(base_name)
+            logger.info(f"Prefilling name field from bid '{bid_name}' -> '{next_name}'")
             self.name_field.setText(next_name)
 
     def _on_copy_selection_changed(self, index):
@@ -566,6 +568,68 @@ class AddVFXBreakdownDialog(QtWidgets.QDialog):
         version_str = str(next_version).zfill(version_digits)
         return f"{name_without_version}{separator}v{version_str}"
 
+    def _get_next_vfx_breakdown_version(self, base_name):
+        """Calculate the next version name for VFX Breakdown based on existing breakdowns.
+
+        Takes a base name like "BidName-VFX Breakdown" and returns the next
+        available version "BidName-VFX Breakdown-v001", "BidName-VFX Breakdown-v002", etc.
+
+        Args:
+            base_name: The base name without version (e.g., "BidName-VFX Breakdown")
+
+        Returns:
+            str: The next version name (e.g., "BidName-VFX Breakdown-v001")
+        """
+        import re
+
+        logger.debug(f"_get_next_vfx_breakdown_version called with base_name='{base_name}'")
+
+        # Find the highest version number for this base name pattern
+        highest_version = 0
+
+        if self.sg_session and self.project_id:
+            try:
+                existing = self.sg_session.sg.find(
+                    "CustomEntity01",
+                    [["project", "is", {"type": "Project", "id": int(self.project_id)}]],
+                    ["code"]
+                )
+
+                # Build pattern to match similar names with versions: "BaseName-v###"
+                escaped_base = re.escape(base_name)
+                pattern = re.compile(rf'^{escaped_base}-[vV](\d+)$', re.IGNORECASE)
+
+                for entity in existing:
+                    code = entity.get("code", "")
+                    m = pattern.match(code)
+                    if m:
+                        version = int(m.group(1))
+                        logger.debug(f"Found matching breakdown '{code}' with version {version}")
+                        if version > highest_version:
+                            highest_version = version
+            except Exception as e:
+                logger.error(f"Failed to check existing versions: {e}")
+        else:
+            # Fallback: check against existing_breakdowns list
+            escaped_base = re.escape(base_name)
+            pattern = re.compile(rf'^{escaped_base}-[vV](\d+)$', re.IGNORECASE)
+
+            for breakdown in self.existing_breakdowns:
+                code = breakdown.get("code", "")
+                m = pattern.match(code)
+                if m:
+                    version = int(m.group(1))
+                    logger.debug(f"Found matching breakdown '{code}' with version {version}")
+                    if version > highest_version:
+                        highest_version = version
+
+        # Return the next version with 3-digit padding
+        next_version = highest_version + 1
+        version_str = str(next_version).zfill(3)
+        result = f"{base_name}-v{version_str}"
+        logger.debug(f"Next VFX Breakdown version: '{result}'")
+        return result
+
     def get_result(self):
         """Get the dialog result.
 
@@ -581,107 +645,6 @@ class AddVFXBreakdownDialog(QtWidgets.QDialog):
             "name": name,
             "source": source
         }
-
-
-class RemoveVFXBreakdownDialog(QtWidgets.QDialog):
-    """Dialog for removing a VFX Breakdown."""
-
-    def __init__(self, existing_breakdowns, parent=None):
-        """Initialize the dialog.
-
-        Args:
-            existing_breakdowns: List of existing VFX Breakdown dicts with 'id' and 'code'
-            parent: Parent widget
-        """
-        super().__init__(parent)
-        self.existing_breakdowns = existing_breakdowns
-        self.setWindowTitle("Remove VFX Breakdown")
-        self.setModal(True)
-        self.setMinimumWidth(450)
-
-        # Generate random confirmation string
-        self.confirmation_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-
-        self._build_ui()
-
-    def _build_ui(self):
-        """Build the dialog UI."""
-        layout = QtWidgets.QVBoxLayout(self)
-
-        # Warning message
-        warning_label = QtWidgets.QLabel(
-            "⚠️ WARNING: This action cannot be undone!\n"
-            "Deleting a VFX Breakdown will also delete all associated Bidding Scenes."
-        )
-        warning_label.setStyleSheet("color: #ff6666; font-weight: bold; padding: 10px;")
-        warning_label.setWordWrap(True)
-        layout.addWidget(warning_label)
-
-        # Select breakdown to delete
-        select_layout = QtWidgets.QHBoxLayout()
-        select_label = QtWidgets.QLabel("Select VFX Breakdown:")
-        select_layout.addWidget(select_label)
-
-        self.breakdown_combo = QtWidgets.QComboBox()
-        self.breakdown_combo.addItem("-- Select VFX Breakdown --", None)
-        for breakdown in self.existing_breakdowns:
-            label = breakdown.get("code") or breakdown.get("name") or f"ID {breakdown.get('id', 'N/A')}"
-            self.breakdown_combo.addItem(label, breakdown)
-        select_layout.addWidget(self.breakdown_combo, stretch=1)
-
-        layout.addLayout(select_layout)
-
-        # Confirmation section
-        layout.addSpacing(20)
-
-        confirm_label = QtWidgets.QLabel(
-            f"To confirm deletion, type the following string:\n\n{self.confirmation_string}"
-        )
-        confirm_label.setStyleSheet("font-weight: bold; padding: 10px;")
-        confirm_label.setAlignment(QtCore.Qt.AlignCenter)
-        layout.addWidget(confirm_label)
-
-        # Confirmation input
-        confirm_layout = QtWidgets.QHBoxLayout()
-        confirm_input_label = QtWidgets.QLabel("Confirmation:")
-        confirm_layout.addWidget(confirm_input_label)
-
-        self.confirmation_field = QtWidgets.QLineEdit()
-        self.confirmation_field.setPlaceholderText("Type confirmation string here...")
-        self.confirmation_field.textChanged.connect(self._on_confirmation_changed)
-        confirm_layout.addWidget(self.confirmation_field, stretch=1)
-
-        layout.addLayout(confirm_layout)
-
-        # Buttons
-        layout.addSpacing(20)
-        button_layout = QtWidgets.QHBoxLayout()
-        button_layout.addStretch()
-
-        self.delete_button = QtWidgets.QPushButton("Delete")
-        self.delete_button.setEnabled(False)
-        self.delete_button.setStyleSheet("background-color: #ff6666; color: white; font-weight: bold;")
-        self.delete_button.clicked.connect(self.accept)
-        button_layout.addWidget(self.delete_button)
-
-        self.cancel_button = QtWidgets.QPushButton("Cancel")
-        self.cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(self.cancel_button)
-
-        layout.addLayout(button_layout)
-
-    def _on_confirmation_changed(self, text):
-        """Handle confirmation text change."""
-        is_valid = (text == self.confirmation_string)
-        self.delete_button.setEnabled(is_valid)
-
-    def get_selected_breakdown(self):
-        """Get the selected breakdown to delete.
-
-        Returns:
-            dict: The selected breakdown or None
-        """
-        return self.breakdown_combo.currentData()
 
 
 class RenameVFXBreakdownDialog(QtWidgets.QDialog):
@@ -1113,7 +1076,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_combo = None
         self.vfx_breakdown_set_btn = None
         self.vfx_breakdown_refresh_btn = None
-        self.vfx_breakdown_status_label = None
 
         # Reusable breakdown widget (replaces direct table management)
         self.breakdown_widget = None
@@ -1123,6 +1085,9 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_shot_work_delegate = None  # Delegate for sg_vfx_shot_work column
 
         self._build_ui()
+
+        # Fetch schema early to populate column headers with user-friendly names
+        self._fetch_beats_schema()
 
     def _build_ui(self):
         """Build the VFX Breakdown tab UI."""
@@ -1147,7 +1112,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_set_btn.clicked.connect(self._on_set_current_vfx_breakdown)
         selector_row.addWidget(self.vfx_breakdown_set_btn)
 
-        self.vfx_breakdown_add_btn = QtWidgets.QPushButton("Add")
+        self.vfx_breakdown_add_btn = QtWidgets.QPushButton("Create")
         self.vfx_breakdown_add_btn.clicked.connect(self._on_add_vfx_breakdown)
         selector_row.addWidget(self.vfx_breakdown_add_btn)
 
@@ -1164,17 +1129,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         selector_row.addWidget(self.vfx_breakdown_refresh_btn)
 
         selector_group.addLayout(selector_row)
-
-        self.vfx_breakdown_status_label = QtWidgets.QLabel("Select an RFQ to view VFX Breakdowns.")
-        self.vfx_breakdown_status_label.setObjectName("vfxBreakdownStatusLabel")
-        self.vfx_breakdown_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        selector_group.addWidget(self.vfx_breakdown_status_label)
-
-        # Add info label for linked VFX Breakdown
-        self.vfx_breakdown_info_label = QtWidgets.QLabel("")
-        self.vfx_breakdown_info_label.setObjectName("vfxBreakdownInfoLabel")
-        self.vfx_breakdown_info_label.setStyleSheet("color: #6b9bd1; font-weight: bold; padding: 2px 0;")
-        selector_group.addWidget(self.vfx_breakdown_info_label)
 
         # Create reusable VFX Breakdown widget before adding selector_group to layout
         self.breakdown_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
@@ -1237,7 +1191,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     selected_rows.add(item.row())
                 if selected_rows:
                     # Delete the first selected row using existing delete method
-                    self._delete_beat(min(selected_rows))
+                    self._delete_bidding_scene(min(selected_rows))
                 return True
 
         return super().eventFilter(obj, event)
@@ -2236,20 +2190,23 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             updated_bid = self.sg_session.sg.find_one(
                 "CustomEntity06",
                 [["id", "is", bid_id]],
-                ["id", "code", "sg_bid_type", "sg_vfx_breakdown"]
+                ["id", "code", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list", "description"]
             )
             # Update the current bid in bidding tab
             if updated_bid and hasattr(self.parent_app, 'bidding_tab'):
                 self.parent_app.bidding_tab.current_bid = updated_bid
-                # Update bid selector's combo box data
+                # Update bid selector's combo box data and info label
                 if hasattr(self.parent_app.bidding_tab, 'bid_selector'):
+                    bid_selector = self.parent_app.bidding_tab.bid_selector
                     # Find and update the item in the combo
-                    combo = self.parent_app.bidding_tab.bid_selector.bid_combo
+                    combo = bid_selector.bid_combo
                     for i in range(combo.count()):
                         item_bid = combo.itemData(i)
                         if isinstance(item_bid, dict) and item_bid.get('id') == bid_id:
                             combo.setItemData(i, updated_bid)
                             break
+                    # Update the bid info label
+                    bid_selector._update_bid_info_label(updated_bid)
             logger.info(f"Bid {bid_id} refreshed with latest sg_vfx_breakdown link.")
         except Exception as e:
             logger.warning(f"Failed to refresh Bid after update: {e}")
@@ -2281,15 +2238,12 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             logger.error(f"Failed to fetch existing breakdowns: {e}", exc_info=True)
             existing_breakdowns = []
 
-        # Get current breakdown for name prefill
-        current_breakdown = self.vfx_breakdown_combo.currentData() if self.vfx_breakdown_combo else None
-
-        # Show dialog
+        # Show dialog (pass current bid for name prefill)
         dialog = AddVFXBreakdownDialog(
             existing_breakdowns,
             sg_session=self.sg_session,
             project_id=proj["id"],
-            current_breakdown=current_breakdown,
+            current_bid=current_bid,
             parent=self
         )
         if dialog.exec() != QtWidgets.QDialog.Accepted:
@@ -2389,54 +2343,70 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         if not self.parent_app:
             return
 
-        # Get current project
-        proj = self.parent_app.sg_project_combo.itemData(self.parent_app.sg_project_combo.currentIndex())
-        if not proj:
-            QtWidgets.QMessageBox.warning(self, "No Project Selected", "Please select a project first.")
-            return
-
-        # Get existing breakdowns for the dialog
-        try:
-            existing_breakdowns = self.sg_session.get_vfx_breakdowns(proj["id"], fields=["id", "code", "name"])
-        except Exception as e:
-            logger.error(f"Failed to fetch existing breakdowns: {e}", exc_info=True)
-            existing_breakdowns = []
-
-        if not existing_breakdowns:
-            QtWidgets.QMessageBox.information(self, "No Breakdowns", "There are no VFX Breakdowns to remove.")
-            return
-
-        # Show dialog
-        dialog = RemoveVFXBreakdownDialog(existing_breakdowns, parent=self)
-        if dialog.exec() != QtWidgets.QDialog.Accepted:
-            return
-
-        # Get selected breakdown
-        breakdown = dialog.get_selected_breakdown()
+        # Get currently selected breakdown
+        breakdown = self.vfx_breakdown_combo.currentData()
         if not breakdown:
-            QtWidgets.QMessageBox.warning(self, "No Selection", "Please select a VFX Breakdown to remove.")
+            QtWidgets.QMessageBox.warning(self, "No VFX Breakdown Selected", "Please select a VFX Breakdown to remove.")
             return
 
-        # Delete the VFX Breakdown
+        breakdown_id = breakdown.get("id")
+        breakdown_name = breakdown.get("code") or breakdown.get("name") or f"ID {breakdown_id}"
+
+        # Confirm deletion
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete VFX Breakdown '{breakdown_name}'?\n\n"
+            f"This will also delete all associated Bidding Scenes.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        # Delete the VFX Breakdown and its associated Bidding Scenes
         try:
-            breakdown_id = breakdown["id"]
-            breakdown_name = breakdown.get("code") or breakdown.get("name") or f"ID {breakdown_id}"
             entity_type = self.sg_session.get_vfx_breakdown_entity_type()
 
             logger.info(f"Deleting VFX Breakdown: {breakdown_name} (ID: {breakdown_id})")
 
-            # Delete from ShotGrid
+            # First, delete all associated Bidding Scenes (CustomEntity02)
+            bidding_scenes = self.sg_session.get_bidding_scenes_for_vfx_breakdown(breakdown_id, fields=["id"])
+            if bidding_scenes:
+                logger.info(f"Deleting {len(bidding_scenes)} associated Bidding Scenes")
+                for scene in bidding_scenes:
+                    self.sg_session.sg.delete("CustomEntity02", scene["id"])
+                logger.info(f"Successfully deleted {len(bidding_scenes)} Bidding Scenes")
+
+            # Check if this breakdown is assigned to the current bid and clear the reference
+            current_bid = getattr(self.parent_app.bidding_tab, 'current_bid', None) if hasattr(self.parent_app, 'bidding_tab') else None
+            if current_bid:
+                bid_breakdown = current_bid.get("sg_vfx_breakdown")
+                bid_breakdown_id = None
+                if isinstance(bid_breakdown, dict):
+                    bid_breakdown_id = bid_breakdown.get("id")
+                elif isinstance(bid_breakdown, list) and bid_breakdown:
+                    bid_breakdown_id = bid_breakdown[0].get("id") if bid_breakdown[0] else None
+
+                if bid_breakdown_id == breakdown_id:
+                    # Clear the reference in the Bid
+                    self.sg_session.sg.update("CustomEntity06", current_bid["id"], {"sg_vfx_breakdown": None})
+                    logger.info(f"Cleared sg_vfx_breakdown reference from Bid {current_bid['id']}")
+
+            # Delete the VFX Breakdown from ShotGrid
             self.sg_session.sg.delete(entity_type, breakdown_id)
 
             logger.info(f"Successfully deleted VFX Breakdown {breakdown_id}")
 
-            # Clear the table if this was the currently selected breakdown
-            current_breakdown = self.vfx_breakdown_combo.currentData()
-            if current_breakdown and current_breakdown.get("id") == breakdown_id:
-                self._clear_vfx_breakdown_table()
+            # Clear the table
+            self._clear_vfx_breakdown_table()
 
             # Refresh the combo box
             self._refresh_vfx_breakdowns()
+
+            # Update the bid info label if the breakdown was assigned to current bid
+            if current_bid and bid_breakdown_id == breakdown_id:
+                self._refresh_bid_info_label()
 
             QtWidgets.QMessageBox.information(
                 self,
@@ -2451,6 +2421,50 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 "Error",
                 f"Failed to delete VFX Breakdown:\n{str(e)}"
             )
+
+    def _refresh_bid_info_label(self):
+        """Refresh the bid data from ShotGrid and update the bid info label in the Bids group."""
+        if not self.parent_app:
+            return
+
+        # Get current bid
+        current_bid = getattr(self.parent_app.bidding_tab, 'current_bid', None) if hasattr(self.parent_app, 'bidding_tab') else None
+        if not current_bid:
+            return
+
+        bid_id = current_bid.get("id")
+        if not bid_id:
+            return
+
+        try:
+            # Fetch updated bid data from ShotGrid
+            updated_bid = self.sg_session.sg.find_one(
+                "CustomEntity06",
+                [["id", "is", bid_id]],
+                ["id", "code", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list", "description"]
+            )
+            if not updated_bid:
+                return
+
+            # Update current bid in bidding tab
+            if hasattr(self.parent_app, 'bidding_tab'):
+                self.parent_app.bidding_tab.current_bid = updated_bid
+                # Update bid selector's combo box data and info label
+                if hasattr(self.parent_app.bidding_tab, 'bid_selector'):
+                    bid_selector = self.parent_app.bidding_tab.bid_selector
+                    # Find and update the item in the combo
+                    combo = bid_selector.bid_combo
+                    for i in range(combo.count()):
+                        item_bid = combo.itemData(i)
+                        if isinstance(item_bid, dict) and item_bid.get('id') == bid_id:
+                            combo.setItemData(i, updated_bid)
+                            break
+                    # Update the bid info label
+                    bid_selector._update_bid_info_label(updated_bid)
+
+            logger.info(f"Bid {bid_id} refreshed with latest data.")
+        except Exception as e:
+            logger.warning(f"Failed to refresh Bid info label: {e}")
 
     def _on_rename_vfx_breakdown(self):
         """Handle Rename VFX Breakdown button click."""
@@ -2481,11 +2495,41 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         if new_name == current_name:
             return
 
+        breakdown_id = breakdown["id"]
+        entity_type = self.sg_session.get_vfx_breakdown_entity_type()
+
+        # Get project and bid context from parent app
+        proj = self.parent_app.sg_project_combo.itemData(self.parent_app.sg_project_combo.currentIndex()) if self.parent_app else None
+        project_id = proj.get("id") if proj else None
+        current_bid = getattr(self.parent_app.bidding_tab, 'current_bid', None) if hasattr(self.parent_app, 'bidding_tab') else None
+        bid_id = current_bid.get("id") if current_bid else None
+
+        # Check for name clash with existing VFX Breakdowns
+        try:
+            filters = [
+                ["code", "is", new_name],
+                ["id", "is_not", breakdown_id]
+            ]
+            if project_id:
+                filters.append(["project", "is", {"type": "Project", "id": project_id}])
+            if bid_id:
+                filters.append(["sg_parent_bid", "is", {"type": "CustomEntity06", "id": bid_id}])
+
+            existing = self.sg_session.sg.find(entity_type, filters, ["id", "code"])
+
+            if existing:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Name Already Exists",
+                    f"A VFX Breakdown with the name '{new_name}' already exists.\n\nPlease choose a different name."
+                )
+                return
+        except Exception as e:
+            logger.error(f"Failed to check for name clash: {e}", exc_info=True)
+            # Continue with rename attempt - let ShotGrid handle any conflict
+
         # Rename the VFX Breakdown
         try:
-            breakdown_id = breakdown["id"]
-            entity_type = self.sg_session.get_vfx_breakdown_entity_type()
-
             logger.info(f"Renaming VFX Breakdown {breakdown_id}: '{current_name}' -> '{new_name}'")
 
             # Update in ShotGrid
@@ -2493,9 +2537,26 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
             logger.info(f"Successfully renamed VFX Breakdown {breakdown_id}")
 
+            # Check if this breakdown is assigned to the current bid
+            should_refresh_info_label = False
+            if current_bid:
+                vfx_breakdown_ref = current_bid.get("sg_vfx_breakdown")
+                vfx_breakdown_ref_id = None
+                if isinstance(vfx_breakdown_ref, dict):
+                    vfx_breakdown_ref_id = vfx_breakdown_ref.get("id")
+                elif isinstance(vfx_breakdown_ref, list) and vfx_breakdown_ref:
+                    vfx_breakdown_ref_id = vfx_breakdown_ref[0].get("id") if vfx_breakdown_ref[0] else None
+
+                if vfx_breakdown_ref_id == breakdown_id:
+                    should_refresh_info_label = True
+
             # Refresh the combo box and maintain selection
             self._refresh_vfx_breakdowns()
             self._select_vfx_breakdown_by_id(breakdown_id)
+
+            # Update the bid info label if the renamed breakdown is assigned to current bid
+            if should_refresh_info_label:
+                self._refresh_bid_info_label()
 
             # Update RFQ label if this breakdown is currently set for the RFQ
             if self.parent_app:
@@ -2529,7 +2590,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             )
 
     def _create_empty_vfx_breakdown(self, project_id, name, bid_id=None):
-        """Create an empty VFX Breakdown.
+        """Create an empty VFX Breakdown with an initial Bidding Scene.
 
         Args:
             project_id: Project ID
@@ -2553,6 +2614,20 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         logger.info(f"Creating empty VFX Breakdown: {data}")
         result = self.sg_session.sg.create(entity_type, data)
         logger.info(f"Created VFX Breakdown: {result}")
+
+        # Create an initial default Bidding Scene (this row cannot be removed)
+        try:
+            new_breakdown_id = result["id"]
+            initial_scene_data = {
+                "code": "New Bidding Scene",
+                "project": {"type": "Project", "id": project_id},
+                "sg_parent": {"type": entity_type, "id": new_breakdown_id}
+            }
+            initial_scene = self.sg_session.sg.create("CustomEntity02", initial_scene_data)
+            logger.info(f"Created initial Bidding Scene {initial_scene['id']} for VFX Breakdown {new_breakdown_id}")
+        except Exception as e:
+            logger.error(f"Failed to create initial Bidding Scene: {e}", exc_info=True)
+            # Don't fail the VFX Breakdown creation if the initial scene fails
 
         return result
 
@@ -2800,42 +2875,40 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             # If no linked breakdown, leave at placeholder (index 0)
             # Don't auto-select the first breakdown - user must explicitly choose
 
-            # Update info label to show linked VFX Breakdown from current Bid
-            self._update_vfx_breakdown_info_label()
+            # Update group box additional info to show linked VFX Breakdown from current Bid
+            self._update_vfx_breakdown_group_info()
         else:
             self._set_vfx_breakdown_status("No VFX Breakdowns found for this Bid.")
             self._clear_vfx_breakdown_table()
-            self.vfx_breakdown_info_label.setText("")
+            self.vfx_breakdown_selector_group.setAdditionalInfo("")
 
     def _set_vfx_breakdown_status(self, message, is_error=False):
-        """Set the status message.
+        """Log the status message.
 
         Args:
-            message: Status message to display
-            is_error: Whether this is an error message (changes color)
+            message: Status message to log
+            is_error: Whether this is an error message
         """
-        color = "#ff8080" if is_error else "#a0a0a0"
-        self.vfx_breakdown_status_label.setStyleSheet(f"color: {color}; padding: 2px 0;")
-        self.vfx_breakdown_status_label.setText(message)
+        if is_error:
+            logger.warning(f"VFX Breakdown status: {message}")
+        else:
+            logger.info(f"VFX Breakdown status: {message}")
 
-    def _update_vfx_breakdown_info_label(self):
-        """Update the info label to show linked VFX Breakdown from current Bid."""
+    def _update_vfx_breakdown_group_info(self):
+        """Update the group box additional info to show linked VFX Breakdown from current Bid."""
         if not self.parent_app or not hasattr(self.parent_app, 'bidding_tab'):
-            self.vfx_breakdown_info_label.setText("")
             self.vfx_breakdown_selector_group.setAdditionalInfo("")
             return
 
         # Get current bid from bidding tab
         bid = getattr(self.parent_app.bidding_tab, 'current_bid', None)
         if not bid:
-            self.vfx_breakdown_info_label.setText("")
             self.vfx_breakdown_selector_group.setAdditionalInfo("")
             return
 
         # Get linked VFX Breakdown from Bid
         linked_breakdown = bid.get("sg_vfx_breakdown")
         if not linked_breakdown:
-            self.vfx_breakdown_info_label.setText("")
             self.vfx_breakdown_selector_group.setAdditionalInfo("")
             return
 
@@ -2850,10 +2923,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 breakdown_name = first_breakdown.get("name") or first_breakdown.get("code") or f"ID {first_breakdown.get('id', 'N/A')}"
 
         if breakdown_name:
-            self.vfx_breakdown_info_label.setText(f"Linked to current Bid: {breakdown_name}")
             self.vfx_breakdown_selector_group.setAdditionalInfo(f"Linked to current Bid: {breakdown_name}")
         else:
-            self.vfx_breakdown_info_label.setText("")
             self.vfx_breakdown_selector_group.setAdditionalInfo("")
 
     def _clear_vfx_breakdown_table(self):

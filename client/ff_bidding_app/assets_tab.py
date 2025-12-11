@@ -59,7 +59,6 @@ class AssetsTab(QtWidgets.QWidget):
         self.bid_assets_combo = None
         self.bid_assets_set_btn = None
         self.bid_assets_refresh_btn = None
-        self.bid_assets_status_label = None
 
         # Reusable assets widget (uses VFXBreakdownWidget for table display)
         self.assets_widget = None
@@ -69,6 +68,9 @@ class AssetsTab(QtWidgets.QWidget):
         self.asset_type_delegate = None  # Delegate for sg_bid_asset_type column
 
         self._build_ui()
+
+        # Fetch schema early to populate column headers with user-friendly names
+        self._fetch_asset_schema()
 
     def _build_ui(self):
         """Build the Assets tab UI."""
@@ -93,7 +95,7 @@ class AssetsTab(QtWidgets.QWidget):
         self.bid_assets_set_btn.clicked.connect(self._on_set_current_bid_assets)
         selector_row.addWidget(self.bid_assets_set_btn)
 
-        self.bid_assets_add_btn = QtWidgets.QPushButton("Add")
+        self.bid_assets_add_btn = QtWidgets.QPushButton("Create")
         self.bid_assets_add_btn.clicked.connect(self._on_add_bid_assets)
         selector_row.addWidget(self.bid_assets_add_btn)
 
@@ -110,17 +112,6 @@ class AssetsTab(QtWidgets.QWidget):
         selector_row.addWidget(self.bid_assets_refresh_btn)
 
         selector_group.addLayout(selector_row)
-
-        self.bid_assets_status_label = QtWidgets.QLabel("Select a Bid to view Bid Assets.")
-        self.bid_assets_status_label.setObjectName("bidAssetsStatusLabel")
-        self.bid_assets_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        selector_group.addWidget(self.bid_assets_status_label)
-
-        # Add info label for linked Bid Assets
-        self.bid_assets_info_label = QtWidgets.QLabel("")
-        self.bid_assets_info_label.setObjectName("bidAssetsInfoLabel")
-        self.bid_assets_info_label.setStyleSheet("color: #6b9bd1; font-weight: bold; padding: 2px 0;")
-        selector_group.addWidget(self.bid_assets_info_label)
 
         # Create reusable Assets widget (reusing VFXBreakdownWidget) before adding selector_group to layout
         self.assets_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, settings_key="assets", parent=self)
@@ -149,39 +140,34 @@ class AssetsTab(QtWidgets.QWidget):
         self._set_bid_assets_status(message, is_error)
 
     def _set_bid_assets_status(self, message, is_error=False):
-        """Set the status message for bid assets.
+        """Log the status message for bid assets.
 
         Args:
-            message: Status message
+            message: Status message to log
             is_error: Whether this is an error message
         """
         if is_error:
-            self.bid_assets_status_label.setStyleSheet("color: #ff6b6b; padding: 2px 0;")
+            logger.warning(f"Bid Assets status: {message}")
         else:
-            self.bid_assets_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        self.bid_assets_status_label.setText(message)
+            logger.info(f"Bid Assets status: {message}")
 
-    def _update_bid_assets_info_label(self):
-        """Update the info label to show linked Bid Assets from current Bid."""
+    def _update_bid_assets_group_info(self):
+        """Update the group box additional info to show linked Bid Assets from current Bid."""
         if not self.current_bid_data:
-            self.bid_assets_info_label.setText("")
             self.bid_assets_selector_group.setAdditionalInfo("")
             return
 
         # Get linked Bid Assets from Bid
         linked_bid_assets = self.current_bid_data.get("sg_bid_assets")
         if not linked_bid_assets:
-            self.bid_assets_info_label.setText("")
             self.bid_assets_selector_group.setAdditionalInfo("")
             return
 
         # Extract bid assets name
         if isinstance(linked_bid_assets, dict):
             bid_assets_name = linked_bid_assets.get("name") or linked_bid_assets.get("code") or f"ID {linked_bid_assets.get('id', 'N/A')}"
-            self.bid_assets_info_label.setText(f"Linked to current Bid: {bid_assets_name}")
             self.bid_assets_selector_group.setAdditionalInfo(f"Linked to current Bid: {bid_assets_name}")
         else:
-            self.bid_assets_info_label.setText("")
             self.bid_assets_selector_group.setAdditionalInfo("")
 
     def set_bid(self, bid_data, project_id):
@@ -308,13 +294,13 @@ class AssetsTab(QtWidgets.QWidget):
                 # If no linked Bid Assets, leave at placeholder (index 0)
                 # Don't auto-select - user must explicitly choose
 
-                # Update info label to show linked Bid Assets
-                self._update_bid_assets_info_label()
+                # Update group box additional info to show linked Bid Assets
+                self._update_bid_assets_group_info()
             else:
                 self._set_bid_assets_status("No Bid Assets found for this project.")
                 self.bid_assets_set_btn.setEnabled(False)
                 self.assets_widget.clear_data()
-                self.bid_assets_info_label.setText("")
+                self.bid_assets_selector_group.setAdditionalInfo("")
 
         except Exception as e:
             logger.error(f"Failed to refresh Bid Assets: {e}", exc_info=True)
@@ -488,6 +474,10 @@ class AssetsTab(QtWidgets.QWidget):
 
             bid_assets_name = self.bid_assets_combo.currentText()
             self._set_bid_assets_status(f"Set '{bid_assets_name}' as current Bid Assets.")
+
+            # Refresh the bid data and update the bid info label
+            self._refresh_bid_info_label()
+
             QtWidgets.QMessageBox.information(
                 self,
                 "Success",
@@ -503,6 +493,41 @@ class AssetsTab(QtWidgets.QWidget):
                 "Error",
                 f"Failed to set current Bid Assets:\n{str(e)}"
             )
+
+    def _refresh_bid_info_label(self):
+        """Refresh the bid data from ShotGrid and update the bid info label in the Bids group."""
+        if not self.current_bid_id or not self.parent_app:
+            return
+
+        try:
+            # Fetch updated bid data from ShotGrid
+            updated_bid = self.sg_session.sg.find_one(
+                "CustomEntity06",
+                [["id", "is", self.current_bid_id]],
+                ["id", "code", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list", "description"]
+            )
+            if not updated_bid:
+                return
+
+            # Update current bid in bidding tab
+            if hasattr(self.parent_app, 'bidding_tab'):
+                self.parent_app.bidding_tab.current_bid = updated_bid
+                # Update bid selector's combo box data and info label
+                if hasattr(self.parent_app.bidding_tab, 'bid_selector'):
+                    bid_selector = self.parent_app.bidding_tab.bid_selector
+                    # Find and update the item in the combo
+                    combo = bid_selector.bid_combo
+                    for i in range(combo.count()):
+                        item_bid = combo.itemData(i)
+                        if isinstance(item_bid, dict) and item_bid.get('id') == self.current_bid_id:
+                            combo.setItemData(i, updated_bid)
+                            break
+                    # Update the bid info label
+                    bid_selector._update_bid_info_label(updated_bid)
+
+            logger.info(f"Bid {self.current_bid_id} refreshed with latest data.")
+        except Exception as e:
+            logger.warning(f"Failed to refresh Bid info label: {e}")
 
     def _on_add_bid_assets(self):
         """Add a new Bid Assets."""
@@ -575,6 +600,22 @@ class AssetsTab(QtWidgets.QWidget):
             return
 
         try:
+            # Check if this bid assets is assigned to the current bid and clear the reference
+            should_refresh_info_label = False
+            if self.current_bid_id and self.current_bid_data:
+                bid_assets_ref = self.current_bid_data.get("sg_bid_assets")
+                bid_assets_ref_id = None
+                if isinstance(bid_assets_ref, dict):
+                    bid_assets_ref_id = bid_assets_ref.get("id")
+                elif isinstance(bid_assets_ref, list) and bid_assets_ref:
+                    bid_assets_ref_id = bid_assets_ref[0].get("id") if bid_assets_ref[0] else None
+
+                if bid_assets_ref_id == bid_assets_id:
+                    # Clear the reference in the Bid
+                    self.sg_session.sg.update("CustomEntity06", self.current_bid_id, {"sg_bid_assets": None})
+                    logger.info(f"Cleared sg_bid_assets reference from Bid {self.current_bid_id}")
+                    should_refresh_info_label = True
+
             # Delete the Bid Assets (CustomEntity08)
             self.sg_session.sg.delete("CustomEntity08", bid_assets_id)
 
@@ -583,6 +624,10 @@ class AssetsTab(QtWidgets.QWidget):
 
             # Refresh list
             self._refresh_bid_assets()
+
+            # Update the bid info label if the bid assets was assigned to current bid
+            if should_refresh_info_label:
+                self._refresh_bid_info_label()
 
         except Exception as e:
             logger.error(f"Failed to delete Bid Assets: {e}", exc_info=True)
@@ -612,6 +657,27 @@ class AssetsTab(QtWidgets.QWidget):
         if not ok or not new_name or new_name == current_name:
             return
 
+        # Check for name clash with existing Bid Assets
+        try:
+            filters = [
+                ["project", "is", {"type": "Project", "id": self.current_project_id}],
+                ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": self.current_bid_id}],
+                ["code", "is", new_name],
+                ["id", "is_not", bid_assets_id]
+            ]
+            existing = self.sg_session.sg.find("CustomEntity08", filters, ["id", "code"])
+
+            if existing:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Name Already Exists",
+                    f"A Bid Assets with the name '{new_name}' already exists.\n\nPlease choose a different name."
+                )
+                return
+        except Exception as e:
+            logger.error(f"Failed to check for name clash: {e}", exc_info=True)
+            # Continue with rename attempt - let ShotGrid handle any conflict
+
         try:
             # Update the Bid Assets name
             self.sg_session.sg.update("CustomEntity08", bid_assets_id, {"code": new_name})
@@ -619,11 +685,28 @@ class AssetsTab(QtWidgets.QWidget):
             logger.info(f"Renamed Bid Assets from '{current_name}' to '{new_name}' (ID: {bid_assets_id})")
             self._set_bid_assets_status(f"Renamed to '{new_name}'.")
 
+            # Check if this bid assets is assigned to the current bid
+            should_refresh_info_label = False
+            if self.current_bid_data:
+                bid_assets_ref = self.current_bid_data.get("sg_bid_assets")
+                bid_assets_ref_id = None
+                if isinstance(bid_assets_ref, dict):
+                    bid_assets_ref_id = bid_assets_ref.get("id")
+                elif isinstance(bid_assets_ref, list) and bid_assets_ref:
+                    bid_assets_ref_id = bid_assets_ref[0].get("id") if bid_assets_ref[0] else None
+
+                if bid_assets_ref_id == bid_assets_id:
+                    should_refresh_info_label = True
+
             # Refresh list and maintain selection
             current_index = self.bid_assets_combo.currentIndex()
             self._refresh_bid_assets()
             if current_index < self.bid_assets_combo.count():
                 self.bid_assets_combo.setCurrentIndex(current_index)
+
+            # Update the bid info label if the renamed bid assets is assigned to current bid
+            if should_refresh_info_label:
+                self._refresh_bid_info_label()
 
         except Exception as e:
             logger.error(f"Failed to rename Bid Assets: {e}", exc_info=True)

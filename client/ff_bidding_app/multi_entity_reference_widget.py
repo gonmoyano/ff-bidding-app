@@ -182,6 +182,7 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         # Colors for custom painting
         self.bg_color = QtGui.QColor("#2b2b2b")      # Normal background
         self.border_color = QtGui.QColor("#0078d4")  # Border color (used when selected/editing)
+        self.grid_border_color = QtGui.QColor("#3a3a3a")  # Grid border color (normal state, matches table grid)
         self.border_width = 1                         # Border width in pixels
 
         self._setup_ui()
@@ -393,12 +394,14 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         # Draw background (always fill)
         painter.fillRect(rect, self.bg_color)
 
-        # Only draw border when selected or editing (normal state has no border like table cells)
+        # Always draw border - use blue when selected/editing, grid color otherwise
         if self._is_selected or self._is_editing:
             painter.setPen(QtGui.QPen(self.border_color, self.border_width))
-            painter.setBrush(QtCore.Qt.NoBrush)
-            # Draw rect without fill, adjusted to fit within widget bounds
-            painter.drawRect(rect.adjusted(0, 0, -1, -1))
+        else:
+            painter.setPen(QtGui.QPen(self.grid_border_color, self.border_width))
+        painter.setBrush(QtCore.Qt.NoBrush)
+        # Draw rect without fill, adjusted to fit within widget bounds
+        painter.drawRect(rect.adjusted(0, 0, -1, -1))
 
     def set_selected(self, selected):
         """Set the selection state of the widget.
