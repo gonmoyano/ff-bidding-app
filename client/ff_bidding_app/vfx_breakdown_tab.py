@@ -647,107 +647,6 @@ class AddVFXBreakdownDialog(QtWidgets.QDialog):
         }
 
 
-class RemoveVFXBreakdownDialog(QtWidgets.QDialog):
-    """Dialog for removing a VFX Breakdown."""
-
-    def __init__(self, existing_breakdowns, parent=None):
-        """Initialize the dialog.
-
-        Args:
-            existing_breakdowns: List of existing VFX Breakdown dicts with 'id' and 'code'
-            parent: Parent widget
-        """
-        super().__init__(parent)
-        self.existing_breakdowns = existing_breakdowns
-        self.setWindowTitle("Remove VFX Breakdown")
-        self.setModal(True)
-        self.setMinimumWidth(450)
-
-        # Generate random confirmation string
-        self.confirmation_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-
-        self._build_ui()
-
-    def _build_ui(self):
-        """Build the dialog UI."""
-        layout = QtWidgets.QVBoxLayout(self)
-
-        # Warning message
-        warning_label = QtWidgets.QLabel(
-            "⚠️ WARNING: This action cannot be undone!\n"
-            "Deleting a VFX Breakdown will also delete all associated Bidding Scenes."
-        )
-        warning_label.setStyleSheet("color: #ff6666; font-weight: bold; padding: 10px;")
-        warning_label.setWordWrap(True)
-        layout.addWidget(warning_label)
-
-        # Select breakdown to delete
-        select_layout = QtWidgets.QHBoxLayout()
-        select_label = QtWidgets.QLabel("Select VFX Breakdown:")
-        select_layout.addWidget(select_label)
-
-        self.breakdown_combo = QtWidgets.QComboBox()
-        self.breakdown_combo.addItem("-- Select VFX Breakdown --", None)
-        for breakdown in self.existing_breakdowns:
-            label = breakdown.get("code") or breakdown.get("name") or f"ID {breakdown.get('id', 'N/A')}"
-            self.breakdown_combo.addItem(label, breakdown)
-        select_layout.addWidget(self.breakdown_combo, stretch=1)
-
-        layout.addLayout(select_layout)
-
-        # Confirmation section
-        layout.addSpacing(20)
-
-        confirm_label = QtWidgets.QLabel(
-            f"To confirm deletion, type the following string:\n\n{self.confirmation_string}"
-        )
-        confirm_label.setStyleSheet("font-weight: bold; padding: 10px;")
-        confirm_label.setAlignment(QtCore.Qt.AlignCenter)
-        layout.addWidget(confirm_label)
-
-        # Confirmation input
-        confirm_layout = QtWidgets.QHBoxLayout()
-        confirm_input_label = QtWidgets.QLabel("Confirmation:")
-        confirm_layout.addWidget(confirm_input_label)
-
-        self.confirmation_field = QtWidgets.QLineEdit()
-        self.confirmation_field.setPlaceholderText("Type confirmation string here...")
-        self.confirmation_field.textChanged.connect(self._on_confirmation_changed)
-        confirm_layout.addWidget(self.confirmation_field, stretch=1)
-
-        layout.addLayout(confirm_layout)
-
-        # Buttons
-        layout.addSpacing(20)
-        button_layout = QtWidgets.QHBoxLayout()
-        button_layout.addStretch()
-
-        self.delete_button = QtWidgets.QPushButton("Delete")
-        self.delete_button.setEnabled(False)
-        self.delete_button.setStyleSheet("background-color: #ff6666; color: white; font-weight: bold;")
-        self.delete_button.clicked.connect(self.accept)
-        button_layout.addWidget(self.delete_button)
-
-        self.cancel_button = QtWidgets.QPushButton("Cancel")
-        self.cancel_button.clicked.connect(self.reject)
-        button_layout.addWidget(self.cancel_button)
-
-        layout.addLayout(button_layout)
-
-    def _on_confirmation_changed(self, text):
-        """Handle confirmation text change."""
-        is_valid = (text == self.confirmation_string)
-        self.delete_button.setEnabled(is_valid)
-
-    def get_selected_breakdown(self):
-        """Get the selected breakdown to delete.
-
-        Returns:
-            dict: The selected breakdown or None
-        """
-        return self.breakdown_combo.currentData()
-
-
 class RenameVFXBreakdownDialog(QtWidgets.QDialog):
     """Dialog for renaming a VFX Breakdown."""
 
@@ -2453,38 +2352,29 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         if not self.parent_app:
             return
 
-        # Get current project
-        proj = self.parent_app.sg_project_combo.itemData(self.parent_app.sg_project_combo.currentIndex())
-        if not proj:
-            QtWidgets.QMessageBox.warning(self, "No Project Selected", "Please select a project first.")
-            return
-
-        # Get existing breakdowns for the dialog
-        try:
-            existing_breakdowns = self.sg_session.get_vfx_breakdowns(proj["id"], fields=["id", "code", "name"])
-        except Exception as e:
-            logger.error(f"Failed to fetch existing breakdowns: {e}", exc_info=True)
-            existing_breakdowns = []
-
-        if not existing_breakdowns:
-            QtWidgets.QMessageBox.information(self, "No Breakdowns", "There are no VFX Breakdowns to remove.")
-            return
-
-        # Show dialog
-        dialog = RemoveVFXBreakdownDialog(existing_breakdowns, parent=self)
-        if dialog.exec() != QtWidgets.QDialog.Accepted:
-            return
-
-        # Get selected breakdown
-        breakdown = dialog.get_selected_breakdown()
+        # Get currently selected breakdown
+        breakdown = self.vfx_breakdown_combo.currentData()
         if not breakdown:
-            QtWidgets.QMessageBox.warning(self, "No Selection", "Please select a VFX Breakdown to remove.")
+            QtWidgets.QMessageBox.warning(self, "No VFX Breakdown Selected", "Please select a VFX Breakdown to remove.")
+            return
+
+        breakdown_id = breakdown.get("id")
+        breakdown_name = breakdown.get("code") or breakdown.get("name") or f"ID {breakdown_id}"
+
+        # Confirm deletion
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete VFX Breakdown '{breakdown_name}'?\n\n"
+            f"This will also delete all associated Bidding Scenes.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if reply != QtWidgets.QMessageBox.Yes:
             return
 
         # Delete the VFX Breakdown
         try:
-            breakdown_id = breakdown["id"]
-            breakdown_name = breakdown.get("code") or breakdown.get("name") or f"ID {breakdown_id}"
             entity_type = self.sg_session.get_vfx_breakdown_entity_type()
 
             logger.info(f"Deleting VFX Breakdown: {breakdown_name} (ID: {breakdown_id})")
@@ -2494,10 +2384,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
             logger.info(f"Successfully deleted VFX Breakdown {breakdown_id}")
 
-            # Clear the table if this was the currently selected breakdown
-            current_breakdown = self.vfx_breakdown_combo.currentData()
-            if current_breakdown and current_breakdown.get("id") == breakdown_id:
-                self._clear_vfx_breakdown_table()
+            # Clear the table
+            self._clear_vfx_breakdown_table()
 
             # Refresh the combo box
             self._refresh_vfx_breakdowns()
