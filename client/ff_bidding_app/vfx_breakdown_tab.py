@@ -1188,7 +1188,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     selected_rows.add(item.row())
                 if selected_rows:
                     # Delete the first selected row using existing delete method
-                    self._delete_beat(min(selected_rows))
+                    self._delete_bidding_scene(min(selected_rows))
                 return True
 
         return super().eventFilter(obj, event)
@@ -2587,7 +2587,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             )
 
     def _create_empty_vfx_breakdown(self, project_id, name, bid_id=None):
-        """Create an empty VFX Breakdown.
+        """Create an empty VFX Breakdown with an initial Bidding Scene.
 
         Args:
             project_id: Project ID
@@ -2611,6 +2611,20 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         logger.info(f"Creating empty VFX Breakdown: {data}")
         result = self.sg_session.sg.create(entity_type, data)
         logger.info(f"Created VFX Breakdown: {result}")
+
+        # Create an initial default Bidding Scene (this row cannot be removed)
+        try:
+            new_breakdown_id = result["id"]
+            initial_scene_data = {
+                "code": "New Bidding Scene",
+                "project": {"type": "Project", "id": project_id},
+                "sg_vfx_breakdown": {"type": entity_type, "id": new_breakdown_id}
+            }
+            initial_scene = self.sg_session.sg.create("CustomEntity02", initial_scene_data)
+            logger.info(f"Created initial Bidding Scene {initial_scene['id']} for VFX Breakdown {new_breakdown_id}")
+        except Exception as e:
+            logger.error(f"Failed to create initial Bidding Scene: {e}", exc_info=True)
+            # Don't fail the VFX Breakdown creation if the initial scene fails
 
         return result
 
