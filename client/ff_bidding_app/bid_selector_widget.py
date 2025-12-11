@@ -346,7 +346,6 @@ class AddBidDialog(QtWidgets.QDialog):
             if bid_type:
                 display_text += f" ({bid_type})"
             self.source_combo.addItem(display_text, bid["id"])
-        self.source_combo.currentIndexChanged.connect(self._on_source_bid_changed)
         self.source_combo_layout.addWidget(self.source_combo, stretch=1)
 
         copy_container_layout.addLayout(self.source_combo_layout)
@@ -384,56 +383,23 @@ class AddBidDialog(QtWidgets.QDialog):
         self.copy_options_layout = QtWidgets.QVBoxLayout()
         self.copy_options_layout.setContentsMargins(20, 5, 0, 0)  # Indent
 
-        # VFX Breakdown checkbox and name field
+        # VFX Breakdown checkbox
         self.copy_vfx_breakdown_checkbox = TickCheckBox("Copy VFX Breakdown (with Bidding Scenes)")
         self.copy_vfx_breakdown_checkbox.setStyleSheet(checkbox_style)
         self.copy_vfx_breakdown_checkbox.setChecked(True)
-        self.copy_vfx_breakdown_checkbox.toggled.connect(self._on_vfx_checkbox_toggled)
         self.copy_options_layout.addWidget(self.copy_vfx_breakdown_checkbox)
 
-        vfx_name_layout = QtWidgets.QHBoxLayout()
-        vfx_name_layout.setContentsMargins(24, 0, 0, 5)
-        vfx_name_label = QtWidgets.QLabel("Name:")
-        vfx_name_label.setStyleSheet("color: #888888;")
-        vfx_name_layout.addWidget(vfx_name_label)
-        self.vfx_breakdown_name_field = QtWidgets.QLineEdit()
-        self.vfx_breakdown_name_field.setPlaceholderText("VFX Breakdown name...")
-        vfx_name_layout.addWidget(self.vfx_breakdown_name_field, stretch=1)
-        self.copy_options_layout.addLayout(vfx_name_layout)
-
-        # Bid Assets checkbox and name field
+        # Bid Assets checkbox
         self.copy_bid_assets_checkbox = TickCheckBox("Copy Bid Assets (with Asset Items)")
         self.copy_bid_assets_checkbox.setStyleSheet(checkbox_style)
         self.copy_bid_assets_checkbox.setChecked(True)
-        self.copy_bid_assets_checkbox.toggled.connect(self._on_assets_checkbox_toggled)
         self.copy_options_layout.addWidget(self.copy_bid_assets_checkbox)
 
-        assets_name_layout = QtWidgets.QHBoxLayout()
-        assets_name_layout.setContentsMargins(24, 0, 0, 5)
-        assets_name_label = QtWidgets.QLabel("Name:")
-        assets_name_label.setStyleSheet("color: #888888;")
-        assets_name_layout.addWidget(assets_name_label)
-        self.bid_assets_name_field = QtWidgets.QLineEdit()
-        self.bid_assets_name_field.setPlaceholderText("Bid Assets name...")
-        assets_name_layout.addWidget(self.bid_assets_name_field, stretch=1)
-        self.copy_options_layout.addLayout(assets_name_layout)
-
-        # Price List checkbox and name field
+        # Price List checkbox
         self.copy_price_list_checkbox = TickCheckBox("Copy Price List (with Line Items)")
         self.copy_price_list_checkbox.setStyleSheet(checkbox_style)
         self.copy_price_list_checkbox.setChecked(True)
-        self.copy_price_list_checkbox.toggled.connect(self._on_price_list_checkbox_toggled)
         self.copy_options_layout.addWidget(self.copy_price_list_checkbox)
-
-        price_list_name_layout = QtWidgets.QHBoxLayout()
-        price_list_name_layout.setContentsMargins(24, 0, 0, 5)
-        price_list_name_label = QtWidgets.QLabel("Name:")
-        price_list_name_label.setStyleSheet("color: #888888;")
-        price_list_name_layout.addWidget(price_list_name_label)
-        self.price_list_name_field = QtWidgets.QLineEdit()
-        self.price_list_name_field.setPlaceholderText("Price List name...")
-        price_list_name_layout.addWidget(self.price_list_name_field, stretch=1)
-        self.copy_options_layout.addLayout(price_list_name_layout)
 
         copy_container_layout.addLayout(self.copy_options_layout)
 
@@ -446,9 +412,6 @@ class AddBidDialog(QtWidgets.QDialog):
         if not self.existing_bids:
             self.copy_from_radio.setEnabled(False)
             self.copy_from_radio.setToolTip("No existing Bids to copy from")
-        else:
-            # Initialize name fields with first source bid's versioned names
-            self._on_source_bid_changed(0)
 
         layout.addWidget(options_group)
 
@@ -535,127 +498,6 @@ class AddBidDialog(QtWidgets.QDialog):
     def should_copy_price_list(self):
         """Check if Price List should be copied."""
         return self.is_copy_mode() and self.copy_price_list_checkbox.isChecked()
-
-    def get_vfx_breakdown_name(self):
-        """Get the VFX Breakdown name from the dialog."""
-        return self.vfx_breakdown_name_field.text().strip()
-
-    def get_bid_assets_name(self):
-        """Get the Bid Assets name from the dialog."""
-        return self.bid_assets_name_field.text().strip()
-
-    def get_price_list_name(self):
-        """Get the Price List name from the dialog."""
-        return self.price_list_name_field.text().strip()
-
-    def _on_vfx_checkbox_toggled(self, checked):
-        """Handle VFX Breakdown checkbox toggle."""
-        self.vfx_breakdown_name_field.setEnabled(checked)
-
-    def _on_assets_checkbox_toggled(self, checked):
-        """Handle Bid Assets checkbox toggle."""
-        self.bid_assets_name_field.setEnabled(checked)
-
-    def _on_price_list_checkbox_toggled(self, checked):
-        """Handle Price List checkbox toggle."""
-        self.price_list_name_field.setEnabled(checked)
-
-    def _on_source_bid_changed(self, index):
-        """Handle source bid selection change - update name fields with versioned names."""
-        source_bid = self.get_source_bid_data()
-        if not source_bid:
-            return
-
-        # Get the source bid's children names and calculate next versions
-        vfx_breakdown = source_bid.get("sg_vfx_breakdown")
-        bid_assets = source_bid.get("sg_bid_assets")
-        price_list = source_bid.get("sg_price_list")
-
-        # Update VFX Breakdown name field
-        if vfx_breakdown and isinstance(vfx_breakdown, dict):
-            vfx_id = vfx_breakdown.get("id")
-            if vfx_id:
-                vfx_name = self._get_entity_name("CustomEntity01", vfx_id)
-                if vfx_name:
-                    next_name = self._get_next_version_name(vfx_name, "CustomEntity01")
-                    self.vfx_breakdown_name_field.setText(next_name)
-
-        # Update Bid Assets name field
-        if bid_assets and isinstance(bid_assets, dict):
-            assets_id = bid_assets.get("id")
-            if assets_id:
-                assets_name = self._get_entity_name("CustomEntity08", assets_id)
-                if assets_name:
-                    next_name = self._get_next_version_name(assets_name, "CustomEntity08")
-                    self.bid_assets_name_field.setText(next_name)
-
-        # Update Price List name field
-        if price_list and isinstance(price_list, dict):
-            price_list_id = price_list.get("id")
-            if price_list_id:
-                price_list_name = self._get_entity_name("CustomEntity10", price_list_id)
-                if price_list_name:
-                    next_name = self._get_next_version_name(price_list_name, "CustomEntity10")
-                    self.price_list_name_field.setText(next_name)
-
-    def _get_entity_name(self, entity_type, entity_id):
-        """Get the name (code) of an entity by ID."""
-        try:
-            entity = self.sg_session.sg.find_one(entity_type, [["id", "is", entity_id]], ["code"])
-            if entity:
-                return entity.get("code", "")
-        except Exception as e:
-            logger.error(f"Failed to get entity name: {e}")
-        return ""
-
-    def _get_next_version_name(self, base_name, entity_type):
-        """Calculate the next version name based on existing entities.
-
-        Args:
-            base_name: The base name to version (e.g., "My VFX Breakdown v1")
-            entity_type: The ShotGrid entity type to search
-
-        Returns:
-            str: The next version name (e.g., "My VFX Breakdown v2")
-        """
-        import re
-
-        # Extract base name and version number
-        version_match = re.match(r'^(.+?)(?:\s+v(\d+))?$', base_name, re.IGNORECASE)
-        if version_match:
-            name_without_version = version_match.group(1).strip()
-            current_version = int(version_match.group(2)) if version_match.group(2) else 0
-        else:
-            name_without_version = base_name
-            current_version = 0
-
-        # Find all existing entities with similar names in this project
-        try:
-            existing = self.sg_session.sg.find(
-                entity_type,
-                [["project", "is", {"type": "Project", "id": int(self.project_id)}]],
-                ["code"]
-            )
-
-            # Find the highest version number for this base name
-            highest_version = current_version
-            pattern = re.compile(rf'^{re.escape(name_without_version)}\s+v(\d+)$', re.IGNORECASE)
-
-            for entity in existing:
-                code = entity.get("code", "")
-                match = pattern.match(code)
-                if match:
-                    version = int(match.group(1))
-                    if version > highest_version:
-                        highest_version = version
-
-            # Return the next version
-            return f"{name_without_version} v{highest_version + 1}"
-
-        except Exception as e:
-            logger.error(f"Failed to calculate next version: {e}")
-            # Fallback: just increment the current version
-            return f"{name_without_version} v{current_version + 1}"
 
 
 class RenameBidDialog(QtWidgets.QDialog):
@@ -3010,7 +2852,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self.set_current_btn.setToolTip("Set this Bid as the current one for the selected RFQ")
         selector_row.addWidget(self.set_current_btn)
 
-        self.add_btn = QtWidgets.QPushButton("Add")
+        self.add_btn = QtWidgets.QPushButton("Create")
         self.add_btn.clicked.connect(self._on_add_bid)
         self.add_btn.setToolTip("Create a new Bid")
         selector_row.addWidget(self.add_btn)
@@ -3664,7 +3506,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         if source_vfx_breakdown:
                             source_vfx_id = source_vfx_breakdown.get("id") if isinstance(source_vfx_breakdown, dict) else None
                             if source_vfx_id:
-                                vfx_name = dialog.get_vfx_breakdown_name() or f"{bid_name} - VFX Breakdown"
+                                vfx_name = f"{bid_name} - VFX Breakdown"
                                 new_vfx_breakdown = self._copy_vfx_breakdown(source_vfx_id, vfx_name, bid_id=new_bid_id)
                                 if new_vfx_breakdown:
                                     # Link to the new Bid
@@ -3682,7 +3524,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         if source_bid_assets:
                             source_assets_id = source_bid_assets.get("id") if isinstance(source_bid_assets, dict) else None
                             if source_assets_id:
-                                assets_name = dialog.get_bid_assets_name() or f"{bid_name} - Assets"
+                                assets_name = f"{bid_name} - Assets"
                                 new_bid_assets = self._copy_bid_assets(source_assets_id, assets_name, bid_id=new_bid_id)
                                 if new_bid_assets:
                                     # Link to the new Bid
@@ -3700,7 +3542,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         if source_price_list:
                             source_price_list_id = source_price_list.get("id") if isinstance(source_price_list, dict) else None
                             if source_price_list_id:
-                                price_list_name = dialog.get_price_list_name() or f"{bid_name} - Price List"
+                                price_list_name = f"{bid_name} - Price List"
                                 new_price_list = self._copy_price_list(source_price_list_id, price_list_name, bid_id=new_bid_id)
                                 if new_price_list:
                                     # Link to the new Bid
