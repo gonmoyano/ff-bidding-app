@@ -3,6 +3,7 @@ Rates Tab
 Contains UI and logic for managing Price Lists (CustomEntity10).
 """
 
+import re
 from PySide6 import QtWidgets, QtCore, QtGui
 
 try:
@@ -23,25 +24,28 @@ except ImportError:
 class CreatePriceListDialog(QtWidgets.QDialog):
     """Dialog for creating a new Price List with options to copy from existing or create new."""
 
-    def __init__(self, sg_session, project_id, parent=None):
+    def __init__(self, sg_session, project_id, current_bid=None, parent=None):
         """Initialize the dialog.
 
         Args:
             sg_session: ShotgridClient instance
             project_id: ID of the current project
+            current_bid: Currently selected Bid dict for name prefill
             parent: Parent widget
         """
         super().__init__(parent)
         self.sg_session = sg_session
         self.project_id = project_id
+        self.current_bid = current_bid
         self.existing_price_lists = []
 
-        self.setWindowTitle("Create New Price List")
+        self.setWindowTitle("Add Price List")
         self.setModal(True)
-        self.setMinimumWidth(450)
+        self.setMinimumWidth(400)
 
         self._load_existing_price_lists()
         self._build_ui()
+        self._prefill_name_from_bid()
 
     def _load_existing_price_lists(self):
         """Load existing Price Lists for the copy option."""
@@ -63,47 +67,37 @@ class CreatePriceListDialog(QtWidgets.QDialog):
         """Build the dialog UI."""
         layout = QtWidgets.QVBoxLayout(self)
 
+        # Creation mode
+        mode_layout = QtWidgets.QHBoxLayout()
+        mode_label = QtWidgets.QLabel("Mode:")
+        mode_layout.addWidget(mode_label)
+
+        self.mode_combo = QtWidgets.QComboBox()
+        self.mode_combo.addItem("Create empty")
+        self.mode_combo.addItem("Copy from existing")
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        mode_layout.addWidget(self.mode_combo, stretch=1)
+
+        layout.addLayout(mode_layout)
+
         # Name field
         name_layout = QtWidgets.QHBoxLayout()
-        name_label = QtWidgets.QLabel("Price List Name:")
+        name_label = QtWidgets.QLabel("Name:")
         name_layout.addWidget(name_label)
 
         self.name_field = QtWidgets.QLineEdit()
-        self.name_field.setPlaceholderText("Enter name for new Price List...")
+        self.name_field.setPlaceholderText("Enter Price List name...")
         name_layout.addWidget(self.name_field, stretch=1)
 
         layout.addLayout(name_layout)
 
-        # Creation options group
-        options_group = QtWidgets.QGroupBox("Creation Options")
-        options_layout = QtWidgets.QVBoxLayout(options_group)
+        # Copy from dropdown
+        copy_layout = QtWidgets.QHBoxLayout()
+        copy_label = QtWidgets.QLabel("Copy from:")
+        copy_layout.addWidget(copy_label)
 
-        # Radio button: Create new (empty)
-        self.create_new_radio = QtWidgets.QRadioButton("Create new (empty)")
-        self.create_new_radio.setToolTip(
-            "Create a new Price List with a single empty Line Item row"
-        )
-        self.create_new_radio.setChecked(True)
-        self.create_new_radio.toggled.connect(self._on_radio_toggled)
-        options_layout.addWidget(self.create_new_radio)
-
-        # Radio button: Copy from existing
-        self.copy_from_radio = QtWidgets.QRadioButton("Copy from existing Price List")
-        self.copy_from_radio.setToolTip(
-            "Copy all Line Items from an existing Price List"
-        )
-        self.copy_from_radio.toggled.connect(self._on_radio_toggled)
-        options_layout.addWidget(self.copy_from_radio)
-
-        # ComboBox for selecting source Price List (only visible when copy option selected)
-        self.source_combo_layout = QtWidgets.QHBoxLayout()
-        self.source_combo_layout.setContentsMargins(20, 0, 0, 0)  # Indent
-
-        self.source_label = QtWidgets.QLabel("Source:")
-        self.source_combo_layout.addWidget(self.source_label)
-
-        self.source_combo = QtWidgets.QComboBox()
-        self.source_combo.setMinimumWidth(250)
+        self.copy_combo = QtWidgets.QComboBox()
+        self.copy_combo.addItem("-- Select Price List --", None)
         for price_list in self.existing_price_lists:
             line_items_count = 0
             sg_line_items = price_list.get("sg_line_items")
@@ -113,29 +107,18 @@ class CreatePriceListDialog(QtWidgets.QDialog):
                 elif isinstance(sg_line_items, dict):
                     line_items_count = 1
             display_text = f"{price_list.get('code', 'Unnamed')} ({line_items_count} items)"
-            self.source_combo.addItem(display_text, price_list["id"])
-        self.source_combo_layout.addWidget(self.source_combo, stretch=1)
+            self.copy_combo.addItem(display_text, price_list)
+        self.copy_combo.currentIndexChanged.connect(self._on_copy_selection_changed)
+        copy_layout.addWidget(self.copy_combo, stretch=1)
 
-        options_layout.addLayout(self.source_combo_layout)
-
-        # Initially hide source combo since "Create new" is selected
-        self.source_label.setVisible(False)
-        self.source_combo.setVisible(False)
-
-        # Disable copy option if no existing Price Lists
-        if not self.existing_price_lists:
-            self.copy_from_radio.setEnabled(False)
-            self.copy_from_radio.setToolTip("No existing Price Lists to copy from")
-
-        layout.addWidget(options_group)
+        layout.addLayout(copy_layout)
 
         # Buttons
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addStretch()
 
-        self.ok_button = QtWidgets.QPushButton("Create")
+        self.ok_button = QtWidgets.QPushButton("OK")
         self.ok_button.clicked.connect(self.accept)
-        self.ok_button.setDefault(True)
         button_layout.addWidget(self.ok_button)
 
         self.cancel_button = QtWidgets.QPushButton("Cancel")
@@ -144,11 +127,166 @@ class CreatePriceListDialog(QtWidgets.QDialog):
 
         layout.addLayout(button_layout)
 
-    def _on_radio_toggled(self, checked):
-        """Handle radio button toggle."""
-        is_copy = self.copy_from_radio.isChecked()
-        self.source_label.setVisible(is_copy)
-        self.source_combo.setVisible(is_copy)
+        # Initial state
+        self._on_mode_changed(0)
+
+    def _on_mode_changed(self, index):
+        """Handle mode change."""
+        is_copy_mode = (index == 1)
+        self.copy_combo.setEnabled(is_copy_mode)
+        # Apply visual styling to make disabled state more obvious
+        if is_copy_mode:
+            self.copy_combo.setStyleSheet("")
+        else:
+            self.copy_combo.setStyleSheet("QComboBox:disabled { color: #666666; background-color: #2d2d2d; }")
+        # If switching to copy mode and a price list is already selected, update name
+        if is_copy_mode and self.copy_combo.currentIndex() > 0:
+            self._on_copy_selection_changed(self.copy_combo.currentIndex())
+
+    def _prefill_name_from_bid(self):
+        """Prefill the Name field with BidName-Price List-v### format."""
+        if not self.current_bid:
+            return
+
+        bid_name = self.current_bid.get("code") or self.current_bid.get("name") or ""
+        if bid_name:
+            # Build base name as "BidName-Price List"
+            base_name = f"{bid_name}-Price List"
+            next_name = self._get_next_price_list_version(base_name)
+            logger.info(f"Prefilling name field from bid '{bid_name}' -> '{next_name}'")
+            self.name_field.setText(next_name)
+
+    def _on_copy_selection_changed(self, index):
+        """Handle copy source selection change - prefill name with next version."""
+        # Only process in copy mode
+        if self.mode_combo.currentIndex() != 1:
+            return
+
+        # Skip if no valid selection (first item is placeholder)
+        if index <= 0:
+            return
+
+        price_list = self.copy_combo.currentData()
+        if not price_list:
+            logger.warning("No price list data found for selected index")
+            return
+
+        source_name = price_list.get("code") or price_list.get("name") or ""
+        logger.info(f"Copy selection changed: source_name='{source_name}'")
+        if source_name:
+            next_name = self._get_next_version_name(source_name)
+            logger.info(f"Prefilling name field with: '{next_name}'")
+            self.name_field.setText(next_name)
+
+    def _get_next_version_name(self, base_name):
+        """Calculate the next version name based on existing price lists.
+
+        Handles formats like:
+        - "Name v1" -> "Name v2"
+        - "Name-v001" -> "Name-v002"
+        - "Puzzle Box - v002-Price List-v001" -> "Puzzle Box - v002-Price List-v002"
+
+        Args:
+            base_name: The source name to version
+
+        Returns:
+            str: The next version name
+        """
+        logger.debug(f"_get_next_version_name called with base_name='{base_name}'")
+
+        # Try to match version pattern at the end: -v### or v### or -v## or v##
+        # Pattern matches: optional separator, 'v' or 'V', and digits
+        version_pattern = re.compile(r'^(.+?)[-\s]?[vV](\d+)$')
+        match = version_pattern.match(base_name)
+        logger.debug(f"Version pattern match: {match}")
+
+        if match:
+            name_without_version = match.group(1)
+            current_version = int(match.group(2))
+            version_digits = len(match.group(2))  # Preserve digit count (e.g., 001 vs 1)
+
+            # Determine the separator used (-, space, or none)
+            # Check original name for the separator before 'v'
+            sep_match = re.search(r'([-\s])?[vV]\d+$', base_name)
+            separator = sep_match.group(1) if sep_match and sep_match.group(1) else ''
+        else:
+            # No version found, treat whole name as base and start at v0
+            name_without_version = base_name
+            current_version = 0
+            version_digits = 3  # Default to 3 digits like v001
+            separator = '-'
+
+        # Find the highest version number for this base name pattern
+        highest_version = current_version
+
+        if self.sg_session and self.project_id:
+            try:
+                existing = self.sg_session.sg.find(
+                    "CustomEntity10",
+                    [
+                        ["project", "is", {"type": "Project", "id": self.project_id}],
+                        ["code", "starts_with", name_without_version]
+                    ],
+                    ["code"]
+                )
+
+                for item in existing:
+                    code = item.get("code", "")
+                    # Try to extract version number
+                    item_match = version_pattern.match(code)
+                    if item_match and item_match.group(1) == name_without_version:
+                        version_num = int(item_match.group(2))
+                        highest_version = max(highest_version, version_num)
+
+            except Exception as e:
+                logger.error(f"Failed to query existing price lists for version: {e}")
+
+        # Create next version name
+        next_version = highest_version + 1
+        next_name = f"{name_without_version}{separator}v{next_version:0{version_digits}d}"
+        logger.debug(f"Generated next name: '{next_name}'")
+
+        return next_name
+
+    def _get_next_price_list_version(self, base_name):
+        """Get the next version for a Price List name.
+
+        Args:
+            base_name: Base name without version (e.g., "BidName-Price List")
+
+        Returns:
+            str: Name with next version (e.g., "BidName-Price List-v001")
+        """
+        highest_version = 0
+
+        if self.sg_session and self.project_id:
+            try:
+                # Query existing Price Lists with this base name
+                existing = self.sg_session.sg.find(
+                    "CustomEntity10",
+                    [
+                        ["project", "is", {"type": "Project", "id": self.project_id}],
+                        ["code", "starts_with", f"{base_name}-v"]
+                    ],
+                    ["code"]
+                )
+
+                for item in existing:
+                    code = item.get("code", "")
+                    # Extract version number
+                    if code.startswith(f"{base_name}-v"):
+                        try:
+                            version_str = code[len(f"{base_name}-v"):]
+                            version_num = int(version_str)
+                            highest_version = max(highest_version, version_num)
+                        except ValueError:
+                            pass
+
+            except Exception as e:
+                logger.error(f"Failed to query existing price lists: {e}")
+
+        next_version = highest_version + 1
+        return f"{base_name}-v{next_version:03d}"
 
     def get_price_list_name(self):
         """Get the entered Price List name."""
@@ -156,22 +294,33 @@ class CreatePriceListDialog(QtWidgets.QDialog):
 
     def is_copy_mode(self):
         """Check if copy mode is selected."""
-        return self.copy_from_radio.isChecked()
+        return self.mode_combo.currentIndex() == 1
 
     def get_source_price_list_id(self):
         """Get the selected source Price List ID for copying."""
         if self.is_copy_mode():
-            return self.source_combo.currentData()
+            price_list = self.copy_combo.currentData()
+            if price_list:
+                return price_list.get("id")
         return None
 
     def get_source_price_list_data(self):
         """Get the full data for the selected source Price List."""
-        source_id = self.get_source_price_list_id()
-        if source_id:
-            for pl in self.existing_price_lists:
-                if pl["id"] == source_id:
-                    return pl
+        if self.is_copy_mode():
+            return self.copy_combo.currentData()
         return None
+
+    def get_result(self):
+        """Get the dialog result.
+
+        Returns:
+            dict: Result with 'name', 'mode', 'source' keys
+        """
+        return {
+            "name": self.name_field.text().strip(),
+            "mode": "empty" if self.mode_combo.currentIndex() == 0 else "copy",
+            "source": self.copy_combo.currentData() if self.mode_combo.currentIndex() == 1 else None
+        }
 
 
 class RatesTab(QtWidgets.QWidget):
@@ -742,14 +891,34 @@ class RatesTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "No Project Selected", "Please select a project first.")
             return
 
-        # Show creation dialog
-        dialog = CreatePriceListDialog(self.sg_session, self.current_project_id, self)
+        if not self.current_bid_id:
+            QtWidgets.QMessageBox.warning(self, "No Bid Selected", "Please select a Bid first.")
+            return
+
+        # Show creation dialog with current bid for name prefill
+        dialog = CreatePriceListDialog(
+            self.sg_session,
+            self.current_project_id,
+            current_bid=self.current_bid_data,
+            parent=self
+        )
         if dialog.exec() != QtWidgets.QDialog.Accepted:
             return
 
-        name = dialog.get_price_list_name()
+        # Get dialog result
+        result = dialog.get_result()
+        name = result["name"]
+        mode = result["mode"]
+        source = result["source"]
+
+        # Validate name
         if not name:
             QtWidgets.QMessageBox.warning(self, "Invalid Name", "Please enter a name for the Price List.")
+            return
+
+        # Validate source for copy mode
+        if mode == "copy" and not source:
+            QtWidgets.QMessageBox.warning(self, "No Source Selected", "Please select a Price List to copy from.")
             return
 
         try:
@@ -768,9 +937,9 @@ class RatesTab(QtWidgets.QWidget):
 
             logger.info(f"Created Price List: {name} (ID: {new_price_list_id})")
 
-            if dialog.is_copy_mode():
+            if mode == "copy":
                 # Copy Line Items from source Price List
-                source_id = dialog.get_source_price_list_id()
+                source_id = source.get("id") if source else None
                 if source_id:
                     self._copy_line_items_from_price_list(source_id, new_price_list_id)
                     self._set_price_lists_status(f"Created Price List '{name}' (copied from existing).")
