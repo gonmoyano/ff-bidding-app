@@ -2373,13 +2373,21 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         if reply != QtWidgets.QMessageBox.Yes:
             return
 
-        # Delete the VFX Breakdown
+        # Delete the VFX Breakdown and its associated Bidding Scenes
         try:
             entity_type = self.sg_session.get_vfx_breakdown_entity_type()
 
             logger.info(f"Deleting VFX Breakdown: {breakdown_name} (ID: {breakdown_id})")
 
-            # Delete from ShotGrid
+            # First, delete all associated Bidding Scenes (CustomEntity02)
+            bidding_scenes = self.sg_session.get_bidding_scenes_for_vfx_breakdown(breakdown_id, fields=["id"])
+            if bidding_scenes:
+                logger.info(f"Deleting {len(bidding_scenes)} associated Bidding Scenes")
+                for scene in bidding_scenes:
+                    self.sg_session.sg.delete("CustomEntity02", scene["id"])
+                logger.info(f"Successfully deleted {len(bidding_scenes)} Bidding Scenes")
+
+            # Delete the VFX Breakdown from ShotGrid
             self.sg_session.sg.delete(entity_type, breakdown_id)
 
             logger.info(f"Successfully deleted VFX Breakdown {breakdown_id}")
