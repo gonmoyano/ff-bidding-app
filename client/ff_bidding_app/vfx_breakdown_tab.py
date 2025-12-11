@@ -1076,7 +1076,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_combo = None
         self.vfx_breakdown_set_btn = None
         self.vfx_breakdown_refresh_btn = None
-        self.vfx_breakdown_status_label = None
 
         # Reusable breakdown widget (replaces direct table management)
         self.breakdown_widget = None
@@ -1127,11 +1126,6 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         selector_row.addWidget(self.vfx_breakdown_refresh_btn)
 
         selector_group.addLayout(selector_row)
-
-        self.vfx_breakdown_status_label = QtWidgets.QLabel("Select an RFQ to view VFX Breakdowns.")
-        self.vfx_breakdown_status_label.setObjectName("vfxBreakdownStatusLabel")
-        self.vfx_breakdown_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        selector_group.addWidget(self.vfx_breakdown_status_label)
 
         # Create reusable VFX Breakdown widget before adding selector_group to layout
         self.breakdown_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, parent=self)
@@ -2825,15 +2819,16 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             self.vfx_breakdown_selector_group.setAdditionalInfo("")
 
     def _set_vfx_breakdown_status(self, message, is_error=False):
-        """Set the status message.
+        """Log the status message.
 
         Args:
-            message: Status message to display
-            is_error: Whether this is an error message (changes color)
+            message: Status message to log
+            is_error: Whether this is an error message
         """
-        color = "#ff8080" if is_error else "#a0a0a0"
-        self.vfx_breakdown_status_label.setStyleSheet(f"color: {color}; padding: 2px 0;")
-        self.vfx_breakdown_status_label.setText(message)
+        if is_error:
+            logger.warning(f"VFX Breakdown status: {message}")
+        else:
+            logger.info(f"VFX Breakdown status: {message}")
 
     def _update_vfx_breakdown_group_info(self):
         """Update the group box additional info to show linked VFX Breakdown from current Bid."""

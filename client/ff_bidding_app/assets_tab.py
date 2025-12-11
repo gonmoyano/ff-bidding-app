@@ -59,7 +59,6 @@ class AssetsTab(QtWidgets.QWidget):
         self.bid_assets_combo = None
         self.bid_assets_set_btn = None
         self.bid_assets_refresh_btn = None
-        self.bid_assets_status_label = None
 
         # Reusable assets widget (uses VFXBreakdownWidget for table display)
         self.assets_widget = None
@@ -111,11 +110,6 @@ class AssetsTab(QtWidgets.QWidget):
 
         selector_group.addLayout(selector_row)
 
-        self.bid_assets_status_label = QtWidgets.QLabel("Select a Bid to view Bid Assets.")
-        self.bid_assets_status_label.setObjectName("bidAssetsStatusLabel")
-        self.bid_assets_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        selector_group.addWidget(self.bid_assets_status_label)
-
         # Create reusable Assets widget (reusing VFXBreakdownWidget) before adding selector_group to layout
         self.assets_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, settings_key="assets", parent=self)
 
@@ -143,17 +137,16 @@ class AssetsTab(QtWidgets.QWidget):
         self._set_bid_assets_status(message, is_error)
 
     def _set_bid_assets_status(self, message, is_error=False):
-        """Set the status message for bid assets.
+        """Log the status message for bid assets.
 
         Args:
-            message: Status message
+            message: Status message to log
             is_error: Whether this is an error message
         """
         if is_error:
-            self.bid_assets_status_label.setStyleSheet("color: #ff6b6b; padding: 2px 0;")
+            logger.warning(f"Bid Assets status: {message}")
         else:
-            self.bid_assets_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        self.bid_assets_status_label.setText(message)
+            logger.info(f"Bid Assets status: {message}")
 
     def _update_bid_assets_group_info(self):
         """Update the group box additional info to show linked Bid Assets from current Bid."""

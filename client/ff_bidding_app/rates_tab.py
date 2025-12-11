@@ -202,7 +202,6 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_combo = None
         self.price_lists_set_btn = None
         self.price_lists_refresh_btn = None
-        self.price_lists_status_label = None
         self.price_lists_group_box = None  # CollapsibleGroupBox for Price Lists
 
         # Rate Card widgets and data
@@ -269,11 +268,6 @@ class RatesTab(QtWidgets.QWidget):
 
         selector_group.addLayout(selector_row)
 
-        self.price_lists_status_label = QtWidgets.QLabel("Select a Bid to view Price Lists.")
-        self.price_lists_status_label.setObjectName("priceListsStatusLabel")
-        self.price_lists_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        selector_group.addWidget(self.price_lists_status_label)
-
         # Create Line Items widget before adding selector_group to layout
         line_items_content = self._create_line_items_tab()
 
@@ -320,17 +314,16 @@ class RatesTab(QtWidgets.QWidget):
         return widget
 
     def _set_price_lists_status(self, message, is_error=False):
-        """Set the status message for price lists.
+        """Log the status message for price lists.
 
         Args:
-            message: Status message
+            message: Status message to log
             is_error: Whether this is an error message
         """
         if is_error:
-            self.price_lists_status_label.setStyleSheet("color: #ff6b6b; padding: 2px 0;")
+            logger.warning(f"Price Lists status: {message}")
         else:
-            self.price_lists_status_label.setStyleSheet("color: #a0a0a0; padding: 2px 0;")
-        self.price_lists_status_label.setText(message)
+            logger.info(f"Price Lists status: {message}")
 
     def set_bid(self, bid_data, project_id):
         """Set the current bid and load associated price lists.
