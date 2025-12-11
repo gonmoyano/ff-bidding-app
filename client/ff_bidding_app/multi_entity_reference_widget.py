@@ -33,6 +33,7 @@ class EntityPillWidget(QtWidgets.QWidget):
     # Default pill height (can be adjusted)
     DEFAULT_HEIGHT = 22
     MIN_HEIGHT = 16  # Minimum height to remain readable
+    MAX_HEIGHT = 60  # Maximum height to prevent pills from becoming too tall
 
     def __init__(self, entity, is_valid=True, max_height=None, parent=None):
         """
@@ -157,12 +158,15 @@ class EntityPillWidget(QtWidgets.QWidget):
     def _calculate_effective_height(self):
         """Calculate the effective height for the pill based on constraints.
 
+        The pill will expand to fill available space (up to MAX_HEIGHT) or
+        shrink if space is limited (down to MIN_HEIGHT).
+
         Returns:
             int: The effective height to use for the pill
         """
         if self._max_height is not None:
-            # Use the constrained height, but respect minimum
-            return max(self.MIN_HEIGHT, min(self._max_height, self.DEFAULT_HEIGHT))
+            # Clamp height between MIN_HEIGHT and MAX_HEIGHT
+            return max(self.MIN_HEIGHT, min(self._max_height, self.MAX_HEIGHT))
         return self.DEFAULT_HEIGHT
 
     def set_max_height(self, max_height):
@@ -174,10 +178,38 @@ class EntityPillWidget(QtWidgets.QWidget):
         self._max_height = max_height
         effective_height = self._calculate_effective_height()
         self.setFixedHeight(effective_height)
-        # Update close button size proportionally
+        # Update close button size proportionally (scale from 12px at MIN_HEIGHT to 24px at MAX_HEIGHT)
         if hasattr(self, 'close_btn'):
-            btn_size = max(12, min(16, effective_height - 4))
+            btn_size = max(12, min(24, int(effective_height * 0.4)))
             self.close_btn.setFixedSize(btn_size, btn_size)
+            # Update close button font size
+            font_size = max(12, min(20, int(effective_height * 0.35)))
+            self.close_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background: transparent;
+                    border: none;
+                    color: #555555;
+                    font-size: {font_size}px;
+                    font-weight: bold;
+                    padding: 0px;
+                }}
+                QPushButton:hover {{
+                    color: #ff6b6b;
+                    background: rgba(255, 107, 107, 0.15);
+                    border-radius: {btn_size // 2}px;
+                }}
+            """)
+        # Update label font size proportionally (scale from 11px to 16px)
+        if hasattr(self, 'name_label'):
+            label_font_size = max(11, min(16, int(effective_height * 0.3)))
+            self.name_label.setStyleSheet(f"""
+                QLabel {{
+                    color: {self.text_color};
+                    font-size: {label_font_size}px;
+                    background: transparent;
+                    border: none;
+                }}
+            """)
         self.updateGeometry()
 
     def sizeHint(self):
