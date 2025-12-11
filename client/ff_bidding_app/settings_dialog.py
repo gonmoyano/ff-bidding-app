@@ -160,10 +160,10 @@ class ManageClientUsersDialog(QtWidgets.QDialog):
         self.users_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.users_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.users_table.horizontalHeader().setStretchLastSection(True)
-        self.users_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-        self.users_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
-        self.users_table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
-        self.users_table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
+        self.users_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)
+        self.users_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Interactive)
+        self.users_table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.Interactive)
+        self.users_table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.Interactive)
         self.users_table.verticalHeader().setVisible(False)
         self.users_table.doubleClicked.connect(self._edit_selected_user)
         layout.addWidget(self.users_table)
@@ -598,7 +598,8 @@ class ManageVendorsDialog(QtWidgets.QDialog):
         self.vendors_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.vendors_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.vendors_table.horizontalHeader().setStretchLastSection(True)
-        self.vendors_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        self.vendors_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)
+        self.vendors_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Interactive)
         self.vendors_table.verticalHeader().setVisible(False)
         self.vendors_table.doubleClicked.connect(self._edit_selected_vendor)
         layout.addWidget(self.vendors_table)
@@ -804,7 +805,8 @@ class VendorsTab(QtWidgets.QWidget):
         self.vendor_table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.vendor_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.vendor_table.horizontalHeader().setStretchLastSection(True)
-        self.vendor_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeToContents)
+        self.vendor_table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Interactive)
+        self.vendor_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Interactive)
         self.vendor_table.verticalHeader().setVisible(False)
         layout.addWidget(self.vendor_table)
 
@@ -1050,8 +1052,30 @@ class GeneralTab(QtWidgets.QWidget):
         self.dpi_slider.setMaximum(200)  # 200%
         self.dpi_slider.setSingleStep(5)
         self.dpi_slider.setPageStep(25)
-        self.dpi_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
-        self.dpi_slider.setTickInterval(25)
+        self.dpi_slider.setTickPosition(QtWidgets.QSlider.NoTicks)
+        # Blue slider styling matching selected tabs
+        self.dpi_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                border: 1px solid #3a3a3a;
+                height: 8px;
+                background: #2a2a2a;
+                border-radius: 4px;
+            }
+            QSlider::handle:horizontal {
+                background: #4a9eff;
+                border: 1px solid #3a8eef;
+                width: 18px;
+                margin: -5px 0;
+                border-radius: 9px;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #6ab0ff;
+            }
+            QSlider::sub-page:horizontal {
+                background: #4a9eff;
+                border-radius: 4px;
+            }
+        """)
 
         # Set current value
         current_dpi = self.app_settings.get_dpi_scale()

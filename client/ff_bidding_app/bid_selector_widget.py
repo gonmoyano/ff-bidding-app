@@ -3,7 +3,28 @@ Bid Selector Widget
 Reusable widget component for selecting and managing Bids (CustomEntity06).
 """
 
+import random
+import string
+
 from PySide6 import QtWidgets, QtCore, QtGui
+from PySide6.QtSvg import QSvgRenderer
+
+# File cog icon (from Material Design Icons - https://pictogrammers.com/library/mdi/icon/file-cog/)
+FILE_COG_SVG_PATH = "M6 2C4.89 2 4 2.9 4 4V20C4 21.11 4.89 22 6 22H12.68A7 7 0 0 1 12 19A7 7 0 0 1 19 12A7 7 0 0 1 22 12.68V8L15 2H6M13 3.5L19.5 10H13V3.5M18 14C17.87 14 17.76 14.09 17.74 14.21L17.55 15.53C17.25 15.66 16.96 15.82 16.7 16L15.46 15.5C15.35 15.5 15.22 15.5 15.15 15.63L14.15 17.36C14.09 17.47 14.11 17.6 14.21 17.68L15.27 18.5C15.25 18.67 15.24 18.83 15.24 19C15.24 19.17 15.25 19.33 15.27 19.5L14.21 20.32C14.12 20.4 14.09 20.53 14.15 20.64L15.15 22.37C15.21 22.5 15.34 22.5 15.46 22.5L16.7 22C16.96 22.18 17.24 22.35 17.55 22.47L17.74 23.79C17.76 23.91 17.86 24 18 24H20C20.11 24 20.22 23.91 20.24 23.79L20.43 22.47C20.73 22.34 21 22.18 21.27 22L22.5 22.5C22.63 22.5 22.76 22.5 22.83 22.37L23.83 20.64C23.89 20.53 23.86 20.4 23.77 20.32L22.7 19.5C22.72 19.33 22.74 19.17 22.74 19C22.74 18.83 22.73 18.67 22.7 18.5L23.76 17.68C23.85 17.6 23.88 17.47 23.82 17.36L22.82 15.63C22.76 15.5 22.63 15.5 22.5 15.5L21.27 16C21 15.82 20.73 15.65 20.42 15.53L20.23 14.21C20.22 14.09 20.11 14 20 14H18M19 17.5C19.83 17.5 20.5 18.17 20.5 19C20.5 19.83 19.83 20.5 19 20.5C18.16 20.5 17.5 19.83 17.5 19C17.5 18.17 18.17 17.5 19 17.5Z"
+
+
+def create_icon_from_svg_path(svg_path, size=24, color="#e0e0e0"):
+    """Create a QIcon from an SVG path string."""
+    svg_content = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="{size}" height="{size}">
+        <path fill="{color}" d="{svg_path}"/>
+    </svg>'''
+    renderer = QSvgRenderer(svg_content.encode('utf-8'))
+    pixmap = QtGui.QPixmap(size, size)
+    pixmap.fill(QtCore.Qt.transparent)
+    painter = QtGui.QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+    return QtGui.QIcon(pixmap)
 
 try:
     from .logger import logger
@@ -121,6 +142,57 @@ class CollapsibleGroupBox(QtWidgets.QWidget):
         self.content_layout.addLayout(layout)
 
 
+class TickCheckBox(QtWidgets.QCheckBox):
+    """Custom checkbox that draws a tick mark instead of a solid indicator when checked."""
+
+    def __init__(self, text="", parent=None):
+        """Initialize the tick checkbox.
+
+        Args:
+            text: Label text for the checkbox
+            parent: Parent widget
+        """
+        super().__init__(text, parent)
+
+    def paintEvent(self, event):
+        """Custom paint to draw tick mark when checked."""
+        super().paintEvent(event)
+
+        if self.isChecked():
+            painter = QtGui.QPainter(self)
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+
+            # Get the indicator rect (checkbox square area)
+            style = self.style()
+            opt = QtWidgets.QStyleOptionButton()
+            self.initStyleOption(opt)
+            indicator_rect = style.subElementRect(
+                QtWidgets.QStyle.SE_CheckBoxIndicator, opt, self
+            )
+
+            # Draw the tick mark
+            pen = QtGui.QPen(QtGui.QColor("#4a9eff"))
+            pen.setWidth(2)
+            pen.setCapStyle(QtCore.Qt.RoundCap)
+            painter.setPen(pen)
+
+            # Calculate tick mark points within the indicator
+            x = indicator_rect.x()
+            y = indicator_rect.y()
+            w = indicator_rect.width()
+            h = indicator_rect.height()
+
+            # Tick mark coordinates (checkmark shape)
+            start_point = QtCore.QPointF(x + w * 0.2, y + h * 0.5)
+            mid_point = QtCore.QPointF(x + w * 0.4, y + h * 0.7)
+            end_point = QtCore.QPointF(x + w * 0.8, y + h * 0.3)
+
+            painter.drawLine(start_point, mid_point)
+            painter.drawLine(mid_point, end_point)
+
+            painter.end()
+
+
 class AddBidDialog(QtWidgets.QDialog):
     """Dialog for adding a new Bid with option to copy from existing."""
 
@@ -188,12 +260,55 @@ class AddBidDialog(QtWidgets.QDialog):
 
         layout.addLayout(type_layout)
 
+        # Description field
+        desc_layout = QtWidgets.QHBoxLayout()
+        desc_label = QtWidgets.QLabel("Description:")
+        desc_label.setAlignment(QtCore.Qt.AlignTop)
+        desc_layout.addWidget(desc_label)
+
+        self.description_field = QtWidgets.QPlainTextEdit()
+        self.description_field.setPlaceholderText("Enter bid description...")
+        self.description_field.setMaximumHeight(60)
+        desc_layout.addWidget(self.description_field, stretch=1)
+
+        layout.addLayout(desc_layout)
+
         # Creation options group
         options_group = QtWidgets.QGroupBox("Creation Options")
         options_layout = QtWidgets.QVBoxLayout(options_group)
 
+        # Custom stylesheet for radio buttons (radial style with inner circle)
+        radio_style = """
+            QRadioButton {
+                spacing: 8px;
+                font-weight: normal;
+            }
+            QRadioButton::indicator {
+                width: 16px;
+                height: 16px;
+                border-radius: 9px;
+                border: 2px solid #666666;
+                background-color: #2b2b2b;
+            }
+            QRadioButton::indicator:checked {
+                border: 2px solid #4a9eff;
+                background-color: qradialgradient(
+                    cx:0.5, cy:0.5, radius:0.4,
+                    fx:0.5, fy:0.5,
+                    stop:0 #4a9eff, stop:0.6 #4a9eff, stop:0.7 #2b2b2b, stop:1 #2b2b2b
+                );
+            }
+            QRadioButton::indicator:hover {
+                border: 2px solid #888888;
+            }
+            QRadioButton::indicator:checked:hover {
+                border: 2px solid #6ab0ff;
+            }
+        """
+
         # Radio button: Create new (with child entities)
         self.create_new_radio = QtWidgets.QRadioButton("Create new")
+        self.create_new_radio.setStyleSheet(radio_style)
         self.create_new_radio.setToolTip(
             "Create a new Bid with VFX Breakdown, Bid Assets, and Price List"
         )
@@ -203,15 +318,22 @@ class AddBidDialog(QtWidgets.QDialog):
 
         # Radio button: Copy from existing
         self.copy_from_radio = QtWidgets.QRadioButton("Copy from existing Bid")
+        self.copy_from_radio.setStyleSheet(radio_style)
         self.copy_from_radio.setToolTip(
             "Copy VFX Breakdown, Bid Assets, and Price List from an existing Bid"
         )
         self.copy_from_radio.toggled.connect(self._on_radio_toggled)
         options_layout.addWidget(self.copy_from_radio)
 
+        # Container widget for copy options (for smooth show/hide)
+        self.copy_options_container = QtWidgets.QWidget()
+        copy_container_layout = QtWidgets.QVBoxLayout(self.copy_options_container)
+        copy_container_layout.setContentsMargins(0, 0, 0, 0)
+        copy_container_layout.setSpacing(5)
+
         # ComboBox for selecting source Bid (only visible when copy option selected)
         self.source_combo_layout = QtWidgets.QHBoxLayout()
-        self.source_combo_layout.setContentsMargins(20, 0, 0, 0)  # Indent
+        self.source_combo_layout.setContentsMargins(20, 5, 0, 0)  # Indent
 
         self.source_label = QtWidgets.QLabel("Source Bid:")
         self.source_combo_layout.addWidget(self.source_label)
@@ -226,32 +348,65 @@ class AddBidDialog(QtWidgets.QDialog):
             self.source_combo.addItem(display_text, bid["id"])
         self.source_combo_layout.addWidget(self.source_combo, stretch=1)
 
-        options_layout.addLayout(self.source_combo_layout)
+        copy_container_layout.addLayout(self.source_combo_layout)
+
+        # Custom stylesheet for checkboxes (tick icon style - transparent with tick mark)
+        checkbox_style = """
+            QCheckBox {
+                spacing: 8px;
+                font-weight: normal;
+            }
+            QCheckBox::indicator {
+                width: 16px;
+                height: 16px;
+                border-radius: 3px;
+                border: 2px solid #666666;
+                background-color: transparent;
+            }
+            QCheckBox::indicator:unchecked {
+                border: 2px solid #666666;
+                background-color: transparent;
+            }
+            QCheckBox::indicator:checked {
+                border: 2px solid #4a9eff;
+                background-color: transparent;
+            }
+            QCheckBox::indicator:hover {
+                border: 2px solid #888888;
+            }
+            QCheckBox::indicator:checked:hover {
+                border: 2px solid #6ab0ff;
+            }
+        """
 
         # Checkboxes for what to copy (only visible when copy option selected)
         self.copy_options_layout = QtWidgets.QVBoxLayout()
         self.copy_options_layout.setContentsMargins(20, 5, 0, 0)  # Indent
 
-        self.copy_vfx_breakdown_checkbox = QtWidgets.QCheckBox("Copy VFX Breakdown (with Bidding Scenes)")
+        # VFX Breakdown checkbox
+        self.copy_vfx_breakdown_checkbox = TickCheckBox("Copy VFX Breakdown (with Bidding Scenes)")
+        self.copy_vfx_breakdown_checkbox.setStyleSheet(checkbox_style)
         self.copy_vfx_breakdown_checkbox.setChecked(True)
         self.copy_options_layout.addWidget(self.copy_vfx_breakdown_checkbox)
 
-        self.copy_bid_assets_checkbox = QtWidgets.QCheckBox("Copy Bid Assets (with Asset Items)")
+        # Bid Assets checkbox
+        self.copy_bid_assets_checkbox = TickCheckBox("Copy Bid Assets (with Asset Items)")
+        self.copy_bid_assets_checkbox.setStyleSheet(checkbox_style)
         self.copy_bid_assets_checkbox.setChecked(True)
         self.copy_options_layout.addWidget(self.copy_bid_assets_checkbox)
 
-        self.copy_price_list_checkbox = QtWidgets.QCheckBox("Copy Price List (with Line Items)")
+        # Price List checkbox
+        self.copy_price_list_checkbox = TickCheckBox("Copy Price List (with Line Items)")
+        self.copy_price_list_checkbox.setStyleSheet(checkbox_style)
         self.copy_price_list_checkbox.setChecked(True)
         self.copy_options_layout.addWidget(self.copy_price_list_checkbox)
 
-        options_layout.addLayout(self.copy_options_layout)
+        copy_container_layout.addLayout(self.copy_options_layout)
 
-        # Initially hide copy options since "Create new" is selected
-        self.source_label.setVisible(False)
-        self.source_combo.setVisible(False)
-        self.copy_vfx_breakdown_checkbox.setVisible(False)
-        self.copy_bid_assets_checkbox.setVisible(False)
-        self.copy_price_list_checkbox.setVisible(False)
+        options_layout.addWidget(self.copy_options_container)
+
+        # Initially hide copy options container since "Create new" is selected
+        self.copy_options_container.setVisible(False)
 
         # Disable copy option if no existing Bids
         if not self.existing_bids:
@@ -278,11 +433,28 @@ class AddBidDialog(QtWidgets.QDialog):
     def _on_radio_toggled(self, checked):
         """Handle radio button toggle."""
         is_copy = self.copy_from_radio.isChecked()
-        self.source_label.setVisible(is_copy)
-        self.source_combo.setVisible(is_copy)
-        self.copy_vfx_breakdown_checkbox.setVisible(is_copy)
-        self.copy_bid_assets_checkbox.setVisible(is_copy)
-        self.copy_price_list_checkbox.setVisible(is_copy)
+        self.copy_options_container.setVisible(is_copy)
+
+        # Force layout to recalculate
+        self.layout().invalidate()
+        self.layout().activate()
+
+        # Adjust dialog size when toggling
+        if is_copy:
+            # Expand to fit copy options
+            self.adjustSize()
+        else:
+            # Reset to minimum size when "Create new" is selected
+            # Set size constraint to allow shrinking
+            self.setMinimumHeight(0)
+            self.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
+
+            # Process pending layout events
+            QtWidgets.QApplication.processEvents()
+
+            # Get the new minimum size hint and resize
+            new_size = self.sizeHint()
+            self.resize(self.width(), new_size.height())
 
     def get_bid_name(self):
         """Get the bid name from the dialog."""
@@ -291,6 +463,10 @@ class AddBidDialog(QtWidgets.QDialog):
     def get_bid_type(self):
         """Get the selected bid type."""
         return self.type_combo.currentText()
+
+    def get_description(self):
+        """Get the bid description from the dialog."""
+        return self.description_field.toPlainText().strip()
 
     def is_copy_mode(self):
         """Check if copy mode is selected."""
@@ -372,6 +548,513 @@ class RenameBidDialog(QtWidgets.QDialog):
     def get_new_name(self):
         """Get the new name from the dialog."""
         return self.name_field.text().strip()
+
+
+class ConfigBidDialog(QtWidgets.QDialog):
+    """Dialog for configuring Bid properties and children entities."""
+
+    # Signal emitted when bid is deleted (bid_id)
+    bidDeleted = QtCore.Signal(int)
+
+    def __init__(self, sg_session, project_id, bid_id, bid_data, parent=None):
+        """Initialize the dialog.
+
+        Args:
+            sg_session: ShotgridClient instance
+            project_id: ID of the current project
+            bid_id: ID of the current Bid
+            bid_data: Current bid data dict
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.sg_session = sg_session
+        self.project_id = project_id
+        self.bid_id = bid_id
+        self.bid_data = bid_data
+        self._bid_was_deleted = False
+
+        # Generate random confirmation string for delete
+        self.confirmation_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+
+        self.setWindowTitle("Configure Bid")
+        self.setModal(True)
+        self.setMinimumWidth(500)
+
+        self._load_available_items()
+        self._build_ui()
+
+    def _load_available_items(self):
+        """Load available items for each dropdown."""
+        try:
+            # Load VFX Breakdowns for this bid
+            self.vfx_breakdowns = self.sg_session.sg.find(
+                "CustomEntity01",
+                [
+                    ["project", "is", {"type": "Project", "id": int(self.project_id)}],
+                    ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": int(self.bid_id)}]
+                ],
+                ["id", "code", "name"]
+            )
+            self.vfx_breakdowns.sort(key=lambda x: x.get("code", "").lower())
+        except Exception as e:
+            logger.error(f"Failed to load VFX Breakdowns: {e}")
+            self.vfx_breakdowns = []
+
+        try:
+            # Load Bid Assets for this bid
+            self.bid_assets = self.sg_session.sg.find(
+                "CustomEntity08",
+                [
+                    ["project", "is", {"type": "Project", "id": int(self.project_id)}],
+                    ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": int(self.bid_id)}]
+                ],
+                ["id", "code", "name"]
+            )
+            self.bid_assets.sort(key=lambda x: x.get("code", "").lower())
+        except Exception as e:
+            logger.error(f"Failed to load Bid Assets: {e}")
+            self.bid_assets = []
+
+        try:
+            # Load Price Lists for this bid
+            self.price_lists = self.sg_session.sg.find(
+                "CustomEntity10",
+                [
+                    ["project", "is", {"type": "Project", "id": int(self.project_id)}],
+                    ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": int(self.bid_id)}]
+                ],
+                ["id", "code", "name", "sg_rate_card"]
+            )
+            self.price_lists.sort(key=lambda x: x.get("code", "").lower())
+        except Exception as e:
+            logger.error(f"Failed to load Price Lists: {e}")
+            self.price_lists = []
+
+        try:
+            # Load Rate Cards (non-project entity)
+            self.rate_cards = self.sg_session.sg.find(
+                "CustomNonProjectEntity01",
+                [],
+                ["id", "code", "name"]
+            )
+            self.rate_cards.sort(key=lambda x: x.get("code", "").lower())
+        except Exception as e:
+            logger.error(f"Failed to load Rate Cards: {e}")
+            self.rate_cards = []
+
+        try:
+            # Load all existing bids for duplicate name validation
+            self.existing_bids = self.sg_session.sg.find(
+                "CustomEntity06",
+                [["project", "is", {"type": "Project", "id": int(self.project_id)}]],
+                ["id", "code"]
+            )
+        except Exception as e:
+            logger.error(f"Failed to load existing bids: {e}")
+            self.existing_bids = []
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Bid Name field
+        name_layout = QtWidgets.QHBoxLayout()
+        name_label = QtWidgets.QLabel("Bid Name:")
+        name_label.setMinimumWidth(100)
+        name_layout.addWidget(name_label)
+
+        self.name_field = QtWidgets.QLineEdit()
+        self.name_field.setText(self.bid_data.get("code", ""))
+        self.name_field.setPlaceholderText("Enter bid name")
+        name_layout.addWidget(self.name_field, stretch=1)
+        layout.addLayout(name_layout)
+
+        # Description field
+        desc_layout = QtWidgets.QHBoxLayout()
+        desc_label = QtWidgets.QLabel("Description:")
+        desc_label.setMinimumWidth(100)
+        desc_label.setAlignment(QtCore.Qt.AlignTop)
+        desc_layout.addWidget(desc_label)
+
+        self.description_field = QtWidgets.QTextEdit()
+        self.description_field.setPlainText(self.bid_data.get("description", "") or "")
+        self.description_field.setPlaceholderText("Enter bid description")
+        self.description_field.setMaximumHeight(60)
+        desc_layout.addWidget(self.description_field, stretch=1)
+        layout.addLayout(desc_layout)
+
+        # Separator
+        layout.addSpacing(10)
+        separator = QtWidgets.QFrame()
+        separator.setFrameShape(QtWidgets.QFrame.HLine)
+        separator.setFrameShadow(QtWidgets.QFrame.Sunken)
+        layout.addWidget(separator)
+        layout.addSpacing(5)
+
+        # VFX Breakdown dropdown
+        vfx_layout = QtWidgets.QHBoxLayout()
+        vfx_label = QtWidgets.QLabel("VFX Breakdown:")
+        vfx_label.setMinimumWidth(100)
+        vfx_layout.addWidget(vfx_label)
+
+        self.vfx_combo = QtWidgets.QComboBox()
+        self.vfx_combo.addItem("-- None --", None)
+        for breakdown in self.vfx_breakdowns:
+            name = breakdown.get("code") or breakdown.get("name") or f"ID {breakdown['id']}"
+            self.vfx_combo.addItem(name, breakdown["id"])
+        vfx_layout.addWidget(self.vfx_combo, stretch=1)
+        layout.addLayout(vfx_layout)
+
+        # Pre-select current VFX Breakdown
+        current_vfx = self.bid_data.get("sg_vfx_breakdown")
+        if current_vfx and isinstance(current_vfx, dict):
+            current_vfx_id = current_vfx.get("id")
+            for i in range(self.vfx_combo.count()):
+                if self.vfx_combo.itemData(i) == current_vfx_id:
+                    self.vfx_combo.setCurrentIndex(i)
+                    break
+
+        # Bid Assets dropdown
+        assets_layout = QtWidgets.QHBoxLayout()
+        assets_label = QtWidgets.QLabel("Bid Assets:")
+        assets_label.setMinimumWidth(100)
+        assets_layout.addWidget(assets_label)
+
+        self.assets_combo = QtWidgets.QComboBox()
+        self.assets_combo.addItem("-- None --", None)
+        for assets in self.bid_assets:
+            name = assets.get("code") or assets.get("name") or f"ID {assets['id']}"
+            self.assets_combo.addItem(name, assets["id"])
+        assets_layout.addWidget(self.assets_combo, stretch=1)
+        layout.addLayout(assets_layout)
+
+        # Pre-select current Bid Assets
+        current_assets = self.bid_data.get("sg_bid_assets")
+        if current_assets and isinstance(current_assets, dict):
+            current_assets_id = current_assets.get("id")
+            for i in range(self.assets_combo.count()):
+                if self.assets_combo.itemData(i) == current_assets_id:
+                    self.assets_combo.setCurrentIndex(i)
+                    break
+
+        # Price List dropdown
+        price_layout = QtWidgets.QHBoxLayout()
+        price_label = QtWidgets.QLabel("Price List:")
+        price_label.setMinimumWidth(100)
+        price_layout.addWidget(price_label)
+
+        self.price_combo = QtWidgets.QComboBox()
+        self.price_combo.addItem("-- None --", None)
+        for price_list in self.price_lists:
+            name = price_list.get("code") or price_list.get("name") or f"ID {price_list['id']}"
+            self.price_combo.addItem(name, price_list["id"])
+        price_layout.addWidget(self.price_combo, stretch=1)
+        layout.addLayout(price_layout)
+
+        # Pre-select current Price List
+        current_price = self.bid_data.get("sg_price_list")
+        if current_price and isinstance(current_price, dict):
+            current_price_id = current_price.get("id")
+            for i in range(self.price_combo.count()):
+                if self.price_combo.itemData(i) == current_price_id:
+                    self.price_combo.setCurrentIndex(i)
+                    break
+
+        # Rate Card dropdown
+        rate_layout = QtWidgets.QHBoxLayout()
+        rate_label = QtWidgets.QLabel("Rate Card:")
+        rate_label.setMinimumWidth(100)
+        rate_layout.addWidget(rate_label)
+
+        self.rate_combo = QtWidgets.QComboBox()
+        self.rate_combo.addItem("-- None --", None)
+        base_rates_index = 0
+        for idx, rate_card in enumerate(self.rate_cards):
+            name = rate_card.get("code") or rate_card.get("name") or f"ID {rate_card['id']}"
+            self.rate_combo.addItem(name, rate_card["id"])
+            if name.lower() == "base rates":
+                base_rates_index = idx + 1
+
+        rate_layout.addWidget(self.rate_combo, stretch=1)
+        layout.addLayout(rate_layout)
+
+        # Pre-select current Rate Card from Price List, or default to Base Rates
+        self._select_rate_card(base_rates_index)
+
+        # Connect price list change signal now that rate_combo exists
+        self.price_combo.currentIndexChanged.connect(self._on_price_list_changed)
+
+        # Add spacing before buttons
+        layout.addSpacing(15)
+
+        # Buttons row
+        button_layout = QtWidgets.QHBoxLayout()
+
+        # Remove button on the left
+        self.remove_button = QtWidgets.QPushButton("Remove Bid...")
+        self.remove_button.setStyleSheet("color: #ff6666;")
+        self.remove_button.clicked.connect(self._on_remove_bid)
+        button_layout.addWidget(self.remove_button)
+
+        button_layout.addStretch()
+
+        self.ok_button = QtWidgets.QPushButton("Save")
+        self.ok_button.clicked.connect(self._validate_and_accept)
+        self.ok_button.setDefault(True)
+        button_layout.addWidget(self.ok_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+    def _validate_and_accept(self):
+        """Validate bid name and accept if valid."""
+        new_name = self.name_field.text().strip()
+        current_name = self.bid_data.get("code", "")
+
+        # Check if name is empty
+        if not new_name:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Validation Error",
+                "Bid name cannot be empty."
+            )
+            self.name_field.setFocus()
+            return
+
+        # Check for duplicate name (only if name changed)
+        if new_name.lower() != current_name.lower():
+            for bid in self.existing_bids:
+                if bid["id"] != self.bid_id and bid.get("code", "").lower() == new_name.lower():
+                    QtWidgets.QMessageBox.warning(
+                        self,
+                        "Duplicate Name",
+                        f"A bid with the name '{bid.get('code')}' already exists.\n\n"
+                        "Please choose a different name."
+                    )
+                    self.name_field.setFocus()
+                    self.name_field.selectAll()
+                    return
+
+        self.accept()
+
+    def _on_price_list_changed(self, index):
+        """Handle price list selection change to update rate card."""
+        price_list_id = self.price_combo.currentData()
+        if price_list_id:
+            for price_list in self.price_lists:
+                if price_list["id"] == price_list_id:
+                    rate_card = price_list.get("sg_rate_card")
+                    if rate_card and isinstance(rate_card, dict):
+                        rate_card_id = rate_card.get("id")
+                        for i in range(self.rate_combo.count()):
+                            if self.rate_combo.itemData(i) == rate_card_id:
+                                self.rate_combo.setCurrentIndex(i)
+                                return
+                    break
+
+    def _select_rate_card(self, default_index=0):
+        """Select the rate card based on current price list or default."""
+        current_price = self.bid_data.get("sg_price_list")
+        if current_price and isinstance(current_price, dict):
+            current_price_id = current_price.get("id")
+            for price_list in self.price_lists:
+                if price_list["id"] == current_price_id:
+                    rate_card = price_list.get("sg_rate_card")
+                    if rate_card and isinstance(rate_card, dict):
+                        rate_card_id = rate_card.get("id")
+                        for i in range(self.rate_combo.count()):
+                            if self.rate_combo.itemData(i) == rate_card_id:
+                                self.rate_combo.setCurrentIndex(i)
+                                return
+                    break
+        if default_index > 0:
+            self.rate_combo.setCurrentIndex(default_index)
+
+    def _on_remove_bid(self):
+        """Handle Remove Bid button click - show confirmation dialog."""
+        bid_name = self.bid_data.get("code", f"Bid {self.bid_id}")
+
+        # Build summary of children that will be deleted
+        children_summary = []
+        if self.vfx_breakdowns:
+            names = [b.get("code") or b.get("name") or f"ID {b['id']}" for b in self.vfx_breakdowns]
+            children_summary.append(f"• {len(self.vfx_breakdowns)} VFX Breakdown(s): {', '.join(names)}")
+        if self.bid_assets:
+            names = [a.get("code") or a.get("name") or f"ID {a['id']}" for a in self.bid_assets]
+            children_summary.append(f"• {len(self.bid_assets)} Bid Assets: {', '.join(names)}")
+        if self.price_lists:
+            names = [p.get("code") or p.get("name") or f"ID {p['id']}" for p in self.price_lists]
+            children_summary.append(f"• {len(self.price_lists)} Price List(s): {', '.join(names)}")
+
+        # Create confirmation dialog
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Remove Bid")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(450)
+
+        layout = QtWidgets.QVBoxLayout(dialog)
+
+        # Warning message
+        warning_label = QtWidgets.QLabel(
+            f"⚠️ WARNING: This action cannot be undone!\n\n"
+            f"Deleting bid '{bid_name}' will also delete all linked children:"
+        )
+        warning_label.setStyleSheet("color: #ff6666; font-weight: bold; padding: 10px;")
+        warning_label.setWordWrap(True)
+        layout.addWidget(warning_label)
+
+        # Children summary
+        if children_summary:
+            summary_text = "\n".join(children_summary)
+            summary_label = QtWidgets.QLabel(summary_text)
+            summary_label.setStyleSheet("padding: 10px; background-color: #2a2a2a; border-radius: 4px;")
+            summary_label.setWordWrap(True)
+            layout.addWidget(summary_label)
+        else:
+            no_children_label = QtWidgets.QLabel("(No linked children found)")
+            no_children_label.setStyleSheet("padding: 10px; color: #888888;")
+            layout.addWidget(no_children_label)
+
+        # Confirmation section
+        layout.addSpacing(20)
+
+        confirm_label = QtWidgets.QLabel(
+            f"To confirm deletion, type the following string:\n\n{self.confirmation_string}"
+        )
+        confirm_label.setStyleSheet("font-weight: bold; padding: 10px;")
+        confirm_label.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(confirm_label)
+
+        # Confirmation input
+        confirm_layout = QtWidgets.QHBoxLayout()
+        confirm_input_label = QtWidgets.QLabel("Confirmation:")
+        confirm_layout.addWidget(confirm_input_label)
+
+        confirmation_field = QtWidgets.QLineEdit()
+        confirmation_field.setPlaceholderText("Type confirmation string here...")
+        confirm_layout.addWidget(confirmation_field, stretch=1)
+        layout.addLayout(confirm_layout)
+
+        # Buttons
+        layout.addSpacing(20)
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        delete_button = QtWidgets.QPushButton("Delete")
+        delete_button.setEnabled(False)
+        delete_button.setStyleSheet("background-color: #ff6666; color: white; font-weight: bold;")
+        button_layout.addWidget(delete_button)
+
+        cancel_button = QtWidgets.QPushButton("Cancel")
+        button_layout.addWidget(cancel_button)
+
+        layout.addLayout(button_layout)
+
+        # Connect signals
+        def on_confirmation_changed(text):
+            delete_button.setEnabled(text == self.confirmation_string)
+
+        confirmation_field.textChanged.connect(on_confirmation_changed)
+        delete_button.clicked.connect(dialog.accept)
+        cancel_button.clicked.connect(dialog.reject)
+
+        # Show dialog
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+
+        # Perform deletion
+        try:
+            # Delete children first
+            for breakdown in self.vfx_breakdowns:
+                # Also delete bidding scenes for each breakdown
+                bidding_scenes = self.sg_session.sg.find(
+                    "CustomEntity02",
+                    [["sg_parent", "is", {"type": "CustomEntity01", "id": breakdown["id"]}]],
+                    ["id"]
+                )
+                for scene in bidding_scenes:
+                    self.sg_session.sg.delete("CustomEntity02", scene["id"])
+                self.sg_session.sg.delete("CustomEntity01", breakdown["id"])
+                logger.info(f"Deleted VFX Breakdown {breakdown['id']} with {len(bidding_scenes)} bidding scenes")
+
+            for assets in self.bid_assets:
+                # Also delete asset items
+                asset_items = self.sg_session.sg.find(
+                    "CustomEntity07",
+                    [["sg_bid_assets", "is", {"type": "CustomEntity08", "id": assets["id"]}]],
+                    ["id"]
+                )
+                for item in asset_items:
+                    self.sg_session.sg.delete("CustomEntity07", item["id"])
+                self.sg_session.sg.delete("CustomEntity08", assets["id"])
+                logger.info(f"Deleted Bid Assets {assets['id']} with {len(asset_items)} asset items")
+
+            for price_list in self.price_lists:
+                # Also delete line items
+                line_items = self.sg_session.sg.find(
+                    "CustomEntity03",
+                    [["sg_parent_pricelist", "is", {"type": "CustomEntity10", "id": price_list["id"]}]],
+                    ["id"]
+                )
+                for item in line_items:
+                    self.sg_session.sg.delete("CustomEntity03", item["id"])
+                self.sg_session.sg.delete("CustomEntity10", price_list["id"])
+                logger.info(f"Deleted Price List {price_list['id']} with {len(line_items)} line items")
+
+            # Delete the bid itself
+            self.sg_session.sg.delete("CustomEntity06", self.bid_id)
+            logger.info(f"Deleted Bid {self.bid_id}")
+
+            self._bid_was_deleted = True
+            self.bidDeleted.emit(self.bid_id)
+
+            QtWidgets.QMessageBox.information(
+                self,
+                "Success",
+                f"Bid '{bid_name}' and all linked children have been deleted."
+            )
+
+            # Close the dialog
+            self.reject()
+
+        except Exception as e:
+            logger.error(f"Failed to delete bid: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to delete bid:\n{str(e)}"
+            )
+
+    def was_bid_deleted(self):
+        """Check if the bid was deleted during this dialog session."""
+        return self._bid_was_deleted
+
+    def get_bid_name(self):
+        """Get the bid name from the text field."""
+        return self.name_field.text().strip()
+
+    def get_description(self):
+        """Get the description from the text field."""
+        return self.description_field.toPlainText().strip()
+
+    def get_vfx_breakdown_id(self):
+        """Get selected VFX Breakdown ID."""
+        return self.vfx_combo.currentData()
+
+    def get_bid_assets_id(self):
+        """Get selected Bid Assets ID."""
+        return self.assets_combo.currentData()
+
+    def get_price_list_id(self):
+        """Get selected Price List ID."""
+        return self.price_combo.currentData()
+
+    def get_rate_card_id(self):
+        """Get selected Rate Card ID."""
+        return self.rate_combo.currentData()
 
 
 class CreateBidDialog(QtWidgets.QDialog):
@@ -2134,26 +2817,45 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self.bid_combo.currentIndexChanged.connect(self._on_bid_changed)
         selector_row.addWidget(self.bid_combo, stretch=1)
 
+        # Config Bid button (icon only) - match height to combobox
+        self.config_bid_btn = QtWidgets.QPushButton()
+        self.config_bid_btn.setToolTip("Configure Bid")
+        self.config_bid_btn.setIcon(create_icon_from_svg_path(FILE_COG_SVG_PATH, size=16, color="#e0e0e0"))
+        self.config_bid_btn.setIconSize(QtCore.QSize(16, 16))
+        # Match size to the combobox height
+        combo_height = self.bid_combo.sizeHint().height()
+        self.config_bid_btn.setFixedSize(combo_height, combo_height)
+        self.config_bid_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: 1px solid #555555;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #3a3a3a;
+                border: 1px solid #666666;
+            }
+            QPushButton:pressed {
+                background-color: #2a2a2a;
+            }
+            QPushButton:disabled {
+                opacity: 0.5;
+            }
+        """)
+        self.config_bid_btn.setEnabled(False)
+        self.config_bid_btn.clicked.connect(self._on_config_bid)
+        selector_row.addWidget(self.config_bid_btn)
+
         self.set_current_btn = QtWidgets.QPushButton("Set as Current")
         self.set_current_btn.setEnabled(False)
         self.set_current_btn.clicked.connect(self._on_set_current_bid)
         self.set_current_btn.setToolTip("Set this Bid as the current one for the selected RFQ")
         selector_row.addWidget(self.set_current_btn)
 
-        self.add_btn = QtWidgets.QPushButton("Add")
+        self.add_btn = QtWidgets.QPushButton("Create")
         self.add_btn.clicked.connect(self._on_add_bid)
         self.add_btn.setToolTip("Create a new Bid")
         selector_row.addWidget(self.add_btn)
-
-        self.remove_btn = QtWidgets.QPushButton("Remove")
-        self.remove_btn.clicked.connect(self._on_remove_bid)
-        self.remove_btn.setToolTip("Delete the selected Bid")
-        selector_row.addWidget(self.remove_btn)
-
-        self.rename_btn = QtWidgets.QPushButton("Rename")
-        self.rename_btn.clicked.connect(self._on_rename_bid)
-        self.rename_btn.setToolTip("Rename the selected Bid")
-        selector_row.addWidget(self.rename_btn)
 
         self.refresh_btn = QtWidgets.QPushButton("Refresh")
         self.refresh_btn.clicked.connect(self._on_refresh_bids)
@@ -2169,7 +2871,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         # Bid info label (breakdown and asset)
         self.bid_info_label = QtWidgets.QLabel("")
-        self.bid_info_label.setStyleSheet("color: #7fb3d5; padding: 2px 0; font-style: italic;")
+        self.bid_info_label.setStyleSheet("padding: 2px 0;")
         self.bid_info_label.setWordWrap(True)
         group.addWidget(self.bid_info_label)
 
@@ -2203,6 +2905,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         if not project_id:
             self.bid_combo.blockSignals(False)
             self.set_current_btn.setEnabled(False)
+            self.config_bid_btn.setEnabled(False)
             self._set_status("Select an RFQ to view Bids.")
             return
 
@@ -2214,7 +2917,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             # Get bids filtered by RFQ (only bids linked to this RFQ via sg_parent_rfq)
             bids = self.sg_session.get_bids(
                 project_id,
-                fields=["id", "code", "name", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list"],
+                fields=["id", "code", "name", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list", "description"],
                 rfq_id=rfq_id
             )
         except Exception as e:
@@ -2230,8 +2933,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         self.bid_combo.blockSignals(False)
 
-        # Enable Set button only if there are bids and an RFQ is selected
+        # Enable Set and Config buttons only if there are bids and an RFQ is selected
         self.set_current_btn.setEnabled(len(bids) > 0 and rfq is not None)
+        self.config_bid_btn.setEnabled(len(bids) > 0 and rfq is not None)
 
         # Status & selection
         if bids:
@@ -2295,7 +2999,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         return self.bid_combo.currentData()
 
     def _update_bid_info_label(self, bid):
-        """Update the bid info label and group box title with breakdown and bid asset info.
+        """Update the bid info label and group box title with breakdown, bid asset, price list and description info.
 
         Args:
             bid: Bid data dict or None
@@ -2306,6 +3010,10 @@ class BidSelectorWidget(QtWidgets.QWidget):
             self.group_box.setAdditionalInfo("")
             return
 
+        # Colors for formatting
+        label_color = "#a0a0a0"  # Light gray for labels (normal weight)
+        value_color = "#6b9bd1"  # Blue for values (bold)
+
         info_parts = []
 
         # Get bid name for title bar
@@ -2313,7 +3021,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         # Start with "Current Bid: (bid name)"
         title_text = f"Current Bid: {bid_name}"
 
-        # Add breakdown info
+        # Add VFX Breakdown info
         breakdown = bid.get("sg_vfx_breakdown")
         if breakdown:
             # Extract breakdown name/code
@@ -2323,10 +3031,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 breakdown_name = breakdown[0].get("name") or breakdown[0].get("code") or f"ID {breakdown[0].get('id', 'N/A')}"
             else:
                 breakdown_name = str(breakdown)
-            info_parts.append(f"Bid Breakdown: {breakdown_name}")
-            title_text += f" Bid Breakdown: {breakdown_name}"
+        else:
+            breakdown_name = "None"
+        info_parts.append(f'<span style="color:{label_color};">Vfx Breakdown:</span> <span style="color:{value_color}; font-weight:bold;">{breakdown_name}</span>')
 
-        # Add bid asset info
+        # Add Bid Assets info
         bid_assets = bid.get("sg_bid_assets")
         if bid_assets:
             # Extract bid asset name/code
@@ -2336,14 +3045,36 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 asset_name = bid_assets[0].get("name") or bid_assets[0].get("code") or f"ID {bid_assets[0].get('id', 'N/A')}"
             else:
                 asset_name = str(bid_assets)
-            info_parts.append(f"Bid Asset: {asset_name}")
-            title_text += f" Bid Asset: {asset_name}"
-
-        # Update the label with the info (for display under dropdown)
-        if info_parts:
-            self.bid_info_label.setText("  ".join(info_parts))
         else:
-            self.bid_info_label.setText("")
+            asset_name = "None"
+        info_parts.append(f'<span style="color:{label_color};">Bid Assets:</span> <span style="color:{value_color}; font-weight:bold;">{asset_name}</span>')
+
+        # Add Price List info
+        price_list = bid.get("sg_price_list")
+        if price_list:
+            # Extract price list name/code
+            if isinstance(price_list, dict):
+                price_list_name = price_list.get("name") or price_list.get("code") or f"ID {price_list.get('id', 'N/A')}"
+            elif isinstance(price_list, list) and price_list:
+                price_list_name = price_list[0].get("name") or price_list[0].get("code") or f"ID {price_list[0].get('id', 'N/A')}"
+            else:
+                price_list_name = str(price_list)
+        else:
+            price_list_name = "None"
+        info_parts.append(f'<span style="color:{label_color};">Price List:</span> <span style="color:{value_color}; font-weight:bold;">{price_list_name}</span>')
+
+        # Add Description info
+        description = bid.get("description")
+        if description:
+            # Truncate long descriptions for display
+            if len(description) > 50:
+                description = description[:50] + "..."
+        else:
+            description = "None"
+        info_parts.append(f'<span style="color:{label_color};">Description:</span> <span style="color:{value_color}; font-weight:bold;">{description}</span>')
+
+        # Update the label with HTML formatted info (for display under dropdown)
+        self.bid_info_label.setText(" · ".join(info_parts))
 
         # Update the group box title with bid name and info (for collapsed state)
         self.group_box.setAdditionalInfo(title_text)
@@ -2359,6 +3090,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self.bid_info_label.setText("")
         self.group_box.setAdditionalInfo("")
         self.set_current_btn.setEnabled(False)
+        self.config_bid_btn.setEnabled(False)
         self._set_status("Select an RFQ to view Bids.")
 
     def _on_bid_changed(self, index):
@@ -2621,6 +3353,101 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         return created
 
+    def _on_config_bid(self):
+        """Handle Config Bid button click - show dialog to configure bid children."""
+        bid = self.get_current_bid()
+        if not bid:
+            QtWidgets.QMessageBox.warning(self, "No Bid Selected", "Please select a Bid from the list.")
+            return
+
+        bid_id = bid.get("id")
+        bid_name = bid.get("code", f"Bid {bid_id}")
+
+        # Show config dialog
+        dialog = ConfigBidDialog(
+            self.sg_session,
+            self.current_project_id,
+            bid_id,
+            bid,
+            parent=self
+        )
+
+        result = dialog.exec_()
+
+        # Check if bid was deleted
+        if dialog.was_bid_deleted():
+            # Refresh bids list after deletion
+            self._refresh_bids()
+            self.statusMessageChanged.emit(f"✓ Deleted bid '{bid_name}'", False)
+            return
+
+        if result != QtWidgets.QDialog.Accepted:
+            return
+
+        # Get values from dialog
+        new_name = dialog.get_bid_name()
+        description = dialog.get_description()
+        vfx_breakdown_id = dialog.get_vfx_breakdown_id()
+        bid_assets_id = dialog.get_bid_assets_id()
+        price_list_id = dialog.get_price_list_id()
+        rate_card_id = dialog.get_rate_card_id()
+
+        try:
+            # Update bid with name, description and selected children
+            update_data = {}
+
+            # Update name if changed
+            if new_name and new_name != bid_name:
+                update_data["code"] = new_name
+
+            # Update description
+            update_data["description"] = description if description else None
+
+            if vfx_breakdown_id:
+                update_data["sg_vfx_breakdown"] = {"type": "CustomEntity01", "id": vfx_breakdown_id}
+            else:
+                update_data["sg_vfx_breakdown"] = None
+
+            if bid_assets_id:
+                update_data["sg_bid_assets"] = {"type": "CustomEntity08", "id": bid_assets_id}
+            else:
+                update_data["sg_bid_assets"] = None
+
+            if price_list_id:
+                update_data["sg_price_list"] = {"type": "CustomEntity10", "id": price_list_id}
+            else:
+                update_data["sg_price_list"] = None
+
+            # Update bid
+            self.sg_session.sg.update("CustomEntity06", bid_id, update_data)
+            logger.info(f"Updated Bid {bid_id} with config: {update_data}")
+
+            # Update rate card on price list if both are selected
+            if price_list_id and rate_card_id:
+                self.sg_session.sg.update(
+                    "CustomEntity10",
+                    price_list_id,
+                    {"sg_rate_card": {"type": "CustomNonProjectEntity01", "id": rate_card_id}}
+                )
+                logger.info(f"Updated Price List {price_list_id} with Rate Card {rate_card_id}")
+
+            display_name = new_name if new_name else bid_name
+            self._set_status(f"Bid '{display_name}' configuration saved.")
+
+            # Refresh bids to update the info label
+            self.populate_bids(self.current_rfq, self.current_project_id, auto_select=False)
+
+            # Re-select the current bid
+            self._select_bid_by_id(bid_id)
+
+        except Exception as e:
+            logger.error(f"Failed to update Bid configuration: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to save Bid configuration: {str(e)}"
+            )
+
     def _on_add_bid(self):
         """Handle Add Bid button click."""
         # Get current project
@@ -2642,6 +3469,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         bid_name = dialog.get_bid_name()
         bid_type = dialog.get_bid_type()
+        description = dialog.get_description()
 
         if not bid_name:
             QtWidgets.QMessageBox.warning(self, "Invalid Input", "Please enter a bid name.")
@@ -2660,7 +3488,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         try:
             # Create the bid linked to the current RFQ
             new_bid = self.sg_session.create_bid(
-                self.current_project_id, bid_name, bid_type, parent_rfq_id=rfq_id
+                self.current_project_id, bid_name, bid_type, parent_rfq_id=rfq_id, description=description
             )
             new_bid_id = new_bid['id']
 
@@ -2678,7 +3506,8 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         if source_vfx_breakdown:
                             source_vfx_id = source_vfx_breakdown.get("id") if isinstance(source_vfx_breakdown, dict) else None
                             if source_vfx_id:
-                                new_vfx_breakdown = self._copy_vfx_breakdown(source_vfx_id, f"{bid_name} - VFX Breakdown", bid_id=new_bid_id)
+                                vfx_name = f"{bid_name}-VFX Breakdown-v001"
+                                new_vfx_breakdown = self._copy_vfx_breakdown(source_vfx_id, vfx_name, bid_id=new_bid_id)
                                 if new_vfx_breakdown:
                                     # Link to the new Bid
                                     self.sg_session.sg.update(
@@ -2695,7 +3524,8 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         if source_bid_assets:
                             source_assets_id = source_bid_assets.get("id") if isinstance(source_bid_assets, dict) else None
                             if source_assets_id:
-                                new_bid_assets = self._copy_bid_assets(source_assets_id, f"{bid_name} - Assets", bid_id=new_bid_id)
+                                assets_name = f"{bid_name}-Assets-v001"
+                                new_bid_assets = self._copy_bid_assets(source_assets_id, assets_name, bid_id=new_bid_id)
                                 if new_bid_assets:
                                     # Link to the new Bid
                                     self.sg_session.sg.update(
@@ -2712,7 +3542,8 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         if source_price_list:
                             source_price_list_id = source_price_list.get("id") if isinstance(source_price_list, dict) else None
                             if source_price_list_id:
-                                new_price_list = self._copy_price_list(source_price_list_id, f"{bid_name} - Price List", bid_id=new_bid_id)
+                                price_list_name = f"{bid_name}-Price List-v001"
+                                new_price_list = self._copy_price_list(source_price_list_id, price_list_name, bid_id=new_bid_id)
                                 if new_price_list:
                                     # Link to the new Bid
                                     self.sg_session.sg.update(
@@ -2785,7 +3616,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             logger.info(f"Created VFX Breakdown copy: {new_name} (ID: {new_breakdown_id})")
 
             # Fetch all bidding scenes from the source breakdown
-            source_scenes = self.sg_session.get_beats_for_vfx_breakdown(
+            source_scenes = self.sg_session.get_bidding_scenes_for_vfx_breakdown(
                 source_id,
                 fields=[
                     "code", "sg_beat_id", "sg_vfx_breakdown_scene", "sg_page",
@@ -2954,9 +3785,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
                     "sg_parent_pricelist": {"type": "CustomEntity10", "id": new_price_list_id}
                 }
 
-                # Copy all fields except id and sg_parent_pricelist (which we set above)
+                # Copy all fields except id, sg_parent_pricelist (which we set above),
+                # and read-only computed fields like sg_total_mandays
+                skip_fields = ("id", "type", "sg_parent_pricelist", "sg_total_mandays")
                 for field, value in item.items():
-                    if field not in ("id", "type", "sg_parent_pricelist") and value is not None:
+                    if field not in skip_fields and value is not None:
                         # Handle entity references
                         if isinstance(value, dict) and "type" in value and "id" in value:
                             new_item_data[field] = {"type": value["type"], "id": value["id"]}
