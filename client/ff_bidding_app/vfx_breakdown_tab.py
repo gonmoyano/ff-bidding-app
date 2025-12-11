@@ -356,24 +356,27 @@ class DeleteBiddingSceneCommand:
 class AddVFXBreakdownDialog(QtWidgets.QDialog):
     """Dialog for creating a new VFX Breakdown."""
 
-    def __init__(self, existing_breakdowns, sg_session=None, project_id=None, parent=None):
+    def __init__(self, existing_breakdowns, sg_session=None, project_id=None, current_breakdown=None, parent=None):
         """Initialize the dialog.
 
         Args:
             existing_breakdowns: List of existing VFX Breakdown dicts with 'id' and 'code'
             sg_session: ShotgridClient instance for version checking
             project_id: Project ID for version checking
+            current_breakdown: Currently selected VFX Breakdown dict for name prefill
             parent: Parent widget
         """
         super().__init__(parent)
         self.existing_breakdowns = existing_breakdowns
         self.sg_session = sg_session
         self.project_id = project_id
+        self.current_breakdown = current_breakdown
         self.setWindowTitle("Add VFX Breakdown")
         self.setModal(True)
         self.setMinimumWidth(400)
 
         self._build_ui()
+        self._prefill_name_from_current()
 
     def _build_ui(self):
         """Build the dialog UI."""
@@ -447,6 +450,17 @@ class AddVFXBreakdownDialog(QtWidgets.QDialog):
         # If switching to copy mode and a breakdown is already selected, update name
         if is_copy_mode and self.copy_combo.currentIndex() > 0:
             self._on_copy_selection_changed(self.copy_combo.currentIndex())
+
+    def _prefill_name_from_current(self):
+        """Prefill the Name field with the next version of the current breakdown's name."""
+        if not self.current_breakdown:
+            return
+
+        source_name = self.current_breakdown.get("code") or self.current_breakdown.get("name") or ""
+        if source_name:
+            next_name = self._get_next_version_name(source_name)
+            logger.info(f"Prefilling name field from current breakdown '{source_name}' -> '{next_name}'")
+            self.name_field.setText(next_name)
 
     def _on_copy_selection_changed(self, index):
         """Handle copy source selection change - prefill name with next version."""
@@ -2260,11 +2274,15 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             logger.error(f"Failed to fetch existing breakdowns: {e}", exc_info=True)
             existing_breakdowns = []
 
+        # Get current breakdown for name prefill
+        current_breakdown = self.vfx_breakdown_combo.currentData() if self.vfx_breakdown_combo else None
+
         # Show dialog
         dialog = AddVFXBreakdownDialog(
             existing_breakdowns,
             sg_session=self.sg_session,
             project_id=proj["id"],
+            current_breakdown=current_breakdown,
             parent=self
         )
         if dialog.exec() != QtWidgets.QDialog.Accepted:
