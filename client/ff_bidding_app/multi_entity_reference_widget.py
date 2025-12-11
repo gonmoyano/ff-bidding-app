@@ -503,6 +503,17 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         self.pills_layout.invalidate()
         self.pills_container.updateGeometry()
 
+    def update_for_height(self, height):
+        """Public method to update pill heights for a given container height.
+
+        Call this method when the widget's height is changed programmatically
+        (e.g., via setFixedHeight) to ensure pills are resized accordingly.
+
+        Args:
+            height (int): The new height of the widget
+        """
+        self._update_pill_heights(height)
+
     def paintEvent(self, event):
         """Custom paint event to draw the background and border with state colors."""
         painter = QtGui.QPainter(self)
