@@ -499,9 +499,14 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
                 if isinstance(widget, EntityPillWidget):
                     widget.set_max_height(available_height)
 
-        # Trigger layout update
+        # Force layout to recalculate by triggering a resize on the container
+        # invalidate() only marks layout as dirty but doesn't recalculate
         self.pills_layout.invalidate()
         self.pills_container.updateGeometry()
+        # Force the layout to actually apply new geometries
+        if self.pills_container.size().isValid():
+            self.pills_container.resize(self.pills_container.size())
+        self.pills_container.update()
 
     def update_for_height(self, height):
         """Public method to update pill heights for a given container height.

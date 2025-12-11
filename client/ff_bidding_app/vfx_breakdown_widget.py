@@ -1570,6 +1570,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                     widget = self.table_view.indexWidget(index)
                     if widget:
                         widget.setFixedHeight(saved_height)
+                        # Explicitly update pill heights (resize event may not fire immediately)
+                        if hasattr(widget, 'update_for_height'):
+                            widget.update_for_height(saved_height)
                         widget.updateGeometry()
 
                     # Force the row to resize
