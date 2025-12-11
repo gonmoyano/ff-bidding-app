@@ -446,7 +446,7 @@ class AddVFXBreakdownDialog(QtWidgets.QDialog):
         if is_copy_mode:
             self.copy_combo.setStyleSheet("")
         else:
-            self.copy_combo.setStyleSheet("QComboBox:disabled { color: #666666; background-color: #1a1a1a; }")
+            self.copy_combo.setStyleSheet("QComboBox:disabled { color: #666666; background-color: #2d2d2d; }")
         # If switching to copy mode and a breakdown is already selected, update name
         if is_copy_mode and self.copy_combo.currentIndex() > 0:
             self._on_copy_selection_changed(self.copy_combo.currentIndex())
