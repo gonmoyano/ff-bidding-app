@@ -21,6 +21,7 @@ class EntityPillWidget(QtWidgets.QWidget):
     - X button for removal
     - Hover effects
     - Dark theme styling matching ShotGrid
+    - Dynamic height adjustment based on container size
 
     Signals:
         removeRequested: Emitted when user clicks the X button
@@ -29,18 +30,24 @@ class EntityPillWidget(QtWidgets.QWidget):
     removeRequested = QtCore.Signal(object)  # Emits the entity dict
     clicked = QtCore.Signal(object)  # Emits the entity dict when pill is clicked
 
-    def __init__(self, entity, is_valid=True, parent=None):
+    # Default pill height (can be adjusted)
+    DEFAULT_HEIGHT = 22
+    MIN_HEIGHT = 16  # Minimum height to remain readable
+
+    def __init__(self, entity, is_valid=True, max_height=None, parent=None):
         """
         Initialize an entity pill widget.
 
         Args:
             entity (dict): ShotGrid entity dict with 'type', 'id', 'name' keys
             is_valid (bool): Whether this entity reference is valid (exists in current bid's assets)
+            max_height (int): Maximum height for the pill (for clipping to cell size)
             parent (QWidget): Parent widget
         """
         super().__init__(parent)
         self.entity = entity
         self.is_valid = is_valid
+        self._max_height = max_height
         # Try 'code' first (used by Asset items), then 'name', finally fallback to ID
         self.entity_name = entity.get("code") or entity.get("name") or f"ID {entity.get('id', 'N/A')}"
 
@@ -60,8 +67,11 @@ class EntityPillWidget(QtWidgets.QWidget):
         """Build the pill UI with label and close button."""
         # Main layout - horizontal
         layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(8, 3, 4, 3)
-        layout.setSpacing(4)
+        layout.setContentsMargins(6, 2, 4, 2)
+        layout.setSpacing(3)
+
+        # Calculate effective height
+        effective_height = self._calculate_effective_height()
 
         # Entity name label
         self.name_label = QtWidgets.QLabel(self.entity_name)
@@ -144,6 +154,43 @@ class EntityPillWidget(QtWidgets.QWidget):
         """
         return self.entity
 
+    def _calculate_effective_height(self):
+        """Calculate the effective height for the pill based on constraints.
+
+        Returns:
+            int: The effective height to use for the pill
+        """
+        if self._max_height is not None:
+            # Use the constrained height, but respect minimum
+            return max(self.MIN_HEIGHT, min(self._max_height, self.DEFAULT_HEIGHT))
+        return self.DEFAULT_HEIGHT
+
+    def set_max_height(self, max_height):
+        """Set the maximum height for the pill and update the widget.
+
+        Args:
+            max_height (int): Maximum height constraint
+        """
+        self._max_height = max_height
+        effective_height = self._calculate_effective_height()
+        self.setFixedHeight(effective_height)
+        # Update close button size proportionally
+        if hasattr(self, 'close_btn'):
+            btn_size = max(12, min(16, effective_height - 4))
+            self.close_btn.setFixedSize(btn_size, btn_size)
+        self.updateGeometry()
+
+    def sizeHint(self):
+        """Return the preferred size for this pill widget.
+
+        Returns:
+            QSize: Preferred size
+        """
+        effective_height = self._calculate_effective_height()
+        # Width is based on content, height is constrained
+        width = self.name_label.sizeHint().width() + 30  # Add space for close button and margins
+        return QtCore.QSize(width, effective_height)
+
 
 class MultiEntityReferenceWidget(QtWidgets.QWidget):
     """
@@ -178,6 +225,7 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         self._valid_entity_ids = valid_entity_ids  # Set of valid entity IDs
         self._is_selected = False  # Track selection state
         self._is_editing = False   # Track edit state
+        self._pill_max_height = None  # Max height for pills (calculated from widget height)
 
         # Colors for custom painting
         self.bg_color = QtGui.QColor("#2b2b2b")      # Normal background
@@ -225,18 +273,21 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         main_layout.setSpacing(0)
 
         # Scroll area for pills (in case of many entities)
-        scroll_area = QtWidgets.QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
-        scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        # Store as instance variable for later access
+        self._scroll_area = QtWidgets.QScrollArea()
+        self._scroll_area.setWidgetResizable(True)
+        self._scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
+        # Hide scroll bars by default for cleaner look in small cells
+        # Scroll bars will appear automatically when content overflows
+        self._scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self._scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
 
         # Container for pills with flow layout
         self.pills_container = QtWidgets.QWidget()
         self.pills_layout = FlowLayout(self.pills_container, margin=2, h_spacing=4, v_spacing=4)
 
-        scroll_area.setWidget(self.pills_container)
-        main_layout.addWidget(scroll_area)
+        self._scroll_area.setWidget(self.pills_container)
+        main_layout.addWidget(self._scroll_area)
 
         # Make scroll area and pills container transparent (paintEvent handles main widget)
         self.setStyleSheet("""
@@ -285,7 +336,7 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
             entity_id = entity.get('id')
             is_valid = entity_id in self._valid_entity_ids
 
-        pill = EntityPillWidget(entity, is_valid=is_valid, parent=self)
+        pill = EntityPillWidget(entity, is_valid=is_valid, max_height=self._pill_max_height, parent=self)
         pill.removeRequested.connect(self._on_pill_remove)
         self.pills_layout.addWidget(pill)
 
@@ -382,6 +433,43 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
     def sizeHint(self):
         """Provide size hint for layout."""
         return QtCore.QSize(200, 60)
+
+    def resizeEvent(self, event):
+        """Handle resize events to update pill sizes based on available height.
+
+        Args:
+            event (QResizeEvent): The resize event
+        """
+        super().resizeEvent(event)
+        # Calculate available height for pills (accounting for margins and border)
+        new_height = event.size().height()
+        self._update_pill_heights(new_height)
+
+    def _update_pill_heights(self, widget_height):
+        """Update the maximum height for all pills based on widget height.
+
+        Args:
+            widget_height (int): The current height of the widget
+        """
+        # Calculate available height for pills
+        # Account for: 2px top margin + 2px bottom margin + 2px scroll area margin
+        # and leave some vertical padding
+        available_height = max(EntityPillWidget.MIN_HEIGHT, widget_height - 8)
+
+        # Store the max height for new pills
+        self._pill_max_height = available_height
+
+        # Update existing pills
+        for i in range(self.pills_layout.count()):
+            item = self.pills_layout.itemAt(i)
+            if item and item.widget():
+                widget = item.widget()
+                if isinstance(widget, EntityPillWidget):
+                    widget.set_max_height(available_height)
+
+        # Trigger layout update
+        self.pills_layout.invalidate()
+        self.pills_container.updateGeometry()
 
     def paintEvent(self, event):
         """Custom paint event to draw the background and border with state colors."""
