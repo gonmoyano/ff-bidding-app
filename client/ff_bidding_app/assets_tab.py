@@ -614,6 +614,22 @@ class AssetsTab(QtWidgets.QWidget):
             return
 
         try:
+            # Check if this bid assets is assigned to the current bid and clear the reference
+            should_refresh_info_label = False
+            if self.current_bid_id and self.current_bid_data:
+                bid_assets_ref = self.current_bid_data.get("sg_bid_assets")
+                bid_assets_ref_id = None
+                if isinstance(bid_assets_ref, dict):
+                    bid_assets_ref_id = bid_assets_ref.get("id")
+                elif isinstance(bid_assets_ref, list) and bid_assets_ref:
+                    bid_assets_ref_id = bid_assets_ref[0].get("id") if bid_assets_ref[0] else None
+
+                if bid_assets_ref_id == bid_assets_id:
+                    # Clear the reference in the Bid
+                    self.sg_session.sg.update("CustomEntity06", self.current_bid_id, {"sg_bid_assets": None})
+                    logger.info(f"Cleared sg_bid_assets reference from Bid {self.current_bid_id}")
+                    should_refresh_info_label = True
+
             # Delete the Bid Assets (CustomEntity08)
             self.sg_session.sg.delete("CustomEntity08", bid_assets_id)
 
@@ -622,6 +638,10 @@ class AssetsTab(QtWidgets.QWidget):
 
             # Refresh list
             self._refresh_bid_assets()
+
+            # Update the bid info label if the bid assets was assigned to current bid
+            if should_refresh_info_label:
+                self._refresh_bid_info_label()
 
         except Exception as e:
             logger.error(f"Failed to delete Bid Assets: {e}", exc_info=True)

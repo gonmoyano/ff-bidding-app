@@ -2387,6 +2387,21 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     self.sg_session.sg.delete("CustomEntity02", scene["id"])
                 logger.info(f"Successfully deleted {len(bidding_scenes)} Bidding Scenes")
 
+            # Check if this breakdown is assigned to the current bid and clear the reference
+            current_bid = getattr(self.parent_app.bidding_tab, 'current_bid', None) if hasattr(self.parent_app, 'bidding_tab') else None
+            if current_bid:
+                bid_breakdown = current_bid.get("sg_vfx_breakdown")
+                bid_breakdown_id = None
+                if isinstance(bid_breakdown, dict):
+                    bid_breakdown_id = bid_breakdown.get("id")
+                elif isinstance(bid_breakdown, list) and bid_breakdown:
+                    bid_breakdown_id = bid_breakdown[0].get("id") if bid_breakdown[0] else None
+
+                if bid_breakdown_id == breakdown_id:
+                    # Clear the reference in the Bid
+                    self.sg_session.sg.update("CustomEntity06", current_bid["id"], {"sg_vfx_breakdown": None})
+                    logger.info(f"Cleared sg_vfx_breakdown reference from Bid {current_bid['id']}")
+
             # Delete the VFX Breakdown from ShotGrid
             self.sg_session.sg.delete(entity_type, breakdown_id)
 
@@ -2397,6 +2412,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
             # Refresh the combo box
             self._refresh_vfx_breakdowns()
+
+            # Update the bid info label if the breakdown was assigned to current bid
+            if current_bid and bid_breakdown_id == breakdown_id:
+                self._refresh_bid_info_label()
 
             QtWidgets.QMessageBox.information(
                 self,
@@ -2411,6 +2430,50 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                 "Error",
                 f"Failed to delete VFX Breakdown:\n{str(e)}"
             )
+
+    def _refresh_bid_info_label(self):
+        """Refresh the bid data from ShotGrid and update the bid info label in the Bids group."""
+        if not self.parent_app:
+            return
+
+        # Get current bid
+        current_bid = getattr(self.parent_app.bidding_tab, 'current_bid', None) if hasattr(self.parent_app, 'bidding_tab') else None
+        if not current_bid:
+            return
+
+        bid_id = current_bid.get("id")
+        if not bid_id:
+            return
+
+        try:
+            # Fetch updated bid data from ShotGrid
+            updated_bid = self.sg_session.sg.find_one(
+                "CustomEntity06",
+                [["id", "is", bid_id]],
+                ["id", "code", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list", "description"]
+            )
+            if not updated_bid:
+                return
+
+            # Update current bid in bidding tab
+            if hasattr(self.parent_app, 'bidding_tab'):
+                self.parent_app.bidding_tab.current_bid = updated_bid
+                # Update bid selector's combo box data and info label
+                if hasattr(self.parent_app.bidding_tab, 'bid_selector'):
+                    bid_selector = self.parent_app.bidding_tab.bid_selector
+                    # Find and update the item in the combo
+                    combo = bid_selector.bid_combo
+                    for i in range(combo.count()):
+                        item_bid = combo.itemData(i)
+                        if isinstance(item_bid, dict) and item_bid.get('id') == bid_id:
+                            combo.setItemData(i, updated_bid)
+                            break
+                    # Update the bid info label
+                    bid_selector._update_bid_info_label(updated_bid)
+
+            logger.info(f"Bid {bid_id} refreshed with latest data.")
+        except Exception as e:
+            logger.warning(f"Failed to refresh Bid info label: {e}")
 
     def _on_rename_vfx_breakdown(self):
         """Handle Rename VFX Breakdown button click."""

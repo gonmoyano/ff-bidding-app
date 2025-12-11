@@ -989,6 +989,22 @@ class RatesTab(QtWidgets.QWidget):
             return
 
         try:
+            # Check if this price list is assigned to the current bid and clear the reference
+            should_refresh_info_label = False
+            if self.current_bid_id and self.current_bid_data:
+                price_list_ref = self.current_bid_data.get("sg_price_list")
+                price_list_ref_id = None
+                if isinstance(price_list_ref, dict):
+                    price_list_ref_id = price_list_ref.get("id")
+                elif isinstance(price_list_ref, list) and price_list_ref:
+                    price_list_ref_id = price_list_ref[0].get("id") if price_list_ref[0] else None
+
+                if price_list_ref_id == price_list_id:
+                    # Clear the reference in the Bid
+                    self.sg_session.sg.update("CustomEntity06", self.current_bid_id, {"sg_price_list": None})
+                    logger.info(f"Cleared sg_price_list reference from Bid {self.current_bid_id}")
+                    should_refresh_info_label = True
+
             # Delete the Price List (CustomEntity10)
             self.sg_session.sg.delete("CustomEntity10", price_list_id)
 
@@ -997,6 +1013,10 @@ class RatesTab(QtWidgets.QWidget):
 
             # Refresh list
             self._refresh_price_lists()
+
+            # Update the bid info label if the price list was assigned to current bid
+            if should_refresh_info_label:
+                self._refresh_bid_info_label()
 
         except Exception as e:
             logger.error(f"Failed to delete Price List: {e}", exc_info=True)
