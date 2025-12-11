@@ -252,7 +252,7 @@ class RatesTab(QtWidgets.QWidget):
         self.price_lists_rate_cards_btn.clicked.connect(self._on_open_rate_cards_dialog)
         selector_row.addWidget(self.price_lists_rate_cards_btn)
 
-        self.price_lists_add_btn = QtWidgets.QPushButton("Add")
+        self.price_lists_add_btn = QtWidgets.QPushButton("Create")
         self.price_lists_add_btn.clicked.connect(self._on_add_price_list)
         selector_row.addWidget(self.price_lists_add_btn)
 

@@ -1211,7 +1211,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfx_breakdown_set_btn.clicked.connect(self._on_set_current_vfx_breakdown)
         selector_row.addWidget(self.vfx_breakdown_set_btn)
 
-        self.vfx_breakdown_add_btn = QtWidgets.QPushButton("Add")
+        self.vfx_breakdown_add_btn = QtWidgets.QPushButton("Create")
         self.vfx_breakdown_add_btn.clicked.connect(self._on_add_vfx_breakdown)
         selector_row.addWidget(self.vfx_breakdown_add_btn)
 

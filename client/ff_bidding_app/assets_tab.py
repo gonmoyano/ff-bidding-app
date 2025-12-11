@@ -93,7 +93,7 @@ class AssetsTab(QtWidgets.QWidget):
         self.bid_assets_set_btn.clicked.connect(self._on_set_current_bid_assets)
         selector_row.addWidget(self.bid_assets_set_btn)
 
-        self.bid_assets_add_btn = QtWidgets.QPushButton("Add")
+        self.bid_assets_add_btn = QtWidgets.QPushButton("Create")
         self.bid_assets_add_btn.clicked.connect(self._on_add_bid_assets)
         selector_row.addWidget(self.bid_assets_add_btn)
 
