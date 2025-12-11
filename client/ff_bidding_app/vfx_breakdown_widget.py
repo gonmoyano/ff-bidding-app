@@ -834,6 +834,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Set height to match current row height setting
             current_row_height = self.app_settings.get("vfx_breakdown_row_height", 80)
             widget.setFixedHeight(current_row_height)
+            # Explicitly update pill heights for the initial height
+            widget.update_for_height(current_row_height)
 
             # Connect signal to update model when entities change
             # Use functools.partial to properly bind the widget so we can look up its position dynamically
@@ -1598,6 +1600,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                         widget.setMinimumHeight(value)
                         widget.setMaximumHeight(value)
                         widget.setFixedHeight(value)
+                        # Explicitly update pill heights (resize event may not fire immediately)
+                        if hasattr(widget, 'update_for_height'):
+                            widget.update_for_height(value)
                         widget.updateGeometry()
 
                     # Force the row to resize
