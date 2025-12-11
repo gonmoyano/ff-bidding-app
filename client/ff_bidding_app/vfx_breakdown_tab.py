@@ -2495,14 +2495,23 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         breakdown_id = breakdown["id"]
         entity_type = self.sg_session.get_vfx_breakdown_entity_type()
 
+        # Get project and bid context from parent app
+        proj = self.parent_app.sg_project_combo.itemData(self.parent_app.sg_project_combo.currentIndex()) if self.parent_app else None
+        project_id = proj.get("id") if proj else None
+        current_bid = getattr(self.parent_app.bidding_tab, 'current_bid', None) if hasattr(self.parent_app, 'bidding_tab') else None
+        bid_id = current_bid.get("id") if current_bid else None
+
         # Check for name clash with existing VFX Breakdowns
         try:
             filters = [
-                ["project", "is", {"type": "Project", "id": self.current_project_id}],
-                ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": self.current_bid_id}],
                 ["code", "is", new_name],
                 ["id", "is_not", breakdown_id]
             ]
+            if project_id:
+                filters.append(["project", "is", {"type": "Project", "id": project_id}])
+            if bid_id:
+                filters.append(["sg_parent_bid", "is", {"type": "CustomEntity06", "id": bid_id}])
+
             existing = self.sg_session.sg.find(entity_type, filters, ["id", "code"])
 
             if existing:
@@ -2527,8 +2536,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
             # Check if this breakdown is assigned to the current bid
             should_refresh_info_label = False
-            if self.current_bid_data:
-                vfx_breakdown_ref = self.current_bid_data.get("sg_vfx_breakdown")
+            if current_bid:
+                vfx_breakdown_ref = current_bid.get("sg_vfx_breakdown")
                 vfx_breakdown_ref_id = None
                 if isinstance(vfx_breakdown_ref, dict):
                     vfx_breakdown_ref_id = vfx_breakdown_ref.get("id")
