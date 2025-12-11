@@ -356,27 +356,27 @@ class DeleteBiddingSceneCommand:
 class AddVFXBreakdownDialog(QtWidgets.QDialog):
     """Dialog for creating a new VFX Breakdown."""
 
-    def __init__(self, existing_breakdowns, sg_session=None, project_id=None, current_breakdown=None, parent=None):
+    def __init__(self, existing_breakdowns, sg_session=None, project_id=None, current_bid=None, parent=None):
         """Initialize the dialog.
 
         Args:
             existing_breakdowns: List of existing VFX Breakdown dicts with 'id' and 'code'
             sg_session: ShotgridClient instance for version checking
             project_id: Project ID for version checking
-            current_breakdown: Currently selected VFX Breakdown dict for name prefill
+            current_bid: Currently selected Bid dict for name prefill
             parent: Parent widget
         """
         super().__init__(parent)
         self.existing_breakdowns = existing_breakdowns
         self.sg_session = sg_session
         self.project_id = project_id
-        self.current_breakdown = current_breakdown
+        self.current_bid = current_bid
         self.setWindowTitle("Add VFX Breakdown")
         self.setModal(True)
         self.setMinimumWidth(400)
 
         self._build_ui()
-        self._prefill_name_from_current()
+        self._prefill_name_from_bid()
 
     def _build_ui(self):
         """Build the dialog UI."""
@@ -451,15 +451,17 @@ class AddVFXBreakdownDialog(QtWidgets.QDialog):
         if is_copy_mode and self.copy_combo.currentIndex() > 0:
             self._on_copy_selection_changed(self.copy_combo.currentIndex())
 
-    def _prefill_name_from_current(self):
-        """Prefill the Name field with the next version of the current breakdown's name."""
-        if not self.current_breakdown:
+    def _prefill_name_from_bid(self):
+        """Prefill the Name field with BidName-VFX Breakdown-v### format."""
+        if not self.current_bid:
             return
 
-        source_name = self.current_breakdown.get("code") or self.current_breakdown.get("name") or ""
-        if source_name:
-            next_name = self._get_next_version_name(source_name)
-            logger.info(f"Prefilling name field from current breakdown '{source_name}' -> '{next_name}'")
+        bid_name = self.current_bid.get("code") or self.current_bid.get("name") or ""
+        if bid_name:
+            # Build base name as "BidName-VFX Breakdown"
+            base_name = f"{bid_name}-VFX Breakdown"
+            next_name = self._get_next_vfx_breakdown_version(base_name)
+            logger.info(f"Prefilling name field from bid '{bid_name}' -> '{next_name}'")
             self.name_field.setText(next_name)
 
     def _on_copy_selection_changed(self, index):
@@ -565,6 +567,68 @@ class AddVFXBreakdownDialog(QtWidgets.QDialog):
         next_version = highest_version + 1
         version_str = str(next_version).zfill(version_digits)
         return f"{name_without_version}{separator}v{version_str}"
+
+    def _get_next_vfx_breakdown_version(self, base_name):
+        """Calculate the next version name for VFX Breakdown based on existing breakdowns.
+
+        Takes a base name like "BidName-VFX Breakdown" and returns the next
+        available version "BidName-VFX Breakdown-v001", "BidName-VFX Breakdown-v002", etc.
+
+        Args:
+            base_name: The base name without version (e.g., "BidName-VFX Breakdown")
+
+        Returns:
+            str: The next version name (e.g., "BidName-VFX Breakdown-v001")
+        """
+        import re
+
+        logger.debug(f"_get_next_vfx_breakdown_version called with base_name='{base_name}'")
+
+        # Find the highest version number for this base name pattern
+        highest_version = 0
+
+        if self.sg_session and self.project_id:
+            try:
+                existing = self.sg_session.sg.find(
+                    "CustomEntity01",
+                    [["project", "is", {"type": "Project", "id": int(self.project_id)}]],
+                    ["code"]
+                )
+
+                # Build pattern to match similar names with versions: "BaseName-v###"
+                escaped_base = re.escape(base_name)
+                pattern = re.compile(rf'^{escaped_base}-[vV](\d+)$', re.IGNORECASE)
+
+                for entity in existing:
+                    code = entity.get("code", "")
+                    m = pattern.match(code)
+                    if m:
+                        version = int(m.group(1))
+                        logger.debug(f"Found matching breakdown '{code}' with version {version}")
+                        if version > highest_version:
+                            highest_version = version
+            except Exception as e:
+                logger.error(f"Failed to check existing versions: {e}")
+        else:
+            # Fallback: check against existing_breakdowns list
+            escaped_base = re.escape(base_name)
+            pattern = re.compile(rf'^{escaped_base}-[vV](\d+)$', re.IGNORECASE)
+
+            for breakdown in self.existing_breakdowns:
+                code = breakdown.get("code", "")
+                m = pattern.match(code)
+                if m:
+                    version = int(m.group(1))
+                    logger.debug(f"Found matching breakdown '{code}' with version {version}")
+                    if version > highest_version:
+                        highest_version = version
+
+        # Return the next version with 3-digit padding
+        next_version = highest_version + 1
+        version_str = str(next_version).zfill(3)
+        result = f"{base_name}-v{version_str}"
+        logger.debug(f"Next VFX Breakdown version: '{result}'")
+        return result
 
     def get_result(self):
         """Get the dialog result.
@@ -2281,15 +2345,12 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             logger.error(f"Failed to fetch existing breakdowns: {e}", exc_info=True)
             existing_breakdowns = []
 
-        # Get current breakdown for name prefill
-        current_breakdown = self.vfx_breakdown_combo.currentData() if self.vfx_breakdown_combo else None
-
-        # Show dialog
+        # Show dialog (pass current bid for name prefill)
         dialog = AddVFXBreakdownDialog(
             existing_breakdowns,
             sg_session=self.sg_session,
             project_id=proj["id"],
-            current_breakdown=current_breakdown,
+            current_bid=current_bid,
             parent=self
         )
         if dialog.exec() != QtWidgets.QDialog.Accepted:
