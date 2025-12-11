@@ -483,6 +483,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.entity_name = entity_name  # Entity display name for context menus
         self.settings_key = settings_key  # Unique settings key for this widget instance
         self.current_bid = None  # Store reference to current Bid
+        self.current_breakdown = None  # Store reference to current VFX Breakdown (for adding rows)
         self._asset_menu_open = False  # Guard to prevent re-entry
         self.context_provider = None  # Widget that provides context (price_list_id, project_id, etc.)
 
@@ -916,6 +917,16 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # Refresh asset widgets with new validation when bid changes
         self._refresh_asset_widgets_validation()
+
+    def set_current_breakdown(self, breakdown):
+        """Set the current VFX Breakdown for this widget.
+
+        This is required for adding new rows to the breakdown.
+
+        Args:
+            breakdown: VFX Breakdown dictionary from ShotGrid with 'id', 'type', 'code' keys
+        """
+        self.current_breakdown = breakdown
 
     def _refresh_asset_widgets_validation(self):
         """Refresh validation for all asset widgets based on current bid."""
@@ -2158,14 +2169,10 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 delete_action = menu.addAction(f"Delete {self.entity_name}")
                 delete_action.triggered.connect(lambda: self._delete_bidding_scene(row))
             else:
-                # For other entity types, keep the original behavior
-                # Add item above
-                add_above_action = menu.addAction(f"Add {self.entity_name} Above")
-                add_above_action.triggered.connect(lambda: self._add_bidding_scene_above(row))
-
-                # Add item below
-                add_below_action = menu.addAction(f"Add {self.entity_name} Below")
-                add_below_action.triggered.connect(lambda: self._add_bidding_scene_below(row))
+                # For other entity types (CustomEntity02 - Bidding Scenes)
+                # Add row at the end
+                add_row_action = menu.addAction(f"Add Row")
+                add_row_action.triggered.connect(self._add_row)
 
                 menu.addSeparator()
 
@@ -2198,6 +2205,105 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Other types require parent context
             self.statusMessageChanged.emit(f"Add {self.entity_name} functionality requires parent tab context", False)
 
+    def _add_row(self):
+        """Add a new row at the end of the table and save to ShotGrid.
+
+        Creates a new Bidding Scene (CustomEntity02) linked to the current breakdown.
+        """
+        entity_type = self.model.entity_type
+
+        # For now, only support CustomEntity02 (Bidding Scenes)
+        if entity_type != "CustomEntity02":
+            self.statusMessageChanged.emit(f"Add Row not supported for {self.entity_name}", False)
+            return
+
+        # Check if we have a current breakdown to link to
+        if not self.current_breakdown:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No VFX Breakdown",
+                "Please select a VFX Breakdown first before adding rows."
+            )
+            return
+
+        breakdown_id = self.current_breakdown.get("id")
+        breakdown_type = self.current_breakdown.get("type", "CustomEntity01")
+
+        if not breakdown_id:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Invalid Breakdown",
+                "The current VFX Breakdown is invalid (no ID)."
+            )
+            return
+
+        # Get project context
+        context = self.context_provider if self.context_provider else self.parent()
+        project_id = None
+
+        if context and hasattr(context, 'current_project_id'):
+            project_id = context.current_project_id
+        elif context and hasattr(context, 'parent_app') and context.parent_app:
+            # Try to get from parent_app's project combo
+            parent_app = context.parent_app
+            if hasattr(parent_app, 'sg_project_combo'):
+                proj = parent_app.sg_project_combo.itemData(parent_app.sg_project_combo.currentIndex())
+                if proj:
+                    project_id = proj.get("id")
+
+        if not project_id:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Project",
+                "No project selected. Cannot add row."
+            )
+            return
+
+        try:
+            # Create new bidding scene data
+            new_row_data = {
+                "project": {"type": "Project", "id": project_id},
+                "sg_parent": {"type": breakdown_type, "id": breakdown_id},
+                "code": "New Row"
+            }
+
+            # Create in ShotGrid
+            result = self.sg_session.sg.create("CustomEntity02", new_row_data)
+
+            if not result:
+                raise Exception("ShotGrid returned empty result")
+
+            # Add the result to the model data
+            self.model.all_bidding_scenes_data.append(result)
+
+            # Rebuild display mappings and notify views
+            self.model.apply_filters()
+
+            # Find the display row for the new item and start editing
+            new_data_idx = len(self.model.all_bidding_scenes_data) - 1
+            for display_row, data_idx in self.model.display_row_to_data_row.items():
+                if data_idx == new_data_idx:
+                    # Get the index for the 'code' column (or first column)
+                    code_col = self.model.column_fields.index('code') if 'code' in self.model.column_fields else 0
+                    code_index = self.model.index(display_row, code_col)
+
+                    # Scroll to and edit the cell
+                    self.table_view.scrollTo(code_index)
+                    self.table_view.setCurrentIndex(code_index)
+                    self.table_view.edit(code_index)
+                    break
+
+            self.statusMessageChanged.emit(f"Added new row", False)
+
+        except Exception as e:
+            logger.error(f"Failed to add row: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to add row:\n{str(e)}"
+            )
+            self.statusMessageChanged.emit(f"Failed to add row: {str(e)}", True)
+
     def _delete_bidding_scene(self, row):
         """Delete the specified row."""
         entity_type = self.model.entity_type
@@ -2208,9 +2314,75 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         elif entity_type == "CustomEntity03":
             # Line Item deletion - we can handle this directly
             self._delete_line_item(row)
+        elif entity_type == "CustomEntity02":
+            # Bidding Scene deletion
+            self._delete_bidding_scene_row(row)
         else:
             # Other types require parent context
             self.statusMessageChanged.emit(f"Delete {self.entity_name} functionality requires parent tab context", False)
+
+    def _delete_bidding_scene_row(self, row):
+        """Delete the specified bidding scene row (CustomEntity02).
+
+        Args:
+            row: Display row index to delete
+        """
+        # Check if this is the last row - at least one row must remain
+        if len(self.model.all_bidding_scenes_data) <= 1:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Cannot Delete",
+                "The last row cannot be removed. At least one row must remain in the VFX Breakdown."
+            )
+            return
+
+        # Get the actual data row index
+        if row not in self.model.display_row_to_data_row:
+            logger.error(f"Invalid row index for deletion: {row}")
+            return
+
+        data_row = self.model.display_row_to_data_row[row]
+        row_data = self.model.all_bidding_scenes_data[data_row]
+
+        row_id = row_data.get("id")
+        row_code = row_data.get("code", "Unknown")
+
+        if not row_id:
+            logger.error("Cannot delete row: missing ID")
+            self.statusMessageChanged.emit("Cannot delete row: missing ID", True)
+            return
+
+        # Confirm deletion
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Confirm Deletion",
+            f"Are you sure you want to delete '{row_code}'?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        try:
+            # Delete from ShotGrid
+            self.sg_session.sg.delete("CustomEntity02", row_id)
+
+            # Remove from model data
+            self.model.all_bidding_scenes_data.pop(data_row)
+
+            # Reapply filters to update the view
+            self.model.apply_filters()
+
+            self.statusMessageChanged.emit(f"Deleted '{row_code}'.", False)
+
+        except Exception as e:
+            logger.error(f"Failed to delete row: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to delete row:\n{str(e)}"
+            )
+            self.statusMessageChanged.emit(f"Failed to delete row: {str(e)}", True)
 
     def _delete_asset_item(self, row):
         """Delete the specified asset item (CustomEntity07).
