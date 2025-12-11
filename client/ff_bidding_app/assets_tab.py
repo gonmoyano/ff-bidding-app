@@ -69,6 +69,9 @@ class AssetsTab(QtWidgets.QWidget):
 
         self._build_ui()
 
+        # Fetch schema early to populate column headers with user-friendly names
+        self._fetch_asset_schema()
+
     def _build_ui(self):
         """Build the Assets tab UI."""
         layout = QtWidgets.QVBoxLayout(self)

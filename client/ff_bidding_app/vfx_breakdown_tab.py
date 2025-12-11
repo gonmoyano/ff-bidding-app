@@ -1086,6 +1086,9 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         self._build_ui()
 
+        # Fetch schema early to populate column headers with user-friendly names
+        self._fetch_beats_schema()
+
     def _build_ui(self):
         """Build the VFX Breakdown tab UI."""
         layout = QtWidgets.QVBoxLayout(self)
