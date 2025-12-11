@@ -3506,7 +3506,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         if source_vfx_breakdown:
                             source_vfx_id = source_vfx_breakdown.get("id") if isinstance(source_vfx_breakdown, dict) else None
                             if source_vfx_id:
-                                vfx_name = f"{bid_name} - VFX Breakdown-v001"
+                                vfx_name = f"{bid_name}-VFX Breakdown-v001"
                                 new_vfx_breakdown = self._copy_vfx_breakdown(source_vfx_id, vfx_name, bid_id=new_bid_id)
                                 if new_vfx_breakdown:
                                     # Link to the new Bid
@@ -3524,7 +3524,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         if source_bid_assets:
                             source_assets_id = source_bid_assets.get("id") if isinstance(source_bid_assets, dict) else None
                             if source_assets_id:
-                                assets_name = f"{bid_name} - Assets-v001"
+                                assets_name = f"{bid_name}-Assets-v001"
                                 new_bid_assets = self._copy_bid_assets(source_assets_id, assets_name, bid_id=new_bid_id)
                                 if new_bid_assets:
                                     # Link to the new Bid
@@ -3542,7 +3542,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         if source_price_list:
                             source_price_list_id = source_price_list.get("id") if isinstance(source_price_list, dict) else None
                             if source_price_list_id:
-                                price_list_name = f"{bid_name} - Price List-v001"
+                                price_list_name = f"{bid_name}-Price List-v001"
                                 new_price_list = self._copy_price_list(source_price_list_id, price_list_name, bid_id=new_bid_id)
                                 if new_price_list:
                                     # Link to the new Bid
