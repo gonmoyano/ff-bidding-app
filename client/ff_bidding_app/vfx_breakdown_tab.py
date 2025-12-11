@@ -2618,7 +2618,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             initial_scene_data = {
                 "code": "New Bidding Scene",
                 "project": {"type": "Project", "id": project_id},
-                "sg_vfx_breakdown": {"type": entity_type, "id": new_breakdown_id}
+                "sg_parent": {"type": entity_type, "id": new_breakdown_id}
             }
             initial_scene = self.sg_session.sg.create("CustomEntity02", initial_scene_data)
             logger.info(f"Created initial Bidding Scene {initial_scene['id']} for VFX Breakdown {new_breakdown_id}")
