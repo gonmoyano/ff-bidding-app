@@ -488,6 +488,10 @@ class AssetsTab(QtWidgets.QWidget):
 
             bid_assets_name = self.bid_assets_combo.currentText()
             self._set_bid_assets_status(f"Set '{bid_assets_name}' as current Bid Assets.")
+
+            # Refresh the bid data and update the bid info label
+            self._refresh_bid_info_label()
+
             QtWidgets.QMessageBox.information(
                 self,
                 "Success",
@@ -503,6 +507,41 @@ class AssetsTab(QtWidgets.QWidget):
                 "Error",
                 f"Failed to set current Bid Assets:\n{str(e)}"
             )
+
+    def _refresh_bid_info_label(self):
+        """Refresh the bid data from ShotGrid and update the bid info label in the Bids group."""
+        if not self.current_bid_id or not self.parent_app:
+            return
+
+        try:
+            # Fetch updated bid data from ShotGrid
+            updated_bid = self.sg_session.sg.find_one(
+                "CustomEntity06",
+                [["id", "is", self.current_bid_id]],
+                ["id", "code", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list", "description"]
+            )
+            if not updated_bid:
+                return
+
+            # Update current bid in bidding tab
+            if hasattr(self.parent_app, 'bidding_tab'):
+                self.parent_app.bidding_tab.current_bid = updated_bid
+                # Update bid selector's combo box data and info label
+                if hasattr(self.parent_app.bidding_tab, 'bid_selector'):
+                    bid_selector = self.parent_app.bidding_tab.bid_selector
+                    # Find and update the item in the combo
+                    combo = bid_selector.bid_combo
+                    for i in range(combo.count()):
+                        item_bid = combo.itemData(i)
+                        if isinstance(item_bid, dict) and item_bid.get('id') == self.current_bid_id:
+                            combo.setItemData(i, updated_bid)
+                            break
+                    # Update the bid info label
+                    bid_selector._update_bid_info_label(updated_bid)
+
+            logger.info(f"Bid {self.current_bid_id} refreshed with latest data.")
+        except Exception as e:
+            logger.warning(f"Failed to refresh Bid info label: {e}")
 
     def _on_add_bid_assets(self):
         """Add a new Bid Assets."""

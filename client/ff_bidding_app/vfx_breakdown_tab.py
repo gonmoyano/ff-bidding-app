@@ -2300,20 +2300,23 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             updated_bid = self.sg_session.sg.find_one(
                 "CustomEntity06",
                 [["id", "is", bid_id]],
-                ["id", "code", "sg_bid_type", "sg_vfx_breakdown"]
+                ["id", "code", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list", "description"]
             )
             # Update the current bid in bidding tab
             if updated_bid and hasattr(self.parent_app, 'bidding_tab'):
                 self.parent_app.bidding_tab.current_bid = updated_bid
-                # Update bid selector's combo box data
+                # Update bid selector's combo box data and info label
                 if hasattr(self.parent_app.bidding_tab, 'bid_selector'):
+                    bid_selector = self.parent_app.bidding_tab.bid_selector
                     # Find and update the item in the combo
-                    combo = self.parent_app.bidding_tab.bid_selector.bid_combo
+                    combo = bid_selector.bid_combo
                     for i in range(combo.count()):
                         item_bid = combo.itemData(i)
                         if isinstance(item_bid, dict) and item_bid.get('id') == bid_id:
                             combo.setItemData(i, updated_bid)
                             break
+                    # Update the bid info label
+                    bid_selector._update_bid_info_label(updated_bid)
             logger.info(f"Bid {bid_id} refreshed with latest sg_vfx_breakdown link.")
         except Exception as e:
             logger.warning(f"Failed to refresh Bid after update: {e}")
