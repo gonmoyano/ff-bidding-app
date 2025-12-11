@@ -1032,7 +1032,13 @@ class RatesTab(QtWidgets.QWidget):
             if not self.line_items_field_schema:
                 self._fetch_line_items_schema()
 
-            fields_to_query = [f for f in self.line_items_field_allowlist if f not in ["id", "_calc_price"]]
+            # Fields to skip when copying (read-only, calculated, or special fields)
+            skip_fields = [
+                "id", "_calc_price", "sg_parent_pricelist", "project",
+                "sg_total_mandays",  # Calculated field
+                "created_at", "created_by", "updated_at", "updated_by",
+            ]
+            fields_to_query = [f for f in self.line_items_field_allowlist if f not in skip_fields]
 
             source_line_item_data = self.sg_session.sg.find(
                 "CustomEntity03",
