@@ -865,6 +865,9 @@ class RatesTab(QtWidgets.QWidget):
             if not updated_bid:
                 return
 
+            # Update our local copy of the bid data
+            self.current_bid_data = updated_bid
+
             # Update current bid in bidding tab
             if hasattr(self.parent_app, 'bidding_tab'):
                 self.parent_app.bidding_tab.current_bid = updated_bid
