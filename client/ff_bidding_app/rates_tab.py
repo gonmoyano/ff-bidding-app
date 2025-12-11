@@ -1026,6 +1026,27 @@ class RatesTab(QtWidgets.QWidget):
         if not ok or not new_name or new_name == current_name:
             return
 
+        # Check for name clash with existing Price Lists
+        try:
+            filters = [
+                ["project", "is", {"type": "Project", "id": self.current_project_id}],
+                ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": self.current_bid_id}],
+                ["code", "is", new_name],
+                ["id", "is_not", price_list_id]
+            ]
+            existing = self.sg_session.sg.find("CustomEntity10", filters, ["id", "code"])
+
+            if existing:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Name Already Exists",
+                    f"A Price List with the name '{new_name}' already exists.\n\nPlease choose a different name."
+                )
+                return
+        except Exception as e:
+            logger.error(f"Failed to check for name clash: {e}", exc_info=True)
+            # Continue with rename attempt - let ShotGrid handle any conflict
+
         try:
             # Update the Price List name
             self.sg_session.sg.update("CustomEntity10", price_list_id, {"code": new_name})
@@ -1033,11 +1054,28 @@ class RatesTab(QtWidgets.QWidget):
             logger.info(f"Renamed Price List from '{current_name}' to '{new_name}' (ID: {price_list_id})")
             self._set_price_lists_status(f"Renamed to '{new_name}'.")
 
+            # Check if this price list is assigned to the current bid
+            should_refresh_info_label = False
+            if self.current_bid_data:
+                price_list_ref = self.current_bid_data.get("sg_price_list")
+                price_list_ref_id = None
+                if isinstance(price_list_ref, dict):
+                    price_list_ref_id = price_list_ref.get("id")
+                elif isinstance(price_list_ref, list) and price_list_ref:
+                    price_list_ref_id = price_list_ref[0].get("id") if price_list_ref[0] else None
+
+                if price_list_ref_id == price_list_id:
+                    should_refresh_info_label = True
+
             # Refresh list and maintain selection
             current_index = self.price_lists_combo.currentIndex()
             self._refresh_price_lists()
             if current_index < self.price_lists_combo.count():
                 self.price_lists_combo.setCurrentIndex(current_index)
+
+            # Update the bid info label if the renamed price list is assigned to current bid
+            if should_refresh_info_label:
+                self._refresh_bid_info_label()
 
         except Exception as e:
             logger.error(f"Failed to rename Price List: {e}", exc_info=True)

@@ -654,6 +654,27 @@ class AssetsTab(QtWidgets.QWidget):
         if not ok or not new_name or new_name == current_name:
             return
 
+        # Check for name clash with existing Bid Assets
+        try:
+            filters = [
+                ["project", "is", {"type": "Project", "id": self.current_project_id}],
+                ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": self.current_bid_id}],
+                ["code", "is", new_name],
+                ["id", "is_not", bid_assets_id]
+            ]
+            existing = self.sg_session.sg.find("CustomEntity08", filters, ["id", "code"])
+
+            if existing:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Name Already Exists",
+                    f"A Bid Assets with the name '{new_name}' already exists.\n\nPlease choose a different name."
+                )
+                return
+        except Exception as e:
+            logger.error(f"Failed to check for name clash: {e}", exc_info=True)
+            # Continue with rename attempt - let ShotGrid handle any conflict
+
         try:
             # Update the Bid Assets name
             self.sg_session.sg.update("CustomEntity08", bid_assets_id, {"code": new_name})
@@ -661,11 +682,28 @@ class AssetsTab(QtWidgets.QWidget):
             logger.info(f"Renamed Bid Assets from '{current_name}' to '{new_name}' (ID: {bid_assets_id})")
             self._set_bid_assets_status(f"Renamed to '{new_name}'.")
 
+            # Check if this bid assets is assigned to the current bid
+            should_refresh_info_label = False
+            if self.current_bid_data:
+                bid_assets_ref = self.current_bid_data.get("sg_bid_assets")
+                bid_assets_ref_id = None
+                if isinstance(bid_assets_ref, dict):
+                    bid_assets_ref_id = bid_assets_ref.get("id")
+                elif isinstance(bid_assets_ref, list) and bid_assets_ref:
+                    bid_assets_ref_id = bid_assets_ref[0].get("id") if bid_assets_ref[0] else None
+
+                if bid_assets_ref_id == bid_assets_id:
+                    should_refresh_info_label = True
+
             # Refresh list and maintain selection
             current_index = self.bid_assets_combo.currentIndex()
             self._refresh_bid_assets()
             if current_index < self.bid_assets_combo.count():
                 self.bid_assets_combo.setCurrentIndex(current_index)
+
+            # Update the bid info label if the renamed bid assets is assigned to current bid
+            if should_refresh_info_label:
+                self._refresh_bid_info_label()
 
         except Exception as e:
             logger.error(f"Failed to rename Bid Assets: {e}", exc_info=True)

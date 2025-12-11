@@ -2492,11 +2492,32 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         if new_name == current_name:
             return
 
+        breakdown_id = breakdown["id"]
+        entity_type = self.sg_session.get_vfx_breakdown_entity_type()
+
+        # Check for name clash with existing VFX Breakdowns
+        try:
+            filters = [
+                ["project", "is", {"type": "Project", "id": self.current_project_id}],
+                ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": self.current_bid_id}],
+                ["code", "is", new_name],
+                ["id", "is_not", breakdown_id]
+            ]
+            existing = self.sg_session.sg.find(entity_type, filters, ["id", "code"])
+
+            if existing:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    "Name Already Exists",
+                    f"A VFX Breakdown with the name '{new_name}' already exists.\n\nPlease choose a different name."
+                )
+                return
+        except Exception as e:
+            logger.error(f"Failed to check for name clash: {e}", exc_info=True)
+            # Continue with rename attempt - let ShotGrid handle any conflict
+
         # Rename the VFX Breakdown
         try:
-            breakdown_id = breakdown["id"]
-            entity_type = self.sg_session.get_vfx_breakdown_entity_type()
-
             logger.info(f"Renaming VFX Breakdown {breakdown_id}: '{current_name}' -> '{new_name}'")
 
             # Update in ShotGrid
@@ -2504,9 +2525,26 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
             logger.info(f"Successfully renamed VFX Breakdown {breakdown_id}")
 
+            # Check if this breakdown is assigned to the current bid
+            should_refresh_info_label = False
+            if self.current_bid_data:
+                vfx_breakdown_ref = self.current_bid_data.get("sg_vfx_breakdown")
+                vfx_breakdown_ref_id = None
+                if isinstance(vfx_breakdown_ref, dict):
+                    vfx_breakdown_ref_id = vfx_breakdown_ref.get("id")
+                elif isinstance(vfx_breakdown_ref, list) and vfx_breakdown_ref:
+                    vfx_breakdown_ref_id = vfx_breakdown_ref[0].get("id") if vfx_breakdown_ref[0] else None
+
+                if vfx_breakdown_ref_id == breakdown_id:
+                    should_refresh_info_label = True
+
             # Refresh the combo box and maintain selection
             self._refresh_vfx_breakdowns()
             self._select_vfx_breakdown_by_id(breakdown_id)
+
+            # Update the bid info label if the renamed breakdown is assigned to current bid
+            if should_refresh_info_label:
+                self._refresh_bid_info_label()
 
             # Update RFQ label if this breakdown is currently set for the RFQ
             if self.parent_app:
