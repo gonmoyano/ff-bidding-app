@@ -3,6 +3,7 @@ Assets Tab
 Contains UI and logic for managing Bid Assets (CustomEntity08) and Asset items (CustomEntity07).
 """
 
+import re
 from PySide6 import QtWidgets, QtCore
 
 try:
@@ -18,6 +19,262 @@ except ImportError:
     from vfx_breakdown_model import VFXBreakdownModel, ValidatedComboBoxDelegate
     from vfx_breakdown_widget import VFXBreakdownWidget
     from bid_selector_widget import CollapsibleGroupBox
+
+
+class AddBidAssetsDialog(QtWidgets.QDialog):
+    """Dialog for creating a new Bid Assets."""
+
+    def __init__(self, existing_bid_assets, sg_session=None, project_id=None, current_bid=None, parent=None):
+        """Initialize the dialog.
+
+        Args:
+            existing_bid_assets: List of existing Bid Assets dicts with 'id' and 'code'
+            sg_session: ShotgridClient instance for version checking
+            project_id: Project ID for version checking
+            current_bid: Currently selected Bid dict for name prefill
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.existing_bid_assets = existing_bid_assets
+        self.sg_session = sg_session
+        self.project_id = project_id
+        self.current_bid = current_bid
+        self.setWindowTitle("Add Bid Assets")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+
+        self._build_ui()
+        self._prefill_name_from_bid()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Creation mode
+        mode_layout = QtWidgets.QHBoxLayout()
+        mode_label = QtWidgets.QLabel("Mode:")
+        mode_layout.addWidget(mode_label)
+
+        self.mode_combo = QtWidgets.QComboBox()
+        self.mode_combo.addItem("Create empty")
+        self.mode_combo.addItem("Copy from existing")
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        mode_layout.addWidget(self.mode_combo, stretch=1)
+
+        layout.addLayout(mode_layout)
+
+        # Name field
+        name_layout = QtWidgets.QHBoxLayout()
+        name_label = QtWidgets.QLabel("Name:")
+        name_layout.addWidget(name_label)
+
+        self.name_field = QtWidgets.QLineEdit()
+        self.name_field.setPlaceholderText("Enter Bid Assets name...")
+        name_layout.addWidget(self.name_field, stretch=1)
+
+        layout.addLayout(name_layout)
+
+        # Copy from dropdown
+        copy_layout = QtWidgets.QHBoxLayout()
+        copy_label = QtWidgets.QLabel("Copy from:")
+        copy_layout.addWidget(copy_label)
+
+        self.copy_combo = QtWidgets.QComboBox()
+        self.copy_combo.addItem("-- Select Bid Assets --", None)
+        for bid_assets in self.existing_bid_assets:
+            label = bid_assets.get("code") or bid_assets.get("name") or f"ID {bid_assets.get('id', 'N/A')}"
+            self.copy_combo.addItem(label, bid_assets)
+        self.copy_combo.currentIndexChanged.connect(self._on_copy_selection_changed)
+        copy_layout.addWidget(self.copy_combo, stretch=1)
+
+        layout.addLayout(copy_layout)
+
+        # Buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.addStretch()
+
+        self.ok_button = QtWidgets.QPushButton("OK")
+        self.ok_button.clicked.connect(self.accept)
+        button_layout.addWidget(self.ok_button)
+
+        self.cancel_button = QtWidgets.QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+
+        layout.addLayout(button_layout)
+
+        # Initial state
+        self._on_mode_changed(0)
+
+    def _on_mode_changed(self, index):
+        """Handle mode change."""
+        is_copy_mode = (index == 1)
+        self.copy_combo.setEnabled(is_copy_mode)
+        # Apply visual styling to make disabled state more obvious
+        if is_copy_mode:
+            self.copy_combo.setStyleSheet("")
+        else:
+            self.copy_combo.setStyleSheet("QComboBox:disabled { color: #666666; background-color: #2d2d2d; }")
+        # If switching to copy mode and a bid assets is already selected, update name
+        if is_copy_mode and self.copy_combo.currentIndex() > 0:
+            self._on_copy_selection_changed(self.copy_combo.currentIndex())
+
+    def _prefill_name_from_bid(self):
+        """Prefill the Name field with BidName-Bid Assets-v### format."""
+        if not self.current_bid:
+            return
+
+        bid_name = self.current_bid.get("code") or self.current_bid.get("name") or ""
+        if bid_name:
+            # Build base name as "BidName-Bid Assets"
+            base_name = f"{bid_name}-Bid Assets"
+            next_name = self._get_next_bid_assets_version(base_name)
+            logger.info(f"Prefilling name field from bid '{bid_name}' -> '{next_name}'")
+            self.name_field.setText(next_name)
+
+    def _on_copy_selection_changed(self, index):
+        """Handle copy source selection change - prefill name with next version."""
+        # Only process in copy mode
+        if self.mode_combo.currentIndex() != 1:
+            return
+
+        # Skip if no valid selection (first item is placeholder)
+        if index <= 0:
+            return
+
+        bid_assets = self.copy_combo.currentData()
+        if not bid_assets:
+            logger.warning("No bid assets data found for selected index")
+            return
+
+        source_name = bid_assets.get("code") or bid_assets.get("name") or ""
+        logger.info(f"Copy selection changed: source_name='{source_name}'")
+        if source_name:
+            next_name = self._get_next_version_name(source_name)
+            logger.info(f"Prefilling name field with: '{next_name}'")
+            self.name_field.setText(next_name)
+
+    def _get_next_version_name(self, base_name):
+        """Calculate the next version name based on existing bid assets.
+
+        Handles formats like:
+        - "Name v1" -> "Name v2"
+        - "Name-v001" -> "Name-v002"
+        - "Puzzle Box - v002-Bid Assets-v001" -> "Puzzle Box - v002-Bid Assets-v002"
+
+        Args:
+            base_name: The source name to version
+
+        Returns:
+            str: The next version name
+        """
+        logger.debug(f"_get_next_version_name called with base_name='{base_name}'")
+
+        # Try to match version pattern at the end: -v### or v### or -v## or v##
+        # Pattern matches: optional separator, 'v' or 'V', and digits
+        version_pattern = re.compile(r'^(.+?)[-\s]?[vV](\d+)$')
+        match = version_pattern.match(base_name)
+        logger.debug(f"Version pattern match: {match}")
+
+        if match:
+            name_without_version = match.group(1)
+            current_version = int(match.group(2))
+            version_digits = len(match.group(2))  # Preserve digit count (e.g., 001 vs 1)
+
+            # Determine the separator used (-, space, or none)
+            # Check original name for the separator before 'v'
+            sep_match = re.search(r'([-\s])?[vV]\d+$', base_name)
+            separator = sep_match.group(1) if sep_match and sep_match.group(1) else ''
+        else:
+            # No version found, treat whole name as base and start at v0
+            name_without_version = base_name
+            current_version = 0
+            version_digits = 3  # Default to 3 digits like v001
+            separator = '-'
+
+        # Find the highest version number for this base name pattern
+        highest_version = current_version
+
+        if self.sg_session and self.project_id:
+            try:
+                existing = self.sg_session.sg.find(
+                    "CustomEntity08",
+                    [
+                        ["project", "is", {"type": "Project", "id": self.project_id}],
+                        ["code", "starts_with", name_without_version]
+                    ],
+                    ["code"]
+                )
+
+                for item in existing:
+                    code = item.get("code", "")
+                    # Try to extract version number
+                    item_match = version_pattern.match(code)
+                    if item_match and item_match.group(1) == name_without_version:
+                        version_num = int(item_match.group(2))
+                        highest_version = max(highest_version, version_num)
+
+            except Exception as e:
+                logger.error(f"Failed to query existing bid assets for version: {e}")
+
+        # Create next version name
+        next_version = highest_version + 1
+        next_name = f"{name_without_version}{separator}v{next_version:0{version_digits}d}"
+        logger.debug(f"Generated next name: '{next_name}'")
+
+        return next_name
+
+    def _get_next_bid_assets_version(self, base_name):
+        """Get the next version for a Bid Assets name.
+
+        Args:
+            base_name: Base name without version (e.g., "BidName-Bid Assets")
+
+        Returns:
+            str: Name with next version (e.g., "BidName-Bid Assets-v001")
+        """
+        highest_version = 0
+
+        if self.sg_session and self.project_id:
+            try:
+                # Query existing Bid Assets with this base name
+                existing = self.sg_session.sg.find(
+                    "CustomEntity08",
+                    [
+                        ["project", "is", {"type": "Project", "id": self.project_id}],
+                        ["code", "starts_with", f"{base_name}-v"]
+                    ],
+                    ["code"]
+                )
+
+                for item in existing:
+                    code = item.get("code", "")
+                    # Extract version number
+                    if code.startswith(f"{base_name}-v"):
+                        try:
+                            version_str = code[len(f"{base_name}-v"):]
+                            version_num = int(version_str)
+                            highest_version = max(highest_version, version_num)
+                        except ValueError:
+                            pass
+
+            except Exception as e:
+                logger.error(f"Failed to query existing bid assets: {e}")
+
+        next_version = highest_version + 1
+        return f"{base_name}-v{next_version:03d}"
+
+    def get_result(self):
+        """Get the dialog result.
+
+        Returns:
+            dict: Result with 'name', 'mode', 'source' keys
+        """
+        return {
+            "name": self.name_field.text().strip(),
+            "mode": "empty" if self.mode_combo.currentIndex() == 0 else "copy",
+            "source": self.copy_combo.currentData() if self.mode_combo.currentIndex() == 1 else None
+        }
 
 
 class AssetsTab(QtWidgets.QWidget):
@@ -535,40 +792,81 @@ class AssetsTab(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(self, "No Project Selected", "Please select a project first.")
             return
 
-        # Prompt for name
-        name, ok = QtWidgets.QInputDialog.getText(
-            self,
-            "Add Bid Assets",
-            "Enter name for new Bid Assets:"
-        )
+        if not self.current_bid_id:
+            QtWidgets.QMessageBox.warning(self, "No Bid Selected", "Please select a Bid first.")
+            return
 
-        if not ok or not name:
+        # Get existing bid assets for the dialog
+        try:
+            existing_bid_assets = self.sg_session.sg.find(
+                "CustomEntity08",
+                [["project", "is", {"type": "Project", "id": self.current_project_id}]],
+                ["id", "code", "name"]
+            )
+        except Exception as e:
+            logger.error(f"Failed to fetch existing bid assets: {e}", exc_info=True)
+            existing_bid_assets = []
+
+        # Show dialog
+        dialog = AddBidAssetsDialog(
+            existing_bid_assets,
+            sg_session=self.sg_session,
+            project_id=self.current_project_id,
+            current_bid=self.current_bid_data,
+            parent=self
+        )
+        if dialog.exec() != QtWidgets.QDialog.Accepted:
+            return
+
+        # Get dialog result
+        result = dialog.get_result()
+        name = result["name"]
+        mode = result["mode"]
+        source = result["source"]
+
+        # Validate name
+        if not name:
+            QtWidgets.QMessageBox.warning(self, "Invalid Name", "Please enter a name for the Bid Assets.")
+            return
+
+        # Validate source for copy mode
+        if mode == "copy" and not source:
+            QtWidgets.QMessageBox.warning(self, "No Source Selected", "Please select a Bid Assets to copy from.")
             return
 
         try:
-            # Create CustomEntity08 (Bid Assets)
-            bid_assets_data = {
-                "code": name,
-                "project": {"type": "Project", "id": self.current_project_id}
-            }
+            if mode == "empty":
+                new_bid_assets = self._create_empty_bid_assets(name)
+            else:  # copy
+                # Show progress dialog for copy operation
+                progress = QtWidgets.QProgressDialog(
+                    "Copying Bid Assets...",
+                    "Cancel",
+                    0,
+                    100,
+                    self
+                )
+                progress.setWindowTitle("Copying Bid Assets")
+                progress.setWindowModality(QtCore.Qt.WindowModal)
+                progress.setMinimumDuration(0)
+                progress.setValue(0)
 
-            # Link to current Bid if one is selected
-            if self.current_bid_id:
-                bid_assets_data["sg_parent_bid"] = {"type": "CustomEntity06", "id": self.current_bid_id}
+                new_bid_assets = self._copy_bid_assets(source["id"], name, progress)
 
-            new_bid_assets = self.sg_session.sg.create("CustomEntity08", bid_assets_data)
+                progress.close()
 
-            logger.info(f"Created Bid Assets: {name} (ID: {new_bid_assets['id']})")
-            self._set_bid_assets_status(f"Created Bid Assets '{name}'.")
+            if new_bid_assets:
+                logger.info(f"Created Bid Assets: {name} (ID: {new_bid_assets['id']})")
+                self._set_bid_assets_status(f"Created Bid Assets '{name}'.")
 
-            # Refresh list and select new one
-            self._refresh_bid_assets()
+                # Refresh list and select new one
+                self._refresh_bid_assets()
 
-            # Find and select the new bid assets
-            for i in range(self.bid_assets_combo.count()):
-                if self.bid_assets_combo.itemData(i) == new_bid_assets['id']:
-                    self.bid_assets_combo.setCurrentIndex(i)
-                    break
+                # Find and select the new bid assets
+                for i in range(self.bid_assets_combo.count()):
+                    if self.bid_assets_combo.itemData(i) == new_bid_assets['id']:
+                        self.bid_assets_combo.setCurrentIndex(i)
+                        break
 
         except Exception as e:
             logger.error(f"Failed to create Bid Assets: {e}", exc_info=True)
@@ -577,6 +875,107 @@ class AssetsTab(QtWidgets.QWidget):
                 "Error",
                 f"Failed to create Bid Assets:\n{str(e)}"
             )
+
+    def _create_empty_bid_assets(self, name):
+        """Create an empty Bid Assets with one initial asset item.
+
+        Args:
+            name: Name for the new Bid Assets
+
+        Returns:
+            dict: The created Bid Assets entity
+        """
+        # Create CustomEntity08 (Bid Assets)
+        bid_assets_data = {
+            "code": name,
+            "project": {"type": "Project", "id": self.current_project_id}
+        }
+
+        # Link to current Bid if one is selected
+        if self.current_bid_id:
+            bid_assets_data["sg_parent_bid"] = {"type": "CustomEntity06", "id": self.current_bid_id}
+
+        new_bid_assets = self.sg_session.sg.create("CustomEntity08", bid_assets_data)
+
+        # Create an initial empty Asset Item
+        asset_item_data = {
+            "code": "New Asset",
+            "project": {"type": "Project", "id": self.current_project_id},
+            "sg_bid_assets": {"type": "CustomEntity08", "id": new_bid_assets["id"]}
+        }
+        self.sg_session.sg.create("CustomEntity07", asset_item_data)
+
+        return new_bid_assets
+
+    def _copy_bid_assets(self, source_id, new_name, progress=None):
+        """Copy a Bid Assets with all its Asset Items.
+
+        Args:
+            source_id: ID of the Bid Assets to copy from
+            new_name: Name for the new Bid Assets
+            progress: Optional QProgressDialog for progress updates
+
+        Returns:
+            dict: The created Bid Assets entity, or None on failure
+        """
+        try:
+            # Create the new Bid Assets
+            bid_assets_data = {
+                "code": new_name,
+                "project": {"type": "Project", "id": self.current_project_id}
+            }
+
+            if self.current_bid_id:
+                bid_assets_data["sg_parent_bid"] = {"type": "CustomEntity06", "id": self.current_bid_id}
+
+            new_bid_assets = self.sg_session.sg.create("CustomEntity08", bid_assets_data)
+            new_bid_assets_id = new_bid_assets["id"]
+
+            logger.info(f"Created Bid Assets copy: {new_name} (ID: {new_bid_assets_id})")
+
+            # Fetch all Asset Items from the source Bid Assets
+            source_items = self.sg_session.sg.find(
+                "CustomEntity07",
+                [["sg_bid_assets", "is", {"type": "CustomEntity08", "id": source_id}]],
+                self.asset_field_allowlist
+            )
+
+            if progress:
+                progress.setMaximum(len(source_items) + 1)
+                progress.setValue(1)
+
+            # Copy each asset item
+            for i, item in enumerate(source_items):
+                if progress:
+                    if progress.wasCanceled():
+                        logger.warning("Bid Assets copy canceled by user")
+                        return new_bid_assets
+                    progress.setLabelText(f"Copying asset item {i + 1} of {len(source_items)}...")
+                    progress.setValue(i + 2)
+
+                # Create new asset item data, copying relevant fields
+                new_item_data = {
+                    "code": item.get("code", ""),
+                    "project": {"type": "Project", "id": self.current_project_id},
+                    "sg_bid_assets": {"type": "CustomEntity08", "id": new_bid_assets_id}
+                }
+
+                # Copy other fields that are in the allowlist
+                for field in self.asset_field_allowlist:
+                    if field in ["id", "code", "project", "sg_bid_assets"]:
+                        continue
+                    if field in item and item[field] is not None:
+                        new_item_data[field] = item[field]
+
+                self.sg_session.sg.create("CustomEntity07", new_item_data)
+
+            logger.info(f"Successfully copied {len(source_items)} asset items to Bid Assets {new_bid_assets_id}")
+
+            return new_bid_assets
+
+        except Exception as e:
+            logger.error(f"Failed to copy Bid Assets: {e}", exc_info=True)
+            raise
 
     def _on_remove_bid_assets(self):
         """Remove the selected Bid Assets."""
