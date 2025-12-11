@@ -2636,10 +2636,10 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
                 for field in copy_fields:
                     if field in bidding_scene and bidding_scene[field] is not None:
-                        new_bidding_scene_data[field] = bidding_scene[field]
+                        new_beat_data[field] = bidding_scene[field]
 
                 # Create the new bidding scene
-                self.sg_session.sg.create("CustomEntity02", new_bidding_scene_data)
+                self.sg_session.sg.create("CustomEntity02", new_beat_data)
 
             # Report completion
             if progress_callback:
