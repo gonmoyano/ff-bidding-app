@@ -484,6 +484,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.settings_key = settings_key  # Unique settings key for this widget instance
         self.current_bid = None  # Store reference to current Bid
         self.current_breakdown = None  # Store reference to current VFX Breakdown (for adding rows)
+        self.current_bid_assets = None  # Store reference to current Bid Assets (for adding asset items)
         self._asset_menu_open = False  # Guard to prevent re-entry
         self.context_provider = None  # Widget that provides context (price_list_id, project_id, etc.)
 
@@ -927,6 +928,16 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             breakdown: VFX Breakdown dictionary from ShotGrid with 'id', 'type', 'code' keys
         """
         self.current_breakdown = breakdown
+
+    def set_current_bid_assets(self, bid_assets):
+        """Set the current Bid Assets for this widget.
+
+        This is required for adding new asset items to the Bid Assets.
+
+        Args:
+            bid_assets: Bid Assets dictionary from ShotGrid with 'id', 'type', 'code' keys
+        """
+        self.current_bid_assets = bid_assets
 
     def _refresh_asset_widgets_validation(self):
         """Refresh validation for all asset widgets based on current bid."""
@@ -2208,15 +2219,21 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
     def _add_row(self):
         """Add a new row at the end of the table and save to ShotGrid.
 
-        Creates a new Bidding Scene (CustomEntity02) linked to the current breakdown.
+        Supports:
+        - CustomEntity02 (Bidding Scenes) linked to VFX Breakdown
+        - CustomEntity07 (Asset Items) linked to Bid Assets
         """
         entity_type = self.model.entity_type
 
-        # For now, only support CustomEntity02 (Bidding Scenes)
-        if entity_type != "CustomEntity02":
+        if entity_type == "CustomEntity02":
+            self._add_bidding_scene_row()
+        elif entity_type == "CustomEntity07":
+            self._add_asset_item_row()
+        else:
             self.statusMessageChanged.emit(f"Add Row not supported for {self.entity_name}", False)
-            return
 
+    def _add_bidding_scene_row(self):
+        """Add a new Bidding Scene (CustomEntity02) row linked to current breakdown."""
         # Check if we have a current breakdown to link to
         if not self.current_breakdown:
             QtWidgets.QMessageBox.warning(
@@ -2238,19 +2255,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             return
 
         # Get project context
-        context = self.context_provider if self.context_provider else self.parent()
-        project_id = None
-
-        if context and hasattr(context, 'current_project_id'):
-            project_id = context.current_project_id
-        elif context and hasattr(context, 'parent_app') and context.parent_app:
-            # Try to get from parent_app's project combo
-            parent_app = context.parent_app
-            if hasattr(parent_app, 'sg_project_combo'):
-                proj = parent_app.sg_project_combo.itemData(parent_app.sg_project_combo.currentIndex())
-                if proj:
-                    project_id = proj.get("id")
-
+        project_id = self._get_project_id()
         if not project_id:
             QtWidgets.QMessageBox.warning(
                 self,
@@ -2273,26 +2278,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             if not result:
                 raise Exception("ShotGrid returned empty result")
 
-            # Add the result to the model data
-            self.model.all_bidding_scenes_data.append(result)
-
-            # Rebuild display mappings and notify views
-            self.model.apply_filters()
-
-            # Find the display row for the new item and start editing
-            new_data_idx = len(self.model.all_bidding_scenes_data) - 1
-            for display_row, data_idx in self.model.display_row_to_data_row.items():
-                if data_idx == new_data_idx:
-                    # Get the index for the 'code' column (or first column)
-                    code_col = self.model.column_fields.index('code') if 'code' in self.model.column_fields else 0
-                    code_index = self.model.index(display_row, code_col)
-
-                    # Scroll to and edit the cell
-                    self.table_view.scrollTo(code_index)
-                    self.table_view.setCurrentIndex(code_index)
-                    self.table_view.edit(code_index)
-                    break
-
+            self._add_row_to_model(result)
             self.statusMessageChanged.emit(f"Added new row", False)
 
         except Exception as e:
@@ -2303,6 +2289,110 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 f"Failed to add row:\n{str(e)}"
             )
             self.statusMessageChanged.emit(f"Failed to add row: {str(e)}", True)
+
+    def _add_asset_item_row(self):
+        """Add a new Asset Item (CustomEntity07) row linked to current Bid Assets."""
+        # Check if we have a current bid assets to link to
+        if not self.current_bid_assets:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Bid Assets",
+                "Please select a Bid Assets first before adding rows."
+            )
+            return
+
+        bid_assets_id = self.current_bid_assets.get("id")
+
+        if not bid_assets_id:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Invalid Bid Assets",
+                "The current Bid Assets is invalid (no ID)."
+            )
+            return
+
+        # Get project context
+        project_id = self._get_project_id()
+        if not project_id:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Project",
+                "No project selected. Cannot add row."
+            )
+            return
+
+        try:
+            # Create new asset item data
+            new_row_data = {
+                "project": {"type": "Project", "id": project_id},
+                "sg_bid_assets": {"type": "CustomEntity08", "id": bid_assets_id},
+                "code": "New Asset"
+            }
+
+            # Create in ShotGrid
+            result = self.sg_session.sg.create("CustomEntity07", new_row_data)
+
+            if not result:
+                raise Exception("ShotGrid returned empty result")
+
+            self._add_row_to_model(result)
+            self.statusMessageChanged.emit(f"Added new asset item", False)
+
+        except Exception as e:
+            logger.error(f"Failed to add asset item: {e}", exc_info=True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Error",
+                f"Failed to add asset item:\n{str(e)}"
+            )
+            self.statusMessageChanged.emit(f"Failed to add asset item: {str(e)}", True)
+
+    def _get_project_id(self):
+        """Get the current project ID from context.
+
+        Returns:
+            int: Project ID or None if not available
+        """
+        context = self.context_provider if self.context_provider else self.parent()
+        project_id = None
+
+        if context and hasattr(context, 'current_project_id'):
+            project_id = context.current_project_id
+        elif context and hasattr(context, 'parent_app') and context.parent_app:
+            # Try to get from parent_app's project combo
+            parent_app = context.parent_app
+            if hasattr(parent_app, 'sg_project_combo'):
+                proj = parent_app.sg_project_combo.itemData(parent_app.sg_project_combo.currentIndex())
+                if proj:
+                    project_id = proj.get("id")
+
+        return project_id
+
+    def _add_row_to_model(self, result):
+        """Add a new row result to the model and scroll to edit it.
+
+        Args:
+            result: The created entity dict from ShotGrid
+        """
+        # Add the result to the model data
+        self.model.all_bidding_scenes_data.append(result)
+
+        # Rebuild display mappings and notify views
+        self.model.apply_filters()
+
+        # Find the display row for the new item and start editing
+        new_data_idx = len(self.model.all_bidding_scenes_data) - 1
+        for display_row, data_idx in self.model.display_row_to_data_row.items():
+            if data_idx == new_data_idx:
+                # Get the index for the 'code' column (or first column)
+                code_col = self.model.column_fields.index('code') if 'code' in self.model.column_fields else 0
+                code_index = self.model.index(display_row, code_col)
+
+                # Scroll to and edit the cell
+                self.table_view.scrollTo(code_index)
+                self.table_view.setCurrentIndex(code_index)
+                self.table_view.edit(code_index)
+                break
 
     def _delete_bidding_scene(self, row):
         """Delete the specified row."""

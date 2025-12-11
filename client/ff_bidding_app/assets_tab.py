@@ -567,12 +567,14 @@ class AssetsTab(QtWidgets.QWidget):
         """Handle Bid Assets selection change."""
         if index < 0:
             self.assets_widget.clear_data()
+            self.assets_widget.set_current_bid_assets(None)
             return
 
         bid_assets_id = self.bid_assets_combo.currentData()
         if not bid_assets_id:
             # Placeholder selected, clear the table
             self.assets_widget.clear_data()
+            self.assets_widget.set_current_bid_assets(None)
             return
 
         # Load asset items for this Bid Assets
@@ -647,6 +649,13 @@ class AssetsTab(QtWidgets.QWidget):
             bid_assets_id: ID of the Bid Assets (CustomEntity08)
         """
         try:
+            # Set the current bid assets in the widget for add/delete row functionality
+            bid_assets_data = self.bid_assets_combo.currentData()
+            if isinstance(bid_assets_data, int):
+                # If it's just an ID, create a minimal dict
+                bid_assets_data = {"id": bid_assets_id, "type": "CustomEntity08"}
+            self.assets_widget.set_current_bid_assets(bid_assets_data)
+
             # Query Line Items for validation
             self.line_item_names = self._load_line_item_names()
 
