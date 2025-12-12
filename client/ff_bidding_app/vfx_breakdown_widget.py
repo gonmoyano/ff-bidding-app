@@ -1328,11 +1328,14 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             return []
 
     def _get_valid_asset_ids(self):
-        """Get the set of valid asset IDs from the current bid's Assets tab.
+        """Get the set of valid asset names from the current bid's Assets tab.
 
         Returns:
-            set: Set of asset IDs (integers) that are valid for the current bid.
+            set: Set of asset names (strings) that are valid for the current bid.
                  Returns None if no bid is selected (meaning all assets are valid/no validation).
+        Note:
+            Despite the method name, this returns names for name-based matching,
+            allowing assets to be validated across different Bid Assets versions.
         """
         if not self.current_bid:
             # No bid selected - no validation
@@ -1341,10 +1344,14 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Get all assets from the current bid
         assets = self._get_available_bid_assets()
 
-        # Extract IDs into a set
-        valid_ids = {asset['id'] for asset in assets if 'id' in asset}
+        # Extract names into a set (use 'code' first, then 'name' as fallback)
+        valid_names = set()
+        for asset in assets:
+            name = asset.get('code') or asset.get('name')
+            if name:
+                valid_names.add(name)
 
-        return valid_ids
+        return valid_names
 
     def clear_data(self):
         """Clear all data from the widget."""
