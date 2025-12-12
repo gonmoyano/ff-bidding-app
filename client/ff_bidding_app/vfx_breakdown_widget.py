@@ -12,14 +12,14 @@ try:
     from .logger import logger
     from .vfx_breakdown_model import VFXBreakdownModel, PasteCommand, CheckBoxDelegate
     from .settings import AppSettings
-    from .multi_entity_reference_widget import MultiEntityReferenceWidget
+    from .multi_entity_reference_widget import MultiEntityReferenceWidget, EntityPillWidget
     from .formula_evaluator import FormulaEvaluator
     from .bid_selector_widget import CollapsibleGroupBox
 except ImportError:
     logger = logging.getLogger("FFPackageManager")
     from vfx_breakdown_model import VFXBreakdownModel, PasteCommand, CheckBoxDelegate
     from settings import AppSettings
-    from multi_entity_reference_widget import MultiEntityReferenceWidget
+    from multi_entity_reference_widget import MultiEntityReferenceWidget, EntityPillWidget
     from formula_evaluator import FormulaEvaluator
     from bid_selector_widget import CollapsibleGroupBox
 
@@ -1652,16 +1652,26 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         if not self.table_view:
             return
 
-        # Get the current default row height from slider (this is the pill's current height)
-        default_row_height = self.app_settings.get("vfx_breakdown_row_height", 80)
+        # Get the current slider row height
+        slider_row_height = self.app_settings.get("vfx_breakdown_row_height", 80)
 
-        # If trying to resize smaller than the default pill height, force row back to default
-        if new_size < default_row_height:
+        # Calculate the actual pill height based on slider setting
+        # Pill height = max(MIN_HEIGHT, min(row_height - 8 margin, MAX_HEIGHT))
+        pill_height = max(
+            EntityPillWidget.MIN_HEIGHT,
+            min(slider_row_height - 8, EntityPillWidget.MAX_HEIGHT)
+        )
+
+        # Minimum row height = pill height + margins (8px)
+        min_row_height = pill_height + 8
+
+        # If trying to resize smaller than the pill height, force row back to minimum
+        if new_size < min_row_height:
             v_header = self.table_view.verticalHeader()
-            v_header.resizeSection(row, default_row_height)
+            v_header.resizeSection(row, min_row_height)
             return  # The signal will fire again with the corrected size
 
-        # Update pill widget height when row is made larger (expanding beyond default)
+        # Update pill widget height when row is expanded
         try:
             assets_col_idx = self.model.column_fields.index("sg_bid_assets")
             index = self.model.index(row, assets_col_idx)
