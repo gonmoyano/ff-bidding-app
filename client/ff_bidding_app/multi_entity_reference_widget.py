@@ -259,6 +259,7 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         self._is_selected = False  # Track selection state
         self._is_editing = False   # Track edit state
         self._pill_max_height = None  # Max height for pills (calculated from widget height)
+        self._skip_resize_pill_updates = False  # Skip pill height updates during manual row resize
 
         # Colors for custom painting
         self.bg_color = QtGui.QColor("#2b2b2b")      # Normal background
@@ -476,6 +477,9 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
             event (QResizeEvent): The resize event
         """
         super().resizeEvent(event)
+        # Skip pill height updates if flag is set (during manual row resize)
+        if self._skip_resize_pill_updates:
+            return
         # Calculate available height for pills (accounting for margins and border)
         new_height = event.size().height()
         self._update_pill_heights(new_height)
@@ -521,6 +525,17 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
             height (int): The new height of the widget
         """
         self._update_pill_heights(height)
+
+    def set_skip_resize_pill_updates(self, skip):
+        """Set whether to skip pill height updates during resize events.
+
+        Use this when manually resizing the row (e.g., dragging row edge)
+        to prevent pills from enlarging to match the row height.
+
+        Args:
+            skip (bool): True to skip pill updates during resize, False otherwise
+        """
+        self._skip_resize_pill_updates = skip
 
     def paintEvent(self, event):
         """Custom paint event to draw the background and border with state colors."""

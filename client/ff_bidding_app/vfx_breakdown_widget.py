@@ -1677,11 +1677,15 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             index = self.model.index(row, assets_col_idx)
             widget = self.table_view.indexWidget(index)
             if widget:
+                # Skip pill height updates during manual row resize
+                widget.set_skip_resize_pill_updates(True)
                 # Update widget bounds to match row height, but don't resize pills
                 widget.setMinimumHeight(new_size)
                 widget.setMaximumHeight(new_size)
                 widget.setFixedHeight(new_size)
                 widget.updateGeometry()
+                # Re-enable pill updates for future slider changes
+                widget.set_skip_resize_pill_updates(False)
         except (ValueError, AttributeError):
             # Column not present or other issue - skip widget updates
             pass
