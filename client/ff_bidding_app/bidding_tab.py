@@ -235,6 +235,10 @@ class BiddingTab(QtWidgets.QWidget):
         if hasattr(self, 'costs_tab'):
             self.costs_tab.refresh_currency_formatting(currency_symbol)
 
+        # Refresh currency formatting in Rates tab with the new symbol
+        if hasattr(self, 'rates_tab'):
+            self.rates_tab.refresh_currency_formatting(currency_symbol)
+
     def _on_load_linked_requested(self, bid_data):
         """Handle Load Linked button click - load linked entities into their dropdown menus.
 
