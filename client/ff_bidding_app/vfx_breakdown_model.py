@@ -540,9 +540,7 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         self.entity_type = "CustomEntity02"  # Default: Bidding Scenes
 
         # Column configuration - matches import mapping fields
-        # First column is a virtual checkbox for Excel export selection
         self.column_fields = [
-            "_export_to_excel",  # Virtual column for export checkbox
             "id",
             "code",
             "sg_bid_assets",

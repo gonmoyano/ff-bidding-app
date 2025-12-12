@@ -127,6 +127,11 @@ class PackagesTab(QtWidgets.QWidget):
             parent=self
         )
 
+        # Add _export_to_excel column at the beginning for Bid Tracker export functionality
+        if hasattr(self.breakdown_widget, 'model'):
+            self.breakdown_widget.model.column_fields.insert(0, "_export_to_excel")
+            self.breakdown_widget.model.column_headers = self.breakdown_widget.model.column_fields.copy()
+
         # Add search and sort toolbar to the selector group
         if self.breakdown_widget.toolbar_widget:
             breakdown_selector_group.addWidget(self.breakdown_widget.toolbar_widget)
