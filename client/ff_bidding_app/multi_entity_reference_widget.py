@@ -266,6 +266,7 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         self.border_color = QtGui.QColor("#0078d4")  # Border color (used when selected/editing)
         self.grid_border_color = QtGui.QColor("#3a3a3a")  # Grid border color (normal state, matches table grid)
         self.border_width = 1                         # Border width in pixels
+        self.overflow_dot_color = QtGui.QColor("#888888")  # Color for overflow indicator dots
 
         self._setup_ui()
         self._populate_entities()
@@ -537,6 +538,89 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         """
         self._skip_resize_pill_updates = skip
 
+    def _calculate_overflow_info(self):
+        """Calculate overflow indicator information.
+
+        Determines if there are hidden pills (on rows below the first row due to
+        wrapping) and how many dots to show based on available space between
+        the last visible pill on the first row and the widget's right edge.
+
+        Returns:
+            tuple: (has_overflow, num_dots, dot_x_start, dot_y) or (False, 0, 0, 0) if no overflow
+        """
+        if not hasattr(self, 'pills_layout') or not hasattr(self, 'pills_container'):
+            return (False, 0, 0, 0)
+
+        # Get widget dimensions
+        widget_width = self.width()
+        widget_height = self.height()
+
+        # Constants for dots
+        dot_diameter = 4
+        dot_spacing = 3
+        right_margin = 6  # Space from the right edge
+        min_space_per_dot = dot_diameter + dot_spacing  # ~7px per dot
+
+        # Find pills on the first row and any pills on subsequent rows
+        first_row_pills = []
+        overflow_pills = []
+        first_row_y = None
+
+        for i in range(self.pills_layout.count()):
+            item = self.pills_layout.itemAt(i)
+            if item and item.widget():
+                widget = item.widget()
+                if isinstance(widget, EntityPillWidget):
+                    # Get pill geometry relative to the pills_container
+                    pill_geom = widget.geometry()
+
+                    # Determine which row this pill is on
+                    if first_row_y is None:
+                        first_row_y = pill_geom.y()
+
+                    # Categorize pills by row
+                    if pill_geom.y() == first_row_y:
+                        # Pill is on the first row
+                        first_row_pills.append((widget, pill_geom))
+                    else:
+                        # Pill wrapped to a subsequent row (overflow)
+                        overflow_pills.append((widget, pill_geom))
+
+        # No overflow if all pills are on the first row
+        if not overflow_pills:
+            return (False, 0, 0, 0)
+
+        # Find the right edge of the last pill on the first row
+        if first_row_pills:
+            last_visible = first_row_pills[-1]
+            last_pill_right = last_visible[1].x() + last_visible[1].width() + 4  # +4 for container margin
+        else:
+            # No pills on first row (shouldn't happen, but handle gracefully)
+            last_pill_right = 6
+
+        # Calculate available space for dots
+        available_space = widget_width - last_pill_right - right_margin
+
+        # Determine number of dots based on available space (max 3)
+        num_dots = min(3, max(0, int(available_space / min_space_per_dot)))
+
+        if num_dots == 0:
+            return (False, 0, 0, 0)
+
+        # Calculate dot starting position (center the dots in available space)
+        total_dots_width = num_dots * dot_diameter + (num_dots - 1) * dot_spacing
+        dot_x_start = last_pill_right + (available_space - total_dots_width) / 2
+
+        # Y position: center vertically based on pill height on first row
+        if first_row_pills:
+            first_pill_geom = first_row_pills[0][1]
+            # Center dots with the first row pills
+            dot_y = first_pill_geom.y() + first_pill_geom.height() / 2 + 4  # +4 for container margin
+        else:
+            dot_y = widget_height / 2
+
+        return (True, num_dots, dot_x_start, dot_y)
+
     def paintEvent(self, event):
         """Custom paint event to draw the background and border with state colors."""
         painter = QtGui.QPainter(self)
@@ -556,6 +640,22 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         painter.setBrush(QtCore.Qt.NoBrush)
         # Draw rect without fill, adjusted to fit within widget bounds
         painter.drawRect(rect.adjusted(0, 0, -1, -1))
+
+        # Draw overflow indicator dots if needed
+        has_overflow, num_dots, dot_x_start, dot_y = self._calculate_overflow_info()
+        if has_overflow and num_dots > 0:
+            dot_diameter = 4
+            dot_spacing = 3
+            painter.setPen(QtCore.Qt.NoPen)
+            painter.setBrush(QtGui.QBrush(self.overflow_dot_color))
+
+            for i in range(num_dots):
+                dot_x = dot_x_start + i * (dot_diameter + dot_spacing)
+                painter.drawEllipse(
+                    QtCore.QPointF(dot_x + dot_diameter / 2, dot_y),
+                    dot_diameter / 2,
+                    dot_diameter / 2
+                )
 
     def set_selected(self, selected):
         """Set the selection state of the widget.
