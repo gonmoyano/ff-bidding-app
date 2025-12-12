@@ -932,10 +932,16 @@ class ConfigBidDialog(QtWidgets.QDialog):
             self.rate_combo.setCurrentIndex(default_index)
 
     def _load_currency_settings(self):
-        """Load current currency settings for this bid."""
-        # Get currency symbol from ShotGrid bid data, fall back to global setting
+        """Load current currency settings for this bid.
+
+        Currency symbol is loaded from ShotGrid (sg_currency field) first.
+        If not defined in ShotGrid, falls back to application settings.
+        """
+        # Get currency symbol from ShotGrid bid data first
         current_currency = self.bid_data.get("sg_currency")
-        if not current_currency:
+
+        # Fall back to application settings if not defined in ShotGrid
+        if not current_currency or current_currency.strip() == "":
             current_currency = self.app_settings.get_currency() or "$"
 
         # Get position from local settings
