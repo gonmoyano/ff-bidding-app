@@ -630,6 +630,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         v_header = self.table_view.verticalHeader()
         v_header.sectionClicked.connect(self._on_row_header_clicked)
+        v_header.sectionResized.connect(self._on_row_resized)
 
         # Context menu
         self.table_view.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -1645,6 +1646,29 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         # Save to settings
         self.app_settings.set("vfx_breakdown_row_height", value)
+
+    def _on_row_resized(self, row, old_size, new_size):
+        """Handle individual row resize (e.g., when user drags row edge)."""
+        if not self.table_view:
+            return
+
+        # Update the pill widget height for the resized row
+        try:
+            assets_col_idx = self.model.column_fields.index("sg_bid_assets")
+            index = self.model.index(row, assets_col_idx)
+            widget = self.table_view.indexWidget(index)
+            if widget:
+                # Update both minimum and maximum height to match row height
+                widget.setMinimumHeight(new_size)
+                widget.setMaximumHeight(new_size)
+                widget.setFixedHeight(new_size)
+                # Explicitly update pill heights
+                if hasattr(widget, 'update_for_height'):
+                    widget.update_for_height(new_size)
+                widget.updateGeometry()
+        except (ValueError, AttributeError):
+            # Column not present or other issue - skip widget updates
+            pass
 
     def _apply_column_dropdowns(self):
         """Apply dropdown delegates to columns marked for dropdowns."""
