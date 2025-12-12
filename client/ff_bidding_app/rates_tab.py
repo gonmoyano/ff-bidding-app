@@ -935,6 +935,12 @@ class RatesTab(QtWidgets.QWidget):
             if self.current_bid_id:
                 price_list_data["sg_parent_bid"] = {"type": "CustomEntity06", "id": self.current_bid_id}
 
+            # Link to currently selected Rate Card (if any)
+            if self.rate_card_combo and self.rate_card_combo.currentData():
+                rate_card_id = self.rate_card_combo.currentData()
+                price_list_data["sg_rate_card"] = {"type": "CustomNonProjectEntity01", "id": rate_card_id}
+                logger.info(f"Linking new Price List to Rate Card ID: {rate_card_id}")
+
             new_price_list = self.sg_session.sg.create("CustomEntity10", price_list_data)
             new_price_list_id = new_price_list['id']
 
