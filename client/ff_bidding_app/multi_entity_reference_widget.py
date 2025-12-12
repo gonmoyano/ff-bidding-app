@@ -556,10 +556,10 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         widget_height = self.height()
 
         # Constants for dots
-        dot_diameter = 4
-        dot_spacing = 3
+        dot_diameter = 3
+        dot_spacing = 2
         right_margin = 6  # Space from the right edge
-        min_space_per_dot = dot_diameter + dot_spacing  # ~7px per dot
+        min_space_per_dot = dot_diameter + dot_spacing  # ~5px per dot
 
         # Find pills on the first row and any pills on subsequent rows
         first_row_pills = []
@@ -611,13 +611,8 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         total_dots_width = num_dots * dot_diameter + (num_dots - 1) * dot_spacing
         dot_x_start = last_pill_right + (available_space - total_dots_width) / 2
 
-        # Y position: center vertically based on pill height on first row
-        if first_row_pills:
-            first_pill_geom = first_row_pills[0][1]
-            # Center dots with the first row pills
-            dot_y = first_pill_geom.y() + first_pill_geom.height() / 2 + 4  # +4 for container margin
-        else:
-            dot_y = widget_height / 2
+        # Y position: 5% from bottom edge of the row
+        dot_y = widget_height * 0.95 - dot_diameter / 2
 
         return (True, num_dots, dot_x_start, dot_y)
 
@@ -644,8 +639,8 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         # Draw overflow indicator dots if needed
         has_overflow, num_dots, dot_x_start, dot_y = self._calculate_overflow_info()
         if has_overflow and num_dots > 0:
-            dot_diameter = 4
-            dot_spacing = 3
+            dot_diameter = 3
+            dot_spacing = 2
             painter.setPen(QtCore.Qt.NoPen)
             painter.setBrush(QtGui.QBrush(self.overflow_dot_color))
 
