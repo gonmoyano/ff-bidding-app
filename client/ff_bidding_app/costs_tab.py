@@ -318,16 +318,11 @@ class CostsTab(QtWidgets.QMainWindow):
             # Calculate grand total
             grand_total = shot_total + asset_total + misc_total
 
-            # Get currency symbol
-            currency_symbol = "$"
-            if self.app_settings:
-                currency_symbol = self.app_settings.get_currency() or "$"
-
             # Update the summary spreadsheet (rows 1-4, column 1)
-            self.total_cost_spreadsheet.set_cell_value(1, 1, f"{currency_symbol}{shot_total:,.2f}")
-            self.total_cost_spreadsheet.set_cell_value(2, 1, f"{currency_symbol}{asset_total:,.2f}")
-            self.total_cost_spreadsheet.set_cell_value(3, 1, f"{currency_symbol}{misc_total:,.2f}")
-            self.total_cost_spreadsheet.set_cell_value(4, 1, f"{currency_symbol}{grand_total:,.2f}")
+            self.total_cost_spreadsheet.set_cell_value(1, 1, self._format_currency(shot_total))
+            self.total_cost_spreadsheet.set_cell_value(2, 1, self._format_currency(asset_total))
+            self.total_cost_spreadsheet.set_cell_value(3, 1, self._format_currency(misc_total))
+            self.total_cost_spreadsheet.set_cell_value(4, 1, self._format_currency(grand_total))
 
         except Exception as e:
             logger.error(f"Error updating Total Cost summary: {e}", exc_info=True)
@@ -346,10 +341,36 @@ class CostsTab(QtWidgets.QMainWindow):
 
         try:
             # Remove currency symbols, commas, and whitespace
-            cleaned = value_str.replace('$', '').replace('€', '').replace('£', '').replace(',', '').strip()
+            cleaned = value_str.replace('$', '').replace('€', '').replace('£', '').replace('¥', '').replace('₹', '').replace('₽', '').replace(',', '').strip()
             return float(cleaned)
         except (ValueError, AttributeError):
             return 0.0
+
+    def _format_currency(self, value):
+        """Format a numeric value with currency symbol based on bid settings.
+
+        Args:
+            value: Numeric value to format
+
+        Returns:
+            str: Formatted currency string
+        """
+        if not self.app_settings:
+            return f"${value:,.2f}"
+
+        # Get bid-specific currency settings, or fall back to global
+        if self.current_bid_id:
+            currency_symbol = self.app_settings.get_bid_currency(self.current_bid_id)
+            currency_position = self.app_settings.get_bid_currency_position(self.current_bid_id)
+        else:
+            currency_symbol = self.app_settings.get_currency() or "$"
+            currency_position = "prepend"
+
+        # Format based on position
+        if currency_position == "append":
+            return f"{value:,.2f}{currency_symbol}"
+        else:
+            return f"{currency_symbol}{value:,.2f}"
 
     def _on_shots_data_changed(self):
         """Handle data changes in the Shots Cost model - recalculate totals and update summary."""
@@ -450,6 +471,12 @@ class CostsTab(QtWidgets.QMainWindow):
         self.current_bid_data = bid_data
         self.current_bid_id = bid_data.get('id') if bid_data else None
         self.current_project_id = project_id
+
+        # Update bid_id on totals wrappers for currency formatting
+        if hasattr(self, 'shots_cost_totals_wrapper'):
+            self.shots_cost_totals_wrapper.set_bid_id(self.current_bid_id)
+        if hasattr(self, 'asset_cost_totals_wrapper'):
+            self.asset_cost_totals_wrapper.set_bid_id(self.current_bid_id)
 
         if bid_data and project_id:
             # Load Line Items first - needed for both VFX breakdown and asset cost pricing
