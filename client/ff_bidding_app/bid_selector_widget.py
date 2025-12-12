@@ -3046,7 +3046,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             # Get bids filtered by RFQ (only bids linked to this RFQ via sg_parent_rfq)
             bids = self.sg_session.get_bids(
                 project_id,
-                fields=["id", "code", "name", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list", "description"],
+                fields=["id", "code", "name", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list", "sg_currency", "description"],
                 rfq_id=rfq_id
             )
         except Exception as e:
