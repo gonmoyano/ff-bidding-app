@@ -280,6 +280,9 @@ class AddBidAssetsDialog(QtWidgets.QDialog):
 class AssetsTab(QtWidgets.QWidget):
     """Assets tab widget for managing Bid Assets and Asset items."""
 
+    # Signals
+    bidAssetsChanged = QtCore.Signal(object)  # Emits updated bid data when Bid Assets is set as current
+
     def __init__(self, sg_session, parent=None):
         """Initialize the Assets tab.
 
@@ -743,6 +746,9 @@ class AssetsTab(QtWidgets.QWidget):
 
             # Refresh the bid data and update the bid info label
             self._refresh_bid_info_label()
+
+            # Emit signal so other widgets can update (e.g., VFX Breakdown pill colors)
+            self.bidAssetsChanged.emit(self.current_bid_data)
 
             QtWidgets.QMessageBox.information(
                 self,

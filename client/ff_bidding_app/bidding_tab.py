@@ -92,6 +92,9 @@ class BiddingTab(QtWidgets.QWidget):
         # Use the full AssetsTab (includes selector, Add/Remove/Rename buttons, etc.)
         tab = AssetsTab(self.sg_session, parent=self.parent_app)
 
+        # Connect signal to update VFX Breakdown pill colors when Bid Assets changes
+        tab.bidAssetsChanged.connect(self._on_bid_assets_changed)
+
         # Store reference to use in set_bid if needed
         self.assets_tab = tab
 
@@ -254,3 +257,23 @@ class BiddingTab(QtWidgets.QWidget):
             price_list = bid_data.get("sg_price_list")
             if price_list and isinstance(price_list, dict):
                 logger.info(f"  Selected Price List ID: {price_list.get('id')}")
+
+    def _on_bid_assets_changed(self, updated_bid_data):
+        """Handle Bid Assets change - update VFX Breakdown pill colors.
+
+        Args:
+            updated_bid_data: Updated bid data dictionary with new sg_bid_assets
+        """
+        if not updated_bid_data:
+            return
+
+        logger.info(f"Bid Assets changed for Bid: {updated_bid_data.get('code')}")
+
+        # Update the VFX Breakdown widget with the new bid data so it can refresh pill colors
+        if hasattr(self, 'vfx_breakdown_tab') and hasattr(self.vfx_breakdown_tab, 'breakdown_widget'):
+            breakdown_widget = self.vfx_breakdown_tab.breakdown_widget
+            # Update the current bid reference in the breakdown widget
+            breakdown_widget.set_current_bid(updated_bid_data)
+            # Refresh asset widgets to update pill colors based on new Bid Assets
+            breakdown_widget._refresh_asset_widgets_validation()
+            logger.info("  Updated VFX Breakdown pill colors based on new Bid Assets")
