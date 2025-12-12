@@ -3063,6 +3063,23 @@ class BidSelectorWidget(QtWidgets.QWidget):
             price_list_name = "None"
         info_parts.append(f'<span style="color:{label_color};">Price List:</span> <span style="color:{value_color}; font-weight:bold;">{price_list_name}</span>')
 
+        # Add Rate Card info (linked to the Price List)
+        rate_card_name = "None"
+        if price_list and isinstance(price_list, dict) and price_list.get("id"):
+            try:
+                # Query the price list to get its rate card
+                price_list_data = self.sg_session.sg.find_one(
+                    "CustomEntity10",
+                    [["id", "is", price_list["id"]]],
+                    ["sg_rate_card"]
+                )
+                if price_list_data and price_list_data.get("sg_rate_card"):
+                    rate_card = price_list_data["sg_rate_card"]
+                    rate_card_name = rate_card.get("name") or rate_card.get("code") or f"ID {rate_card.get('id', 'N/A')}"
+            except Exception as e:
+                logger.warning(f"Failed to fetch rate card for price list: {e}")
+        info_parts.append(f'<span style="color:{label_color};">Rate Card:</span> <span style="color:{value_color}; font-weight:bold;">{rate_card_name}</span>')
+
         # Add Description info
         description = bid.get("description")
         if description:

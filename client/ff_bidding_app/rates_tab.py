@@ -1949,6 +1949,10 @@ class RateCardDialog(QtWidgets.QDialog):
             if parent and isinstance(parent, RatesTab):
                 logger.info("Updating parent RatesTab info label immediately")
                 parent._fetch_price_list_data(self.current_price_list_id)
+                # Recalculate prices based on new Rate Card
+                parent._initialize_price_static_values()
+                # Update bid info label to reflect Rate Card change
+                parent._refresh_bid_info_label()
 
         except Exception as e:
             logger.error(f"Failed to set current Rate Card: {e}", exc_info=True)
