@@ -89,7 +89,7 @@ class EntityPillWidget(QtWidgets.QWidget):
 
         # Add tooltip for invalid pills showing the asset name
         if not self.is_valid:
-            self.name_label.setToolTip(f"Invalid asset reference: {self.entity_name}\n(Asset not found in current bid)")
+            self.name_label.setToolTip(f"Asset not available: {self.entity_name}\n(Not found in current Bid Assets)")
 
         layout.addWidget(self.name_label)
 
@@ -248,13 +248,14 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         Args:
             entities (list): List of ShotGrid entity dicts
             allow_add (bool): Whether to show the Add button
-            valid_entity_ids (set): Set of valid entity IDs for the current bid (for validation)
+            valid_entity_ids (set): Set of valid entity names for the current bid (for validation)
+                                    Note: Despite the name, this now uses names for matching
             parent (QWidget): Parent widget
         """
         super().__init__(parent)
         self._entities = self._deduplicate_entities(entities or [])
         self._allow_add = allow_add
-        self._valid_entity_ids = valid_entity_ids  # Set of valid entity IDs
+        self._valid_entity_names = valid_entity_ids  # Set of valid entity names (renamed internally)
         self._is_selected = False  # Track selection state
         self._is_editing = False   # Track edit state
         self._pill_max_height = None  # Max height for pills (calculated from widget height)
@@ -362,11 +363,12 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         Args:
             entity (dict): Entity dictionary
         """
-        # Check if this entity is valid (in the current bid's assets)
+        # Check if this entity is valid (name matches one in the current bid's assets)
         is_valid = True
-        if self._valid_entity_ids is not None:
-            entity_id = entity.get('id')
-            is_valid = entity_id in self._valid_entity_ids
+        if self._valid_entity_names is not None:
+            # Use 'code' first (used by Asset items), then 'name' as fallback
+            entity_name = entity.get('code') or entity.get('name')
+            is_valid = entity_name in self._valid_entity_names if entity_name else False
 
         pill = EntityPillWidget(entity, is_valid=is_valid, max_height=self._pill_max_height, parent=self)
         pill.removeRequested.connect(self._on_pill_remove)
@@ -444,13 +446,14 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         self._entities = self._deduplicate_entities(entities or [])
         self._populate_entities()
 
-    def set_valid_entity_ids(self, valid_entity_ids):
-        """Update the set of valid entity IDs and refresh pills.
+    def set_valid_entity_ids(self, valid_entity_names):
+        """Update the set of valid entity names and refresh pills.
 
         Args:
-            valid_entity_ids (set): Set of valid entity IDs for validation
+            valid_entity_names (set): Set of valid entity names for validation
+                                      Note: Despite method name, this uses names for matching
         """
-        self._valid_entity_ids = valid_entity_ids
+        self._valid_entity_names = valid_entity_names
         # Refresh pills to update validation colors
         self._populate_entities()
 
@@ -499,9 +502,14 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
                 if isinstance(widget, EntityPillWidget):
                     widget.set_max_height(available_height)
 
-        # Trigger layout update
+        # Force layout to recalculate by triggering a resize on the container
+        # invalidate() only marks layout as dirty but doesn't recalculate
         self.pills_layout.invalidate()
         self.pills_container.updateGeometry()
+        # Force the layout to actually apply new geometries
+        if self.pills_container.size().isValid():
+            self.pills_container.resize(self.pills_container.size())
+        self.pills_container.update()
 
     def update_for_height(self, height):
         """Public method to update pill heights for a given container height.

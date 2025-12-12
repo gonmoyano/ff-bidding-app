@@ -2770,6 +2770,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
     # Signals
     bidChanged = QtCore.Signal(object)  # Emits selected bid data (dict or None)
+    loadLinkedRequested = QtCore.Signal(object)  # Emits bid data to load linked entities
     statusMessageChanged = QtCore.Signal(str, bool)  # message, is_error
 
     def __init__(self, sg_session, parent=None):
@@ -2852,6 +2853,12 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self.set_current_btn.setToolTip("Set this Bid as the current one for the selected RFQ")
         selector_row.addWidget(self.set_current_btn)
 
+        self.load_linked_btn = QtWidgets.QPushButton("Load Linked")
+        self.load_linked_btn.setEnabled(False)
+        self.load_linked_btn.clicked.connect(self._on_load_linked)
+        self.load_linked_btn.setToolTip("Load the VFX Breakdown, Bid Assets, and Price List linked to this Bid")
+        selector_row.addWidget(self.load_linked_btn)
+
         self.add_btn = QtWidgets.QPushButton("Create")
         self.add_btn.clicked.connect(self._on_add_bid)
         self.add_btn.setToolTip("Create a new Bid")
@@ -2905,6 +2912,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         if not project_id:
             self.bid_combo.blockSignals(False)
             self.set_current_btn.setEnabled(False)
+            self.load_linked_btn.setEnabled(False)
             self.config_bid_btn.setEnabled(False)
             self._set_status("Select an RFQ to view Bids.")
             return
@@ -2933,8 +2941,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         self.bid_combo.blockSignals(False)
 
-        # Enable Set and Config buttons only if there are bids and an RFQ is selected
+        # Enable Set, Load Linked, and Config buttons only if there are bids and an RFQ is selected
         self.set_current_btn.setEnabled(len(bids) > 0 and rfq is not None)
+        self.load_linked_btn.setEnabled(len(bids) > 0 and rfq is not None)
         self.config_bid_btn.setEnabled(len(bids) > 0 and rfq is not None)
 
         # Status & selection
@@ -3063,6 +3072,23 @@ class BidSelectorWidget(QtWidgets.QWidget):
             price_list_name = "None"
         info_parts.append(f'<span style="color:{label_color};">Price List:</span> <span style="color:{value_color}; font-weight:bold;">{price_list_name}</span>')
 
+        # Add Rate Card info (linked to the Price List)
+        rate_card_name = "None"
+        if price_list and isinstance(price_list, dict) and price_list.get("id"):
+            try:
+                # Query the price list to get its rate card
+                price_list_data = self.sg_session.sg.find_one(
+                    "CustomEntity10",
+                    [["id", "is", price_list["id"]]],
+                    ["sg_rate_card"]
+                )
+                if price_list_data and price_list_data.get("sg_rate_card"):
+                    rate_card = price_list_data["sg_rate_card"]
+                    rate_card_name = rate_card.get("name") or rate_card.get("code") or f"ID {rate_card.get('id', 'N/A')}"
+            except Exception as e:
+                logger.warning(f"Failed to fetch rate card for price list: {e}")
+        info_parts.append(f'<span style="color:{label_color};">Rate Card:</span> <span style="color:{value_color}; font-weight:bold;">{rate_card_name}</span>')
+
         # Add Description info
         description = bid.get("description")
         if description:
@@ -3090,6 +3116,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         self.bid_info_label.setText("")
         self.group_box.setAdditionalInfo("")
         self.set_current_btn.setEnabled(False)
+        self.load_linked_btn.setEnabled(False)
         self.config_bid_btn.setEnabled(False)
         self._set_status("Select an RFQ to view Bids.")
 
@@ -3186,6 +3213,19 @@ class BidSelectorWidget(QtWidgets.QWidget):
         except Exception as e:
             logger.error(f"Failed to set current bid: {e}", exc_info=True)
             QtWidgets.QMessageBox.critical(self, "Error", f"Failed to set current bid:\n{str(e)}")
+
+    def _on_load_linked(self):
+        """Handle Load Linked button click - load VFX Breakdown, Bid Assets, and Price List linked to the selected bid."""
+        bid = self.get_current_bid()
+        if not bid:
+            QtWidgets.QMessageBox.warning(self, "No Bid Selected", "Please select a Bid from the list.")
+            return
+
+        bid_name = bid.get('code', f"Bid {bid.get('id')}")
+        logger.info(f"Load Linked clicked for Bid: {bid_name}")
+
+        # Emit signal with bid data so parent can load linked entities
+        self.loadLinkedRequested.emit(bid)
 
     def _is_bid_name_unique(self, bid_name, project_id):
         """Check if the Bid name is unique within the project.

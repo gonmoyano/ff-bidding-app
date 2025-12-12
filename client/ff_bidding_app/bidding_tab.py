@@ -55,6 +55,7 @@ class BiddingTab(QtWidgets.QWidget):
         # Add Bid selector widget at the top
         self.bid_selector = BidSelectorWidget(self.sg_session, parent=self)
         self.bid_selector.bidChanged.connect(self._on_bid_changed)
+        self.bid_selector.loadLinkedRequested.connect(self._on_load_linked_requested)
         self.bid_selector.statusMessageChanged.connect(self._on_bid_status_message)
         main_layout.addWidget(self.bid_selector)
 
@@ -90,6 +91,9 @@ class BiddingTab(QtWidgets.QWidget):
         """Create the Assets nested tab content with full functionality."""
         # Use the full AssetsTab (includes selector, Add/Remove/Rename buttons, etc.)
         tab = AssetsTab(self.sg_session, parent=self.parent_app)
+
+        # Connect signal to update VFX Breakdown pill colors when Bid Assets changes
+        tab.bidAssetsChanged.connect(self._on_bid_assets_changed)
 
         # Store reference to use in set_bid if needed
         self.assets_tab = tab
@@ -216,3 +220,60 @@ class BiddingTab(QtWidgets.QWidget):
         """
         logger.info(f"Bid selector status: {message}")
         # Could forward this to parent app status bar if needed
+
+    def _on_load_linked_requested(self, bid_data):
+        """Handle Load Linked button click - load linked entities into their dropdown menus.
+
+        Args:
+            bid_data: Selected bid dictionary
+        """
+        if not bid_data:
+            return
+
+        bid_name = bid_data.get('code', f"Bid {bid_data.get('id')}")
+        logger.info(f"Loading linked entities for Bid: {bid_name}")
+
+        # Load VFX Breakdown linked to this bid
+        if hasattr(self, 'vfx_breakdown_tab') and self.current_rfq:
+            vfx_breakdown = bid_data.get("sg_vfx_breakdown")
+            # Populate combo and select the linked breakdown
+            self.vfx_breakdown_tab.populate_vfx_breakdown_combo(self.current_rfq, auto_select=False)
+            if vfx_breakdown and isinstance(vfx_breakdown, dict):
+                breakdown_id = vfx_breakdown.get('id')
+                if breakdown_id:
+                    self.vfx_breakdown_tab._select_vfx_breakdown_by_id(breakdown_id)
+                    logger.info(f"  Selected VFX Breakdown ID: {breakdown_id}")
+
+        # Load Bid Assets linked to this bid
+        if hasattr(self, 'assets_tab') and self.current_project_id:
+            self.assets_tab.set_bid(bid_data, self.current_project_id)
+            bid_assets = bid_data.get("sg_bid_assets")
+            if bid_assets and isinstance(bid_assets, dict):
+                logger.info(f"  Selected Bid Assets ID: {bid_assets.get('id')}")
+
+        # Load Price List linked to this bid
+        if hasattr(self, 'rates_tab') and self.current_project_id:
+            self.rates_tab.set_bid(bid_data, self.current_project_id)
+            price_list = bid_data.get("sg_price_list")
+            if price_list and isinstance(price_list, dict):
+                logger.info(f"  Selected Price List ID: {price_list.get('id')}")
+
+    def _on_bid_assets_changed(self, updated_bid_data):
+        """Handle Bid Assets change - update VFX Breakdown pill colors.
+
+        Args:
+            updated_bid_data: Updated bid data dictionary with new sg_bid_assets
+        """
+        if not updated_bid_data:
+            return
+
+        logger.info(f"Bid Assets changed for Bid: {updated_bid_data.get('code')}")
+
+        # Update the VFX Breakdown widget with the new bid data so it can refresh pill colors
+        if hasattr(self, 'vfx_breakdown_tab') and hasattr(self.vfx_breakdown_tab, 'breakdown_widget'):
+            breakdown_widget = self.vfx_breakdown_tab.breakdown_widget
+            # Update the current bid reference in the breakdown widget
+            breakdown_widget.set_current_bid(updated_bid_data)
+            # Refresh asset widgets to update pill colors based on new Bid Assets
+            breakdown_widget._refresh_asset_widgets_validation()
+            logger.info("  Updated VFX Breakdown pill colors based on new Bid Assets")

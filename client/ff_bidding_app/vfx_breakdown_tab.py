@@ -2930,6 +2930,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
     def _clear_vfx_breakdown_table(self):
         """Clear the VFX Breakdown table."""
         self.breakdown_widget.clear_data()
+        self.breakdown_widget.set_current_breakdown(None)
 
     def _on_vfx_breakdown_changed(self, index):
         """Handle VFX Breakdown selection change."""
@@ -3103,6 +3104,9 @@ class VFXBreakdownTab(QtWidgets.QWidget):
             self._clear_vfx_breakdown_table()
             self._set_vfx_breakdown_status("Invalid VFX Breakdown selection.", is_error=True)
             return
+
+        # Set the current breakdown in the widget for add/delete row functionality
+        self.breakdown_widget.set_current_breakdown(breakdown)
 
         # Fetch schema for Bidding Scene entity
         if not self.field_schema:
