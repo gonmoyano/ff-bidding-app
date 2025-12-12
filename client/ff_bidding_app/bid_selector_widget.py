@@ -556,7 +556,7 @@ class ConfigBidDialog(QtWidgets.QDialog):
     # Signal emitted when bid is deleted (bid_id)
     bidDeleted = QtCore.Signal(int)
 
-    def __init__(self, sg_session, project_id, bid_id, bid_data, parent=None):
+    def __init__(self, sg_session, project_id, bid_id, bid_data, app_settings=None, parent=None):
         """Initialize the dialog.
 
         Args:
@@ -564,6 +564,7 @@ class ConfigBidDialog(QtWidgets.QDialog):
             project_id: ID of the current project
             bid_id: ID of the current Bid
             bid_data: Current bid data dict
+            app_settings: AppSettings instance for currency settings
             parent: Parent widget
         """
         super().__init__(parent)
@@ -571,6 +572,7 @@ class ConfigBidDialog(QtWidgets.QDialog):
         self.project_id = project_id
         self.bid_id = bid_id
         self.bid_data = bid_data
+        self.app_settings = app_settings or AppSettings()
         self._bid_was_deleted = False
 
         # Generate random confirmation string for delete
@@ -784,6 +786,62 @@ class ConfigBidDialog(QtWidgets.QDialog):
         # Connect price list change signal now that rate_combo exists
         self.price_combo.currentIndexChanged.connect(self._on_price_list_changed)
 
+        # Separator before currency settings
+        layout.addSpacing(10)
+        separator2 = QtWidgets.QFrame()
+        separator2.setFrameShape(QtWidgets.QFrame.HLine)
+        separator2.setFrameShadow(QtWidgets.QFrame.Sunken)
+        layout.addWidget(separator2)
+        layout.addSpacing(5)
+
+        # Currency Symbol dropdown
+        currency_layout = QtWidgets.QHBoxLayout()
+        currency_label = QtWidgets.QLabel("Currency Symbol:")
+        currency_label.setMinimumWidth(100)
+        currency_layout.addWidget(currency_label)
+
+        self.currency_combo = QtWidgets.QComboBox()
+        self.currency_combo.addItem("$ - US Dollar", "$")
+        self.currency_combo.addItem("\u20ac - Euro", "\u20ac")
+        self.currency_combo.addItem("\u00a3 - British Pound", "\u00a3")
+        self.currency_combo.addItem("\u00a5 - Japanese Yen / Chinese Yuan", "\u00a5")
+        self.currency_combo.addItem("\u20b9 - Indian Rupee", "\u20b9")
+        self.currency_combo.addItem("\u20bd - Russian Ruble", "\u20bd")
+        self.currency_combo.addItem("R$ - Brazilian Real", "R$")
+        self.currency_combo.addItem("Custom...", "custom")
+        currency_layout.addWidget(self.currency_combo, stretch=1)
+        layout.addLayout(currency_layout)
+
+        # Custom currency input (shown only when "Custom..." is selected)
+        self.custom_currency_layout = QtWidgets.QHBoxLayout()
+        custom_label = QtWidgets.QLabel("Custom Symbol:")
+        custom_label.setMinimumWidth(100)
+        self.custom_currency_input = QtWidgets.QLineEdit()
+        self.custom_currency_input.setMaxLength(5)
+        self.custom_currency_input.setPlaceholderText("Enter custom symbol")
+        self.custom_currency_layout.addWidget(custom_label)
+        self.custom_currency_layout.addWidget(self.custom_currency_input, stretch=1)
+        layout.addLayout(self.custom_currency_layout)
+
+        # Currency position (prepend/append)
+        position_layout = QtWidgets.QHBoxLayout()
+        position_label = QtWidgets.QLabel("Symbol Position:")
+        position_label.setMinimumWidth(100)
+        position_layout.addWidget(position_label)
+
+        self.position_combo = QtWidgets.QComboBox()
+        self.position_combo.addItem("Before amount (e.g., $100)", "prepend")
+        self.position_combo.addItem("After amount (e.g., 100€)", "append")
+        position_layout.addWidget(self.position_combo, stretch=1)
+        layout.addLayout(position_layout)
+
+        # Set current currency values from settings
+        self._load_currency_settings()
+
+        # Connect currency combo to show/hide custom input
+        self.currency_combo.currentIndexChanged.connect(self._toggle_custom_currency)
+        self._toggle_custom_currency()
+
         # Add spacing before buttons
         layout.addSpacing(15)
 
@@ -872,6 +930,68 @@ class ConfigBidDialog(QtWidgets.QDialog):
                     break
         if default_index > 0:
             self.rate_combo.setCurrentIndex(default_index)
+
+    def _load_currency_settings(self):
+        """Load current currency settings for this bid.
+
+        Currency symbol is loaded from ShotGrid (sg_currency field) first.
+        If not defined in ShotGrid, falls back to application settings.
+        """
+        # Get currency symbol from ShotGrid bid data first
+        current_currency = self.bid_data.get("sg_currency")
+
+        # Fall back to application settings if not defined in ShotGrid
+        if not current_currency or current_currency.strip() == "":
+            current_currency = self.app_settings.get_currency() or "$"
+
+        # Get position from local settings
+        current_position = self.app_settings.get_bid_currency_position(self.bid_id)
+
+        # Find and select the current currency in the dropdown
+        found = False
+        for i in range(self.currency_combo.count() - 1):  # Exclude "Custom..."
+            if self.currency_combo.itemData(i) == current_currency:
+                self.currency_combo.setCurrentIndex(i)
+                found = True
+                break
+
+        if not found and current_currency:
+            # Set to Custom and show the custom value
+            self.currency_combo.setCurrentIndex(self.currency_combo.count() - 1)
+            self.custom_currency_input.setText(current_currency)
+
+        # Set position
+        for i in range(self.position_combo.count()):
+            if self.position_combo.itemData(i) == current_position:
+                self.position_combo.setCurrentIndex(i)
+                break
+
+    def _toggle_custom_currency(self):
+        """Show/hide custom currency input based on dropdown selection."""
+        is_custom = self.currency_combo.currentData() == "custom"
+        # Find and show/hide the custom input widgets
+        for i in range(self.custom_currency_layout.count()):
+            item = self.custom_currency_layout.itemAt(i)
+            if item and item.widget():
+                item.widget().setVisible(is_custom)
+
+    def get_currency_symbol(self):
+        """Get the selected currency symbol.
+
+        Returns:
+            str: Currency symbol
+        """
+        if self.currency_combo.currentData() == "custom":
+            return self.custom_currency_input.text().strip() or "$"
+        return self.currency_combo.currentData()
+
+    def get_currency_position(self):
+        """Get the selected currency position.
+
+        Returns:
+            str: "prepend" or "append"
+        """
+        return self.position_combo.currentData()
 
     def _on_remove_bid(self):
         """Handle Remove Bid button click - show confirmation dialog."""
@@ -2772,6 +2892,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
     bidChanged = QtCore.Signal(object)  # Emits selected bid data (dict or None)
     loadLinkedRequested = QtCore.Signal(object)  # Emits bid data to load linked entities
     statusMessageChanged = QtCore.Signal(str, bool)  # message, is_error
+    currencySettingsChanged = QtCore.Signal(int, str)  # Emits (bid_id, currency_symbol) when currency settings change
 
     def __init__(self, sg_session, parent=None):
         """Initialize the Bid selector widget.
@@ -2925,7 +3046,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             # Get bids filtered by RFQ (only bids linked to this RFQ via sg_parent_rfq)
             bids = self.sg_session.get_bids(
                 project_id,
-                fields=["id", "code", "name", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list", "description"],
+                fields=["id", "code", "name", "sg_bid_type", "sg_vfx_breakdown", "sg_bid_assets", "sg_price_list", "sg_currency", "description"],
                 rfq_id=rfq_id
             )
         except Exception as e:
@@ -3404,11 +3525,13 @@ class BidSelectorWidget(QtWidgets.QWidget):
         bid_name = bid.get("code", f"Bid {bid_id}")
 
         # Show config dialog
+        app_settings = AppSettings()
         dialog = ConfigBidDialog(
             self.sg_session,
             self.current_project_id,
             bid_id,
             bid,
+            app_settings=app_settings,
             parent=self
         )
 
@@ -3431,6 +3554,8 @@ class BidSelectorWidget(QtWidgets.QWidget):
         bid_assets_id = dialog.get_bid_assets_id()
         price_list_id = dialog.get_price_list_id()
         rate_card_id = dialog.get_rate_card_id()
+        currency_symbol = dialog.get_currency_symbol()
+        currency_position = dialog.get_currency_position()
 
         try:
             # Update bid with name, description and selected children
@@ -3458,6 +3583,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
             else:
                 update_data["sg_price_list"] = None
 
+            # Save currency symbol to ShotGrid
+            update_data["sg_currency"] = currency_symbol
+
             # Update bid
             self.sg_session.sg.update("CustomEntity06", bid_id, update_data)
             logger.info(f"Updated Bid {bid_id} with config: {update_data}")
@@ -3470,6 +3598,13 @@ class BidSelectorWidget(QtWidgets.QWidget):
                     {"sg_rate_card": {"type": "CustomNonProjectEntity01", "id": rate_card_id}}
                 )
                 logger.info(f"Updated Price List {price_list_id} with Rate Card {rate_card_id}")
+
+            # Save currency position to local settings (symbol is in ShotGrid)
+            app_settings.set_bid_currency_position(bid_id, currency_position)
+            logger.info(f"Updated Bid {bid_id} currency: {currency_symbol} ({currency_position})")
+
+            # Emit signal to notify that currency settings changed
+            self.currencySettingsChanged.emit(bid_id, currency_symbol)
 
             display_name = new_name if new_name else bid_name
             self._set_status(f"Bid '{display_name}' configuration saved.")

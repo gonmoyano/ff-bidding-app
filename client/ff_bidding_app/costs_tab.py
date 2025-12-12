@@ -79,6 +79,10 @@ class CostsTab(QtWidgets.QMainWindow):
         self.vfx_breakdown_formula_evaluator = None
         self.asset_cost_formula_evaluator = None
 
+        # Formula delegates for currency formatting updates
+        self.shots_cost_formula_delegate = None
+        self.asset_cost_formula_delegate = None
+
         # No central widget - docks can take full space
         self.setCentralWidget(None)
 
@@ -318,16 +322,11 @@ class CostsTab(QtWidgets.QMainWindow):
             # Calculate grand total
             grand_total = shot_total + asset_total + misc_total
 
-            # Get currency symbol
-            currency_symbol = "$"
-            if self.app_settings:
-                currency_symbol = self.app_settings.get_currency() or "$"
-
             # Update the summary spreadsheet (rows 1-4, column 1)
-            self.total_cost_spreadsheet.set_cell_value(1, 1, f"{currency_symbol}{shot_total:,.2f}")
-            self.total_cost_spreadsheet.set_cell_value(2, 1, f"{currency_symbol}{asset_total:,.2f}")
-            self.total_cost_spreadsheet.set_cell_value(3, 1, f"{currency_symbol}{misc_total:,.2f}")
-            self.total_cost_spreadsheet.set_cell_value(4, 1, f"{currency_symbol}{grand_total:,.2f}")
+            self.total_cost_spreadsheet.set_cell_value(1, 1, self._format_currency(shot_total))
+            self.total_cost_spreadsheet.set_cell_value(2, 1, self._format_currency(asset_total))
+            self.total_cost_spreadsheet.set_cell_value(3, 1, self._format_currency(misc_total))
+            self.total_cost_spreadsheet.set_cell_value(4, 1, self._format_currency(grand_total))
 
         except Exception as e:
             logger.error(f"Error updating Total Cost summary: {e}", exc_info=True)
@@ -346,10 +345,37 @@ class CostsTab(QtWidgets.QMainWindow):
 
         try:
             # Remove currency symbols, commas, and whitespace
-            cleaned = value_str.replace('$', '').replace('€', '').replace('£', '').replace(',', '').strip()
+            cleaned = value_str.replace('$', '').replace('€', '').replace('£', '').replace('¥', '').replace('₹', '').replace('₽', '').replace(',', '').strip()
             return float(cleaned)
         except (ValueError, AttributeError):
             return 0.0
+
+    def _format_currency(self, value):
+        """Format a numeric value with currency symbol based on bid settings.
+
+        Args:
+            value: Numeric value to format
+
+        Returns:
+            str: Formatted currency string
+        """
+        # Get currency symbol from bid data (ShotGrid), fall back to global setting
+        currency_symbol = "$"
+        if self.current_bid_data:
+            currency_symbol = self.current_bid_data.get("sg_currency") or "$"
+        elif self.app_settings:
+            currency_symbol = self.app_settings.get_currency() or "$"
+
+        # Get position from local settings
+        currency_position = "prepend"
+        if self.app_settings and self.current_bid_id:
+            currency_position = self.app_settings.get_bid_currency_position(self.current_bid_id)
+
+        # Format based on position
+        if currency_position == "append":
+            return f"{value:,.2f}{currency_symbol}"
+        else:
+            return f"{currency_symbol}{value:,.2f}"
 
     def _on_shots_data_changed(self):
         """Handle data changes in the Shots Cost model - recalculate totals and update summary."""
@@ -451,6 +477,21 @@ class CostsTab(QtWidgets.QMainWindow):
         self.current_bid_id = bid_data.get('id') if bid_data else None
         self.current_project_id = project_id
 
+        # Get currency symbol from bid data (ShotGrid)
+        currency_symbol = None
+        if bid_data:
+            currency_symbol = bid_data.get("sg_currency")
+        if not currency_symbol and self.app_settings:
+            currency_symbol = self.app_settings.get_currency() or "$"
+
+        # Update bid_id and currency symbol on totals wrappers
+        if hasattr(self, 'shots_cost_totals_wrapper'):
+            self.shots_cost_totals_wrapper.set_bid_id(self.current_bid_id)
+            self.shots_cost_totals_wrapper.set_currency_symbol(currency_symbol)
+        if hasattr(self, 'asset_cost_totals_wrapper'):
+            self.asset_cost_totals_wrapper.set_bid_id(self.current_bid_id)
+            self.asset_cost_totals_wrapper.set_currency_symbol(currency_symbol)
+
         if bid_data and project_id:
             # Load Line Items first - needed for both VFX breakdown and asset cost pricing
             logger.info("Loading Line Items for pricing...")
@@ -476,6 +517,72 @@ class CostsTab(QtWidgets.QMainWindow):
                 self.shots_cost_widget.load_bidding_scenes([])
             if hasattr(self, 'asset_cost_widget'):
                 self.asset_cost_widget.load_bidding_scenes([])
+
+    def refresh_currency_formatting(self, currency_symbol=None):
+        """Refresh currency formatting in all cost tables.
+
+        Call this method when currency settings have changed to update
+        all displayed values with the new currency symbol and position.
+
+        Args:
+            currency_symbol: New currency symbol. If None, uses current bid data.
+        """
+        logger.info("Refreshing currency formatting in Costs tab")
+
+        # Determine currency symbol
+        if currency_symbol is None:
+            if self.current_bid_data:
+                currency_symbol = self.current_bid_data.get("sg_currency")
+            if not currency_symbol and self.app_settings:
+                currency_symbol = self.app_settings.get_currency() or "$"
+
+        # Update currency in current_bid_data for _format_currency
+        if self.current_bid_data and currency_symbol:
+            self.current_bid_data["sg_currency"] = currency_symbol
+
+        # Get currency position
+        currency_position = "prepend"
+        if self.app_settings and self.current_bid_id:
+            currency_position = self.app_settings.get_bid_currency_position(self.current_bid_id)
+
+        # Update currency symbol on formula delegates (for Price columns)
+        if self.shots_cost_formula_delegate:
+            self.shots_cost_formula_delegate.set_currency_symbol(currency_symbol, currency_position)
+        if self.asset_cost_formula_delegate:
+            self.asset_cost_formula_delegate.set_currency_symbol(currency_symbol, currency_position)
+
+        # Update currency symbol on wrappers (for totals bar)
+        if hasattr(self, 'shots_cost_totals_wrapper'):
+            self.shots_cost_totals_wrapper.set_currency_symbol(currency_symbol)
+        if hasattr(self, 'asset_cost_totals_wrapper'):
+            self.asset_cost_totals_wrapper.set_currency_symbol(currency_symbol)
+
+        # Recalculate totals in Shots Cost wrapper (will use updated currency)
+        if hasattr(self, 'shots_cost_totals_wrapper') and hasattr(self, 'shots_cost_widget'):
+            if hasattr(self.shots_cost_widget, 'model') and self.shots_cost_widget.model:
+                try:
+                    price_col_idx = self.shots_cost_widget.model.column_fields.index("_calc_price")
+                    self.shots_cost_totals_wrapper.calculate_totals(columns=[price_col_idx], skip_first_col=True)
+                    # Force repaint of the Price column
+                    self.shots_cost_widget.table_view.viewport().update()
+                except (ValueError, AttributeError):
+                    pass
+
+        # Recalculate totals in Asset Cost wrapper (will use updated currency)
+        if hasattr(self, 'asset_cost_totals_wrapper') and hasattr(self, 'asset_cost_widget'):
+            if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
+                try:
+                    price_col_idx = self.asset_cost_widget.model.column_fields.index("_calc_price")
+                    self.asset_cost_totals_wrapper.calculate_totals(columns=[price_col_idx], skip_first_col=True)
+                    # Force repaint of the Price column
+                    self.asset_cost_widget.table_view.viewport().update()
+                except (ValueError, AttributeError):
+                    pass
+
+        # Update Total Cost summary with new currency formatting
+        self._update_total_cost_summary()
+
+        logger.info("Currency formatting refreshed")
 
     def _load_vfx_breakdown_for_bid(self, bid_data):
         """Load VFX Breakdown scenes linked to the bid.
@@ -679,8 +786,13 @@ class CostsTab(QtWidgets.QMainWindow):
 
                 # Apply FormulaDelegate to the Price column
                 price_col_index = self.shots_cost_widget.model.column_fields.index("_calc_price")
-                formula_delegate = FormulaDelegate(self.vfx_breakdown_formula_evaluator, app_settings=self.app_settings)
-                self.shots_cost_widget.table_view.setItemDelegateForColumn(price_col_index, formula_delegate)
+                self.shots_cost_formula_delegate = FormulaDelegate(self.vfx_breakdown_formula_evaluator, app_settings=self.app_settings)
+                # Set currency symbol from bid data
+                if self.current_bid_data:
+                    currency_symbol = self.current_bid_data.get("sg_currency") or self.app_settings.get_currency() or "$"
+                    currency_position = self.app_settings.get_bid_currency_position(self.current_bid_id) if self.current_bid_id else "prepend"
+                    self.shots_cost_formula_delegate.set_currency_symbol(currency_symbol, currency_position)
+                self.shots_cost_widget.table_view.setItemDelegateForColumn(price_col_index, self.shots_cost_formula_delegate)
                 logger.info(f"  ✓ Applied FormulaDelegate to Price column (index {price_col_index})")
 
                 # Configure totals bar for Price column
@@ -1123,8 +1235,13 @@ class CostsTab(QtWidgets.QMainWindow):
 
                 # Apply FormulaDelegate to the Price column
                 price_col_index = self.asset_cost_widget.model.column_fields.index("_calc_price")
-                formula_delegate = FormulaDelegate(self.asset_cost_formula_evaluator, app_settings=self.app_settings)
-                self.asset_cost_widget.table_view.setItemDelegateForColumn(price_col_index, formula_delegate)
+                self.asset_cost_formula_delegate = FormulaDelegate(self.asset_cost_formula_evaluator, app_settings=self.app_settings)
+                # Set currency symbol from bid data
+                if self.current_bid_data:
+                    currency_symbol = self.current_bid_data.get("sg_currency") or self.app_settings.get_currency() or "$"
+                    currency_position = self.app_settings.get_bid_currency_position(self.current_bid_id) if self.current_bid_id else "prepend"
+                    self.asset_cost_formula_delegate.set_currency_symbol(currency_symbol, currency_position)
+                self.asset_cost_widget.table_view.setItemDelegateForColumn(price_col_index, self.asset_cost_formula_delegate)
                 logger.info(f"  ✓ Applied FormulaDelegate to Price column (index {price_col_index})")
 
                 # Configure totals bar for Price column

@@ -32,7 +32,7 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         table_with_totals.calculate_totals()
     """
 
-    def __init__(self, existing_table, parent=None, formula_evaluator=None, app_settings=None):
+    def __init__(self, existing_table, parent=None, formula_evaluator=None, app_settings=None, bid_id=None):
         """
         Wrap an existing table and add totals bar.
 
@@ -41,6 +41,7 @@ class TableWithTotalsBar(QtWidgets.QWidget):
             parent: Optional parent widget
             formula_evaluator: Optional FormulaEvaluator for evaluating formula cells in totals
             app_settings: Optional AppSettings for currency symbol
+            bid_id: Optional bid ID for bid-specific currency settings
         """
         super().__init__(parent)
 
@@ -66,6 +67,7 @@ class TableWithTotalsBar(QtWidgets.QWidget):
 
         # App settings for currency formatting
         self.app_settings = app_settings
+        self.bid_id = bid_id
 
         # Layout
         layout = QtWidgets.QVBoxLayout(self)
@@ -174,6 +176,53 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         """
         self.app_settings = app_settings
 
+    def set_bid_id(self, bid_id):
+        """
+        Set the bid ID for bid-specific currency settings.
+
+        Args:
+            bid_id: Bid ID
+        """
+        self.bid_id = bid_id
+
+    def set_currency_symbol(self, symbol):
+        """
+        Set the currency symbol directly.
+
+        Args:
+            symbol: Currency symbol (e.g., "$", "€", "£")
+        """
+        self._currency_symbol = symbol
+
+    def _format_currency(self, value):
+        """
+        Format a numeric value with currency symbol based on bid settings.
+
+        Args:
+            value: Numeric value to format
+
+        Returns:
+            str: Formatted currency string
+        """
+        # Use directly set currency symbol if available
+        if hasattr(self, '_currency_symbol') and self._currency_symbol:
+            currency_symbol = self._currency_symbol
+        elif self.app_settings:
+            currency_symbol = self.app_settings.get_currency() or "$"
+        else:
+            currency_symbol = "$"
+
+        # Get position from local settings
+        currency_position = "prepend"
+        if self.app_settings and self.bid_id:
+            currency_position = self.app_settings.get_bid_currency_position(self.bid_id)
+
+        # Format based on position
+        if currency_position == "append":
+            return f"{value:,.2f}{currency_symbol}"
+        else:
+            return f"{currency_symbol}{value:,.2f}"
+
     def calculate_totals(self, columns=None, skip_first_col=True, number_format="{:,.0f}"):
         """
         Auto-calculate totals by summing numeric columns.
@@ -226,11 +275,6 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         if not model:
             return
 
-        # Get currency symbol if available
-        currency_symbol = ""
-        if self.app_settings:
-            currency_symbol = self.app_settings.get_currency() or ""
-
         for col in cols_to_process:
             total = 0
             count = 0
@@ -264,7 +308,7 @@ class TableWithTotalsBar(QtWidgets.QWidget):
                                     continue
                             else:
                                 # Remove commas and currency symbols before parsing
-                                text = text.replace(',', '').replace('$', '').replace('€', '').replace('£', '').strip()
+                                text = text.replace(',', '').replace('$', '').replace('€', '').replace('£', '').replace('¥', '').replace('₹', '').replace('₽', '').strip()
                                 value = float(text)
                         else:
                             continue
@@ -276,8 +320,8 @@ class TableWithTotalsBar(QtWidgets.QWidget):
 
             if count > 0:
                 # Format with currency symbol if this is a blue column (price column)
-                if col in self.blue_columns and currency_symbol:
-                    formatted_total = f"{currency_symbol}{total:,.2f}"
+                if col in self.blue_columns:
+                    formatted_total = self._format_currency(total)
                 else:
                     formatted_total = number_format.format(total)
                 self.set_total(col, formatted_total)

@@ -308,6 +308,64 @@ class AppSettings:
         """
         self.set("currency", currency)
 
+    def get_bid_currency(self, bid_id):
+        """Get currency symbol for a specific bid.
+
+        Args:
+            bid_id: ID of the bid
+
+        Returns:
+            str: Currency symbol (falls back to global setting if not set)
+        """
+        bid_currencies = self.get("bid_currencies", {})
+        bid_key = str(bid_id)
+        if bid_key in bid_currencies:
+            return bid_currencies[bid_key].get("symbol", self.get_currency())
+        return self.get_currency()
+
+    def set_bid_currency(self, bid_id, currency):
+        """Set currency symbol for a specific bid.
+
+        Args:
+            bid_id: ID of the bid
+            currency: Currency symbol (e.g., "$", "€", "£", "¥")
+        """
+        bid_currencies = self.get("bid_currencies", {})
+        bid_key = str(bid_id)
+        if bid_key not in bid_currencies:
+            bid_currencies[bid_key] = {}
+        bid_currencies[bid_key]["symbol"] = currency
+        self.set("bid_currencies", bid_currencies)
+
+    def get_bid_currency_position(self, bid_id):
+        """Get currency symbol position for a specific bid.
+
+        Args:
+            bid_id: ID of the bid
+
+        Returns:
+            str: "prepend" or "append" (default: "prepend")
+        """
+        bid_currencies = self.get("bid_currencies", {})
+        bid_key = str(bid_id)
+        if bid_key in bid_currencies:
+            return bid_currencies[bid_key].get("position", "prepend")
+        return "prepend"
+
+    def set_bid_currency_position(self, bid_id, position):
+        """Set currency symbol position for a specific bid.
+
+        Args:
+            bid_id: ID of the bid
+            position: "prepend" or "append"
+        """
+        bid_currencies = self.get("bid_currencies", {})
+        bid_key = str(bid_id)
+        if bid_key not in bid_currencies:
+            bid_currencies[bid_key] = {}
+        bid_currencies[bid_key]["position"] = position
+        self.set("bid_currencies", bid_currencies)
+
     def get_thumbnail_cache_path(self):
         """Get the thumbnail cache folder path.
 

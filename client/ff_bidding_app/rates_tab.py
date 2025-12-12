@@ -365,6 +365,7 @@ class RatesTab(QtWidgets.QWidget):
         self.line_items_widget = None
         self.line_items_field_schema = {}
         self.line_items_field_allowlist = []  # Will be populated dynamically with _mandays fields
+        self.line_items_formula_delegate = None  # For currency formatting updates
 
         # Track signal connection state to avoid RuntimeWarning on disconnect
         self._line_items_data_changed_connected = False
@@ -524,6 +525,38 @@ class RatesTab(QtWidgets.QWidget):
 
         # Refresh the price lists and auto-select the one linked to this bid
         self._refresh_price_lists()
+
+        # Update currency formatting for the price column
+        self.refresh_currency_formatting()
+
+    def refresh_currency_formatting(self, currency_symbol=None):
+        """Refresh currency formatting in the Line Items price column.
+
+        Call this method when currency settings have changed to update
+        the Price column with the new currency symbol and position.
+
+        Args:
+            currency_symbol: New currency symbol. If None, uses current bid data.
+        """
+        # Determine currency symbol
+        if currency_symbol is None:
+            if self.current_bid_data:
+                currency_symbol = self.current_bid_data.get("sg_currency")
+            if not currency_symbol and self.app_settings:
+                currency_symbol = self.app_settings.get_currency() or "$"
+
+        # Get currency position
+        currency_position = "prepend"
+        if self.app_settings and self.current_bid_id:
+            currency_position = self.app_settings.get_bid_currency_position(self.current_bid_id)
+
+        # Update currency symbol on the formula delegate
+        if self.line_items_formula_delegate:
+            self.line_items_formula_delegate.set_currency_symbol(currency_symbol, currency_position)
+            # Force repaint of the table
+            if hasattr(self, 'line_items_widget') and self.line_items_widget:
+                if hasattr(self.line_items_widget, 'table_view'):
+                    self.line_items_widget.table_view.viewport().update()
 
     def _refresh_price_lists(self):
         """Refresh the list of Price Lists for the current bid.
@@ -1478,8 +1511,13 @@ class RatesTab(QtWidgets.QWidget):
                 if hasattr(self, 'line_items_formula_evaluator'):
                     price_col_index = self.line_items_field_allowlist.index("_calc_price") if "_calc_price" in self.line_items_field_allowlist else -1
                     if price_col_index >= 0:
-                        formula_delegate = FormulaDelegate(self.line_items_formula_evaluator, app_settings=self.app_settings)
-                        self.line_items_widget.table_view.setItemDelegateForColumn(price_col_index, formula_delegate)
+                        self.line_items_formula_delegate = FormulaDelegate(self.line_items_formula_evaluator, app_settings=self.app_settings)
+                        # Set currency symbol from bid data
+                        if self.current_bid_data:
+                            currency_symbol = self.current_bid_data.get("sg_currency") or self.app_settings.get_currency() or "$"
+                            currency_position = self.app_settings.get_bid_currency_position(self.current_bid_id) if self.current_bid_id else "prepend"
+                            self.line_items_formula_delegate.set_currency_symbol(currency_symbol, currency_position)
+                        self.line_items_widget.table_view.setItemDelegateForColumn(price_col_index, self.line_items_formula_delegate)
 
                 # Connect to dataChanged signal to auto-update sg_price_static when _calc_price changes
                 if "_calc_price" in self.line_items_field_allowlist and "sg_price_static" in self.line_items_field_allowlist:

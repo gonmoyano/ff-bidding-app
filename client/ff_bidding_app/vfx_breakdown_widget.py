@@ -70,13 +70,44 @@ class FormulaDelegate(NoElideDelegate):
         super().__init__(parent)
         self.formula_evaluator = formula_evaluator
         self.app_settings = app_settings
+        self._currency_symbol = None  # Directly set currency symbol
+        self._currency_position = "prepend"  # Currency position: "prepend" or "append"
+
+    def set_currency_symbol(self, symbol, position="prepend"):
+        """Set the currency symbol to use for formatting.
+
+        Args:
+            symbol: Currency symbol (e.g., "$", "€", "£")
+            position: "prepend" or "append" for symbol position
+        """
+        self._currency_symbol = symbol
+        self._currency_position = position
 
     def _get_currency_symbol(self):
-        """Get the current currency symbol from app settings."""
+        """Get the current currency symbol."""
+        # Use directly set currency symbol if available
+        if self._currency_symbol:
+            return self._currency_symbol
+        # Fall back to app settings
         if self.app_settings:
             symbol = self.app_settings.get_currency()
             return symbol if symbol else ""
         return ""
+
+    def _format_currency(self, value):
+        """Format a numeric value with currency symbol.
+
+        Args:
+            value: Numeric value to format
+
+        Returns:
+            str: Formatted currency string
+        """
+        symbol = self._get_currency_symbol()
+        if self._currency_position == "append":
+            return f"{value:,.2f}{symbol}"
+        else:
+            return f"{symbol}{value:,.2f}"
 
     def paint(self, painter, option, index):
         """Paint the cell with calculated value."""
@@ -94,12 +125,8 @@ class FormulaDelegate(NoElideDelegate):
                 # Pass row and col for circular reference detection
                 result = self.formula_evaluator.evaluate(value, index.row(), index.column())
                 # Format the result
-                if isinstance(result, float):
-                    currency_symbol = self._get_currency_symbol()
-                    display_text = f"{currency_symbol}{result:,.2f}"
-                elif isinstance(result, int):
-                    currency_symbol = self._get_currency_symbol()
-                    display_text = f"{currency_symbol}{result:,.2f}"
+                if isinstance(result, (float, int)):
+                    display_text = self._format_currency(result)
                 else:
                     display_text = str(result)
 
@@ -135,8 +162,7 @@ class FormulaDelegate(NoElideDelegate):
                 result = self.formula_evaluator.evaluate(value)
                 # Format the result nicely
                 if isinstance(result, (float, int)):
-                    currency_symbol = self._get_currency_symbol()
-                    return f"{currency_symbol}{result:,.2f}"
+                    return self._format_currency(result)
                 return str(result)
             except Exception as e:
                 return "#ERROR"
@@ -1677,11 +1703,15 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             index = self.model.index(row, assets_col_idx)
             widget = self.table_view.indexWidget(index)
             if widget:
+                # Skip pill height updates during manual row resize
+                widget.set_skip_resize_pill_updates(True)
                 # Update widget bounds to match row height, but don't resize pills
                 widget.setMinimumHeight(new_size)
                 widget.setMaximumHeight(new_size)
                 widget.setFixedHeight(new_size)
                 widget.updateGeometry()
+                # Re-enable pill updates for future slider changes
+                widget.set_skip_resize_pill_updates(False)
         except (ValueError, AttributeError):
             # Column not present or other issue - skip widget updates
             pass
