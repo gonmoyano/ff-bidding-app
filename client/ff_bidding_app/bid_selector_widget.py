@@ -2881,6 +2881,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
     bidChanged = QtCore.Signal(object)  # Emits selected bid data (dict or None)
     loadLinkedRequested = QtCore.Signal(object)  # Emits bid data to load linked entities
     statusMessageChanged = QtCore.Signal(str, bool)  # message, is_error
+    currencySettingsChanged = QtCore.Signal(int)  # Emits bid_id when currency settings change
 
     def __init__(self, sg_session, parent=None):
         """Initialize the Bid selector widget.
@@ -3588,6 +3589,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
             app_settings.set_bid_currency(bid_id, currency_symbol)
             app_settings.set_bid_currency_position(bid_id, currency_position)
             logger.info(f"Updated Bid {bid_id} currency: {currency_symbol} ({currency_position})")
+
+            # Emit signal to notify that currency settings changed
+            self.currencySettingsChanged.emit(bid_id)
 
             display_name = new_name if new_name else bid_name
             self._set_status(f"Bid '{display_name}' configuration saved.")

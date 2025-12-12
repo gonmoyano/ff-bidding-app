@@ -57,6 +57,7 @@ class BiddingTab(QtWidgets.QWidget):
         self.bid_selector.bidChanged.connect(self._on_bid_changed)
         self.bid_selector.loadLinkedRequested.connect(self._on_load_linked_requested)
         self.bid_selector.statusMessageChanged.connect(self._on_bid_status_message)
+        self.bid_selector.currencySettingsChanged.connect(self._on_currency_settings_changed)
         main_layout.addWidget(self.bid_selector)
 
         # Create nested tab widget
@@ -220,6 +221,18 @@ class BiddingTab(QtWidgets.QWidget):
         """
         logger.info(f"Bid selector status: {message}")
         # Could forward this to parent app status bar if needed
+
+    def _on_currency_settings_changed(self, bid_id):
+        """Handle currency settings change from Configure Bid dialog.
+
+        Args:
+            bid_id: ID of the bid whose currency settings changed
+        """
+        logger.info(f"Currency settings changed for bid ID: {bid_id}")
+
+        # Refresh currency formatting in Costs tab
+        if hasattr(self, 'costs_tab'):
+            self.costs_tab.refresh_currency_formatting()
 
     def _on_load_linked_requested(self, bid_data):
         """Handle Load Linked button click - load linked entities into their dropdown menus.

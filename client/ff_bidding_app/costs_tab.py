@@ -504,6 +504,37 @@ class CostsTab(QtWidgets.QMainWindow):
             if hasattr(self, 'asset_cost_widget'):
                 self.asset_cost_widget.load_bidding_scenes([])
 
+    def refresh_currency_formatting(self):
+        """Refresh currency formatting in all cost tables.
+
+        Call this method when currency settings have changed to update
+        all displayed values with the new currency symbol and position.
+        """
+        logger.info("Refreshing currency formatting in Costs tab")
+
+        # Recalculate totals in Shots Cost wrapper (will use updated currency)
+        if hasattr(self, 'shots_cost_totals_wrapper') and hasattr(self, 'shots_cost_widget'):
+            if hasattr(self.shots_cost_widget, 'model') and self.shots_cost_widget.model:
+                try:
+                    price_col_idx = self.shots_cost_widget.model.column_fields.index("_calc_price")
+                    self.shots_cost_totals_wrapper.calculate_totals(columns=[price_col_idx], skip_first_col=True)
+                except (ValueError, AttributeError):
+                    pass
+
+        # Recalculate totals in Asset Cost wrapper (will use updated currency)
+        if hasattr(self, 'asset_cost_totals_wrapper') and hasattr(self, 'asset_cost_widget'):
+            if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
+                try:
+                    price_col_idx = self.asset_cost_widget.model.column_fields.index("_calc_price")
+                    self.asset_cost_totals_wrapper.calculate_totals(columns=[price_col_idx], skip_first_col=True)
+                except (ValueError, AttributeError):
+                    pass
+
+        # Update Total Cost summary with new currency formatting
+        self._update_total_cost_summary()
+
+        logger.info("Currency formatting refreshed")
+
     def _load_vfx_breakdown_for_bid(self, bid_data):
         """Load VFX Breakdown scenes linked to the bid.
 
