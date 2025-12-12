@@ -355,16 +355,17 @@ class CostsTab(QtWidgets.QMainWindow):
         Returns:
             str: Formatted currency string
         """
-        if not self.app_settings:
-            return f"${value:,.2f}"
-
-        # Get bid-specific currency settings, or fall back to global
-        if self.current_bid_id:
-            currency_symbol = self.app_settings.get_bid_currency(self.current_bid_id)
-            currency_position = self.app_settings.get_bid_currency_position(self.current_bid_id)
-        else:
+        # Get currency symbol from bid data (ShotGrid), fall back to global setting
+        currency_symbol = "$"
+        if self.current_bid_data:
+            currency_symbol = self.current_bid_data.get("sg_currency") or "$"
+        elif self.app_settings:
             currency_symbol = self.app_settings.get_currency() or "$"
-            currency_position = "prepend"
+
+        # Get position from local settings
+        currency_position = "prepend"
+        if self.app_settings and self.current_bid_id:
+            currency_position = self.app_settings.get_bid_currency_position(self.current_bid_id)
 
         # Format based on position
         if currency_position == "append":
@@ -472,11 +473,20 @@ class CostsTab(QtWidgets.QMainWindow):
         self.current_bid_id = bid_data.get('id') if bid_data else None
         self.current_project_id = project_id
 
-        # Update bid_id on totals wrappers for currency formatting
+        # Get currency symbol from bid data (ShotGrid)
+        currency_symbol = None
+        if bid_data:
+            currency_symbol = bid_data.get("sg_currency")
+        if not currency_symbol and self.app_settings:
+            currency_symbol = self.app_settings.get_currency() or "$"
+
+        # Update bid_id and currency symbol on totals wrappers
         if hasattr(self, 'shots_cost_totals_wrapper'):
             self.shots_cost_totals_wrapper.set_bid_id(self.current_bid_id)
+            self.shots_cost_totals_wrapper.set_currency_symbol(currency_symbol)
         if hasattr(self, 'asset_cost_totals_wrapper'):
             self.asset_cost_totals_wrapper.set_bid_id(self.current_bid_id)
+            self.asset_cost_totals_wrapper.set_currency_symbol(currency_symbol)
 
         if bid_data and project_id:
             # Load Line Items first - needed for both VFX breakdown and asset cost pricing
@@ -504,13 +514,33 @@ class CostsTab(QtWidgets.QMainWindow):
             if hasattr(self, 'asset_cost_widget'):
                 self.asset_cost_widget.load_bidding_scenes([])
 
-    def refresh_currency_formatting(self):
+    def refresh_currency_formatting(self, currency_symbol=None):
         """Refresh currency formatting in all cost tables.
 
         Call this method when currency settings have changed to update
         all displayed values with the new currency symbol and position.
+
+        Args:
+            currency_symbol: New currency symbol. If None, uses current bid data.
         """
         logger.info("Refreshing currency formatting in Costs tab")
+
+        # Determine currency symbol
+        if currency_symbol is None:
+            if self.current_bid_data:
+                currency_symbol = self.current_bid_data.get("sg_currency")
+            if not currency_symbol and self.app_settings:
+                currency_symbol = self.app_settings.get_currency() or "$"
+
+        # Update currency in current_bid_data for _format_currency
+        if self.current_bid_data and currency_symbol:
+            self.current_bid_data["sg_currency"] = currency_symbol
+
+        # Update currency symbol on wrappers
+        if hasattr(self, 'shots_cost_totals_wrapper'):
+            self.shots_cost_totals_wrapper.set_currency_symbol(currency_symbol)
+        if hasattr(self, 'asset_cost_totals_wrapper'):
+            self.asset_cost_totals_wrapper.set_currency_symbol(currency_symbol)
 
         # Recalculate totals in Shots Cost wrapper (will use updated currency)
         if hasattr(self, 'shots_cost_totals_wrapper') and hasattr(self, 'shots_cost_widget'):

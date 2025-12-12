@@ -933,7 +933,12 @@ class ConfigBidDialog(QtWidgets.QDialog):
 
     def _load_currency_settings(self):
         """Load current currency settings for this bid."""
-        current_currency = self.app_settings.get_bid_currency(self.bid_id)
+        # Get currency symbol from ShotGrid bid data, fall back to global setting
+        current_currency = self.bid_data.get("sg_currency")
+        if not current_currency:
+            current_currency = self.app_settings.get_currency() or "$"
+
+        # Get position from local settings
         current_position = self.app_settings.get_bid_currency_position(self.bid_id)
 
         # Find and select the current currency in the dropdown
@@ -944,7 +949,7 @@ class ConfigBidDialog(QtWidgets.QDialog):
                 found = True
                 break
 
-        if not found:
+        if not found and current_currency:
             # Set to Custom and show the custom value
             self.currency_combo.setCurrentIndex(self.currency_combo.count() - 1)
             self.custom_currency_input.setText(current_currency)
@@ -2881,7 +2886,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
     bidChanged = QtCore.Signal(object)  # Emits selected bid data (dict or None)
     loadLinkedRequested = QtCore.Signal(object)  # Emits bid data to load linked entities
     statusMessageChanged = QtCore.Signal(str, bool)  # message, is_error
-    currencySettingsChanged = QtCore.Signal(int)  # Emits bid_id when currency settings change
+    currencySettingsChanged = QtCore.Signal(int, str)  # Emits (bid_id, currency_symbol) when currency settings change
 
     def __init__(self, sg_session, parent=None):
         """Initialize the Bid selector widget.
@@ -3572,6 +3577,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
             else:
                 update_data["sg_price_list"] = None
 
+            # Save currency symbol to ShotGrid
+            update_data["sg_currency"] = currency_symbol
+
             # Update bid
             self.sg_session.sg.update("CustomEntity06", bid_id, update_data)
             logger.info(f"Updated Bid {bid_id} with config: {update_data}")
@@ -3585,13 +3593,12 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 )
                 logger.info(f"Updated Price List {price_list_id} with Rate Card {rate_card_id}")
 
-            # Save currency settings for this bid
-            app_settings.set_bid_currency(bid_id, currency_symbol)
+            # Save currency position to local settings (symbol is in ShotGrid)
             app_settings.set_bid_currency_position(bid_id, currency_position)
             logger.info(f"Updated Bid {bid_id} currency: {currency_symbol} ({currency_position})")
 
             # Emit signal to notify that currency settings changed
-            self.currencySettingsChanged.emit(bid_id)
+            self.currencySettingsChanged.emit(bid_id, currency_symbol)
 
             display_name = new_name if new_name else bid_name
             self._set_status(f"Bid '{display_name}' configuration saved.")

@@ -185,6 +185,15 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         """
         self.bid_id = bid_id
 
+    def set_currency_symbol(self, symbol):
+        """
+        Set the currency symbol directly.
+
+        Args:
+            symbol: Currency symbol (e.g., "$", "€", "£")
+        """
+        self._currency_symbol = symbol
+
     def _format_currency(self, value):
         """
         Format a numeric value with currency symbol based on bid settings.
@@ -195,16 +204,18 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         Returns:
             str: Formatted currency string
         """
-        if not self.app_settings:
-            return f"${value:,.2f}"
-
-        # Get bid-specific currency settings, or fall back to global
-        if self.bid_id:
-            currency_symbol = self.app_settings.get_bid_currency(self.bid_id)
-            currency_position = self.app_settings.get_bid_currency_position(self.bid_id)
-        else:
+        # Use directly set currency symbol if available
+        if hasattr(self, '_currency_symbol') and self._currency_symbol:
+            currency_symbol = self._currency_symbol
+        elif self.app_settings:
             currency_symbol = self.app_settings.get_currency() or "$"
-            currency_position = "prepend"
+        else:
+            currency_symbol = "$"
+
+        # Get position from local settings
+        currency_position = "prepend"
+        if self.app_settings and self.bid_id:
+            currency_position = self.app_settings.get_bid_currency_position(self.bid_id)
 
         # Format based on position
         if currency_position == "append":
