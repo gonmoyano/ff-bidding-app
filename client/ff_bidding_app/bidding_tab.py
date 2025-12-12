@@ -222,22 +222,22 @@ class BiddingTab(QtWidgets.QWidget):
         logger.info(f"Bid selector status: {message}")
         # Could forward this to parent app status bar if needed
 
-    def _on_currency_settings_changed(self, bid_id, currency_symbol):
+    def _on_currency_settings_changed(self, bid_id, sg_currency_value):
         """Handle currency settings change from Configure Bid dialog.
 
         Args:
             bid_id: ID of the bid whose currency settings changed
-            currency_symbol: New currency symbol
+            sg_currency_value: Combined currency value (e.g., "$+before", "€+after")
         """
-        logger.info(f"Currency settings changed for bid ID: {bid_id}, symbol: {currency_symbol}")
+        logger.info(f"Currency settings changed for bid ID: {bid_id}, currency: {sg_currency_value}")
 
-        # Refresh currency formatting in Costs tab with the new symbol
+        # Refresh currency formatting in Costs tab with the new currency value
         if hasattr(self, 'costs_tab'):
-            self.costs_tab.refresh_currency_formatting(currency_symbol)
+            self.costs_tab.refresh_currency_formatting(sg_currency_value)
 
-        # Refresh currency formatting in Rates tab with the new symbol
+        # Refresh currency formatting in Rates tab with the new currency value
         if hasattr(self, 'rates_tab'):
-            self.rates_tab.refresh_currency_formatting(currency_symbol)
+            self.rates_tab.refresh_currency_formatting(sg_currency_value)
 
     def _on_load_linked_requested(self, bid_data):
         """Handle Load Linked button click - load linked entities into their dropdown menus.

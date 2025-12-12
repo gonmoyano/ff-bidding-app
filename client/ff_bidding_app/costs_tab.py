@@ -13,6 +13,7 @@ try:
     from .formula_evaluator import FormulaEvaluator
     from .table_with_totals_bar import TableWithTotalsBar
     from .spreadsheet_widget import SpreadsheetWidget
+    from .bid_selector_widget import parse_sg_currency
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
@@ -22,6 +23,7 @@ except ImportError:
     from formula_evaluator import FormulaEvaluator
     from table_with_totals_bar import TableWithTotalsBar
     from spreadsheet_widget import SpreadsheetWidget
+    from bid_selector_widget import parse_sg_currency
 
 
 class CostDock(QtWidgets.QDockWidget):
@@ -359,17 +361,11 @@ class CostsTab(QtWidgets.QMainWindow):
         Returns:
             str: Formatted currency string
         """
-        # Get currency symbol from bid data (ShotGrid), fall back to global setting
-        currency_symbol = "$"
-        if self.current_bid_data:
-            currency_symbol = self.current_bid_data.get("sg_currency") or "$"
-        elif self.app_settings:
-            currency_symbol = self.app_settings.get_currency() or "$"
-
-        # Get position from local settings
-        currency_position = "prepend"
-        if self.app_settings and self.current_bid_id:
-            currency_position = self.app_settings.get_bid_currency_position(self.current_bid_id)
+        # Get currency symbol and position from bid data (ShotGrid sg_currency field)
+        # Format is "symbol+before" or "symbol+after"
+        default_symbol = self.app_settings.get_currency() if self.app_settings else "$"
+        sg_currency_value = self.current_bid_data.get("sg_currency") if self.current_bid_data else None
+        currency_symbol, currency_position = parse_sg_currency(sg_currency_value, default_symbol or "$")
 
         # Format based on position
         if currency_position == "append":
@@ -477,12 +473,11 @@ class CostsTab(QtWidgets.QMainWindow):
         self.current_bid_id = bid_data.get('id') if bid_data else None
         self.current_project_id = project_id
 
-        # Get currency symbol from bid data (ShotGrid)
-        currency_symbol = None
-        if bid_data:
-            currency_symbol = bid_data.get("sg_currency")
-        if not currency_symbol and self.app_settings:
-            currency_symbol = self.app_settings.get_currency() or "$"
+        # Get currency symbol and position from bid data (ShotGrid sg_currency field)
+        # Format is "symbol+before" or "symbol+after"
+        default_symbol = self.app_settings.get_currency() if self.app_settings else "$"
+        sg_currency_value = bid_data.get("sg_currency") if bid_data else None
+        currency_symbol, currency_position = parse_sg_currency(sg_currency_value, default_symbol or "$")
 
         # Update bid_id and currency symbol on totals wrappers
         if hasattr(self, 'shots_cost_totals_wrapper'):
@@ -518,32 +513,29 @@ class CostsTab(QtWidgets.QMainWindow):
             if hasattr(self, 'asset_cost_widget'):
                 self.asset_cost_widget.load_bidding_scenes([])
 
-    def refresh_currency_formatting(self, currency_symbol=None):
+    def refresh_currency_formatting(self, sg_currency_value=None):
         """Refresh currency formatting in all cost tables.
 
         Call this method when currency settings have changed to update
         all displayed values with the new currency symbol and position.
 
         Args:
-            currency_symbol: New currency symbol. If None, uses current bid data.
+            sg_currency_value: Combined currency value (e.g., "$+before"). If None, uses current bid data.
         """
         logger.info("Refreshing currency formatting in Costs tab")
 
-        # Determine currency symbol
-        if currency_symbol is None:
+        # Get sg_currency value from parameter or current bid data
+        if sg_currency_value is None:
             if self.current_bid_data:
-                currency_symbol = self.current_bid_data.get("sg_currency")
-            if not currency_symbol and self.app_settings:
-                currency_symbol = self.app_settings.get_currency() or "$"
+                sg_currency_value = self.current_bid_data.get("sg_currency")
 
-        # Update currency in current_bid_data for _format_currency
-        if self.current_bid_data and currency_symbol:
-            self.current_bid_data["sg_currency"] = currency_symbol
+        # Parse the combined format (symbol+position)
+        default_symbol = self.app_settings.get_currency() if self.app_settings else "$"
+        currency_symbol, currency_position = parse_sg_currency(sg_currency_value, default_symbol or "$")
 
-        # Get currency position
-        currency_position = "prepend"
-        if self.app_settings and self.current_bid_id:
-            currency_position = self.app_settings.get_bid_currency_position(self.current_bid_id)
+        # Update sg_currency in current_bid_data for _format_currency
+        if self.current_bid_data and sg_currency_value:
+            self.current_bid_data["sg_currency"] = sg_currency_value
 
         # Update currency symbol on formula delegates (for Price columns)
         if self.shots_cost_formula_delegate:
@@ -787,10 +779,11 @@ class CostsTab(QtWidgets.QMainWindow):
                 # Apply FormulaDelegate to the Price column
                 price_col_index = self.shots_cost_widget.model.column_fields.index("_calc_price")
                 self.shots_cost_formula_delegate = FormulaDelegate(self.vfx_breakdown_formula_evaluator, app_settings=self.app_settings)
-                # Set currency symbol from bid data
+                # Set currency symbol and position from bid data (sg_currency field)
                 if self.current_bid_data:
-                    currency_symbol = self.current_bid_data.get("sg_currency") or self.app_settings.get_currency() or "$"
-                    currency_position = self.app_settings.get_bid_currency_position(self.current_bid_id) if self.current_bid_id else "prepend"
+                    default_symbol = self.app_settings.get_currency() or "$"
+                    sg_currency_value = self.current_bid_data.get("sg_currency")
+                    currency_symbol, currency_position = parse_sg_currency(sg_currency_value, default_symbol)
                     self.shots_cost_formula_delegate.set_currency_symbol(currency_symbol, currency_position)
                 self.shots_cost_widget.table_view.setItemDelegateForColumn(price_col_index, self.shots_cost_formula_delegate)
                 logger.info(f"  ✓ Applied FormulaDelegate to Price column (index {price_col_index})")
@@ -1236,10 +1229,11 @@ class CostsTab(QtWidgets.QMainWindow):
                 # Apply FormulaDelegate to the Price column
                 price_col_index = self.asset_cost_widget.model.column_fields.index("_calc_price")
                 self.asset_cost_formula_delegate = FormulaDelegate(self.asset_cost_formula_evaluator, app_settings=self.app_settings)
-                # Set currency symbol from bid data
+                # Set currency symbol and position from bid data (sg_currency field)
                 if self.current_bid_data:
-                    currency_symbol = self.current_bid_data.get("sg_currency") or self.app_settings.get_currency() or "$"
-                    currency_position = self.app_settings.get_bid_currency_position(self.current_bid_id) if self.current_bid_id else "prepend"
+                    default_symbol = self.app_settings.get_currency() or "$"
+                    sg_currency_value = self.current_bid_data.get("sg_currency")
+                    currency_symbol, currency_position = parse_sg_currency(sg_currency_value, default_symbol)
                     self.asset_cost_formula_delegate.set_currency_symbol(currency_symbol, currency_position)
                 self.asset_cost_widget.table_view.setItemDelegateForColumn(price_col_index, self.asset_cost_formula_delegate)
                 logger.info(f"  ✓ Applied FormulaDelegate to Price column (index {price_col_index})")

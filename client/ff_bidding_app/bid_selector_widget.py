@@ -26,6 +26,38 @@ def create_icon_from_svg_path(svg_path, size=24, color="#e0e0e0"):
     painter.end()
     return QtGui.QIcon(pixmap)
 
+
+def parse_sg_currency(sg_currency_value, default_symbol="$"):
+    """Parse the sg_currency field value into symbol and position.
+
+    The sg_currency field stores currency settings in the format "symbol+position"
+    where position is either "before" or "after".
+    For backwards compatibility, if no position is specified, "before" is assumed.
+
+    Args:
+        sg_currency_value: The value from sg_currency field (e.g., "$+before", "€+after", or just "$")
+        default_symbol: Default symbol to use if value is empty or None
+
+    Returns:
+        tuple: (currency_symbol, currency_position) where position is "prepend" or "append"
+    """
+    if not sg_currency_value or not sg_currency_value.strip():
+        return default_symbol, "prepend"
+
+    sg_currency_value = sg_currency_value.strip()
+
+    # Check if the value contains position information
+    if "+before" in sg_currency_value:
+        symbol = sg_currency_value.replace("+before", "")
+        return symbol if symbol else default_symbol, "prepend"
+    elif "+after" in sg_currency_value:
+        symbol = sg_currency_value.replace("+after", "")
+        return symbol if symbol else default_symbol, "append"
+    else:
+        # Old format or just symbol - assume "before" position
+        return sg_currency_value, "prepend"
+
+
 try:
     from .logger import logger
     from .settings import AppSettings
@@ -934,18 +966,17 @@ class ConfigBidDialog(QtWidgets.QDialog):
     def _load_currency_settings(self):
         """Load current currency settings for this bid.
 
-        Currency symbol is loaded from ShotGrid (sg_currency field) first.
+        Currency symbol and position are loaded from ShotGrid (sg_currency field).
+        The field stores combined format: "symbol+before" or "symbol+after".
         If not defined in ShotGrid, falls back to application settings.
+        Position defaults to "before" if not specified.
         """
-        # Get currency symbol from ShotGrid bid data first
-        current_currency = self.bid_data.get("sg_currency")
+        # Get sg_currency value from ShotGrid bid data
+        sg_currency_value = self.bid_data.get("sg_currency")
 
-        # Fall back to application settings if not defined in ShotGrid
-        if not current_currency or current_currency.strip() == "":
-            current_currency = self.app_settings.get_currency() or "$"
-
-        # Get position from local settings
-        current_position = self.app_settings.get_bid_currency_position(self.bid_id)
+        # Parse the combined format (symbol+position)
+        default_symbol = self.app_settings.get_currency() or "$"
+        current_currency, current_position = parse_sg_currency(sg_currency_value, default_symbol)
 
         # Find and select the current currency in the dropdown
         found = False
@@ -2892,7 +2923,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
     bidChanged = QtCore.Signal(object)  # Emits selected bid data (dict or None)
     loadLinkedRequested = QtCore.Signal(object)  # Emits bid data to load linked entities
     statusMessageChanged = QtCore.Signal(str, bool)  # message, is_error
-    currencySettingsChanged = QtCore.Signal(int, str)  # Emits (bid_id, currency_symbol) when currency settings change
+    currencySettingsChanged = QtCore.Signal(int, str)  # Emits (bid_id, sg_currency_value) when currency settings change. Format: "symbol+before" or "symbol+after"
 
     def __init__(self, sg_session, parent=None):
         """Initialize the Bid selector widget.
@@ -3583,8 +3614,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
             else:
                 update_data["sg_price_list"] = None
 
-            # Save currency symbol to ShotGrid
-            update_data["sg_currency"] = currency_symbol
+            # Save currency symbol and position to ShotGrid as combined value
+            # Format: "symbol+before" or "symbol+after"
+            position_label = "before" if currency_position == "prepend" else "after"
+            sg_currency_value = f"{currency_symbol}+{position_label}"
+            update_data["sg_currency"] = sg_currency_value
 
             # Update bid
             self.sg_session.sg.update("CustomEntity06", bid_id, update_data)
@@ -3599,12 +3633,13 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 )
                 logger.info(f"Updated Price List {price_list_id} with Rate Card {rate_card_id}")
 
-            # Save currency position to local settings (symbol is in ShotGrid)
+            # Also save currency position to local settings for backwards compatibility
             app_settings.set_bid_currency_position(bid_id, currency_position)
-            logger.info(f"Updated Bid {bid_id} currency: {currency_symbol} ({currency_position})")
+            logger.info(f"Updated Bid {bid_id} currency: {sg_currency_value}")
 
             # Emit signal to notify that currency settings changed
-            self.currencySettingsChanged.emit(bid_id, currency_symbol)
+            # Pass the combined sg_currency value (symbol+position format)
+            self.currencySettingsChanged.emit(bid_id, sg_currency_value)
 
             display_name = new_name if new_name else bid_name
             self._set_status(f"Bid '{display_name}' configuration saved.")
