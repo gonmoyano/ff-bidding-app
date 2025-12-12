@@ -1652,18 +1652,28 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         if not self.table_view:
             return
 
-        # Update the pill widget height for the resized row
+        # Minimum row height based on pill default height (22) + container margins (8)
+        MIN_ROW_HEIGHT = 30
+
+        # If trying to resize smaller than minimum, force row back to minimum
+        if new_size < MIN_ROW_HEIGHT:
+            v_header = self.table_view.verticalHeader()
+            v_header.resizeSection(row, MIN_ROW_HEIGHT)
+            return  # The signal will fire again with the corrected size
+
+        # Only update pill widget height when row is made larger (expanding)
+        # Pills stay at their default size when row is at minimum
         try:
             assets_col_idx = self.model.column_fields.index("sg_bid_assets")
             index = self.model.index(row, assets_col_idx)
             widget = self.table_view.indexWidget(index)
             if widget:
-                # Update both minimum and maximum height to match row height
+                # Update widget height to match row height
                 widget.setMinimumHeight(new_size)
                 widget.setMaximumHeight(new_size)
                 widget.setFixedHeight(new_size)
-                # Explicitly update pill heights
-                if hasattr(widget, 'update_for_height'):
+                # Only update pill heights when expanding beyond default
+                if new_size > MIN_ROW_HEIGHT and hasattr(widget, 'update_for_height'):
                     widget.update_for_height(new_size)
                 widget.updateGeometry()
         except (ValueError, AttributeError):
