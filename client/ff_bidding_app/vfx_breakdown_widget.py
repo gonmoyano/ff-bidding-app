@@ -1671,19 +1671,16 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             v_header.resizeSection(row, min_row_height)
             return  # The signal will fire again with the corrected size
 
-        # Update pill widget height when row is expanded
+        # Update delegate widget bounds when row is expanded (pills stay at their current size)
         try:
             assets_col_idx = self.model.column_fields.index("sg_bid_assets")
             index = self.model.index(row, assets_col_idx)
             widget = self.table_view.indexWidget(index)
             if widget:
-                # Update widget height to match row height
+                # Update widget bounds to match row height, but don't resize pills
                 widget.setMinimumHeight(new_size)
                 widget.setMaximumHeight(new_size)
                 widget.setFixedHeight(new_size)
-                # Update pill heights when expanding beyond default
-                if hasattr(widget, 'update_for_height'):
-                    widget.update_for_height(new_size)
                 widget.updateGeometry()
         except (ValueError, AttributeError):
             # Column not present or other issue - skip widget updates
