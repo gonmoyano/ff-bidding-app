@@ -607,9 +607,8 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         if num_dots == 0:
             return (False, 0, 0, 0)
 
-        # Calculate dot starting position (center the dots in available space)
-        total_dots_width = num_dots * dot_diameter + (num_dots - 1) * dot_spacing
-        dot_x_start = last_pill_right + (available_space - total_dots_width) / 2
+        # Position dots fixed near the last pill (not centered, so they don't move when resizing)
+        dot_x_start = last_pill_right + 4  # Small gap after last pill
 
         # Y position: 5% from bottom edge of the row
         dot_y = widget_height * 0.95 - dot_diameter / 2
