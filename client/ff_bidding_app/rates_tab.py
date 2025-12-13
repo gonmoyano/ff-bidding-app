@@ -1504,6 +1504,12 @@ class RatesTab(QtWidgets.QWidget):
                     display_names["sg_price_static"] = "Price Static"
                 self.line_items_widget.model.set_column_headers(display_names)
 
+                # Hide the sg_price_static column (it's needed for calculations but not visible)
+                if "sg_price_static" in self.line_items_field_allowlist:
+                    price_static_col_index = self.line_items_field_allowlist.index("sg_price_static")
+                    self.line_items_widget.table_view.setColumnHidden(price_static_col_index, True)
+                    logger.info(f"Hidden sg_price_static column (index {price_static_col_index})")
+
                 # Set up formula delegate for the Price column
                 if hasattr(self, 'line_items_formula_evaluator'):
                     price_col_index = self.line_items_field_allowlist.index("_calc_price") if "_calc_price" in self.line_items_field_allowlist else -1
