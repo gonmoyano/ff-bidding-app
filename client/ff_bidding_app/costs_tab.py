@@ -746,6 +746,12 @@ class CostsTab(QtWidgets.QMainWindow):
                         self.shots_cost_widget.table_view.setColumnWidth(col_idx, 100)
                         logger.info(f"  ✓ Set width for column {col_name} (index {col_idx})")
 
+                # Hide the _line_item_price column (needed for calculations but not visible)
+                if "_line_item_price" in self.shots_cost_widget.model.column_fields:
+                    line_item_col_idx = self.shots_cost_widget.model.column_fields.index("_line_item_price")
+                    self.shots_cost_widget.table_view.setColumnHidden(line_item_col_idx, True)
+                    logger.info(f"  ✓ Hidden _line_item_price column (index {line_item_col_idx})")
+
                 # Update totals bar to reflect new column count
                 if hasattr(self, 'shots_cost_totals_wrapper'):
                     self.shots_cost_totals_wrapper.update_column_count()
@@ -1216,6 +1222,12 @@ class CostsTab(QtWidgets.QMainWindow):
 
                 self.asset_cost_widget.model.set_column_headers(display_names)
                 logger.info(f"  ✓ Set {len(display_names)} column headers with display names")
+
+                # Hide the _line_item_price column (needed for calculations but not visible)
+                if "_line_item_price" in self.asset_cost_widget.model.column_fields:
+                    line_item_col_idx = self.asset_cost_widget.model.column_fields.index("_line_item_price")
+                    self.asset_cost_widget.table_view.setColumnHidden(line_item_col_idx, True)
+                    logger.info(f"  ✓ Hidden _line_item_price column (index {line_item_col_idx})")
 
                 # Create FormulaEvaluator for the Asset Cost model
                 # FormulaEvaluator is already imported at the top of the file
