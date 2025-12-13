@@ -1022,6 +1022,9 @@ class CompoundSortDialog(QtWidgets.QDialog):
 class VFXBreakdownTab(QtWidgets.QWidget):
     """VFX Breakdown tab widget for managing VFX Breakdowns and Bidding Scenes."""
 
+    # Signal emitted when VFX Breakdown is set as current for a bid
+    vfxBreakdownChanged = QtCore.Signal(object)  # Emits updated bid data
+
     def __init__(self, sg_session, parent=None):
         """Initialize the VFX Breakdown tab.
 
@@ -2208,6 +2211,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     # Update the bid info label
                     bid_selector._update_bid_info_label(updated_bid)
             logger.info(f"Bid {bid_id} refreshed with latest sg_vfx_breakdown link.")
+            # Emit signal to notify that VFX Breakdown changed
+            self.vfxBreakdownChanged.emit(updated_bid)
         except Exception as e:
             logger.warning(f"Failed to refresh Bid after update: {e}")
 
