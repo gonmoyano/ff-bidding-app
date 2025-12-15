@@ -68,7 +68,7 @@ class BiddingTab(QtWidgets.QWidget):
         self.bid_selector.loadLinkedRequested.connect(self._on_load_linked_requested)
         self.bid_selector.statusMessageChanged.connect(self._on_bid_status_message)
         self.bid_selector.currencySettingsChanged.connect(self._on_currency_settings_changed)
-        main_layout.addWidget(self.bid_selector)
+        main_layout.addWidget(self.bid_selector, 0)  # No stretch - keep preferred size
 
         # Create horizontal splitter for main content and docked costs panel
         self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
@@ -118,20 +118,21 @@ class BiddingTab(QtWidgets.QWidget):
         docked_header_layout.addStretch()
 
         # Undock button
-        self.undock_costs_btn = QtWidgets.QPushButton("⬔")  # Unicode for undock
-        self.undock_costs_btn.setFixedSize(24, 24)
+        self.undock_costs_btn = QtWidgets.QPushButton("Unpin")
+        self.undock_costs_btn.setFixedSize(40, 24)
         self.undock_costs_btn.setToolTip("Undock panel")
         self.undock_costs_btn.setStyleSheet("""
             QPushButton {
                 background-color: transparent;
-                border: none;
+                border: 1px solid #555555;
+                border-radius: 4px;
                 color: #e0e0e0;
-                font-size: 14px;
-                font-weight: bold;
+                font-size: 11px;
+                padding: 2px 4px;
             }
             QPushButton:hover {
                 background-color: #4a9eff;
-                border-radius: 12px;
+                border-color: #4a9eff;
             }
         """)
         self.undock_costs_btn.clicked.connect(self._undock_costs_panel)
@@ -148,7 +149,7 @@ class BiddingTab(QtWidgets.QWidget):
         # Hide docked container initially (unless it was docked before)
         self.docked_costs_container.setVisible(self._costs_panel_docked)
 
-        main_layout.addWidget(self.main_splitter)
+        main_layout.addWidget(self.main_splitter, 1)  # Stretch to fill remaining space
 
         # Create the sliding overlay panel for Costs (when not docked)
         self.costs_overlay_panel = SlidingOverlayPanelWithBackground(

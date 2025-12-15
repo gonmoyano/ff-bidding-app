@@ -93,20 +93,21 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
 
         # Dock button (optional)
         if self._show_dock_button:
-            self.dock_button = QtWidgets.QPushButton("⬒")  # Unicode dock/pin icon
-            self.dock_button.setFixedSize(24, 24)
+            self.dock_button = QtWidgets.QPushButton("Pin")
+            self.dock_button.setFixedSize(32, 24)
             self.dock_button.setToolTip("Dock panel")
             self.dock_button.setStyleSheet("""
                 QPushButton {
                     background-color: transparent;
-                    border: none;
+                    border: 1px solid #555555;
+                    border-radius: 4px;
                     color: #e0e0e0;
-                    font-size: 14px;
-                    font-weight: bold;
+                    font-size: 11px;
+                    padding: 2px 4px;
                 }
                 QPushButton:hover {
                     background-color: #4a9eff;
-                    border-radius: 12px;
+                    border-color: #4a9eff;
                 }
             """)
             self.dock_button.clicked.connect(self._on_dock_clicked)
