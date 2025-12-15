@@ -235,31 +235,19 @@ class FormulaEvaluator:
         ref = ref.strip().replace('$', '')
         match = re.match(r'^([A-Z]+)(\d+)$', ref.upper())
         if not match or not model:
-            logger.debug(f"_get_cell_value_from_model: Invalid ref '{ref}' or no model")
             return 0
 
         col_letter, row_num = match.groups()
         col = self.letter_to_col(col_letter)
         row = int(row_num) - 1  # Convert to 0-based
 
-        logger.debug(f"_get_cell_value_from_model: ref={ref}, row={row}, col={col}, model={type(model).__name__}")
-
-        # Check if this is a SpreadsheetModel and log its internal data
-        if hasattr(model, '_data'):
-            logger.debug(f"_get_cell_value_from_model: SpreadsheetModel._data keys = {list(model._data.keys())[:10]}")
-            logger.debug(f"_get_cell_value_from_model: _data.get(({row}, {col})) = {model._data.get((row, col), 'NOT_FOUND')}")
-        if hasattr(model, '_formulas'):
-            logger.debug(f"_get_cell_value_from_model: _formulas.get(({row}, {col})) = {model._formulas.get((row, col), 'NOT_FOUND')}")
-
         # Check if the row and column are valid for this model
         if row < 0 or col < 0 or row >= model.rowCount() or col >= model.columnCount():
-            logger.debug(f"_get_cell_value_from_model: Out of bounds - rowCount={model.rowCount()}, colCount={model.columnCount()}")
             return 0
 
         # Get the raw value from the model
         index = model.index(row, col)
         value = model.data(index, QtCore.Qt.EditRole)
-        logger.debug(f"_get_cell_value_from_model: Raw EditRole value = '{value}' (type={type(value).__name__})")
 
         # If value is a formula, get the calculated value instead
         if isinstance(value, str) and value.startswith('='):
@@ -498,26 +486,21 @@ class FormulaEvaluator:
 
             # Fetch the actual value from the target sheet
             value = self._get_cell_value_from_model(standard_ref, target_model)
-            logger.debug(f"replace_sheet_reference_quoted: standard_ref={standard_ref}, value={value} (type={type(value).__name__})")
 
             # Return the value as a literal
             if value is None or value == "":
-                logger.debug(f"replace_sheet_reference_quoted: Returning '0' (value was None or empty)")
                 return "0"
             elif isinstance(value, str):
                 # If it's a string, we need to quote it for the formula
                 # But if it's a number string, keep it as number
                 try:
                     float(value)
-                    logger.debug(f"replace_sheet_reference_quoted: Returning numeric string '{value}'")
                     return str(value)
                 except (ValueError, TypeError):
                     # It's a text string, return as 0 or handle as text
                     # For formulas, text in calculations usually becomes 0
-                    logger.debug(f"replace_sheet_reference_quoted: Text value '{value}' -> returning '0'")
                     return "0"
             else:
-                logger.debug(f"replace_sheet_reference_quoted: Returning '{value}'")
                 return str(value)
 
         def replace_sheet_reference_unquoted(match):
@@ -548,26 +531,21 @@ class FormulaEvaluator:
 
             # Fetch the actual value from the target sheet
             value = self._get_cell_value_from_model(standard_ref, target_model)
-            logger.debug(f"replace_sheet_reference_unquoted: sheet={sheet_name}, standard_ref={standard_ref}, value={value} (type={type(value).__name__})")
 
             # Return the value as a literal
             if value is None or value == "":
-                logger.debug(f"replace_sheet_reference_unquoted: Returning '0' (value was None or empty)")
                 return "0"
             elif isinstance(value, str):
                 # If it's a string, we need to quote it for the formula
                 # But if it's a number string, keep it as number
                 try:
                     float(value)
-                    logger.debug(f"replace_sheet_reference_unquoted: Returning numeric string '{value}'")
                     return str(value)
                 except (ValueError, TypeError):
                     # It's a text string, return as 0 or handle as text
                     # For formulas, text in calculations usually becomes 0
-                    logger.debug(f"replace_sheet_reference_unquoted: Text value '{value}' -> returning '0'")
                     return "0"
             else:
-                logger.debug(f"replace_sheet_reference_unquoted: Returning '{value}'")
                 return str(value)
 
         def replace_local_reference(match):

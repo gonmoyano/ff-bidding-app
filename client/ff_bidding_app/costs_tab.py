@@ -378,6 +378,9 @@ class CostsTab(QtWidgets.QMainWindow):
 
     def _on_shots_data_changed(self):
         """Handle data changes in the Shots Cost model - recalculate totals and update summary."""
+        # Clear cross-tab formula caches so references to ShotCosts update
+        self._clear_cross_tab_caches()
+
         if hasattr(self, 'shots_cost_totals_wrapper') and hasattr(self, 'shots_cost_widget'):
             if hasattr(self.shots_cost_widget, 'model') and self.shots_cost_widget.model:
                 try:
@@ -392,6 +395,9 @@ class CostsTab(QtWidgets.QMainWindow):
 
     def _on_assets_data_changed(self):
         """Handle data changes in the Assets Cost model - recalculate totals and update summary."""
+        # Clear cross-tab formula caches so references to AssetCosts update
+        self._clear_cross_tab_caches()
+
         if hasattr(self, 'asset_cost_totals_wrapper') and hasattr(self, 'asset_cost_widget'):
             if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
                 try:
@@ -404,8 +410,25 @@ class CostsTab(QtWidgets.QMainWindow):
                 except (ValueError, AttributeError):
                     pass
 
+    def _clear_cross_tab_caches(self):
+        """Clear formula caches on all spreadsheets to ensure cross-tab references update."""
+        # Clear Misc spreadsheet cache
+        if hasattr(self, 'misc_cost_spreadsheet') and hasattr(self.misc_cost_spreadsheet, 'model'):
+            if hasattr(self.misc_cost_spreadsheet.model, '_evaluated_cache'):
+                self.misc_cost_spreadsheet.model._evaluated_cache.clear()
+                self.misc_cost_spreadsheet.model.layoutChanged.emit()
+
+        # Clear TotalCost spreadsheet cache
+        if hasattr(self, 'total_cost_spreadsheet') and hasattr(self.total_cost_spreadsheet, 'model'):
+            if hasattr(self.total_cost_spreadsheet.model, '_evaluated_cache'):
+                self.total_cost_spreadsheet.model._evaluated_cache.clear()
+                self.total_cost_spreadsheet.model.layoutChanged.emit()
+
     def _on_misc_data_changed(self):
         """Handle data changes in the Misc Cost spreadsheet - update summary and auto-save."""
+        # Clear cross-tab formula caches so references to Misc update
+        self._clear_cross_tab_caches()
+
         # Update Total Cost summary
         self._update_total_cost_summary()
 
