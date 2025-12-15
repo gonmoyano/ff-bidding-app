@@ -1022,20 +1022,24 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
                         entity_type=self.entity_type
                     )
 
-                    temp_command._update_shotgrid(new_value)
+                    # Step 1: Parse and update local data first
                     parsed_value = temp_command._parse_value(new_value, field_name)
                     bidding_scene_data[field_name] = parsed_value
 
-                    # Emit data changed
+                    # Step 2: Emit data changed immediately (UI updates, Costs tab refreshes)
                     self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
 
-                    self._updating = False
-                    reason = "undo/redo" if self._in_undo_redo else "automatic update"
-
-                    # Recalculate dependent cells if formula evaluator is available
+                    # Step 3: Recalculate dependent cells if formula evaluator is available
                     if self.formula_evaluator:
                         self.formula_evaluator.recalculate_dependents(row, col)
 
+                    # Step 4: Process pending events to ensure UI updates are visible
+                    QtWidgets.QApplication.processEvents()
+
+                    # Step 5: Sync to ShotGrid (blocking but UI already updated)
+                    temp_command._update_shotgrid(new_value)
+
+                    self._updating = False
                     return True
                 else:
                     # Normal edit - create undo command
@@ -1082,29 +1086,48 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
 
                         return True
                     else:
-                        # Synchronous update (fallback)
-                        command._update_shotgrid(new_value)
+                        # Synchronous update - update local first, then sync to ShotGrid
+                        # This ensures Costs tab sees changes immediately before SG sync
 
-                        # Update the bidding_scene_data with new value
+                        # Step 1: Update local data immediately
                         bidding_scene_data[field_name] = parsed_value
 
-                        # Emit data changed
+                        # Step 2: Emit data changed immediately (UI updates, Costs tab refreshes)
                         self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
 
-                        # Add to undo stack
-                        self.undo_stack.append(command)
-                        # Clear redo stack on new edit
-                        self.redo_stack.clear()
-
-                        self._updating = False
-
-                        self.statusMessageChanged.emit(f"✓ Updated {field_name} on ShotGrid", False)
-
-                        # Recalculate dependent cells if formula evaluator is available
+                        # Step 3: Recalculate dependent cells if formula evaluator is available
                         if self.formula_evaluator:
                             self.formula_evaluator.recalculate_dependents(row, col)
 
-                        return True
+                        # Step 4: Process pending events to ensure UI updates are visible
+                        QtWidgets.QApplication.processEvents()
+
+                        # Step 5: Sync to ShotGrid (blocking but UI already updated)
+                        try:
+                            command._update_shotgrid(new_value)
+
+                            # Add to undo stack only after successful SG update
+                            self.undo_stack.append(command)
+                            # Clear redo stack on new edit
+                            self.redo_stack.clear()
+
+                            self._updating = False
+                            self.statusMessageChanged.emit(f"✓ Updated {field_name} on ShotGrid", False)
+                            return True
+
+                        except Exception as sg_error:
+                            # ShotGrid update failed - rollback local change
+                            logger.error(f"[ROLLBACK] ShotGrid sync failed: {sg_error}")
+                            bidding_scene_data[field_name] = old_value_raw
+                            self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+
+                            # Recalculate dependents with rolled back value
+                            if self.formula_evaluator:
+                                self.formula_evaluator.recalculate_dependents(row, col)
+
+                            self._updating = False
+                            self.statusMessageChanged.emit(f"✗ Failed to update {field_name}: {sg_error}", True)
+                            return False
 
             except Exception as e:
                 self._updating = False
