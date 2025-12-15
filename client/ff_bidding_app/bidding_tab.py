@@ -72,9 +72,23 @@ class BiddingTab(QtWidgets.QWidget):
 
         # Create horizontal splitter for main content and docked costs panel
         self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.main_splitter.setHandleWidth(6)  # Make handle wider for easier grabbing
+        self.main_splitter.setStyleSheet("""
+            QSplitter::handle:horizontal {
+                background-color: #4a4a4a;
+                width: 6px;
+            }
+            QSplitter::handle:horizontal:hover {
+                background-color: #5a5a5a;
+            }
+            QSplitter::handle:horizontal:pressed {
+                background-color: #4a9eff;
+            }
+        """)
 
         # Create nested tab widget (now without Costs tab)
         self.nested_tab_widget = QtWidgets.QTabWidget()
+        self.nested_tab_widget.setMinimumWidth(400)  # Prevent collapsing too small
 
         # Create and add nested tabs (excluding Costs - it will be in sliding panel)
         vfx_breakdown_tab = self._create_vfx_breakdown_tab()
@@ -94,6 +108,7 @@ class BiddingTab(QtWidgets.QWidget):
 
         # Create docked costs container (initially hidden)
         self.docked_costs_container = QtWidgets.QWidget()
+        self.docked_costs_container.setMinimumWidth(300)  # Prevent collapsing too small
         docked_layout = QtWidgets.QVBoxLayout(self.docked_costs_container)
         docked_layout.setContentsMargins(0, 0, 0, 0)
         docked_layout.setSpacing(0)

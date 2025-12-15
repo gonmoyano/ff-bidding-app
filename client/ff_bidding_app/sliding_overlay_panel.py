@@ -47,12 +47,21 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
         super().__init__(parent)
 
         self.panel_width = panel_width
+        self.min_panel_width = 300  # Minimum width when resizing
+        self.max_panel_width = 1200  # Maximum width when resizing
         self.animation_duration = animation_duration
         self._is_visible = False
         self._show_dock_button = show_dock_button
 
+        # Resize handling
+        self._resize_edge_width = 6  # Width of the resize handle area
+        self._is_resizing = False
+        self._resize_start_x = 0
+        self._resize_start_width = 0
+
         # Set up the widget properties
         self.setAutoFillBackground(True)
+        self.setMouseTracking(True)  # Enable mouse tracking for cursor changes
 
         # Set higher z-order to appear on top
         self.raise_()
@@ -142,11 +151,14 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
 
         self.main_layout.addWidget(self.content_container, 1)
 
-        # Apply styling
+        # Apply styling - thicker left border indicates resize handle
         self.setStyleSheet("""
             SlidingOverlayPanel {
                 background-color: #2b2b2b;
-                border-left: 2px solid #555555;
+                border-left: 4px solid #4a4a4a;
+            }
+            SlidingOverlayPanel:hover {
+                border-left: 4px solid #5a5a5a;
             }
             QWidget#contentContainer {
                 background-color: #2b2b2b;
@@ -305,6 +317,71 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
         """
         if hasattr(self, 'dock_button'):
             self.dock_button.setText(icon_text)
+
+    def _is_on_resize_edge(self, pos):
+        """Check if the position is on the left resize edge.
+
+        Args:
+            pos: QPoint position relative to the widget
+
+        Returns:
+            bool: True if on resize edge
+        """
+        return pos.x() <= self._resize_edge_width
+
+    def mousePressEvent(self, event):
+        """Handle mouse press for resize."""
+        if event.button() == QtCore.Qt.LeftButton and self._is_on_resize_edge(event.pos()):
+            self._is_resizing = True
+            self._resize_start_x = event.globalPos().x()
+            self._resize_start_width = self.panel_width
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Handle mouse move for resize cursor and dragging."""
+        if self._is_resizing:
+            # Calculate new width based on drag distance
+            delta = self._resize_start_x - event.globalPos().x()
+            new_width = self._resize_start_width + delta
+
+            # Clamp to min/max
+            new_width = max(self.min_panel_width, min(self.max_panel_width, new_width))
+
+            # Update panel width and position
+            if new_width != self.panel_width:
+                self.panel_width = new_width
+                if self.parent():
+                    parent_rect = self.parent().rect()
+                    self.setGeometry(
+                        parent_rect.width() - self.panel_width,
+                        0,
+                        self.panel_width,
+                        parent_rect.height()
+                    )
+            event.accept()
+        else:
+            # Update cursor based on position
+            if self._is_on_resize_edge(event.pos()):
+                self.setCursor(QtCore.Qt.SizeHorCursor)
+            else:
+                self.setCursor(QtCore.Qt.ArrowCursor)
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release to end resize."""
+        if event.button() == QtCore.Qt.LeftButton and self._is_resizing:
+            self._is_resizing = False
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def leaveEvent(self, event):
+        """Reset cursor when leaving widget."""
+        if not self._is_resizing:
+            self.setCursor(QtCore.Qt.ArrowCursor)
+        super().leaveEvent(event)
 
 
 class OverlayBackground(QtWidgets.QWidget):
