@@ -420,14 +420,18 @@ class CostsTab(QtWidgets.QMainWindow):
 
         # Prevent recursive calls
         if getattr(self, '_clearing_caches', False):
+            logger.debug("_clear_cross_tab_caches: Skipping (already clearing)")
             return
         self._clearing_caches = True
+
+        logger.debug(f"_clear_cross_tab_caches: Starting (source={type(source).__name__ if source else None})")
 
         try:
             # Clear Misc spreadsheet cache (only if not the source)
             if hasattr(self, 'misc_cost_spreadsheet') and hasattr(self.misc_cost_spreadsheet, 'model'):
                 model = self.misc_cost_spreadsheet.model
                 if model != source and hasattr(model, '_evaluated_cache'):
+                    logger.debug(f"_clear_cross_tab_caches: Clearing Misc cache (had {len(model._evaluated_cache)} entries)")
                     model._evaluated_cache.clear()
                     # Emit dataChanged for all cells to force repaint
                     top_left = model.index(0, 0)
@@ -438,6 +442,7 @@ class CostsTab(QtWidgets.QMainWindow):
             if hasattr(self, 'total_cost_spreadsheet') and hasattr(self.total_cost_spreadsheet, 'model'):
                 model = self.total_cost_spreadsheet.model
                 if model != source and hasattr(model, '_evaluated_cache'):
+                    logger.debug(f"_clear_cross_tab_caches: Clearing TotalCost cache (had {len(model._evaluated_cache)} entries)")
                     model._evaluated_cache.clear()
                     # Emit dataChanged for all cells to force repaint
                     top_left = model.index(0, 0)
@@ -445,6 +450,7 @@ class CostsTab(QtWidgets.QMainWindow):
                     model.dataChanged.emit(top_left, bottom_right, [Qt.DisplayRole])
         finally:
             self._clearing_caches = False
+            logger.debug("_clear_cross_tab_caches: Done")
 
     def _on_misc_data_changed(self):
         """Handle data changes in the Misc Cost spreadsheet - update summary and auto-save."""

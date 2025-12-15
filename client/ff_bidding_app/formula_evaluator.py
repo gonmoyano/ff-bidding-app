@@ -235,6 +235,7 @@ class FormulaEvaluator:
         ref = ref.strip().replace('$', '')
         match = re.match(r'^([A-Z]+)(\d+)$', ref.upper())
         if not match or not model:
+            logger.debug(f"_get_cell_value_from_model: Invalid ref '{ref}' or no model")
             return 0
 
         col_letter, row_num = match.groups()
@@ -243,16 +244,23 @@ class FormulaEvaluator:
 
         # Check if the row and column are valid for this model
         if row < 0 or col < 0 or row >= model.rowCount() or col >= model.columnCount():
+            logger.debug(f"_get_cell_value_from_model: Out of bounds - ref={ref}, row={row}, col={col}")
             return 0
+
+        # Debug: Log the model's internal data for SpreadsheetModel
+        if hasattr(model, '_data'):
+            logger.debug(f"_get_cell_value_from_model: ref={ref}, model._data keys={list(model._data.keys())}, value at ({row},{col})={model._data.get((row, col), 'NOT_FOUND')}")
 
         # Get the raw value from the model
         index = model.index(row, col)
         value = model.data(index, QtCore.Qt.EditRole)
+        logger.debug(f"_get_cell_value_from_model: ref={ref}, EditRole value='{value}'")
 
         # If value is a formula, get the calculated value instead
         if isinstance(value, str) and value.startswith('='):
             # Get the display value which should be calculated
             value = model.data(index, QtCore.Qt.DisplayRole)
+            logger.debug(f"_get_cell_value_from_model: Formula detected, DisplayRole value='{value}'")
 
         # Try to convert to number
         try:
