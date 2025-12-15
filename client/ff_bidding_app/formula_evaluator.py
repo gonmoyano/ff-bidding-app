@@ -41,6 +41,27 @@ class FormulaEvaluator:
         else:
             pass
 
+    def _get_sheet_model_case_insensitive(self, sheet_name: str):
+        """Get a sheet model by name with case-insensitive matching.
+
+        Args:
+            sheet_name: The sheet name to look up (e.g., "misc", "Misc", "MISC")
+
+        Returns:
+            Tuple of (actual_sheet_name, model) if found, (None, None) if not found
+        """
+        # Try exact match first
+        if sheet_name in self.sheet_models:
+            return sheet_name, self.sheet_models[sheet_name]
+
+        # Try case-insensitive match
+        sheet_name_lower = sheet_name.lower()
+        for name, model in self.sheet_models.items():
+            if name.lower() == sheet_name_lower:
+                return name, model
+
+        return None, None
+
     @staticmethod
     def col_index_to_letter(col):
         """Convert column index to letter (0->A, 1->B, ..., 25->Z, 26->AA)"""
@@ -443,13 +464,12 @@ class FormulaEvaluator:
             cell_ref = match.group(2)
             full_ref = match.group(0)
 
-            # Check if sheet exists
-            if sheet_name not in self.sheet_models:
+            # Check if sheet exists (case-insensitive)
+            actual_name, target_model = self._get_sheet_model_case_insensitive(sheet_name)
+            if target_model is None:
                 available_sheets = list(self.sheet_models.keys()) if self.sheet_models else []
                 logger.warning(f"Sheet not found: '{sheet_name}' in reference {full_ref}. Available sheets: {available_sheets}")
                 return "#REF!"
-
-            target_model = self.sheet_models[sheet_name]
 
             # Check if it's already a standard cell reference (A1, B2, etc.)
             # Standard cell references don't need header resolution
@@ -489,13 +509,12 @@ class FormulaEvaluator:
             cell_ref = match.group(2)
             full_ref = match.group(0)
 
-            # Check if sheet exists
-            if sheet_name not in self.sheet_models:
+            # Check if sheet exists (case-insensitive)
+            actual_name, target_model = self._get_sheet_model_case_insensitive(sheet_name)
+            if target_model is None:
                 available_sheets = list(self.sheet_models.keys()) if self.sheet_models else []
                 logger.warning(f"Sheet not found: '{sheet_name}' in reference {full_ref}. Available sheets: {available_sheets}")
                 return "#REF!"
-
-            target_model = self.sheet_models[sheet_name]
 
             # Check if it's already a standard cell reference (A1, B2, etc.)
             # Standard cell references don't need header resolution
