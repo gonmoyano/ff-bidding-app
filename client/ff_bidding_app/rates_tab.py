@@ -9,14 +9,14 @@ from PySide6 import QtWidgets, QtCore, QtGui
 try:
     from .logger import logger
     from .settings import AppSettings
-    from .bid_selector_widget import CollapsibleGroupBox
+    from .bid_selector_widget import CollapsibleGroupBox, parse_sg_currency
     from .vfx_breakdown_widget import VFXBreakdownWidget, FormulaDelegate
     from .formula_evaluator import FormulaEvaluator
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
     from settings import AppSettings
-    from bid_selector_widget import CollapsibleGroupBox
+    from bid_selector_widget import CollapsibleGroupBox, parse_sg_currency
     from vfx_breakdown_widget import VFXBreakdownWidget, FormulaDelegate
     from formula_evaluator import FormulaEvaluator
 
@@ -529,26 +529,23 @@ class RatesTab(QtWidgets.QWidget):
         # Update currency formatting for the price column
         self.refresh_currency_formatting()
 
-    def refresh_currency_formatting(self, currency_symbol=None):
+    def refresh_currency_formatting(self, sg_currency_value=None):
         """Refresh currency formatting in the Line Items price column.
 
         Call this method when currency settings have changed to update
         the Price column with the new currency symbol and position.
 
         Args:
-            currency_symbol: New currency symbol. If None, uses current bid data.
+            sg_currency_value: Combined currency value (e.g., "$+before"). If None, uses current bid data.
         """
-        # Determine currency symbol
-        if currency_symbol is None:
+        # Get sg_currency value from parameter or current bid data
+        if sg_currency_value is None:
             if self.current_bid_data:
-                currency_symbol = self.current_bid_data.get("sg_currency")
-            if not currency_symbol and self.app_settings:
-                currency_symbol = self.app_settings.get_currency() or "$"
+                sg_currency_value = self.current_bid_data.get("sg_currency")
 
-        # Get currency position
-        currency_position = "prepend"
-        if self.app_settings and self.current_bid_id:
-            currency_position = self.app_settings.get_bid_currency_position(self.current_bid_id)
+        # Parse the combined format (symbol+position)
+        default_symbol = self.app_settings.get_currency() if self.app_settings else "$"
+        currency_symbol, currency_position = parse_sg_currency(sg_currency_value, default_symbol or "$")
 
         # Update currency symbol on the formula delegate
         if self.line_items_formula_delegate:
@@ -1507,15 +1504,22 @@ class RatesTab(QtWidgets.QWidget):
                     display_names["sg_price_static"] = "Price Static"
                 self.line_items_widget.model.set_column_headers(display_names)
 
+                # Hide the sg_price_static column (it's needed for calculations but not visible)
+                if "sg_price_static" in self.line_items_field_allowlist:
+                    price_static_col_index = self.line_items_field_allowlist.index("sg_price_static")
+                    self.line_items_widget.table_view.setColumnHidden(price_static_col_index, True)
+                    logger.info(f"Hidden sg_price_static column (index {price_static_col_index})")
+
                 # Set up formula delegate for the Price column
                 if hasattr(self, 'line_items_formula_evaluator'):
                     price_col_index = self.line_items_field_allowlist.index("_calc_price") if "_calc_price" in self.line_items_field_allowlist else -1
                     if price_col_index >= 0:
                         self.line_items_formula_delegate = FormulaDelegate(self.line_items_formula_evaluator, app_settings=self.app_settings)
-                        # Set currency symbol from bid data
+                        # Set currency symbol and position from bid data (sg_currency field)
                         if self.current_bid_data:
-                            currency_symbol = self.current_bid_data.get("sg_currency") or self.app_settings.get_currency() or "$"
-                            currency_position = self.app_settings.get_bid_currency_position(self.current_bid_id) if self.current_bid_id else "prepend"
+                            default_symbol = self.app_settings.get_currency() or "$"
+                            sg_currency_value = self.current_bid_data.get("sg_currency")
+                            currency_symbol, currency_position = parse_sg_currency(sg_currency_value, default_symbol)
                             self.line_items_formula_delegate.set_currency_symbol(currency_symbol, currency_position)
                         self.line_items_widget.table_view.setItemDelegateForColumn(price_col_index, self.line_items_formula_delegate)
 

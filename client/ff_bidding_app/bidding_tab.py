@@ -83,6 +83,9 @@ class BiddingTab(QtWidgets.QWidget):
         # Use the full VFXBreakdownTab (includes selector, Add/Remove/Rename buttons, etc.)
         tab = VFXBreakdownTab(self.sg_session, parent=self.parent_app)
 
+        # Connect signal to update Costs tab when VFX Breakdown changes
+        tab.vfxBreakdownChanged.connect(self._on_vfx_breakdown_changed)
+
         # Store reference to use in set_rfq if needed
         self.vfx_breakdown_tab = tab
 
@@ -222,22 +225,22 @@ class BiddingTab(QtWidgets.QWidget):
         logger.info(f"Bid selector status: {message}")
         # Could forward this to parent app status bar if needed
 
-    def _on_currency_settings_changed(self, bid_id, currency_symbol):
+    def _on_currency_settings_changed(self, bid_id, sg_currency_value):
         """Handle currency settings change from Configure Bid dialog.
 
         Args:
             bid_id: ID of the bid whose currency settings changed
-            currency_symbol: New currency symbol
+            sg_currency_value: Combined currency value (e.g., "$+before", "€+after")
         """
-        logger.info(f"Currency settings changed for bid ID: {bid_id}, symbol: {currency_symbol}")
+        logger.info(f"Currency settings changed for bid ID: {bid_id}, currency: {sg_currency_value}")
 
-        # Refresh currency formatting in Costs tab with the new symbol
+        # Refresh currency formatting in Costs tab with the new currency value
         if hasattr(self, 'costs_tab'):
-            self.costs_tab.refresh_currency_formatting(currency_symbol)
+            self.costs_tab.refresh_currency_formatting(sg_currency_value)
 
-        # Refresh currency formatting in Rates tab with the new symbol
+        # Refresh currency formatting in Rates tab with the new currency value
         if hasattr(self, 'rates_tab'):
-            self.rates_tab.refresh_currency_formatting(currency_symbol)
+            self.rates_tab.refresh_currency_formatting(sg_currency_value)
 
     def _on_load_linked_requested(self, bid_data):
         """Handle Load Linked button click - load linked entities into their dropdown menus.
@@ -276,8 +279,27 @@ class BiddingTab(QtWidgets.QWidget):
             if price_list and isinstance(price_list, dict):
                 logger.info(f"  Selected Price List ID: {price_list.get('id')}")
 
+    def _on_vfx_breakdown_changed(self, updated_bid_data):
+        """Handle VFX Breakdown change - update Costs tab Shots Cost table.
+
+        Args:
+            updated_bid_data: Updated bid data dictionary with new sg_vfx_breakdown
+        """
+        if not updated_bid_data:
+            return
+
+        logger.info(f"VFX Breakdown changed for Bid: {updated_bid_data.get('code')}")
+
+        # Update current bid reference
+        self.current_bid = updated_bid_data
+
+        # Refresh Shots Cost table in Costs tab with new VFX Breakdown data
+        if hasattr(self, 'costs_tab') and self.current_project_id:
+            self.costs_tab.set_bid(updated_bid_data, self.current_project_id)
+            logger.info("  Updated Costs tab with new VFX Breakdown")
+
     def _on_bid_assets_changed(self, updated_bid_data):
-        """Handle Bid Assets change - update VFX Breakdown pill colors.
+        """Handle Bid Assets change - update VFX Breakdown pill colors and Costs tab.
 
         Args:
             updated_bid_data: Updated bid data dictionary with new sg_bid_assets
@@ -287,6 +309,9 @@ class BiddingTab(QtWidgets.QWidget):
 
         logger.info(f"Bid Assets changed for Bid: {updated_bid_data.get('code')}")
 
+        # Update current bid reference
+        self.current_bid = updated_bid_data
+
         # Update the VFX Breakdown widget with the new bid data so it can refresh pill colors
         if hasattr(self, 'vfx_breakdown_tab') and hasattr(self.vfx_breakdown_tab, 'breakdown_widget'):
             breakdown_widget = self.vfx_breakdown_tab.breakdown_widget
@@ -295,3 +320,8 @@ class BiddingTab(QtWidgets.QWidget):
             # Refresh asset widgets to update pill colors based on new Bid Assets
             breakdown_widget._refresh_asset_widgets_validation()
             logger.info("  Updated VFX Breakdown pill colors based on new Bid Assets")
+
+        # Refresh Assets Cost table in Costs tab with new Bid Assets data
+        if hasattr(self, 'costs_tab') and self.current_project_id:
+            self.costs_tab.set_bid(updated_bid_data, self.current_project_id)
+            logger.info("  Updated Costs tab with new Bid Assets")
