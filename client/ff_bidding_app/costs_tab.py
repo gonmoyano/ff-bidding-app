@@ -88,6 +88,9 @@ class CostsTab(QtWidgets.QMainWindow):
         # Timer for debounced misc data saving
         self._misc_save_timer = None
 
+        # Timer for debounced total cost data saving
+        self._total_cost_save_timer = None
+
         # No central widget - docks can take full space
         self.setCentralWidget(None)
 
@@ -410,24 +413,47 @@ class CostsTab(QtWidgets.QMainWindow):
                 except (ValueError, AttributeError):
                     pass
 
-    def _clear_cross_tab_caches(self):
-        """Clear formula caches on all spreadsheets to ensure cross-tab references update."""
-        # Clear Misc spreadsheet cache
-        if hasattr(self, 'misc_cost_spreadsheet') and hasattr(self.misc_cost_spreadsheet, 'model'):
-            if hasattr(self.misc_cost_spreadsheet.model, '_evaluated_cache'):
-                self.misc_cost_spreadsheet.model._evaluated_cache.clear()
-                self.misc_cost_spreadsheet.model.layoutChanged.emit()
+    def _clear_cross_tab_caches(self, source=None):
+        """Clear formula caches on all spreadsheets to ensure cross-tab references update.
 
-        # Clear TotalCost spreadsheet cache
-        if hasattr(self, 'total_cost_spreadsheet') and hasattr(self.total_cost_spreadsheet, 'model'):
-            if hasattr(self.total_cost_spreadsheet.model, '_evaluated_cache'):
-                self.total_cost_spreadsheet.model._evaluated_cache.clear()
-                self.total_cost_spreadsheet.model.layoutChanged.emit()
+        Args:
+            source: The source model that triggered the change (to avoid clearing its own cache again)
+        """
+        from PySide6.QtCore import Qt
+
+        # Prevent recursive calls
+        if getattr(self, '_clearing_caches', False):
+            return
+        self._clearing_caches = True
+
+        try:
+            # Clear Misc spreadsheet cache (only if not the source)
+            if hasattr(self, 'misc_cost_spreadsheet') and hasattr(self.misc_cost_spreadsheet, 'model'):
+                model = self.misc_cost_spreadsheet.model
+                if model != source and hasattr(model, '_evaluated_cache'):
+                    model._evaluated_cache.clear()
+                    # Emit dataChanged for all cells to force repaint
+                    top_left = model.index(0, 0)
+                    bottom_right = model.index(model.rowCount() - 1, model.columnCount() - 1)
+                    model.dataChanged.emit(top_left, bottom_right, [Qt.DisplayRole])
+
+            # Clear TotalCost spreadsheet cache (only if not the source)
+            if hasattr(self, 'total_cost_spreadsheet') and hasattr(self.total_cost_spreadsheet, 'model'):
+                model = self.total_cost_spreadsheet.model
+                if model != source and hasattr(model, '_evaluated_cache'):
+                    model._evaluated_cache.clear()
+                    # Emit dataChanged for all cells to force repaint
+                    top_left = model.index(0, 0)
+                    bottom_right = model.index(model.rowCount() - 1, model.columnCount() - 1)
+                    model.dataChanged.emit(top_left, bottom_right, [Qt.DisplayRole])
+        finally:
+            self._clearing_caches = False
 
     def _on_misc_data_changed(self):
         """Handle data changes in the Misc Cost spreadsheet - update summary and auto-save."""
         # Clear cross-tab formula caches so references to Misc update
-        self._clear_cross_tab_caches()
+        source = self.misc_cost_spreadsheet.model if hasattr(self, 'misc_cost_spreadsheet') else None
+        self._clear_cross_tab_caches(source=source)
 
         # Update Total Cost summary
         self._update_total_cost_summary()
@@ -509,6 +535,86 @@ class CostsTab(QtWidgets.QMainWindow):
         except Exception as e:
             logger.error(f"Failed to load misc data: {e}", exc_info=True)
 
+    def _on_total_cost_data_changed(self):
+        """Handle data changes in the Total Cost spreadsheet - auto-save."""
+        # Clear cross-tab formula caches so references from Total Cost update
+        source = self.total_cost_spreadsheet.model if hasattr(self, 'total_cost_spreadsheet') else None
+        self._clear_cross_tab_caches(source=source)
+
+        # Debounced auto-save to ShotGrid
+        self._schedule_total_cost_save()
+
+    def _schedule_total_cost_save(self):
+        """Schedule a debounced save of total cost data to ShotGrid."""
+        # Cancel any pending save
+        if hasattr(self, '_total_cost_save_timer') and self._total_cost_save_timer is not None:
+            self._total_cost_save_timer.stop()
+
+        # Create a new timer for debounced save (500ms delay)
+        self._total_cost_save_timer = QtCore.QTimer()
+        self._total_cost_save_timer.setSingleShot(True)
+        self._total_cost_save_timer.timeout.connect(self._save_total_cost_data)
+        self._total_cost_save_timer.start(500)
+
+    def _save_total_cost_data(self):
+        """Save total cost spreadsheet data to ShotGrid."""
+        if not self.current_bid_id or not self.current_project_id:
+            logger.debug("Cannot save total cost data - no bid or project selected")
+            return
+
+        if not hasattr(self, 'total_cost_spreadsheet'):
+            logger.warning("Cannot save total cost data - spreadsheet not initialized")
+            return
+
+        try:
+            # Get all data from the spreadsheet
+            cell_data = self.total_cost_spreadsheet.get_data_as_dict()
+
+            if not cell_data:
+                logger.debug("No total cost data to save")
+                return
+
+            # Save to ShotGrid
+            self.sg_session.save_spreadsheet_data(
+                project_id=self.current_project_id,
+                bid_id=self.current_bid_id,
+                spreadsheet_type="total_cost",
+                cell_data=cell_data
+            )
+            logger.info(f"Saved total cost data for bid {self.current_bid_id}: {len(cell_data)} cells")
+
+        except Exception as e:
+            logger.error(f"Failed to save total cost data: {e}", exc_info=True)
+
+    def _load_total_cost_data(self):
+        """Load total cost spreadsheet data from ShotGrid."""
+        if not self.current_bid_id:
+            logger.debug("Cannot load total cost data - no bid selected")
+            return
+
+        if not hasattr(self, 'total_cost_spreadsheet'):
+            logger.warning("Cannot load total cost data - spreadsheet not initialized")
+            return
+
+        try:
+            # Load data from ShotGrid
+            cell_data = self.sg_session.load_spreadsheet_data(
+                bid_id=self.current_bid_id,
+                spreadsheet_type="total_cost"
+            )
+
+            if cell_data:
+                # Load into the spreadsheet widget
+                self.total_cost_spreadsheet.load_data_from_dict(cell_data)
+                logger.info(f"Loaded total cost data for bid {self.current_bid_id}: {len(cell_data)} cells")
+            else:
+                # Clear the spreadsheet if no data found
+                self.total_cost_spreadsheet.load_data_from_dict({})
+                logger.info(f"No total cost data found for bid {self.current_bid_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to load total cost data: {e}", exc_info=True)
+
     def _setup_cross_tab_formulas(self):
         """Set up cross-tab formula references between cost sheets."""
         # Create a dictionary of sheet models for cross-tab references
@@ -551,6 +657,9 @@ class CostsTab(QtWidgets.QMainWindow):
 
             # Set the formula evaluator on the spreadsheet
             self.total_cost_spreadsheet.set_formula_evaluator(self.total_cost_formula_evaluator)
+
+            # Connect dataChanged signal for Total Cost spreadsheet
+            self.total_cost_spreadsheet.model.dataChanged.connect(self._on_total_cost_data_changed)
 
             logger.info("Set up cross-tab formula references for Total Cost Summary")
 
@@ -611,6 +720,11 @@ class CostsTab(QtWidgets.QMainWindow):
             logger.info("Loading misc data from ShotGrid...")
             self._load_misc_data()
             logger.info("Finished loading misc data")
+
+            # Load total cost data from ShotGrid
+            logger.info("Loading total cost data from ShotGrid...")
+            self._load_total_cost_data()
+            logger.info("Finished loading total cost data")
 
             # Update Total Cost summary with initial totals
             QtCore.QTimer.singleShot(100, self._update_total_cost_summary)
