@@ -85,6 +85,9 @@ class CostsTab(QtWidgets.QMainWindow):
         self.shots_cost_formula_delegate = None
         self.asset_cost_formula_delegate = None
 
+        # Timer for debounced misc data saving
+        self._misc_save_timer = None
+
         # No central widget - docks can take full space
         self.setCentralWidget(None)
 
@@ -402,9 +405,86 @@ class CostsTab(QtWidgets.QMainWindow):
                     pass
 
     def _on_misc_data_changed(self):
-        """Handle data changes in the Misc Cost spreadsheet - update summary."""
+        """Handle data changes in the Misc Cost spreadsheet - update summary and auto-save."""
         # Update Total Cost summary
         self._update_total_cost_summary()
+
+        # Debounced auto-save to ShotGrid
+        self._schedule_misc_save()
+
+    def _schedule_misc_save(self):
+        """Schedule a debounced save of misc data to ShotGrid."""
+        # Cancel any pending save
+        if hasattr(self, '_misc_save_timer') and self._misc_save_timer is not None:
+            self._misc_save_timer.stop()
+
+        # Create a new timer for debounced save (500ms delay)
+        self._misc_save_timer = QtCore.QTimer()
+        self._misc_save_timer.setSingleShot(True)
+        self._misc_save_timer.timeout.connect(self._save_misc_data)
+        self._misc_save_timer.start(500)
+
+    def _save_misc_data(self):
+        """Save misc spreadsheet data to ShotGrid."""
+        if not self.current_bid_id or not self.current_project_id:
+            logger.debug("Cannot save misc data - no bid or project selected")
+            return
+
+        if not hasattr(self, 'misc_cost_spreadsheet'):
+            logger.warning("Cannot save misc data - spreadsheet not initialized")
+            return
+
+        try:
+            # Get all data from the spreadsheet
+            cell_data = self.misc_cost_spreadsheet.get_data_as_dict()
+
+            if not cell_data:
+                logger.debug("No misc data to save")
+                return
+
+            # Save to ShotGrid
+            self.sg_session.save_spreadsheet_data(
+                project_id=self.current_project_id,
+                bid_id=self.current_bid_id,
+                spreadsheet_type="misc",
+                cell_data=cell_data
+            )
+            logger.info(f"Saved misc data for bid {self.current_bid_id}: {len(cell_data)} cells")
+
+        except Exception as e:
+            logger.error(f"Failed to save misc data: {e}", exc_info=True)
+
+    def _load_misc_data(self):
+        """Load misc spreadsheet data from ShotGrid."""
+        if not self.current_bid_id:
+            logger.debug("Cannot load misc data - no bid selected")
+            return
+
+        if not hasattr(self, 'misc_cost_spreadsheet'):
+            logger.warning("Cannot load misc data - spreadsheet not initialized")
+            return
+
+        try:
+            # Load data from ShotGrid
+            cell_data = self.sg_session.load_spreadsheet_data(
+                bid_id=self.current_bid_id,
+                spreadsheet_type="misc"
+            )
+
+            if cell_data:
+                # Load into the spreadsheet widget
+                self.misc_cost_spreadsheet.load_data_from_dict(cell_data)
+                logger.info(f"Loaded misc data for bid {self.current_bid_id}: {len(cell_data)} cells")
+            else:
+                # Clear the spreadsheet if no data found
+                self.misc_cost_spreadsheet.load_data_from_dict({})
+                logger.info(f"No misc data found for bid {self.current_bid_id}")
+
+            # Update Total Cost summary after loading
+            QtCore.QTimer.singleShot(100, self._update_total_cost_summary)
+
+        except Exception as e:
+            logger.error(f"Failed to load misc data: {e}", exc_info=True)
 
     def _setup_cross_tab_formulas(self):
         """Set up cross-tab formula references between cost sheets."""
@@ -504,6 +584,11 @@ class CostsTab(QtWidgets.QMainWindow):
             logger.info("Finished refreshing Asset Cost")
             self._refresh_total_cost()
 
+            # Load misc data from ShotGrid
+            logger.info("Loading misc data from ShotGrid...")
+            self._load_misc_data()
+            logger.info("Finished loading misc data")
+
             # Update Total Cost summary with initial totals
             QtCore.QTimer.singleShot(100, self._update_total_cost_summary)
         else:
@@ -512,6 +597,9 @@ class CostsTab(QtWidgets.QMainWindow):
                 self.shots_cost_widget.load_bidding_scenes([])
             if hasattr(self, 'asset_cost_widget'):
                 self.asset_cost_widget.load_bidding_scenes([])
+            # Clear misc spreadsheet
+            if hasattr(self, 'misc_cost_spreadsheet'):
+                self.misc_cost_spreadsheet.load_data_from_dict({})
 
     def refresh_for_rate_card_change(self):
         """Refresh all cost tables when the rate card changes.
