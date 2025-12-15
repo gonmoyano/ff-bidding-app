@@ -2553,6 +2553,56 @@ class ShotgridClient:
     # Spreadsheet Management (CustomEntity15) - For storing misc table data
     # ------------------------------------------------------------------
 
+    def _row_col_to_cell_notation(self, row, col):
+        """Convert row and column indices to Excel-style cell notation (e.g., A1, B10).
+
+        Args:
+            row: Row index (0-based)
+            col: Column index (0-based)
+
+        Returns:
+            str: Cell notation like "A1", "B10", "AA5"
+        """
+        # Convert column index to letter(s)
+        col_str = ""
+        col_num = col
+        while col_num >= 0:
+            col_str = chr(ord('A') + (col_num % 26)) + col_str
+            col_num = col_num // 26 - 1
+            if col_num < 0:
+                break
+
+        # Row is 1-based in Excel notation
+        return f"{col_str}{row + 1}"
+
+    def _cell_notation_to_row_col(self, cell_notation):
+        """Convert Excel-style cell notation to row and column indices.
+
+        Args:
+            cell_notation: Cell notation like "A1", "B10", "AA5"
+
+        Returns:
+            tuple: (row, col) as 0-based indices
+        """
+        import re
+        match = re.match(r'^([A-Z]+)(\d+)$', cell_notation.upper())
+        if not match:
+            raise ValueError(f"Invalid cell notation: {cell_notation}")
+
+        col_str = match.group(1)
+        row_num = int(match.group(2))
+
+        # Convert column letters to index
+        col = 0
+        for char in col_str:
+            col = col * 26 + (ord(char) - ord('A') + 1)
+        col -= 1  # Convert to 0-based
+
+        # Row is 0-based internally
+        row = row_num - 1
+
+        return row, col
+
     def create_spreadsheet(self, project_id, bid_id, spreadsheet_type="misc", code=None):
         """
         Create a new Spreadsheet (CustomEntity15) entity in ShotGrid.
@@ -2646,30 +2696,32 @@ class ShotgridClient:
         Args:
             project_id: ID of the project
             spreadsheet_id: ID of the parent Spreadsheet (CustomEntity15)
-            row: Row index of the cell
-            col: Column index of the cell
+            row: Row index of the cell (0-based)
+            col: Column index of the cell (0-based)
             formula: The cell content (value or formula)
             code: Optional name/code for the item
 
         Returns:
             Created Spreadsheet Item entity dictionary
         """
+        # Convert row/col to cell notation (e.g., A1, B10)
+        cell_notation = self._row_col_to_cell_notation(row, col)
+
         if code is None:
-            code = f"cell_{row}_{col}"
+            code = f"cell_{cell_notation}"
 
         data = {
             "code": code,
             "project": {"type": "Project", "id": int(project_id)},
             "sg_parent": {"type": "CustomEntity15", "id": int(spreadsheet_id)},
-            "sg_row": row,
-            "sg_col": col,
+            "sg_cell": cell_notation,
         }
 
         if formula is not None:
             data["sg_formula"] = str(formula)
 
         result = self.sg.create("CustomEntity16", data)
-        logger.debug(f"Created Spreadsheet Item: {result.get('id')} at ({row}, {col})")
+        logger.debug(f"Created Spreadsheet Item: {result.get('id')} at {cell_notation}")
         return result
 
     def get_spreadsheet_items(self, spreadsheet_id, fields=None):
@@ -2684,7 +2736,7 @@ class ShotgridClient:
             List of Spreadsheet Item entity dictionaries
         """
         if fields is None:
-            fields = ["id", "code", "sg_parent", "sg_row", "sg_col", "sg_formula"]
+            fields = ["id", "code", "sg_parent", "sg_cell", "sg_formula"]
 
         filters = [
             ["sg_parent", "is", {"type": "CustomEntity15", "id": int(spreadsheet_id)}]
@@ -2808,11 +2860,16 @@ class ShotgridClient:
 
         cell_data = {}
         for item in items:
-            row = item.get("sg_row")
-            col = item.get("sg_col")
+            cell_notation = item.get("sg_cell")
             formula = item.get("sg_formula", "")
 
-            if row is not None and col is not None:
+            if cell_notation:
+                try:
+                    row, col = self._cell_notation_to_row_col(cell_notation)
+                except ValueError as e:
+                    logger.warning(f"Invalid cell notation '{cell_notation}': {e}")
+                    continue
+
                 cell_data[(row, col)] = {
                     'value': None,  # Value will be computed from formula
                     'formula': formula if formula and formula.startswith('=') else None,
