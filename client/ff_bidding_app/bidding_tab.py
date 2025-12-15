@@ -86,6 +86,9 @@ class BiddingTab(QtWidgets.QWidget):
         # Connect signal to update Costs tab when VFX Breakdown changes
         tab.vfxBreakdownChanged.connect(self._on_vfx_breakdown_changed)
 
+        # Connect signal to refresh Shots Cost when VFX Breakdown data changes
+        tab.vfxBreakdownDataChanged.connect(self._on_vfx_breakdown_data_changed)
+
         # Store reference to use in set_rfq if needed
         self.vfx_breakdown_tab = tab
 
@@ -98,6 +101,9 @@ class BiddingTab(QtWidgets.QWidget):
 
         # Connect signal to update VFX Breakdown pill colors when Bid Assets changes
         tab.bidAssetsChanged.connect(self._on_bid_assets_changed)
+
+        # Connect signal to refresh Assets Cost when Bid Assets data changes
+        tab.bidAssetsDataChanged.connect(self._on_bid_assets_data_changed)
 
         # Store reference to use in set_bid if needed
         self.assets_tab = tab
@@ -325,3 +331,29 @@ class BiddingTab(QtWidgets.QWidget):
         if hasattr(self, 'costs_tab') and self.current_project_id:
             self.costs_tab.set_bid(updated_bid_data, self.current_project_id)
             logger.info("  Updated Costs tab with new Bid Assets")
+
+    def _on_vfx_breakdown_data_changed(self):
+        """Handle VFX Breakdown data change - refresh Shots Cost table in Costs tab.
+
+        This is called when a field is updated in the VFX Breakdown table
+        and the loaded VFX Breakdown is the one assigned to the current bid.
+        """
+        logger.info("VFX Breakdown data changed - refreshing Shots Cost table")
+
+        # Refresh Shots Cost table in Costs tab
+        if hasattr(self, 'costs_tab') and self.current_bid and self.current_project_id:
+            self.costs_tab.set_bid(self.current_bid, self.current_project_id)
+            logger.info("  Refreshed Shots Cost table in Costs tab")
+
+    def _on_bid_assets_data_changed(self):
+        """Handle Bid Assets data change - refresh Assets Cost table in Costs tab.
+
+        This is called when a field is updated in the Bid Assets table
+        and the loaded Bid Assets is the one assigned to the current bid.
+        """
+        logger.info("Bid Assets data changed - refreshing Assets Cost table")
+
+        # Refresh Assets Cost table in Costs tab
+        if hasattr(self, 'costs_tab') and self.current_bid and self.current_project_id:
+            self.costs_tab.set_bid(self.current_bid, self.current_project_id)
+            logger.info("  Refreshed Assets Cost table in Costs tab")
