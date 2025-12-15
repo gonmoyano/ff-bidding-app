@@ -16,6 +16,59 @@ except ImportError:
     from settings import AppSettings
 
 
+class ShotGridUpdateSignals(QtCore.QObject):
+    """Signals for async ShotGrid updates."""
+    success = QtCore.Signal(int, int, object)  # row, col, new_value
+    failed = QtCore.Signal(int, int, object, str)  # row, col, old_value, error_message
+
+
+class ShotGridUpdateRunnable(QtCore.QRunnable):
+    """Runnable for async ShotGrid updates with rollback on failure."""
+
+    def __init__(self, sg_session, entity_type, entity_id, field_name, update_value,
+                 row, col, old_value, new_value):
+        """Initialize the runnable.
+
+        Args:
+            sg_session: ShotGrid session
+            entity_type: Entity type (e.g., "CustomEntity02")
+            entity_id: Entity ID to update
+            field_name: Field name to update
+            update_value: Parsed value to send to ShotGrid
+            row: Row index in model
+            col: Column index in model
+            old_value: Original value for rollback
+            new_value: New value being set
+        """
+        super().__init__()
+        self.sg_session = sg_session
+        self.entity_type = entity_type
+        self.entity_id = entity_id
+        self.field_name = field_name
+        self.update_value = update_value
+        self.row = row
+        self.col = col
+        self.old_value = old_value
+        self.new_value = new_value
+        self.signals = ShotGridUpdateSignals()
+
+    def run(self):
+        """Execute the ShotGrid update in background thread."""
+        try:
+            self.sg_session.sg.update(
+                self.entity_type,
+                self.entity_id,
+                {self.field_name: self.update_value}
+            )
+            self.signals.success.emit(self.row, self.col, self.new_value)
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"[ASYNC] Failed to update ShotGrid - Entity: {self.entity_type}, "
+                        f"ID: {self.entity_id}, Field: {self.field_name}, Value: {self.update_value}")
+            logger.error(f"[ASYNC] Error: {error_msg}")
+            self.signals.failed.emit(self.row, self.col, self.old_value, error_msg)
+
+
 class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
     """Custom delegate for rendering checkboxes with custom styling."""
 
@@ -619,6 +672,17 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         # Flag to skip undo command creation for automatic updates (e.g., Price Static)
         self._skip_undo_command = False
 
+        # Thread pool for async ShotGrid updates (optimistic updates)
+        self._update_thread_pool = QtCore.QThreadPool.globalInstance()
+
+        # Flag to enable/disable optimistic updates (update UI first, then sync to SG)
+        # NOTE: Disabled by default because ShotGrid API connection is not thread-safe
+        # The SSL connection cannot be shared across threads
+        self._use_optimistic_updates = False
+
+        # Track pending updates for potential rollback (key: (row, col), value: old_value)
+        self._pending_updates = {}
+
     def rowCount(self, parent=QtCore.QModelIndex()):
         """Return the number of rows (filtered bidding scenes)."""
         if parent.isValid():
@@ -724,6 +788,109 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
             return f"{column_letter}{row_number}"
 
         return None
+
+    def _on_async_update_success(self, row, col, new_value):
+        """Handle successful async ShotGrid update."""
+        key = (row, col)
+        if key in self._pending_updates:
+            del self._pending_updates[key]
+
+        # Get field name for logging
+        if 0 <= col < len(self.column_fields):
+            field_name = self.column_fields[col]
+            self.statusMessageChanged.emit(f"✓ Updated {field_name} on ShotGrid", False)
+
+    def _on_async_update_failed(self, row, col, old_value, error_msg):
+        """Handle failed async ShotGrid update - rollback to previous value."""
+        key = (row, col)
+
+        # Log the error prominently
+        logger.error("=" * 80)
+        logger.error(f"[ROLLBACK] ShotGrid update failed - reverting local change")
+        logger.error(f"[ROLLBACK] Row: {row}, Col: {col}, Error: {error_msg}")
+        logger.error("=" * 80)
+
+        # Get the data row index
+        if row not in self.display_row_to_data_row:
+            logger.error(f"[ROLLBACK] Cannot find data row for display row {row}")
+            if key in self._pending_updates:
+                del self._pending_updates[key]
+            return
+
+        data_row_idx = self.display_row_to_data_row[row]
+        if data_row_idx >= len(self.all_bidding_scenes_data):
+            logger.error(f"[ROLLBACK] Data row index {data_row_idx} out of range")
+            if key in self._pending_updates:
+                del self._pending_updates[key]
+            return
+
+        bidding_scene_data = self.all_bidding_scenes_data[data_row_idx]
+        if not bidding_scene_data:
+            if key in self._pending_updates:
+                del self._pending_updates[key]
+            return
+
+        if 0 <= col < len(self.column_fields):
+            field_name = self.column_fields[col]
+
+            # Rollback to old value
+            bidding_scene_data[field_name] = old_value
+            logger.error(f"[ROLLBACK] Reverted {field_name} to: {old_value}")
+
+            # Emit data changed to refresh the view with the old value
+            index = self.index(row, col)
+            self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+
+            # Emit status message
+            self.statusMessageChanged.emit(f"✗ Failed to update {field_name}: {error_msg}", True)
+
+        # Clean up pending updates
+        if key in self._pending_updates:
+            del self._pending_updates[key]
+
+    def _queue_async_update(self, row, col, old_value, new_value, parsed_value,
+                            bidding_scene_data, field_name):
+        """Queue an async ShotGrid update with rollback on failure.
+
+        Args:
+            row: Display row index
+            col: Column index
+            old_value: Original value for rollback
+            new_value: New display value
+            parsed_value: Parsed value to send to ShotGrid
+            bidding_scene_data: Data dict for this row
+            field_name: Field name being updated
+        """
+        entity_id = bidding_scene_data.get("id")
+        if not entity_id:
+            logger.error(f"[ASYNC] No entity ID found for update ({self.entity_type})")
+            self.statusMessageChanged.emit(f"Failed to update {field_name}: No entity ID", True)
+            return False
+
+        # Track pending update for potential rollback
+        key = (row, col)
+        self._pending_updates[key] = old_value
+
+        # Create the runnable
+        runnable = ShotGridUpdateRunnable(
+            sg_session=self.sg_session,
+            entity_type=self.entity_type,
+            entity_id=entity_id,
+            field_name=field_name,
+            update_value=parsed_value,
+            row=row,
+            col=col,
+            old_value=old_value,
+            new_value=new_value
+        )
+
+        # Connect signals
+        runnable.signals.success.connect(self._on_async_update_success)
+        runnable.signals.failed.connect(self._on_async_update_failed)
+
+        # Queue for execution
+        self._update_thread_pool.start(runnable)
+        return True
 
     def setData(self, index, value, role=QtCore.Qt.EditRole):
         """Set data for the given index."""
@@ -855,20 +1022,24 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
                         entity_type=self.entity_type
                     )
 
-                    temp_command._update_shotgrid(new_value)
+                    # Step 1: Parse and update local data first
                     parsed_value = temp_command._parse_value(new_value, field_name)
                     bidding_scene_data[field_name] = parsed_value
 
-                    # Emit data changed
+                    # Step 2: Emit data changed immediately (UI updates, Costs tab refreshes)
                     self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
 
-                    self._updating = False
-                    reason = "undo/redo" if self._in_undo_redo else "automatic update"
-
-                    # Recalculate dependent cells if formula evaluator is available
+                    # Step 3: Recalculate dependent cells if formula evaluator is available
                     if self.formula_evaluator:
                         self.formula_evaluator.recalculate_dependents(row, col)
 
+                    # Step 4: Process pending events to ensure UI updates are visible
+                    QtWidgets.QApplication.processEvents()
+
+                    # Step 5: Sync to ShotGrid (blocking but UI already updated)
+                    temp_command._update_shotgrid(new_value)
+
+                    self._updating = False
                     return True
                 else:
                     # Normal edit - create undo command
@@ -885,29 +1056,78 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
                         entity_type=self.entity_type
                     )
 
-                    command._update_shotgrid(new_value)
-
-                    # Update the bidding_scene_data with new value
+                    # Parse the new value
                     parsed_value = command._parse_value(new_value, field_name)
-                    bidding_scene_data[field_name] = parsed_value
 
-                    # Emit data changed
-                    self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+                    # OPTIMISTIC UPDATE: Update local data first, then sync to SG async
+                    if self._use_optimistic_updates:
+                        # Update the bidding_scene_data with new value immediately
+                        bidding_scene_data[field_name] = parsed_value
 
-                    # Add to undo stack
-                    self.undo_stack.append(command)
-                    # Clear redo stack on new edit
-                    self.redo_stack.clear()
+                        # Emit data changed immediately (optimistic UI update)
+                        self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
 
-                    self._updating = False
+                        # Add to undo stack
+                        self.undo_stack.append(command)
+                        # Clear redo stack on new edit
+                        self.redo_stack.clear()
 
-                    self.statusMessageChanged.emit(f"✓ Updated {field_name} on ShotGrid", False)
+                        self._updating = False
 
-                    # Recalculate dependent cells if formula evaluator is available
-                    if self.formula_evaluator:
-                        self.formula_evaluator.recalculate_dependents(row, col)
+                        # Queue async ShotGrid update with rollback on failure
+                        self._queue_async_update(
+                            row, col, old_value_raw, new_value, parsed_value,
+                            bidding_scene_data, field_name
+                        )
 
-                    return True
+                        # Recalculate dependent cells if formula evaluator is available
+                        if self.formula_evaluator:
+                            self.formula_evaluator.recalculate_dependents(row, col)
+
+                        return True
+                    else:
+                        # Synchronous update - update local first, then sync to ShotGrid
+                        # This ensures Costs tab sees changes immediately before SG sync
+
+                        # Step 1: Update local data immediately
+                        bidding_scene_data[field_name] = parsed_value
+
+                        # Step 2: Emit data changed immediately (UI updates, Costs tab refreshes)
+                        self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+
+                        # Step 3: Recalculate dependent cells if formula evaluator is available
+                        if self.formula_evaluator:
+                            self.formula_evaluator.recalculate_dependents(row, col)
+
+                        # Step 4: Process pending events to ensure UI updates are visible
+                        QtWidgets.QApplication.processEvents()
+
+                        # Step 5: Sync to ShotGrid (blocking but UI already updated)
+                        try:
+                            command._update_shotgrid(new_value)
+
+                            # Add to undo stack only after successful SG update
+                            self.undo_stack.append(command)
+                            # Clear redo stack on new edit
+                            self.redo_stack.clear()
+
+                            self._updating = False
+                            self.statusMessageChanged.emit(f"✓ Updated {field_name} on ShotGrid", False)
+                            return True
+
+                        except Exception as sg_error:
+                            # ShotGrid update failed - rollback local change
+                            logger.error(f"[ROLLBACK] ShotGrid sync failed: {sg_error}")
+                            bidding_scene_data[field_name] = old_value_raw
+                            self.dataChanged.emit(index, index, [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole])
+
+                            # Recalculate dependents with rolled back value
+                            if self.formula_evaluator:
+                                self.formula_evaluator.recalculate_dependents(row, col)
+
+                            self._updating = False
+                            self.statusMessageChanged.emit(f"✗ Failed to update {field_name}: {sg_error}", True)
+                            return False
 
             except Exception as e:
                 self._updating = False

@@ -33,23 +33,35 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
     # Signals
     panel_shown = QtCore.Signal()
     panel_hidden = QtCore.Signal()
+    dock_requested = QtCore.Signal()  # Emitted when dock button is clicked
 
-    def __init__(self, parent=None, panel_width=400, animation_duration=300):
+    def __init__(self, parent=None, panel_width=400, animation_duration=300, show_dock_button=False):
         """Initialize the sliding overlay panel.
 
         Args:
             parent: Parent widget (the panel will overlay this widget)
             panel_width: Width of the panel in pixels (default: 400)
             animation_duration: Animation duration in milliseconds (default: 300)
+            show_dock_button: Whether to show a dock button in the header (default: False)
         """
         super().__init__(parent)
 
         self.panel_width = panel_width
+        self.min_panel_width = 300  # Minimum width when resizing
+        self.max_panel_width = 1200  # Maximum width when resizing
         self.animation_duration = animation_duration
         self._is_visible = False
+        self._show_dock_button = show_dock_button
+
+        # Resize handling
+        self._resize_edge_width = 6  # Width of the resize handle area
+        self._is_resizing = False
+        self._resize_start_x = 0
+        self._resize_start_width = 0
 
         # Set up the widget properties
         self.setAutoFillBackground(True)
+        self.setMouseTracking(True)  # Enable mouse tracking for cursor changes
 
         # Set higher z-order to appear on top
         self.raise_()
@@ -88,6 +100,28 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
 
         header_layout.addStretch()
 
+        # Dock button (optional)
+        if self._show_dock_button:
+            self.dock_button = QtWidgets.QPushButton("Pin")
+            self.dock_button.setFixedSize(32, 24)
+            self.dock_button.setToolTip("Dock panel")
+            self.dock_button.setStyleSheet("""
+                QPushButton {
+                    background-color: transparent;
+                    border: 1px solid #555555;
+                    border-radius: 4px;
+                    color: #e0e0e0;
+                    font-size: 11px;
+                    padding: 2px 4px;
+                }
+                QPushButton:hover {
+                    background-color: #4a9eff;
+                    border-color: #4a9eff;
+                }
+            """)
+            self.dock_button.clicked.connect(self._on_dock_clicked)
+            header_layout.addWidget(self.dock_button)
+
         # Close button
         self.close_button = QtWidgets.QPushButton("✕")
         self.close_button.setFixedSize(24, 24)
@@ -117,11 +151,14 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
 
         self.main_layout.addWidget(self.content_container, 1)
 
-        # Apply styling
+        # Apply styling - thicker left border indicates resize handle
         self.setStyleSheet("""
             SlidingOverlayPanel {
                 background-color: #2b2b2b;
-                border-left: 2px solid #555555;
+                border-left: 4px solid #4a4a4a;
+            }
+            SlidingOverlayPanel:hover {
+                border-left: 4px solid #5a5a5a;
             }
             QWidget#contentContainer {
                 background-color: #2b2b2b;
@@ -250,6 +287,102 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
             parent_rect = self.parent().rect()
             self.move(parent_rect.width() - self.panel_width, 0)
 
+    def _on_dock_clicked(self):
+        """Handle dock button click."""
+        self.dock_requested.emit()
+
+    def set_dock_button_visible(self, visible):
+        """Set whether the dock button is visible.
+
+        Args:
+            visible: True to show, False to hide
+        """
+        if hasattr(self, 'dock_button'):
+            self.dock_button.setVisible(visible)
+
+    def set_dock_button_tooltip(self, tooltip):
+        """Set the dock button tooltip.
+
+        Args:
+            tooltip: Tooltip text
+        """
+        if hasattr(self, 'dock_button'):
+            self.dock_button.setToolTip(tooltip)
+
+    def set_dock_button_icon(self, icon_text):
+        """Set the dock button icon text.
+
+        Args:
+            icon_text: Unicode character or text for the button
+        """
+        if hasattr(self, 'dock_button'):
+            self.dock_button.setText(icon_text)
+
+    def _is_on_resize_edge(self, pos):
+        """Check if the position is on the left resize edge.
+
+        Args:
+            pos: QPoint position relative to the widget
+
+        Returns:
+            bool: True if on resize edge
+        """
+        return pos.x() <= self._resize_edge_width
+
+    def mousePressEvent(self, event):
+        """Handle mouse press for resize."""
+        if event.button() == QtCore.Qt.LeftButton and self._is_on_resize_edge(event.pos()):
+            self._is_resizing = True
+            self._resize_start_x = event.globalPos().x()
+            self._resize_start_width = self.panel_width
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Handle mouse move for resize cursor and dragging."""
+        if self._is_resizing:
+            # Calculate new width based on drag distance
+            delta = self._resize_start_x - event.globalPos().x()
+            new_width = self._resize_start_width + delta
+
+            # Clamp to min/max
+            new_width = max(self.min_panel_width, min(self.max_panel_width, new_width))
+
+            # Update panel width and position
+            if new_width != self.panel_width:
+                self.panel_width = new_width
+                if self.parent():
+                    parent_rect = self.parent().rect()
+                    self.setGeometry(
+                        parent_rect.width() - self.panel_width,
+                        0,
+                        self.panel_width,
+                        parent_rect.height()
+                    )
+            event.accept()
+        else:
+            # Update cursor based on position
+            if self._is_on_resize_edge(event.pos()):
+                self.setCursor(QtCore.Qt.SizeHorCursor)
+            else:
+                self.setCursor(QtCore.Qt.ArrowCursor)
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release to end resize."""
+        if event.button() == QtCore.Qt.LeftButton and self._is_resizing:
+            self._is_resizing = False
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def leaveEvent(self, event):
+        """Reset cursor when leaving widget."""
+        if not self._is_resizing:
+            self.setCursor(QtCore.Qt.ArrowCursor)
+        super().leaveEvent(event)
+
 
 class OverlayBackground(QtWidgets.QWidget):
     """Semi-transparent background overlay that appears behind the sliding panel."""
@@ -318,9 +451,10 @@ class SlidingOverlayPanelWithBackground(QtWidgets.QWidget):
     # Signals
     panel_shown = QtCore.Signal()
     panel_hidden = QtCore.Signal()
+    dock_requested = QtCore.Signal()  # Emitted when dock button is clicked
 
     def __init__(self, parent=None, panel_width=400, animation_duration=300,
-                 background_opacity=0.3, close_on_background_click=True):
+                 background_opacity=0.3, close_on_background_click=True, show_dock_button=False):
         """Initialize the sliding overlay panel with background.
 
         Args:
@@ -329,6 +463,7 @@ class SlidingOverlayPanelWithBackground(QtWidgets.QWidget):
             animation_duration: Animation duration in milliseconds (default: 300)
             background_opacity: Opacity of the background overlay (0.0 to 1.0, default: 0.3)
             close_on_background_click: Close panel when background is clicked (default: True)
+            show_dock_button: Whether to show a dock button in the header (default: False)
         """
         super().__init__(parent)
 
@@ -339,12 +474,13 @@ class SlidingOverlayPanelWithBackground(QtWidgets.QWidget):
         if close_on_background_click:
             self.background.clicked.connect(self.hide_panel)
 
-        # Create sliding panel
-        self.panel = SlidingOverlayPanel(parent, panel_width, animation_duration)
+        # Create sliding panel with dock button support
+        self.panel = SlidingOverlayPanel(parent, panel_width, animation_duration, show_dock_button)
 
         # Connect panel signals to our signals
         self.panel.panel_shown.connect(self.panel_shown.emit)
         self.panel.panel_hidden.connect(self.panel_hidden.emit)
+        self.panel.dock_requested.connect(self.dock_requested.emit)
 
         # Connect to background hide when panel is hidden
         self.panel.panel_hidden.connect(self.background.hide_overlay)
@@ -377,3 +513,15 @@ class SlidingOverlayPanelWithBackground(QtWidgets.QWidget):
     def is_panel_visible(self):
         """Check if the panel is currently visible."""
         return self.panel.is_panel_visible()
+
+    def set_dock_button_visible(self, visible):
+        """Set whether the dock button is visible."""
+        self.panel.set_dock_button_visible(visible)
+
+    def set_dock_button_tooltip(self, tooltip):
+        """Set the dock button tooltip."""
+        self.panel.set_dock_button_tooltip(tooltip)
+
+    def set_dock_button_icon(self, icon_text):
+        """Set the dock button icon text."""
+        self.panel.set_dock_button_icon(icon_text)

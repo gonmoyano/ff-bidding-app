@@ -513,6 +513,73 @@ class CostsTab(QtWidgets.QMainWindow):
             if hasattr(self, 'asset_cost_widget'):
                 self.asset_cost_widget.load_bidding_scenes([])
 
+    def refresh_for_rate_card_change(self):
+        """Refresh all cost tables when the rate card changes.
+
+        This is an optimized refresh that only reloads the line item prices
+        (which are calculated from the rate card) and updates the displays,
+        without reloading all entity data from ShotGrid.
+        """
+        if not self.current_bid_data or not self.current_project_id:
+            logger.warning("Cannot refresh for rate card change - no bid data")
+            return
+
+        logger.info("=" * 80)
+        logger.info("COSTS TAB - Refreshing for Rate Card change")
+        logger.info("=" * 80)
+
+        # Step 1: Reload line item prices (these use the rate card for calculations)
+        logger.info("Step 1: Reloading line item prices...")
+        self._load_line_items_with_prices()
+        logger.info(f"  Reloaded {len(self.line_items_price_map)} line item prices")
+
+        # Step 2: Update the line item price column in Shots Cost widget
+        # This updates the virtual _line_item_price column used in _calc_price formula
+        if hasattr(self, 'shots_cost_widget') and self.shots_cost_widget.model:
+            logger.info("Step 2: Updating Shots Cost prices...")
+            model = self.shots_cost_widget.model
+            # Update line item prices in existing data without reloading
+            # Uses all_bidding_scenes_data (the model's data storage)
+            for row_idx, row_data in enumerate(model.all_bidding_scenes_data):
+                if row_data:
+                    # sg_vfx_shot_work is the line item code (text), used to look up price
+                    vfx_shot_work = row_data.get("sg_vfx_shot_work")
+                    if vfx_shot_work and vfx_shot_work in self.line_items_price_map:
+                        row_data["_line_item_price"] = self.line_items_price_map[vfx_shot_work]
+                        logger.debug(f"  Updated row {row_idx}: {vfx_shot_work} -> price {self.line_items_price_map[vfx_shot_work]}")
+            # Notify view to refresh
+            model.layoutChanged.emit()
+            logger.info(f"  Updated {len(model.all_bidding_scenes_data)} rows in Shots Cost model")
+
+        # Step 3: Refresh Asset Cost (recalculates prices based on new line item prices)
+        logger.info("Step 3: Refreshing Asset Cost...")
+        self._refresh_asset_cost()
+
+        # Step 4: Recalculate totals in both wrappers
+        logger.info("Step 4: Recalculating totals...")
+        if hasattr(self, 'shots_cost_totals_wrapper') and hasattr(self, 'shots_cost_widget'):
+            if hasattr(self.shots_cost_widget, 'model') and self.shots_cost_widget.model:
+                try:
+                    price_col_idx = self.shots_cost_widget.model.column_fields.index("_calc_price")
+                    self.shots_cost_totals_wrapper.calculate_totals(columns=[price_col_idx], skip_first_col=True)
+                except (ValueError, AttributeError):
+                    pass
+
+        if hasattr(self, 'asset_cost_totals_wrapper') and hasattr(self, 'asset_cost_widget'):
+            if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
+                try:
+                    price_col_idx = self.asset_cost_widget.model.column_fields.index("_calc_price")
+                    self.asset_cost_totals_wrapper.calculate_totals(columns=[price_col_idx], skip_first_col=True)
+                except (ValueError, AttributeError):
+                    pass
+
+        # Step 5: Update Total Cost summary
+        logger.info("Step 5: Updating Total Cost summary...")
+        self._update_total_cost_summary()
+
+        logger.info("Rate Card refresh complete")
+        logger.info("=" * 80)
+
     def refresh_currency_formatting(self, sg_currency_value=None):
         """Refresh currency formatting in all cost tables.
 

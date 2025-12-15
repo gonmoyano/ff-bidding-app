@@ -1,6 +1,6 @@
 """
 Bidding Tab
-Contains nested tabs for VFX Breakdown, Assets, Rates, and Costs.
+Contains nested tabs for VFX Breakdown, Assets, Rates, and a sliding Costs panel.
 """
 
 from PySide6 import QtWidgets, QtCore
@@ -11,6 +11,8 @@ try:
     from .rates_tab import RatesTab
     from .costs_tab import CostsTab
     from .bid_selector_widget import BidSelectorWidget
+    from .sliding_overlay_panel import SlidingOverlayPanelWithBackground
+    from .settings import AppSettings
     from .logger import logger
 except ImportError:
     from vfx_breakdown_tab import VFXBreakdownTab
@@ -18,6 +20,8 @@ except ImportError:
     from rates_tab import RatesTab
     from costs_tab import CostsTab
     from bid_selector_widget import BidSelectorWidget
+    from sliding_overlay_panel import SlidingOverlayPanelWithBackground
+    from settings import AppSettings
     import logging
     logger = logging.getLogger("FFPackageManager")
 
@@ -39,16 +43,22 @@ class BiddingTab(QtWidgets.QWidget):
         self.sg_session = sg_session
         self.parent_app = parent
 
+        # Settings
+        self.app_settings = AppSettings()
+
         # Store current selections
         self.current_rfq = None
         self.current_bid = None
         self.current_project_id = None
 
+        # Costs panel state
+        self._costs_panel_docked = self.app_settings.get("biddingTab/costsPanelDocked", False)
+
         # Initialize UI
         self._build_ui()
 
     def _build_ui(self):
-        """Build the UI for the Bidding tab with nested tabs."""
+        """Build the UI for the Bidding tab with nested tabs and sliding Costs panel."""
         main_layout = QtWidgets.QVBoxLayout(self)
         main_layout.setContentsMargins(10, 10, 10, 10)
 
@@ -58,12 +68,29 @@ class BiddingTab(QtWidgets.QWidget):
         self.bid_selector.loadLinkedRequested.connect(self._on_load_linked_requested)
         self.bid_selector.statusMessageChanged.connect(self._on_bid_status_message)
         self.bid_selector.currencySettingsChanged.connect(self._on_currency_settings_changed)
-        main_layout.addWidget(self.bid_selector)
+        main_layout.addWidget(self.bid_selector, 0)  # No stretch - keep preferred size
 
-        # Create nested tab widget
+        # Create horizontal splitter for main content and docked costs panel
+        self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.main_splitter.setHandleWidth(6)  # Make handle wider for easier grabbing
+        self.main_splitter.setStyleSheet("""
+            QSplitter::handle:horizontal {
+                background-color: #4a4a4a;
+                width: 6px;
+            }
+            QSplitter::handle:horizontal:hover {
+                background-color: #5a5a5a;
+            }
+            QSplitter::handle:horizontal:pressed {
+                background-color: #4a9eff;
+            }
+        """)
+
+        # Create nested tab widget (now without Costs tab)
         self.nested_tab_widget = QtWidgets.QTabWidget()
+        self.nested_tab_widget.setMinimumWidth(400)  # Prevent collapsing too small
 
-        # Create and add nested tabs
+        # Create and add nested tabs (excluding Costs - it will be in sliding panel)
         vfx_breakdown_tab = self._create_vfx_breakdown_tab()
         self.nested_tab_widget.addTab(vfx_breakdown_tab, "VFX Breakdown")
 
@@ -73,10 +100,91 @@ class BiddingTab(QtWidgets.QWidget):
         rates_tab = self._create_rates_tab()
         self.nested_tab_widget.addTab(rates_tab, "Rates")
 
-        costs_tab = self._create_costs_tab()
-        self.nested_tab_widget.addTab(costs_tab, "Costs")
+        # Add nested tabs to splitter
+        self.main_splitter.addWidget(self.nested_tab_widget)
 
-        main_layout.addWidget(self.nested_tab_widget)
+        # Create the Costs tab widget (will be used in sliding panel and docked mode)
+        self.costs_tab = self._create_costs_tab()
+
+        # Create docked costs container (initially hidden)
+        self.docked_costs_container = QtWidgets.QWidget()
+        self.docked_costs_container.setMinimumWidth(300)  # Prevent collapsing too small
+        docked_layout = QtWidgets.QVBoxLayout(self.docked_costs_container)
+        docked_layout.setContentsMargins(0, 0, 0, 0)
+        docked_layout.setSpacing(0)
+
+        # Header for docked mode with undock button
+        docked_header = QtWidgets.QWidget()
+        docked_header.setObjectName("dockedCostsHeader")
+        docked_header.setStyleSheet("""
+            QWidget#dockedCostsHeader {
+                background-color: #353535;
+                border-bottom: 1px solid #555555;
+            }
+        """)
+        docked_header_layout = QtWidgets.QHBoxLayout(docked_header)
+        docked_header_layout.setContentsMargins(10, 5, 10, 5)
+
+        docked_title = QtWidgets.QLabel("Costs")
+        docked_title_font = docked_title.font()
+        docked_title_font.setBold(True)
+        docked_title.setFont(docked_title_font)
+        docked_header_layout.addWidget(docked_title)
+        docked_header_layout.addStretch()
+
+        # Undock button
+        self.undock_costs_btn = QtWidgets.QPushButton("Unpin")
+        self.undock_costs_btn.setFixedSize(40, 24)
+        self.undock_costs_btn.setToolTip("Undock panel")
+        self.undock_costs_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                color: #e0e0e0;
+                font-size: 11px;
+                padding: 2px 4px;
+            }
+            QPushButton:hover {
+                background-color: #4a9eff;
+                border-color: #4a9eff;
+            }
+        """)
+        self.undock_costs_btn.clicked.connect(self._undock_costs_panel)
+        docked_header_layout.addWidget(self.undock_costs_btn)
+
+        docked_layout.addWidget(docked_header)
+
+        # Add docked container to splitter (costs_tab will be added based on docked state)
+        self.main_splitter.addWidget(self.docked_costs_container)
+
+        # Set up splitter sizes (70% tabs, 30% costs when docked)
+        self.main_splitter.setSizes([700, 300])
+
+        # Hide docked container initially (unless it was docked before)
+        self.docked_costs_container.setVisible(self._costs_panel_docked)
+
+        main_layout.addWidget(self.main_splitter, 1)  # Stretch to fill remaining space
+
+        # Create the sliding overlay panel for Costs (when not docked)
+        self.costs_overlay_panel = SlidingOverlayPanelWithBackground(
+            parent=self,
+            panel_width=600,
+            animation_duration=300,
+            background_opacity=0.3,
+            close_on_background_click=True,
+            show_dock_button=True
+        )
+        self.costs_overlay_panel.set_title("Costs")
+        self.costs_overlay_panel.dock_requested.connect(self._dock_costs_panel)
+
+        # Place costs_tab in the correct container based on docked state
+        if self._costs_panel_docked:
+            # Add costs tab to docked container
+            docked_layout.addWidget(self.costs_tab)
+        else:
+            # Add costs tab to overlay panel
+            self.costs_overlay_panel.set_content(self.costs_tab)
 
     def _create_vfx_breakdown_tab(self):
         """Create the VFX Breakdown nested tab content with full functionality."""
@@ -115,20 +223,102 @@ class BiddingTab(QtWidgets.QWidget):
         # Use the full RatesTab (includes selector, Add/Remove/Rename buttons, etc.)
         tab = RatesTab(self.sg_session, parent=self.parent_app)
 
+        # Connect signal to refresh Costs tab when Rate Card changes
+        tab.rateCardChanged.connect(self._on_rate_card_changed)
+
+        # Connect signal to refresh Costs tab when Line Item prices change
+        tab.lineItemPricesChanged.connect(self._on_line_item_prices_changed)
+
         # Store reference to use in set_bid if needed
         self.rates_tab = tab
 
         return tab
 
     def _create_costs_tab(self):
-        """Create the Costs nested tab content with dockable cost widgets."""
+        """Create the Costs widget with dockable cost widgets."""
         # Use the full CostsTab (QMainWindow with dockable cost widgets)
         tab = CostsTab(self.sg_session, parent=self.parent_app)
-
-        # Store reference to use in set_bid
-        self.costs_tab = tab
-
         return tab
+
+    def _toggle_costs_panel(self):
+        """Toggle the Costs panel visibility."""
+        if self._costs_panel_docked:
+            # If docked, toggle the docked container visibility
+            self.docked_costs_container.setVisible(not self.docked_costs_container.isVisible())
+        else:
+            # If not docked, toggle the overlay panel
+            self.costs_overlay_panel.toggle()
+
+    def _dock_costs_panel(self):
+        """Dock the Costs panel (move from overlay to permanent split view)."""
+        if self._costs_panel_docked:
+            return  # Already docked
+
+        # Hide the overlay panel
+        self.costs_overlay_panel.hide_panel()
+
+        # Move costs_tab from overlay panel to docked container
+        # First, get the layout of docked container
+        docked_layout = self.docked_costs_container.layout()
+
+        # Set content to an empty widget to release costs_tab from overlay
+        empty_widget = QtWidgets.QWidget()
+        self.costs_overlay_panel.set_content(empty_widget)
+
+        # Add costs_tab to docked container (after the header)
+        docked_layout.addWidget(self.costs_tab)
+
+        # Show the docked container
+        self.docked_costs_container.setVisible(True)
+
+        # Update state
+        self._costs_panel_docked = True
+        self.app_settings.set("biddingTab/costsPanelDocked", True)
+
+        logger.info("Costs panel docked")
+
+    def _undock_costs_panel(self):
+        """Undock the Costs panel (move from permanent split view to overlay)."""
+        if not self._costs_panel_docked:
+            return  # Already undocked
+
+        # Hide the docked container
+        self.docked_costs_container.setVisible(False)
+
+        # Remove costs_tab from docked container
+        docked_layout = self.docked_costs_container.layout()
+        docked_layout.removeWidget(self.costs_tab)
+
+        # Add costs_tab to overlay panel
+        self.costs_overlay_panel.set_content(self.costs_tab)
+
+        # Update state
+        self._costs_panel_docked = False
+        self.app_settings.set("biddingTab/costsPanelDocked", False)
+
+        # Show the overlay panel
+        self.costs_overlay_panel.show_panel()
+
+        logger.info("Costs panel undocked")
+
+    def is_costs_panel_docked(self):
+        """Check if the Costs panel is currently docked.
+
+        Returns:
+            bool: True if docked, False if in overlay mode
+        """
+        return self._costs_panel_docked
+
+    def is_costs_panel_visible(self):
+        """Check if the Costs panel is currently visible.
+
+        Returns:
+            bool: True if visible (either docked or overlay shown)
+        """
+        if self._costs_panel_docked:
+            return self.docked_costs_container.isVisible()
+        else:
+            return self.costs_overlay_panel.is_panel_visible()
 
     def set_rfq(self, rfq_data):
         """
@@ -357,3 +547,29 @@ class BiddingTab(QtWidgets.QWidget):
         if hasattr(self, 'costs_tab') and self.current_bid and self.current_project_id:
             self.costs_tab.set_bid(self.current_bid, self.current_project_id)
             logger.info("  Refreshed Assets Cost table in Costs tab")
+
+    def _on_rate_card_changed(self):
+        """Handle Rate Card change - refresh all tables in Costs tab.
+
+        This is called when a different Rate Card is set as current in the Rates tab.
+        Rate card changes affect line item prices which propagate to all cost calculations.
+        """
+        logger.info("Rate Card changed - refreshing all Costs tables")
+
+        # Refresh all Costs tables since rate card affects all price calculations
+        if hasattr(self, 'costs_tab') and self.current_bid and self.current_project_id:
+            self.costs_tab.refresh_for_rate_card_change()
+            logger.info("  Refreshed all Costs tables for rate card change")
+
+    def _on_line_item_prices_changed(self):
+        """Handle Line Item price change - refresh all tables in Costs tab.
+
+        This is called when line item prices are updated in the Price List.
+        Line item prices are stored in sg_price_static and affect cost calculations.
+        """
+        logger.info("Line Item prices changed - refreshing all Costs tables")
+
+        # Refresh all Costs tables since line item prices affect all cost calculations
+        if hasattr(self, 'costs_tab') and self.current_bid and self.current_project_id:
+            self.costs_tab.refresh_for_rate_card_change()
+            logger.info("  Refreshed all Costs tables for line item price change")

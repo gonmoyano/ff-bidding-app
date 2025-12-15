@@ -326,6 +326,12 @@ class CreatePriceListDialog(QtWidgets.QDialog):
 class RatesTab(QtWidgets.QWidget):
     """Rates tab widget for managing Price Lists."""
 
+    # Signal emitted when the current rate card is changed
+    rateCardChanged = QtCore.Signal()
+
+    # Signal emitted when line item prices change (sg_price_static updated)
+    lineItemPricesChanged = QtCore.Signal()
+
     def __init__(self, sg_session, parent=None):
         """Initialize the Rates tab.
 
@@ -1671,12 +1677,31 @@ class RatesTab(QtWidgets.QWidget):
             model.setData(index, value, QtCore.Qt.EditRole)
             model._skip_undo_command = False
 
+            # Emit signal to notify Costs tab that prices changed (debounced)
+            self._schedule_line_item_price_signal()
+
         except Exception as e:
             # Ensure flag is reset even if error occurs
             if hasattr(self, 'line_items_widget') and hasattr(self.line_items_widget, 'model'):
                 if hasattr(self.line_items_widget.model, '_skip_undo_command'):
                     self.line_items_widget.model._skip_undo_command = False
             logger.error(f"Error in _update_price_static_deferred: {e}", exc_info=True)
+
+    def _schedule_line_item_price_signal(self):
+        """Schedule emission of lineItemPricesChanged signal with debouncing."""
+        # Use a timer to debounce multiple rapid updates
+        if not hasattr(self, '_price_signal_timer'):
+            self._price_signal_timer = QtCore.QTimer(self)
+            self._price_signal_timer.setSingleShot(True)
+            self._price_signal_timer.timeout.connect(self._emit_line_item_price_signal)
+
+        # Reset the timer (debounce)
+        self._price_signal_timer.start(500)  # 500ms debounce
+
+    def _emit_line_item_price_signal(self):
+        """Emit the lineItemPricesChanged signal."""
+        logger.info("Emitting lineItemPricesChanged signal")
+        self.lineItemPricesChanged.emit()
 
 
 class RateCardDialog(QtWidgets.QDialog):
@@ -1995,6 +2020,9 @@ class RateCardDialog(QtWidgets.QDialog):
                 parent._initialize_price_static_values()
                 # Update bid info label to reflect Rate Card change
                 parent._refresh_bid_info_label()
+                # Emit signal to notify other tabs (e.g., Costs) about rate card change
+                logger.info("Emitting rateCardChanged signal")
+                parent.rateCardChanged.emit()
 
         except Exception as e:
             logger.error(f"Failed to set current Rate Card: {e}", exc_info=True)
