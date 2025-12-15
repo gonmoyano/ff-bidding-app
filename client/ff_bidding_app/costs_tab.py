@@ -539,16 +539,17 @@ class CostsTab(QtWidgets.QMainWindow):
             logger.info("Step 2: Updating Shots Cost prices...")
             model = self.shots_cost_widget.model
             # Update line item prices in existing data without reloading
-            for row_idx, row_data in enumerate(model._data):
+            # Uses all_bidding_scenes_data (the model's data storage)
+            for row_idx, row_data in enumerate(model.all_bidding_scenes_data):
                 if row_data:
-                    line_item = row_data.get("sg_line_item")
-                    if line_item:
-                        line_item_id = line_item.get("id") if isinstance(line_item, dict) else None
-                        if line_item_id and line_item_id in self.line_items_price_map:
-                            row_data["_line_item_price"] = self.line_items_price_map[line_item_id]
+                    # sg_vfx_shot_work is the line item code (text), used to look up price
+                    vfx_shot_work = row_data.get("sg_vfx_shot_work")
+                    if vfx_shot_work and vfx_shot_work in self.line_items_price_map:
+                        row_data["_line_item_price"] = self.line_items_price_map[vfx_shot_work]
+                        logger.debug(f"  Updated row {row_idx}: {vfx_shot_work} -> price {self.line_items_price_map[vfx_shot_work]}")
             # Notify view to refresh
             model.layoutChanged.emit()
-            logger.info("  Updated Shots Cost model")
+            logger.info(f"  Updated {len(model.all_bidding_scenes_data)} rows in Shots Cost model")
 
         # Step 3: Refresh Asset Cost (recalculates prices based on new line item prices)
         logger.info("Step 3: Refreshing Asset Cost...")
