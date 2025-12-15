@@ -223,6 +223,9 @@ class BiddingTab(QtWidgets.QWidget):
         # Use the full RatesTab (includes selector, Add/Remove/Rename buttons, etc.)
         tab = RatesTab(self.sg_session, parent=self.parent_app)
 
+        # Connect signal to refresh Costs tab when Rate Card changes
+        tab.rateCardChanged.connect(self._on_rate_card_changed)
+
         # Store reference to use in set_bid if needed
         self.rates_tab = tab
 
@@ -541,3 +544,16 @@ class BiddingTab(QtWidgets.QWidget):
         if hasattr(self, 'costs_tab') and self.current_bid and self.current_project_id:
             self.costs_tab.set_bid(self.current_bid, self.current_project_id)
             logger.info("  Refreshed Assets Cost table in Costs tab")
+
+    def _on_rate_card_changed(self):
+        """Handle Rate Card change - refresh all tables in Costs tab.
+
+        This is called when a different Rate Card is set as current in the Rates tab.
+        Rate card changes affect line item prices which propagate to all cost calculations.
+        """
+        logger.info("Rate Card changed - refreshing all Costs tables")
+
+        # Refresh all Costs tables since rate card affects all price calculations
+        if hasattr(self, 'costs_tab') and self.current_bid and self.current_project_id:
+            self.costs_tab.refresh_for_rate_card_change()
+            logger.info("  Refreshed all Costs tables for rate card change")

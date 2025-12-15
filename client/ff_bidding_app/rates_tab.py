@@ -326,6 +326,9 @@ class CreatePriceListDialog(QtWidgets.QDialog):
 class RatesTab(QtWidgets.QWidget):
     """Rates tab widget for managing Price Lists."""
 
+    # Signal emitted when the current rate card is changed
+    rateCardChanged = QtCore.Signal()
+
     def __init__(self, sg_session, parent=None):
         """Initialize the Rates tab.
 
@@ -1995,6 +1998,9 @@ class RateCardDialog(QtWidgets.QDialog):
                 parent._initialize_price_static_values()
                 # Update bid info label to reflect Rate Card change
                 parent._refresh_bid_info_label()
+                # Emit signal to notify other tabs (e.g., Costs) about rate card change
+                logger.info("Emitting rateCardChanged signal")
+                parent.rateCardChanged.emit()
 
         except Exception as e:
             logger.error(f"Failed to set current Rate Card: {e}", exc_info=True)
