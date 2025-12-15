@@ -404,7 +404,8 @@ class AssetsTab(QtWidgets.QWidget):
         """Handle data changes in the Bid Assets table.
 
         If the currently loaded Bid Assets is the one assigned to the current bid,
-        emit the bidAssetsDataChanged signal to notify the Costs tab to refresh.
+        schedule a deferred signal emission to notify the Costs tab to refresh.
+        Uses QTimer.singleShot to avoid conflicts during the edit operation.
         """
         if not self.current_bid_data:
             return
@@ -427,10 +428,15 @@ class AssetsTab(QtWidgets.QWidget):
         # Get the currently loaded Bid Assets ID
         current_bid_assets_id = self.bid_assets_combo.currentData()
 
-        # If they match, emit the signal to refresh Costs tab
+        # If they match, defer the signal emission to avoid conflicts during edit
         if current_bid_assets_id == bid_assets_id:
-            logger.info(f"Bid Assets data changed - currently loaded {current_bid_assets_id} matches bid's Bid Assets, emitting signal")
-            self.bidAssetsDataChanged.emit()
+            logger.info(f"Bid Assets data changed - scheduling deferred refresh for Bid Assets {current_bid_assets_id}")
+            # Use QTimer.singleShot to defer emission until after the current event is processed
+            QtCore.QTimer.singleShot(100, self._emit_assets_data_changed)
+
+    def _emit_assets_data_changed(self):
+        """Emit the bidAssetsDataChanged signal (called via deferred timer)."""
+        self.bidAssetsDataChanged.emit()
 
     def _set_bid_assets_status(self, message, is_error=False):
         """Log the status message for bid assets.

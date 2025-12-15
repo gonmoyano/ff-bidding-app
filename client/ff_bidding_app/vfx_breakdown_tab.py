@@ -1158,7 +1158,8 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         """Handle data changes in the VFX Breakdown table.
 
         If the currently loaded VFX Breakdown is the one assigned to the current bid,
-        emit the vfxBreakdownDataChanged signal to notify the Costs tab to refresh.
+        schedule a deferred signal emission to notify the Costs tab to refresh.
+        Uses QTimer.singleShot to avoid conflicts during the edit operation.
         """
         # Get current bid from parent bidding tab
         if not hasattr(self.parent_app, 'bidding_tab') or not hasattr(self.parent_app.bidding_tab, 'current_bid'):
@@ -1188,10 +1189,15 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         if isinstance(current_breakdown_id, dict):
             current_breakdown_id = current_breakdown_id.get("id")
 
-        # If they match, emit the signal to refresh Costs tab
+        # If they match, defer the signal emission to avoid conflicts during edit
         if current_breakdown_id == bid_breakdown_id:
-            logger.info(f"VFX Breakdown data changed - currently loaded breakdown {current_breakdown_id} matches bid's breakdown, emitting signal")
-            self.vfxBreakdownDataChanged.emit()
+            logger.info(f"VFX Breakdown data changed - scheduling deferred refresh for breakdown {current_breakdown_id}")
+            # Use QTimer.singleShot to defer emission until after the current event is processed
+            QtCore.QTimer.singleShot(100, self._emit_breakdown_data_changed)
+
+    def _emit_breakdown_data_changed(self):
+        """Emit the vfxBreakdownDataChanged signal (called via deferred timer)."""
+        self.vfxBreakdownDataChanged.emit()
 
     def _setup_shortcuts(self):
         """Setup keyboard shortcuts for undo/redo and copy/paste."""
