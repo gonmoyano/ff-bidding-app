@@ -39,25 +39,17 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         """Paint the table and add blue border with fill handle."""
         super().paintEvent(event)
 
-        # Get current selection (use drag start if dragging, otherwise use current)
-        if self._is_dragging_fill_handle and self._drag_start_index:
-            current = self._drag_start_index
-        else:
-            current = self.currentIndex()
+        # Get current selection
+        current = self.currentIndex()
+        selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
 
-        if not current.isValid():
-            return
-
-        # Get the visual rect of the current cell
-        rect = self.visualRect(current)
-        if rect.isEmpty():
+        if not current.isValid() and not selection:
             return
 
         painter = QtGui.QPainter(self.viewport())
 
-        # If dragging, draw preview of fill range
-        if self._is_dragging_fill_handle and self._drag_current_index and self._drag_current_index != self._drag_start_index:
-            # Draw light gray overlay on cells being filled
+        # If dragging fill handle, draw preview of fill range
+        if self._is_dragging_fill_handle and self._drag_start_index and self._drag_current_index and self._drag_current_index != self._drag_start_index:
             start_row = self._drag_start_index.row()
             start_col = self._drag_start_index.column()
             end_row = self._drag_current_index.row()
@@ -73,19 +65,53 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                     if not cell_rect.isEmpty():
                         painter.drawRect(cell_rect)
 
-        # Draw blue border around selected cell
-        painter.setPen(QtGui.QPen(QtGui.QColor("#4472C4"), 2))
-        painter.drawRect(rect.adjusted(1, 1, -1, -1))
+        # Draw border around all selected cells
+        if selection:
+            # Find bounding rectangle of selection
+            min_row = min(idx.row() for idx in selection)
+            max_row = max(idx.row() for idx in selection)
+            min_col = min(idx.column() for idx in selection)
+            max_col = max(idx.column() for idx in selection)
 
-        # Draw fill handle (small square at bottom-right)
-        handle_size = 6
-        handle_x = rect.right() - handle_size // 2
-        handle_y = rect.bottom() - handle_size // 2
-        self._fill_handle_rect = QtCore.QRect(handle_x, handle_y, handle_size, handle_size)
+            # Get visual rect of bounding selection
+            top_left_rect = self.visualRect(self.model().index(min_row, min_col))
+            bottom_right_rect = self.visualRect(self.model().index(max_row, max_col))
 
-        painter.setBrush(QtGui.QColor("#4472C4"))
-        painter.setPen(Qt.NoPen)
-        painter.drawRect(self._fill_handle_rect)
+            if not top_left_rect.isEmpty() and not bottom_right_rect.isEmpty():
+                # Combine into selection bounding rect
+                selection_rect = top_left_rect.united(bottom_right_rect)
+
+                # Draw blue border around entire selection
+                painter.setPen(QtGui.QPen(QtGui.QColor("#4472C4"), 2))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRect(selection_rect.adjusted(1, 1, -1, -1))
+
+                # Draw fill handle at bottom-right of selection
+                handle_size = 6
+                handle_x = selection_rect.right() - handle_size // 2
+                handle_y = selection_rect.bottom() - handle_size // 2
+                self._fill_handle_rect = QtCore.QRect(handle_x, handle_y, handle_size, handle_size)
+
+                painter.setBrush(QtGui.QColor("#4472C4"))
+                painter.setPen(Qt.NoPen)
+                painter.drawRect(self._fill_handle_rect)
+        elif current.isValid():
+            # Single cell selected - draw border around it
+            rect = self.visualRect(current)
+            if not rect.isEmpty():
+                painter.setPen(QtGui.QPen(QtGui.QColor("#4472C4"), 2))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRect(rect.adjusted(1, 1, -1, -1))
+
+                # Draw fill handle
+                handle_size = 6
+                handle_x = rect.right() - handle_size // 2
+                handle_y = rect.bottom() - handle_size // 2
+                self._fill_handle_rect = QtCore.QRect(handle_x, handle_y, handle_size, handle_size)
+
+                painter.setBrush(QtGui.QColor("#4472C4"))
+                painter.setPen(Qt.NoPen)
+                painter.drawRect(self._fill_handle_rect)
 
         painter.end()
 
@@ -252,39 +278,64 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         super().keyPressEvent(event)
 
     def _copy_selection(self):
-        """Copy the current cell to clipboard."""
-        current = self.currentIndex()
-        if not current.isValid():
+        """Copy selected cells to clipboard."""
+        selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
+        if not selection:
             return
 
         model = self.model()
         if not model:
             return
 
-        # Get the cell's formula or value (EditRole shows formula if present)
-        value = model.data(current, Qt.EditRole)
-        if value is None:
-            value = ""
+        # Sort by row then column
+        selection = sorted(selection, key=lambda idx: (idx.row(), idx.column()))
+
+        # Find bounding rectangle
+        min_row = min(idx.row() for idx in selection)
+        max_row = max(idx.row() for idx in selection)
+        min_col = min(idx.column() for idx in selection)
+        max_col = max(idx.column() for idx in selection)
+
+        # Build clipboard data structure: dict of relative (row, col) -> value
+        clipboard_cells = {}
+        clipboard_text_rows = []
+
+        for row in range(min_row, max_row + 1):
+            row_values = []
+            for col in range(min_col, max_col + 1):
+                index = model.index(row, col)
+                # Check if this cell is in selection
+                if index in selection:
+                    value = model.data(index, Qt.EditRole)
+                    if value is None:
+                        value = ""
+                    clipboard_cells[(row - min_row, col - min_col)] = value
+                    display_value = model.data(index, Qt.DisplayRole)
+                    row_values.append(str(display_value) if display_value else "")
+                else:
+                    row_values.append("")
+            clipboard_text_rows.append("\t".join(row_values))
 
         # Store in internal clipboard
         self._clipboard_data = {
-            'value': value,
-            'row': current.row(),
-            'col': current.column()
+            'cells': clipboard_cells,
+            'rows': max_row - min_row + 1,
+            'cols': max_col - min_col + 1,
+            'source_row': min_row,
+            'source_col': min_col
         }
         self._clipboard_is_cut = False
 
-        # Also copy to system clipboard as text
+        # Also copy to system clipboard as tab-separated text
         clipboard = QtWidgets.QApplication.clipboard()
-        display_value = model.data(current, Qt.DisplayRole)
-        clipboard.setText(str(display_value) if display_value else "")
+        clipboard.setText("\n".join(clipboard_text_rows))
 
-        logger.info(f"Copied cell ({current.row()},{current.column()}): {value}")
+        logger.info(f"Copied {len(clipboard_cells)} cells from ({min_row},{min_col}) to ({max_row},{max_col})")
 
     def _cut_selection(self):
-        """Cut the current cell to clipboard."""
-        current = self.currentIndex()
-        if not current.isValid():
+        """Cut selected cells to clipboard."""
+        selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
+        if not selection:
             return
 
         # First copy the data
@@ -293,10 +344,13 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         # Mark as cut operation
         self._clipboard_is_cut = True
 
-        logger.info(f"Cut cell ({current.row()},{current.column()})")
+        # Store the original selection for clearing after paste
+        self._cut_selection_indexes = list(selection)
+
+        logger.info(f"Cut {len(selection)} cells")
 
     def _paste_selection(self):
-        """Paste clipboard data to the current cell."""
+        """Paste clipboard data to current cell or selection."""
         current = self.currentIndex()
         if not current.isValid():
             return
@@ -305,56 +359,89 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         if not model:
             return
 
-        # Try internal clipboard first
-        if self._clipboard_data:
-            source_row = self._clipboard_data.get('row', 0)
-            source_col = self._clipboard_data.get('col', 0)
-            value = self._clipboard_data.get('value', '')
+        # Try internal clipboard first (multi-cell)
+        if self._clipboard_data and 'cells' in self._clipboard_data:
+            cells = self._clipboard_data['cells']
+            source_row = self._clipboard_data.get('source_row', 0)
+            source_col = self._clipboard_data.get('source_col', 0)
 
-            logger.info(f"Pasting from internal clipboard: {value}")
+            target_row = current.row()
+            target_col = current.column()
 
-            # If it's a formula and we're pasting to a different cell, adjust references
-            if isinstance(value, str) and value.startswith('='):
-                row_offset = current.row() - source_row
-                col_offset = current.column() - source_col
+            # Calculate offset from source to target
+            row_offset = target_row - source_row
+            col_offset = target_col - source_col
 
-                if row_offset != 0 or col_offset != 0:
-                    adjusted_value = self._adjust_formula_for_paste(value, row_offset, col_offset)
-                    logger.info(f"Adjusted formula from {value} to {adjusted_value}")
+            # Paste each cell
+            cells_pasted = 0
+            for (rel_row, rel_col), value in cells.items():
+                paste_row = target_row + rel_row
+                paste_col = target_col + rel_col
+
+                # Check bounds
+                if paste_row >= model.rowCount() or paste_col >= model.columnCount():
+                    continue
+
+                # If it's a formula, adjust references
+                if isinstance(value, str) and value.startswith('='):
+                    adjusted_value = self._adjust_formula_for_paste(value, row_offset + rel_row, col_offset + rel_col)
                     value = adjusted_value
 
-            # Set the data
-            model.setData(current, value, Qt.EditRole)
+                target_index = model.index(paste_row, paste_col)
+                model.setData(target_index, value, Qt.EditRole)
+                cells_pasted += 1
 
-            # If it was a cut operation, clear the source cell
-            if self._clipboard_is_cut and self._clipboard_data:
-                source_index = model.index(source_row, source_col)
-                model.setData(source_index, "", Qt.EditRole)
+            # If it was a cut operation, clear the source cells
+            if self._clipboard_is_cut and hasattr(self, '_cut_selection_indexes'):
+                for source_index in self._cut_selection_indexes:
+                    model.setData(source_index, "", Qt.EditRole)
                 self._clipboard_is_cut = False
-                logger.info(f"Cleared source cell ({source_row},{source_col}) after cut")
+                self._cut_selection_indexes = []
+                logger.info("Cleared source cells after cut")
 
-            logger.info(f"Pasted to cell ({current.row()},{current.column()}): {value}")
+            logger.info(f"Pasted {cells_pasted} cells starting at ({target_row},{target_col})")
         else:
-            # Try system clipboard
+            # Try system clipboard (tab-separated text)
             clipboard = QtWidgets.QApplication.clipboard()
             text = clipboard.text()
             if text:
-                model.setData(current, text, Qt.EditRole)
-                logger.info(f"Pasted from system clipboard to ({current.row()},{current.column()}): {text}")
+                # Parse tab-separated values
+                rows = text.split('\n')
+                target_row = current.row()
+                target_col = current.column()
+
+                cells_pasted = 0
+                for row_offset, row_text in enumerate(rows):
+                    cols = row_text.split('\t')
+                    for col_offset, cell_value in enumerate(cols):
+                        paste_row = target_row + row_offset
+                        paste_col = target_col + col_offset
+
+                        # Check bounds
+                        if paste_row >= model.rowCount() or paste_col >= model.columnCount():
+                            continue
+
+                        target_index = model.index(paste_row, paste_col)
+                        model.setData(target_index, cell_value, Qt.EditRole)
+                        cells_pasted += 1
+
+                logger.info(f"Pasted {cells_pasted} cells from system clipboard")
 
     def _delete_selection(self):
-        """Delete the content of the current cell."""
-        current = self.currentIndex()
-        if not current.isValid():
+        """Delete the content of selected cells."""
+        selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
+        if not selection:
             return
 
         model = self.model()
         if not model:
             return
 
-        # Clear the cell
-        model.setData(current, "", Qt.EditRole)
-        logger.info(f"Deleted cell ({current.row()},{current.column()})")
+        # Clear all selected cells
+        for index in selection:
+            model.setData(index, "", Qt.EditRole)
+
+        logger.info(f"Deleted {len(selection)} cells")
 
     def _adjust_formula_for_paste(self, formula, row_offset, col_offset):
         """Adjust formula references when pasting to a different cell.
@@ -620,17 +707,17 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.table_view = SpreadsheetTableView()
         self.table_view.setAlternatingRowColors(False)  # Disable alternating colors
         self.table_view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
-        self.table_view.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)  # Single selection for fill handle
+        self.table_view.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)  # Multi-cell selection
 
-        # Custom selection styling - transparent background with blue border drawn in paintEvent
+        # Custom selection styling - blue background with white text
         self.table_view.setStyleSheet("""
             QTableView {
-                selection-background-color: transparent;
-                selection-color: inherit;
+                selection-background-color: #4472C4;
+                selection-color: white;
             }
             QTableView::item:selected {
-                background-color: transparent;
-                color: inherit;
+                background-color: #4472C4;
+                color: white;
             }
         """)
 
