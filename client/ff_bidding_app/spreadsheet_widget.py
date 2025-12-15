@@ -243,9 +243,23 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         return re.sub(pattern, replace_ref, formula)
 
     def keyPressEvent(self, event):
-        """Handle keyboard events for copy/cut/paste operations."""
+        """Handle keyboard events for copy/cut/paste/undo/redo operations."""
         key = event.key()
         modifiers = event.modifiers()
+
+        # Check for Ctrl+Z (Undo)
+        if key == Qt.Key_Z and (modifiers & Qt.ControlModifier):
+            logger.info("Ctrl+Z detected - undoing")
+            self._undo()
+            event.accept()
+            return
+
+        # Check for Ctrl+Y (Redo)
+        if key == Qt.Key_Y and (modifiers & Qt.ControlModifier):
+            logger.info("Ctrl+Y detected - redoing")
+            self._redo()
+            event.accept()
+            return
 
         # Check for Ctrl+C (Copy)
         if key == Qt.Key_C and (modifiers & Qt.ControlModifier):
@@ -276,6 +290,18 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             return
 
         super().keyPressEvent(event)
+
+    def _undo(self):
+        """Undo the last change."""
+        model = self.model()
+        if model and hasattr(model, 'undo'):
+            model.undo()
+
+    def _redo(self):
+        """Redo the last undone change."""
+        model = self.model()
+        if model and hasattr(model, 'redo'):
+            model.redo()
 
     def _copy_selection(self):
         """Copy selected cells to clipboard."""
@@ -359,6 +385,9 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         if not model:
             return
 
+        # Collect all changes for a single undo command
+        changes = []
+
         # Try internal clipboard first (multi-cell)
         if self._clipboard_data and 'cells' in self._clipboard_data:
             cells = self._clipboard_data['cells']
@@ -372,8 +401,7 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             row_offset = target_row - source_row
             col_offset = target_col - source_col
 
-            # Paste each cell
-            cells_pasted = 0
+            # Collect paste changes
             for (rel_row, rel_col), value in cells.items():
                 paste_row = target_row + rel_row
                 paste_col = target_col + rel_col
@@ -383,23 +411,43 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                     continue
 
                 # If it's a formula, adjust references
+                new_formula = None
+                new_value = None
                 if isinstance(value, str) and value.startswith('='):
-                    adjusted_value = self._adjust_formula_for_paste(value, row_offset + rel_row, col_offset + rel_col)
-                    value = adjusted_value
+                    new_formula = self._adjust_formula_for_paste(value, row_offset + rel_row, col_offset + rel_col)
+                else:
+                    new_value = value
 
-                target_index = model.index(paste_row, paste_col)
-                model.setData(target_index, value, Qt.EditRole)
-                cells_pasted += 1
+                # Get old values
+                old_value = model._data.get((paste_row, paste_col), None)
+                old_formula = model._formulas.get((paste_row, paste_col), None)
 
-            # If it was a cut operation, clear the source cells
+                changes.append({
+                    'row': paste_row,
+                    'col': paste_col,
+                    'old_value': old_value,
+                    'new_value': new_value,
+                    'old_formula': old_formula,
+                    'new_formula': new_formula
+                })
+
+            # If it was a cut operation, also add deletions for source cells
             if self._clipboard_is_cut and hasattr(self, '_cut_selection_indexes'):
                 for source_index in self._cut_selection_indexes:
-                    model.setData(source_index, "", Qt.EditRole)
+                    src_row, src_col = source_index.row(), source_index.column()
+                    old_value = model._data.get((src_row, src_col), None)
+                    old_formula = model._formulas.get((src_row, src_col), None)
+                    changes.append({
+                        'row': src_row,
+                        'col': src_col,
+                        'old_value': old_value,
+                        'new_value': None,
+                        'old_formula': old_formula,
+                        'new_formula': None
+                    })
                 self._clipboard_is_cut = False
                 self._cut_selection_indexes = []
-                logger.info("Cleared source cells after cut")
 
-            logger.info(f"Pasted {cells_pasted} cells starting at ({target_row},{target_col})")
         else:
             # Try system clipboard (tab-separated text)
             clipboard = QtWidgets.QApplication.clipboard()
@@ -407,10 +455,13 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             if text:
                 # Parse tab-separated values
                 rows = text.split('\n')
+                # Remove trailing empty row if present
+                if rows and rows[-1] == '':
+                    rows = rows[:-1]
+
                 target_row = current.row()
                 target_col = current.column()
 
-                cells_pasted = 0
                 for row_offset, row_text in enumerate(rows):
                     cols = row_text.split('\t')
                     for col_offset, cell_value in enumerate(cols):
@@ -421,11 +472,44 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                         if paste_row >= model.rowCount() or paste_col >= model.columnCount():
                             continue
 
-                        target_index = model.index(paste_row, paste_col)
-                        model.setData(target_index, cell_value, Qt.EditRole)
-                        cells_pasted += 1
+                        # Get old values
+                        old_value = model._data.get((paste_row, paste_col), None)
+                        old_formula = model._formulas.get((paste_row, paste_col), None)
 
-                logger.info(f"Pasted {cells_pasted} cells from system clipboard")
+                        # Determine if new value is formula or value
+                        new_formula = None
+                        new_value = None
+                        if cell_value.startswith('='):
+                            new_formula = cell_value
+                        else:
+                            new_value = cell_value
+
+                        changes.append({
+                            'row': paste_row,
+                            'col': paste_col,
+                            'old_value': old_value,
+                            'new_value': new_value,
+                            'old_formula': old_formula,
+                            'new_formula': new_formula
+                        })
+
+        # Execute paste via command
+        if changes:
+            command = SpreadsheetPasteCommand(changes, model)
+            model._in_undo_redo = True
+            try:
+                command.redo()
+            finally:
+                model._in_undo_redo = False
+
+            # Add to undo stack
+            model.undo_stack.append(command)
+            model.redo_stack.clear()
+
+            # Clear dependent cache
+            model._clear_dependent_cache()
+
+            logger.info(f"Pasted {len(changes)} cells")
 
     def _delete_selection(self):
         """Delete the content of selected cells."""
@@ -437,11 +521,41 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         if not model:
             return
 
-        # Clear all selected cells
+        # Collect deletions for a single undo command
+        deletions = []
         for index in selection:
-            model.setData(index, "", Qt.EditRole)
+            row, col = index.row(), index.column()
+            old_value = model._data.get((row, col), None)
+            old_formula = model._formulas.get((row, col), None)
 
-        logger.info(f"Deleted {len(selection)} cells")
+            # Only include cells that have content
+            if old_value is not None or old_formula is not None:
+                deletions.append({
+                    'row': row,
+                    'col': col,
+                    'old_value': old_value,
+                    'old_formula': old_formula
+                })
+
+        if not deletions:
+            return
+
+        # Execute delete via command
+        command = SpreadsheetDeleteCommand(deletions, model)
+        model._in_undo_redo = True
+        try:
+            command.redo()
+        finally:
+            model._in_undo_redo = False
+
+        # Add to undo stack
+        model.undo_stack.append(command)
+        model.redo_stack.clear()
+
+        # Clear dependent cache
+        model._clear_dependent_cache()
+
+        logger.info(f"Deleted {len(deletions)} cells")
 
     def _adjust_formula_for_paste(self, formula, row_offset, col_offset):
         """Adjust formula references when pasting to a different cell.
@@ -498,8 +612,164 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         return re.sub(pattern, replace_ref, formula)
 
 
+class SpreadsheetEditCommand:
+    """Command pattern for undo/redo of single cell edits in spreadsheet."""
+
+    def __init__(self, model, row, col, old_value, new_value, old_formula, new_formula):
+        """Initialize the edit command.
+
+        Args:
+            model: SpreadsheetModel instance
+            row: Row index
+            col: Column index
+            old_value: Previous value in _data
+            new_value: New value in _data
+            old_formula: Previous formula in _formulas (or None)
+            new_formula: New formula in _formulas (or None)
+        """
+        self.model = model
+        self.row = row
+        self.col = col
+        self.old_value = old_value
+        self.new_value = new_value
+        self.old_formula = old_formula
+        self.new_formula = new_formula
+
+    def undo(self):
+        """Undo the edit - restore old value/formula."""
+        self._apply_cell_data(self.old_value, self.old_formula)
+
+    def redo(self):
+        """Redo the edit - apply new value/formula."""
+        self._apply_cell_data(self.new_value, self.new_formula)
+
+    def _apply_cell_data(self, value, formula):
+        """Apply value or formula to the cell."""
+        # Clear cache
+        self.model._evaluated_cache.pop((self.row, self.col), None)
+
+        if formula:
+            # It's a formula
+            self.model._formulas[(self.row, self.col)] = formula
+            self.model._data.pop((self.row, self.col), None)
+        else:
+            # It's a value
+            if value:
+                self.model._data[(self.row, self.col)] = value
+            else:
+                self.model._data.pop((self.row, self.col), None)
+            self.model._formulas.pop((self.row, self.col), None)
+
+        # Clear dependent cache and emit change
+        self.model._clear_dependent_cache()
+        index = self.model.index(self.row, self.col)
+        self.model.dataChanged.emit(index, index, [Qt.DisplayRole, Qt.EditRole])
+
+
+class SpreadsheetPasteCommand:
+    """Command pattern for undo/redo of paste operations in spreadsheet."""
+
+    def __init__(self, changes, model):
+        """Initialize paste command.
+
+        Args:
+            changes: List of dicts with keys: row, col, old_value, new_value,
+                    old_formula, new_formula
+            model: SpreadsheetModel instance
+        """
+        self.changes = changes
+        self.model = model
+
+    def undo(self):
+        """Undo all paste changes."""
+        for change in self.changes:
+            self._apply_cell_data(
+                change['row'], change['col'],
+                change['old_value'], change['old_formula']
+            )
+
+    def redo(self):
+        """Redo all paste changes."""
+        for change in self.changes:
+            self._apply_cell_data(
+                change['row'], change['col'],
+                change['new_value'], change['new_formula']
+            )
+
+    def _apply_cell_data(self, row, col, value, formula):
+        """Apply value or formula to a cell."""
+        # Clear cache
+        self.model._evaluated_cache.pop((row, col), None)
+
+        if formula:
+            # It's a formula
+            self.model._formulas[(row, col)] = formula
+            self.model._data.pop((row, col), None)
+        else:
+            # It's a value
+            if value:
+                self.model._data[(row, col)] = value
+            else:
+                self.model._data.pop((row, col), None)
+            self.model._formulas.pop((row, col), None)
+
+        # Emit change for this cell
+        index = self.model.index(row, col)
+        self.model.dataChanged.emit(index, index, [Qt.DisplayRole, Qt.EditRole])
+
+
+class SpreadsheetDeleteCommand:
+    """Command pattern for undo/redo of delete operations in spreadsheet."""
+
+    def __init__(self, deletions, model):
+        """Initialize delete command.
+
+        Args:
+            deletions: List of dicts with keys: row, col, old_value, old_formula
+            model: SpreadsheetModel instance
+        """
+        self.deletions = deletions
+        self.model = model
+
+    def undo(self):
+        """Undo deletions - restore old values."""
+        for deletion in self.deletions:
+            self._apply_cell_data(
+                deletion['row'], deletion['col'],
+                deletion['old_value'], deletion['old_formula']
+            )
+
+    def redo(self):
+        """Redo deletions - clear cells again."""
+        for deletion in self.deletions:
+            self._apply_cell_data(
+                deletion['row'], deletion['col'],
+                None, None
+            )
+
+    def _apply_cell_data(self, row, col, value, formula):
+        """Apply value or formula to a cell."""
+        self.model._evaluated_cache.pop((row, col), None)
+
+        if formula:
+            self.model._formulas[(row, col)] = formula
+            self.model._data.pop((row, col), None)
+        else:
+            if value:
+                self.model._data[(row, col)] = value
+            else:
+                self.model._data.pop((row, col), None)
+            self.model._formulas.pop((row, col), None)
+
+        index = self.model.index(row, col)
+        self.model.dataChanged.emit(index, index, [Qt.DisplayRole, Qt.EditRole])
+
+
 class SpreadsheetModel(QtCore.QAbstractTableModel):
-    """Model for spreadsheet data with formula support."""
+    """Model for spreadsheet data with formula support and undo/redo."""
+
+    # Signal emitted when status messages should be shown
+    statusMessageChanged = QtCore.Signal(str, bool)  # message, is_error
 
     def __init__(self, rows=100, cols=26, parent=None):
         """Initialize the spreadsheet model.
@@ -516,6 +786,11 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         self._formulas = {}  # Dict of (row, col) -> formula string
         self._evaluated_cache = {}  # Dict of (row, col) -> evaluated result
         self.formula_evaluator = None
+
+        # Undo/redo stacks
+        self.undo_stack = []
+        self.redo_stack = []
+        self._in_undo_redo = False  # Flag to prevent creating undo commands during undo/redo
 
     def rowCount(self, parent=QtCore.QModelIndex()):
         """Return the number of rows."""
@@ -594,19 +869,43 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         if role == Qt.EditRole:
             row, col = index.row(), index.column()
 
+            # Get old values for undo
+            old_value = self._data.get((row, col), None)
+            old_formula = self._formulas.get((row, col), None)
+
             # Clear the cache for this cell
             self._evaluated_cache.pop((row, col), None)
 
             # Check if it's a formula (starts with =)
-            value_str = str(value).strip()
+            value_str = str(value).strip() if value else ""
+            new_formula = None
+            new_value = None
+
             if value_str.startswith('='):
                 # Store as formula
+                new_formula = value_str
                 self._formulas[(row, col)] = value_str
                 self._data.pop((row, col), None)
             else:
                 # Store as regular value
-                self._data[(row, col)] = value_str
+                new_value = value_str
+                if value_str:
+                    self._data[(row, col)] = value_str
+                else:
+                    self._data.pop((row, col), None)
                 self._formulas.pop((row, col), None)
+
+            # Create undo command (if not in undo/redo operation)
+            if not self._in_undo_redo:
+                # Only create command if there's an actual change
+                if old_value != new_value or old_formula != new_formula:
+                    command = SpreadsheetEditCommand(
+                        self, row, col,
+                        old_value, new_value,
+                        old_formula, new_formula
+                    )
+                    self.undo_stack.append(command)
+                    self.redo_stack.clear()  # Clear redo stack on new edit
 
             # Clear cache for dependent cells
             self._clear_dependent_cache()
@@ -681,6 +980,51 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         self.formula_evaluator = evaluator
         # Clear cache when evaluator changes
         self._evaluated_cache.clear()
+
+    def undo(self):
+        """Undo the last change."""
+        if not self.undo_stack:
+            return False
+
+        command = self.undo_stack.pop()
+        self._in_undo_redo = True
+        try:
+            command.undo()
+        finally:
+            self._in_undo_redo = False
+
+        self.redo_stack.append(command)
+
+        # Clear cache after undo
+        self._clear_dependent_cache()
+
+        self.statusMessageChanged.emit("Undone", False)
+        return True
+
+    def redo(self):
+        """Redo the last undone change."""
+        if not self.redo_stack:
+            return False
+
+        command = self.redo_stack.pop()
+        self._in_undo_redo = True
+        try:
+            command.redo()
+        finally:
+            self._in_undo_redo = False
+
+        self.undo_stack.append(command)
+
+        # Clear cache after redo
+        self._clear_dependent_cache()
+
+        self.statusMessageChanged.emit("Redone", False)
+        return True
+
+    def clear_undo_history(self):
+        """Clear the undo/redo history."""
+        self.undo_stack.clear()
+        self.redo_stack.clear()
 
 
 class SpreadsheetWidget(QtWidgets.QWidget):
