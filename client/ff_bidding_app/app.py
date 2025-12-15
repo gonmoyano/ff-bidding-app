@@ -1218,6 +1218,9 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             last_view = self.app_settings.get("app/lastSelectedView", 0)
             if 0 <= last_view < self.view_selector.count():
                 self.view_selector.setCurrentIndex(last_view)
+                # Explicitly call _on_view_changed to ensure button visibility is set
+                # (signal may not fire if index is already 0)
+                self._on_view_changed(last_view)
 
         except Exception as e:
             logger.error(f"Error in _build_ui: {e}", exc_info=True)
@@ -1409,6 +1412,28 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         self.gdrive_action_btn.setVisible(False)
         bar_layout.addWidget(self.gdrive_action_btn)
 
+        # Costs button (only visible when Bidding view is selected)
+        self.costs_btn = QtWidgets.QPushButton("Costs")
+        self.costs_btn.setToolTip("Show/Hide Costs Panel")
+        self.costs_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4a9eff;
+                color: white;
+                font-weight: bold;
+                padding: 6px 12px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #5eb3ff;
+            }
+            QPushButton:pressed {
+                background-color: #3a8eef;
+            }
+        """)
+        self.costs_btn.clicked.connect(self._toggle_costs_panel)
+        self.costs_btn.setVisible(False)  # Hidden by default
+        bar_layout.addWidget(self.costs_btn)
+
         # Settings button (cog icon)
         self.settings_button = QtWidgets.QPushButton()
         self.settings_button.setToolTip("Application Settings")
@@ -1450,6 +1475,9 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             self.view_stack.setCurrentIndex(view_index)
             # Save the selected view
             self.app_settings.set("app/lastSelectedView", index)
+            # Show/hide Costs button based on selected view
+            # view_index 0 = Bidding view
+            self.costs_btn.setVisible(view_index == 0)
             # Show/hide Package Manager button based on selected view
             # view_index 1 = Packages view
             self.package_manager_btn.setVisible(view_index == 1)
@@ -1465,6 +1493,11 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         """Toggle the Package Manager panel in the Packages tab."""
         if hasattr(self, 'packages_tab') and hasattr(self.packages_tab, '_toggle_package_manager_panel'):
             self.packages_tab._toggle_package_manager_panel()
+
+    def _toggle_costs_panel(self):
+        """Toggle the Costs panel in the Bidding tab."""
+        if hasattr(self, 'bidding_tab') and hasattr(self.bidding_tab, '_toggle_costs_panel'):
+            self.bidding_tab._toggle_costs_panel()
 
     def _check_gdrive_connection(self):
         """Check Google Drive connection status and update the top bar UI."""

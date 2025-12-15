@@ -33,20 +33,23 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
     # Signals
     panel_shown = QtCore.Signal()
     panel_hidden = QtCore.Signal()
+    dock_requested = QtCore.Signal()  # Emitted when dock button is clicked
 
-    def __init__(self, parent=None, panel_width=400, animation_duration=300):
+    def __init__(self, parent=None, panel_width=400, animation_duration=300, show_dock_button=False):
         """Initialize the sliding overlay panel.
 
         Args:
             parent: Parent widget (the panel will overlay this widget)
             panel_width: Width of the panel in pixels (default: 400)
             animation_duration: Animation duration in milliseconds (default: 300)
+            show_dock_button: Whether to show a dock button in the header (default: False)
         """
         super().__init__(parent)
 
         self.panel_width = panel_width
         self.animation_duration = animation_duration
         self._is_visible = False
+        self._show_dock_button = show_dock_button
 
         # Set up the widget properties
         self.setAutoFillBackground(True)
@@ -87,6 +90,27 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
         header_layout.addWidget(self.title_label)
 
         header_layout.addStretch()
+
+        # Dock button (optional)
+        if self._show_dock_button:
+            self.dock_button = QtWidgets.QPushButton("⬒")  # Unicode dock/pin icon
+            self.dock_button.setFixedSize(24, 24)
+            self.dock_button.setToolTip("Dock panel")
+            self.dock_button.setStyleSheet("""
+                QPushButton {
+                    background-color: transparent;
+                    border: none;
+                    color: #e0e0e0;
+                    font-size: 14px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #4a9eff;
+                    border-radius: 12px;
+                }
+            """)
+            self.dock_button.clicked.connect(self._on_dock_clicked)
+            header_layout.addWidget(self.dock_button)
 
         # Close button
         self.close_button = QtWidgets.QPushButton("✕")
@@ -250,6 +274,37 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
             parent_rect = self.parent().rect()
             self.move(parent_rect.width() - self.panel_width, 0)
 
+    def _on_dock_clicked(self):
+        """Handle dock button click."""
+        self.dock_requested.emit()
+
+    def set_dock_button_visible(self, visible):
+        """Set whether the dock button is visible.
+
+        Args:
+            visible: True to show, False to hide
+        """
+        if hasattr(self, 'dock_button'):
+            self.dock_button.setVisible(visible)
+
+    def set_dock_button_tooltip(self, tooltip):
+        """Set the dock button tooltip.
+
+        Args:
+            tooltip: Tooltip text
+        """
+        if hasattr(self, 'dock_button'):
+            self.dock_button.setToolTip(tooltip)
+
+    def set_dock_button_icon(self, icon_text):
+        """Set the dock button icon text.
+
+        Args:
+            icon_text: Unicode character or text for the button
+        """
+        if hasattr(self, 'dock_button'):
+            self.dock_button.setText(icon_text)
+
 
 class OverlayBackground(QtWidgets.QWidget):
     """Semi-transparent background overlay that appears behind the sliding panel."""
@@ -318,9 +373,10 @@ class SlidingOverlayPanelWithBackground(QtWidgets.QWidget):
     # Signals
     panel_shown = QtCore.Signal()
     panel_hidden = QtCore.Signal()
+    dock_requested = QtCore.Signal()  # Emitted when dock button is clicked
 
     def __init__(self, parent=None, panel_width=400, animation_duration=300,
-                 background_opacity=0.3, close_on_background_click=True):
+                 background_opacity=0.3, close_on_background_click=True, show_dock_button=False):
         """Initialize the sliding overlay panel with background.
 
         Args:
@@ -329,6 +385,7 @@ class SlidingOverlayPanelWithBackground(QtWidgets.QWidget):
             animation_duration: Animation duration in milliseconds (default: 300)
             background_opacity: Opacity of the background overlay (0.0 to 1.0, default: 0.3)
             close_on_background_click: Close panel when background is clicked (default: True)
+            show_dock_button: Whether to show a dock button in the header (default: False)
         """
         super().__init__(parent)
 
@@ -339,12 +396,13 @@ class SlidingOverlayPanelWithBackground(QtWidgets.QWidget):
         if close_on_background_click:
             self.background.clicked.connect(self.hide_panel)
 
-        # Create sliding panel
-        self.panel = SlidingOverlayPanel(parent, panel_width, animation_duration)
+        # Create sliding panel with dock button support
+        self.panel = SlidingOverlayPanel(parent, panel_width, animation_duration, show_dock_button)
 
         # Connect panel signals to our signals
         self.panel.panel_shown.connect(self.panel_shown.emit)
         self.panel.panel_hidden.connect(self.panel_hidden.emit)
+        self.panel.dock_requested.connect(self.dock_requested.emit)
 
         # Connect to background hide when panel is hidden
         self.panel.panel_hidden.connect(self.background.hide_overlay)
@@ -377,3 +435,15 @@ class SlidingOverlayPanelWithBackground(QtWidgets.QWidget):
     def is_panel_visible(self):
         """Check if the panel is currently visible."""
         return self.panel.is_panel_visible()
+
+    def set_dock_button_visible(self, visible):
+        """Set whether the dock button is visible."""
+        self.panel.set_dock_button_visible(visible)
+
+    def set_dock_button_tooltip(self, tooltip):
+        """Set the dock button tooltip."""
+        self.panel.set_dock_button_tooltip(tooltip)
+
+    def set_dock_button_icon(self, icon_text):
+        """Set the dock button icon text."""
+        self.panel.set_dock_button_icon(icon_text)
