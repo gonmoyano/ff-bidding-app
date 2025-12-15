@@ -282,6 +282,7 @@ class AssetsTab(QtWidgets.QWidget):
 
     # Signals
     bidAssetsChanged = QtCore.Signal(object)  # Emits updated bid data when Bid Assets is set as current
+    bidAssetsDataChanged = QtCore.Signal()  # Emits when field data changes in the bid's Bid Assets
 
     def __init__(self, sg_session, parent=None):
         """Initialize the Assets tab.
@@ -398,6 +399,38 @@ class AssetsTab(QtWidgets.QWidget):
     def _on_widget_status_changed(self, message, is_error):
         """Handle status message from assets widget."""
         self._set_bid_assets_status(message, is_error)
+
+    def _on_assets_data_changed(self):
+        """Handle data changes in the Bid Assets table.
+
+        If the currently loaded Bid Assets is the one assigned to the current bid,
+        emit the bidAssetsDataChanged signal to notify the Costs tab to refresh.
+        """
+        if not self.current_bid_data:
+            return
+
+        # Get the Bid Assets assigned to the current bid
+        bid_bid_assets = self.current_bid_data.get("sg_bid_assets")
+        if not bid_bid_assets:
+            return
+
+        # Extract the bid's Bid Assets ID
+        bid_assets_id = None
+        if isinstance(bid_bid_assets, dict):
+            bid_assets_id = bid_bid_assets.get("id")
+        elif isinstance(bid_bid_assets, list) and bid_bid_assets:
+            bid_assets_id = bid_bid_assets[0].get("id") if isinstance(bid_bid_assets[0], dict) else None
+
+        if not bid_assets_id:
+            return
+
+        # Get the currently loaded Bid Assets ID
+        current_bid_assets_id = self.bid_assets_combo.currentData()
+
+        # If they match, emit the signal to refresh Costs tab
+        if current_bid_assets_id == bid_assets_id:
+            logger.info(f"Bid Assets data changed - currently loaded {current_bid_assets_id} matches bid's Bid Assets, emitting signal")
+            self.bidAssetsDataChanged.emit()
 
     def _set_bid_assets_status(self, message, is_error=False):
         """Log the status message for bid assets.
@@ -678,6 +711,17 @@ class AssetsTab(QtWidgets.QWidget):
 
             # Use the assets widget to display the items
             self.assets_widget.load_bidding_scenes(asset_items, field_schema=self.field_schema)
+
+            # Connect model dataChanged signal to refresh Costs tab if this is the bid's Bid Assets
+            if hasattr(self.assets_widget, 'model') and self.assets_widget.model:
+                # Disconnect any previous connection to avoid duplicate signals
+                try:
+                    self.assets_widget.model.dataChanged.disconnect(self._on_assets_data_changed)
+                except (RuntimeError, TypeError):
+                    pass  # Not connected yet
+                # Connect the signal
+                self.assets_widget.model.dataChanged.connect(self._on_assets_data_changed)
+                logger.info("Connected model dataChanged signal for Bid Assets data change detection")
 
             # Apply validated combobox delegate to sg_bid_asset_type column
             self._apply_asset_type_delegate()

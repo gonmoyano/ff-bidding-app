@@ -1025,6 +1025,9 @@ class VFXBreakdownTab(QtWidgets.QWidget):
     # Signal emitted when VFX Breakdown is set as current for a bid
     vfxBreakdownChanged = QtCore.Signal(object)  # Emits updated bid data
 
+    # Signal emitted when data changes in the VFX Breakdown that is assigned to the current bid
+    vfxBreakdownDataChanged = QtCore.Signal()  # Emits when field data changes
+
     def __init__(self, sg_session, parent=None):
         """Initialize the VFX Breakdown tab.
 
@@ -1150,6 +1153,45 @@ class VFXBreakdownTab(QtWidgets.QWidget):
     def _on_widget_status_changed(self, message, is_error):
         """Handle status message from breakdown widget."""
         self._set_vfx_breakdown_status(message, is_error)
+
+    def _on_breakdown_data_changed(self):
+        """Handle data changes in the VFX Breakdown table.
+
+        If the currently loaded VFX Breakdown is the one assigned to the current bid,
+        emit the vfxBreakdownDataChanged signal to notify the Costs tab to refresh.
+        """
+        # Get current bid from parent bidding tab
+        if not hasattr(self.parent_app, 'bidding_tab') or not hasattr(self.parent_app.bidding_tab, 'current_bid'):
+            return
+
+        current_bid = self.parent_app.bidding_tab.current_bid
+        if not current_bid:
+            return
+
+        # Get the VFX Breakdown assigned to the current bid
+        bid_vfx_breakdown = current_bid.get("sg_vfx_breakdown")
+        if not bid_vfx_breakdown:
+            return
+
+        # Extract the bid's VFX Breakdown ID
+        bid_breakdown_id = None
+        if isinstance(bid_vfx_breakdown, dict):
+            bid_breakdown_id = bid_vfx_breakdown.get("id")
+        elif isinstance(bid_vfx_breakdown, list) and bid_vfx_breakdown:
+            bid_breakdown_id = bid_vfx_breakdown[0].get("id") if isinstance(bid_vfx_breakdown[0], dict) else None
+
+        if not bid_breakdown_id:
+            return
+
+        # Get the currently loaded VFX Breakdown ID
+        current_breakdown_id = self.vfx_breakdown_combo.currentData()
+        if isinstance(current_breakdown_id, dict):
+            current_breakdown_id = current_breakdown_id.get("id")
+
+        # If they match, emit the signal to refresh Costs tab
+        if current_breakdown_id == bid_breakdown_id:
+            logger.info(f"VFX Breakdown data changed - currently loaded breakdown {current_breakdown_id} matches bid's breakdown, emitting signal")
+            self.vfxBreakdownDataChanged.emit()
 
     def _setup_shortcuts(self):
         """Setup keyboard shortcuts for undo/redo and copy/paste."""
@@ -3165,6 +3207,17 @@ class VFXBreakdownTab(QtWidgets.QWidget):
 
         # Use the breakdown widget to load bidding scenes
         self.breakdown_widget.load_bidding_scenes(bidding_scenes, field_schema=self.field_schema)
+
+        # Connect model dataChanged signal to refresh Costs tab if this is the bid's breakdown
+        if hasattr(self.breakdown_widget, 'model') and self.breakdown_widget.model:
+            # Disconnect any previous connection to avoid duplicate signals
+            try:
+                self.breakdown_widget.model.dataChanged.disconnect(self._on_breakdown_data_changed)
+            except (RuntimeError, TypeError):
+                pass  # Not connected yet
+            # Connect the signal
+            self.breakdown_widget.model.dataChanged.connect(self._on_breakdown_data_changed)
+            logger.info("Connected model dataChanged signal for VFX Breakdown data change detection")
 
         # Apply validated combobox delegate to sg_vfx_shot_work column
         self._apply_vfx_shot_work_delegate()
