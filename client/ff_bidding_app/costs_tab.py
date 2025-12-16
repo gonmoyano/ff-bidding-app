@@ -85,6 +85,12 @@ class CostsTab(QtWidgets.QMainWindow):
         self.shots_cost_formula_delegate = None
         self.asset_cost_formula_delegate = None
 
+        # Debounce timer for saving spreadsheet data to ShotGrid
+        self._misc_save_timer = QtCore.QTimer()
+        self._misc_save_timer.setSingleShot(True)
+        self._misc_save_timer.setInterval(1000)  # 1 second debounce
+        self._misc_save_timer.timeout.connect(self._save_misc_spreadsheet_to_shotgrid)
+
         # No central widget - docks can take full space
         self.setCentralWidget(None)
 
@@ -402,9 +408,13 @@ class CostsTab(QtWidgets.QMainWindow):
                     pass
 
     def _on_misc_data_changed(self):
-        """Handle data changes in the Misc Cost spreadsheet - update summary."""
+        """Handle data changes in the Misc Cost spreadsheet - update summary and save."""
         # Update Total Cost summary
         self._update_total_cost_summary()
+
+        # Schedule debounced save to ShotGrid
+        if self.current_bid_id and self.current_project_id:
+            self._misc_save_timer.start()  # Restart timer on each change
 
     def _setup_cross_tab_formulas(self):
         """Set up cross-tab formula references between cost sheets."""
@@ -504,6 +514,10 @@ class CostsTab(QtWidgets.QMainWindow):
             logger.info("Finished refreshing Asset Cost")
             self._refresh_total_cost()
 
+            # Load Misc spreadsheet data from ShotGrid
+            logger.info("Loading Misc spreadsheet data...")
+            self._load_misc_spreadsheet_from_shotgrid()
+
             # Update Total Cost summary with initial totals
             QtCore.QTimer.singleShot(100, self._update_total_cost_summary)
         else:
@@ -512,6 +526,9 @@ class CostsTab(QtWidgets.QMainWindow):
                 self.shots_cost_widget.load_bidding_scenes([])
             if hasattr(self, 'asset_cost_widget'):
                 self.asset_cost_widget.load_bidding_scenes([])
+            # Clear Misc spreadsheet
+            if hasattr(self, 'misc_cost_spreadsheet'):
+                self.misc_cost_spreadsheet.load_data_from_dict({})
 
     def refresh_for_rate_card_change(self):
         """Refresh all cost tables when the rate card changes.
@@ -1453,6 +1470,63 @@ class CostsTab(QtWidgets.QMainWindow):
 
         logger.info("Reset costs dock layout to default")
 
+    # ------------------------------------------------------------------
+    # Spreadsheet ShotGrid Persistence
+    # ------------------------------------------------------------------
+
+    def _save_misc_spreadsheet_to_shotgrid(self):
+        """Save Misc Cost spreadsheet data to ShotGrid."""
+        if not self.current_bid_id or not self.current_project_id:
+            logger.warning("Cannot save Misc spreadsheet - no bid selected")
+            return
+
+        if not hasattr(self, 'misc_cost_spreadsheet'):
+            return
+
+        try:
+            # Get the spreadsheet data
+            data_dict = self.misc_cost_spreadsheet.get_data_as_dict()
+
+            if not data_dict:
+                logger.debug("No data to save for Misc spreadsheet")
+                return
+
+            # Save to ShotGrid
+            self.sg_session.save_spreadsheet_data(
+                project_id=self.current_project_id,
+                bid_id=self.current_bid_id,
+                spreadsheet_type="misc",
+                data_dict=data_dict
+            )
+            logger.info(f"Saved Misc spreadsheet data to ShotGrid ({len(data_dict)} cells)")
+
+        except Exception as e:
+            logger.error(f"Failed to save Misc spreadsheet to ShotGrid: {e}", exc_info=True)
+
+    def _load_misc_spreadsheet_from_shotgrid(self):
+        """Load Misc Cost spreadsheet data from ShotGrid."""
+        if not self.current_bid_id:
+            return
+
+        if not hasattr(self, 'misc_cost_spreadsheet'):
+            return
+
+        try:
+            # Load from ShotGrid
+            data_dict = self.sg_session.load_spreadsheet_data(
+                bid_id=self.current_bid_id,
+                spreadsheet_type="misc"
+            )
+
+            if data_dict:
+                self.misc_cost_spreadsheet.load_data_from_dict(data_dict)
+                logger.info(f"Loaded Misc spreadsheet data from ShotGrid ({len(data_dict)} cells)")
+            else:
+                logger.debug("No Misc spreadsheet data found in ShotGrid")
+
+        except Exception as e:
+            logger.error(f"Failed to load Misc spreadsheet from ShotGrid: {e}", exc_info=True)
+
     def get_view_menu_actions(self):
         """Get toggle view actions for all docks.
 
@@ -1463,6 +1537,11 @@ class CostsTab(QtWidgets.QMainWindow):
         return []
 
     def closeEvent(self, event: QtGui.QCloseEvent):
-        """Handle close event - save layout."""
+        """Handle close event - save layout and pending spreadsheet data."""
+        # Stop the debounce timer and save any pending data immediately
+        if hasattr(self, '_misc_save_timer') and self._misc_save_timer.isActive():
+            self._misc_save_timer.stop()
+            self._save_misc_spreadsheet_to_shotgrid()
+
         self.save_layout()
         super().closeEvent(event)
