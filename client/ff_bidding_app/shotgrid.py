@@ -1,6 +1,7 @@
 """Simplified Shotgrid client for FF Package Manager."""
 import logging
 import os
+import threading
 
 try:
     from shotgun_api3 import Shotgun
@@ -48,12 +49,23 @@ class ShotgridClient:
         self.site_url = site_url or os.getenv("SG_URL", "")
         self.script_name = script_name or os.getenv("SG_SCRIPT", "")
         self.api_key = api_key or os.getenv("SG_KEY", "")
-        self._sg = None
+
+        # Thread-local connections: each thread gets its own ShotGrid connection
+        # This solves the SSL connection thread-safety issue
+        self._connections = {}
+        self._connections_lock = threading.Lock()
+
+        # Thread-safe schema caches with RLock for re-entrant access
+        self._schema_lock = threading.RLock()
         self._field_schema_cache = {}
         self._entity_schema_cache = {}
 
     def connect(self):
-        """Connect to Shotgrid."""
+        """Connect to Shotgrid.
+
+        Returns a thread-local connection. Each thread gets its own ShotGrid
+        connection to avoid SSL connection thread-safety issues.
+        """
         if Shotgun is None:
             raise RuntimeError(
                 "shotgun_api3 not installed. "
@@ -66,18 +78,27 @@ class ShotgridClient:
                 "or set SG_URL, SG_SCRIPT, SG_KEY environment variables."
             )
 
-        if self._sg is None:
-            self._sg = Shotgun(
-                base_url=self.site_url,
-                script_name=self.script_name,
-                api_key=self.api_key
-            )
+        thread_id = threading.current_thread().ident
 
-        return self._sg
+        # Fast path: check if connection exists without lock
+        if thread_id in self._connections:
+            return self._connections[thread_id]
+
+        # Slow path: create new connection with lock
+        with self._connections_lock:
+            # Double-check after acquiring lock
+            if thread_id not in self._connections:
+                logger.debug(f"Creating new ShotGrid connection for thread {thread_id}")
+                self._connections[thread_id] = Shotgun(
+                    base_url=self.site_url,
+                    script_name=self.script_name,
+                    api_key=self.api_key
+                )
+            return self._connections[thread_id]
 
     @property
     def sg(self):
-        """Get or create Shotgrid connection."""
+        """Get or create Shotgrid connection for the current thread."""
         return self.connect()
 
     def get_projects(self, fields=None, status=None):
@@ -251,20 +272,26 @@ class ShotgridClient:
     # ------------------------------------------------------------------
 
     def get_field_schema(self, entity_type, field_name):
-        """Read schema information for a specific field and cache the result."""
+        """Read schema information for a specific field and cache the result.
 
+        Thread-safe: Uses RLock to protect cache access.
+        """
         cache_key = (entity_type, field_name)
-        if cache_key not in self._field_schema_cache:
-            schema = self.sg.schema_field_read(entity_type, field_name)
-            self._field_schema_cache[cache_key] = schema.get(field_name, {})
-        return self._field_schema_cache[cache_key]
+        with self._schema_lock:
+            if cache_key not in self._field_schema_cache:
+                schema = self.sg.schema_field_read(entity_type, field_name)
+                self._field_schema_cache[cache_key] = schema.get(field_name, {})
+            return self._field_schema_cache[cache_key]
 
     def get_entity_schema(self, entity_type):
-        """Read and cache the schema for an entity type."""
+        """Read and cache the schema for an entity type.
 
-        if entity_type not in self._entity_schema_cache:
-            self._entity_schema_cache[entity_type] = self.sg.schema_read(entity_type)
-        return self._entity_schema_cache[entity_type]
+        Thread-safe: Uses RLock to protect cache access.
+        """
+        with self._schema_lock:
+            if entity_type not in self._entity_schema_cache:
+                self._entity_schema_cache[entity_type] = self.sg.schema_read(entity_type)
+            return self._entity_schema_cache[entity_type]
 
     def get_bidding_scenes_for_vfx_breakdown(self, vfx_breakdown_id, fields=None, order=None):
         """
@@ -2549,14 +2576,38 @@ class ShotgridClient:
         result = self.sg.delete("CustomEntity14", int(tracking_id))
         return result
 
+    def close_connection(self, thread_id=None):
+        """Close the ShotGrid connection for a specific thread or current thread.
+
+        Args:
+            thread_id: Thread ID to close connection for. If None, uses current thread.
+        """
+        if thread_id is None:
+            thread_id = threading.current_thread().ident
+
+        with self._connections_lock:
+            if thread_id in self._connections:
+                # shotgun_api3 connections don't have an explicit close method,
+                # but we can remove the reference to allow garbage collection
+                del self._connections[thread_id]
+                logger.debug(f"Closed ShotGrid connection for thread {thread_id}")
+
+    def close_all_connections(self):
+        """Close all ShotGrid connections across all threads."""
+        with self._connections_lock:
+            thread_ids = list(self._connections.keys())
+            for thread_id in thread_ids:
+                del self._connections[thread_id]
+            logger.debug(f"Closed {len(thread_ids)} ShotGrid connection(s)")
+
     def __enter__(self):
         """Context manager entry."""
         self.connect()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
-        self._sg = None
+        """Context manager exit - closes connection for current thread."""
+        self.close_connection()
 
 
 # Example usage

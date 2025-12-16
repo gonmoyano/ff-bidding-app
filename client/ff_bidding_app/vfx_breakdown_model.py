@@ -676,9 +676,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         self._update_thread_pool = QtCore.QThreadPool.globalInstance()
 
         # Flag to enable/disable optimistic updates (update UI first, then sync to SG)
-        # NOTE: Disabled by default because ShotGrid API connection is not thread-safe
-        # The SSL connection cannot be shared across threads
-        self._use_optimistic_updates = False
+        # NOTE: Now enabled - ShotGridClient uses thread-local connections to ensure
+        # each thread has its own SSL connection, solving the thread-safety issue.
+        self._use_optimistic_updates = True
 
         # Track pending updates for potential rollback (key: (row, col), value: old_value)
         self._pending_updates = {}
