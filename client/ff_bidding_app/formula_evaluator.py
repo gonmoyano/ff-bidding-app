@@ -464,6 +464,9 @@ class FormulaEvaluator:
         Returns:
             Processed formula with ROW(), COLUMN(), INDIRECT(), and header refs replaced
         """
+        original_formula = formula
+        logger.debug(f"_preprocess_formula: Input formula='{formula}' at row={row}, col={col}")
+
         # Replace sheet references and header-based references
         # This handles: 'Sheet Name'!cmp.1, Price!cmp, cmp.1, cmp
         def replace_sheet_reference_quoted(match):
@@ -517,12 +520,17 @@ class FormulaEvaluator:
             cell_ref = match.group(2)
             full_ref = match.group(0)
 
+            logger.debug(f"replace_sheet_reference_unquoted: Matched '{full_ref}' -> sheet='{sheet_name}', cell_ref='{cell_ref}'")
+            logger.debug(f"replace_sheet_reference_unquoted: Available sheets = {list(self.sheet_models.keys()) if self.sheet_models else []}")
+
             # Check if sheet exists (case-insensitive)
             actual_name, target_model = self._get_sheet_model_case_insensitive(sheet_name)
             if target_model is None:
                 available_sheets = list(self.sheet_models.keys()) if self.sheet_models else []
                 logger.warning(f"Sheet not found: '{sheet_name}' in reference {full_ref}. Available sheets: {available_sheets}")
                 return "#REF!"
+
+            logger.debug(f"replace_sheet_reference_unquoted: Found model for '{actual_name}', model type={type(target_model).__name__}")
 
             # Check if it's already a standard cell reference (A1, B2, etc.)
             # Standard cell references don't need header resolution
@@ -539,21 +547,26 @@ class FormulaEvaluator:
 
             # Fetch the actual value from the target sheet
             value = self._get_cell_value_from_model(standard_ref, target_model)
+            logger.debug(f"replace_sheet_reference_unquoted: Got value '{value}' (type={type(value).__name__}) from {actual_name}!{standard_ref}")
 
             # Return the value as a literal
             if value is None or value == "":
+                logger.debug(f"replace_sheet_reference_unquoted: Value is None/empty, returning '0'")
                 return "0"
             elif isinstance(value, str):
                 # If it's a string, we need to quote it for the formula
                 # But if it's a number string, keep it as number
                 try:
                     float(value)
+                    logger.debug(f"replace_sheet_reference_unquoted: Returning numeric string '{value}'")
                     return str(value)
                 except (ValueError, TypeError):
                     # It's a text string, return as 0 or handle as text
                     # For formulas, text in calculations usually becomes 0
+                    logger.debug(f"replace_sheet_reference_unquoted: Text value, returning '0'")
                     return "0"
             else:
+                logger.debug(f"replace_sheet_reference_unquoted: Returning str(value) = '{value}'")
                 return str(value)
 
         def replace_local_reference(match):
@@ -668,6 +681,9 @@ class FormulaEvaluator:
             formula,
             flags=re.IGNORECASE
         )
+
+        if formula != original_formula:
+            logger.debug(f"_preprocess_formula: Transformed '{original_formula}' -> '{formula}'")
 
         return formula
 
