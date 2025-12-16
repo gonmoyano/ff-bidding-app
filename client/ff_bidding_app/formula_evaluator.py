@@ -287,16 +287,46 @@ class FormulaEvaluator:
         """Expand a range reference and get all values.
 
         Args:
-            range_ref: Range reference like "A1:A3" or "A1:B3"
+            range_ref: Range reference like "A1:A3", "A1:B3", or "'Sheet Name'!Y1:Y5"
 
         Returns:
             2D list of values for the range
         """
         import numpy as np
 
+        # Check for cross-sheet range reference
+        # Pattern: 'Sheet Name'!A1:B2 or SheetName!A1:B2
+        sheet_name = None
+        target_model = self.table_model
+
+        # Check for quoted sheet name: 'Sheet Name'!range
+        match = re.match(r"^'([^']+)'!(.+)$", range_ref)
+        if match:
+            sheet_name = match.group(1)
+            range_ref = match.group(2)
+            if sheet_name in self.sheet_models:
+                target_model = self.sheet_models[sheet_name]
+            else:
+                logger.warning(f"Sheet not found: '{sheet_name}'")
+                return [[0]]
+
+        # Check for unquoted sheet name: SheetName!range
+        if not sheet_name:
+            match = re.match(r"^([a-zA-Z_][a-zA-Z0-9_ ]*)!(.+)$", range_ref)
+            if match:
+                sheet_name = match.group(1)
+                range_ref = match.group(2)
+                if sheet_name in self.sheet_models:
+                    target_model = self.sheet_models[sheet_name]
+                else:
+                    logger.warning(f"Sheet not found: '{sheet_name}'")
+                    return [[0]]
+
         # Parse the range (e.g., "A1:A3")
         if ':' not in range_ref:
-            return [[self.get_cell_value(range_ref)]]
+            # Single cell reference
+            value = self._get_cell_value_for_range(range_ref, target_model, sheet_name)
+            return [[value]]
 
         parts = range_ref.split(':')
         if len(parts) != 2:
@@ -306,8 +336,8 @@ class FormulaEvaluator:
         end_ref = parts[1].strip().replace('$', '')
 
         # Parse start and end coordinates
-        start_coords = self.parse_cell_reference(start_ref)
-        end_coords = self.parse_cell_reference(end_ref)
+        start_coords = self._parse_cell_reference_simple(start_ref)
+        end_coords = self._parse_cell_reference_simple(end_ref)
 
         if not start_coords or not end_coords:
             return [[0]]
@@ -327,11 +357,65 @@ class FormulaEvaluator:
             row_values = []
             for col in range(start_col, end_col + 1):
                 cell_ref = f"{self.col_index_to_letter(col)}{row + 1}"
-                row_values.append(self.get_cell_value(cell_ref))
+                value = self._get_cell_value_for_range(cell_ref, target_model, sheet_name)
+                row_values.append(value)
             values.append(row_values)
 
         # Convert to numpy array for formulas library
         return np.array(values) if values else [[0]]
+
+    def _parse_cell_reference_simple(self, ref: str) -> Optional[Tuple[int, int]]:
+        """Parse cell reference like 'A1' into (row, col) without model bounds check.
+
+        Args:
+            ref: Cell reference like "A1", "$B$2", "C10"
+
+        Returns:
+            Tuple of (row, col) or None if invalid
+        """
+        ref = ref.strip().replace('$', '')
+        match = re.match(r'^([A-Z]+)(\d+)$', ref.upper())
+        if match:
+            col_letter, row_num = match.groups()
+            col = self.letter_to_col(col_letter)
+            row = int(row_num) - 1  # Convert to 0-based
+            return (row, col)
+        return None
+
+    def _get_cell_value_for_range(self, ref: str, model, sheet_name: str = None) -> Any:
+        """Get a cell value for range calculations, handling cross-sheet references.
+
+        Args:
+            ref: Cell reference like "A1", "B2"
+            model: The table model to fetch from
+            sheet_name: Optional sheet name for logging
+
+        Returns:
+            Cell value (number or 0 for non-numeric)
+        """
+        if model is None:
+            return 0
+
+        # Use _get_raw_cell_value_from_model which handles formula evaluation
+        value = self._get_raw_cell_value_from_model(ref, model)
+
+        # Convert to number for calculations
+        if value is None or value == "":
+            return 0
+
+        try:
+            if isinstance(value, (int, float)):
+                return value
+            if isinstance(value, str):
+                # Handle percentage
+                if value.endswith('%'):
+                    return float(value[:-1]) / 100
+                # Remove formatting characters
+                cleaned = value.replace(',', '').replace('$', '').replace('€', '').replace('£', '').strip()
+                return float(cleaned) if cleaned else 0
+            return 0
+        except (ValueError, TypeError):
+            return 0
 
     def _get_simple_sheet_reference_value(self, formula: str, current_row: int = None) -> Any:
         """Check if formula is a simple sheet reference and return its raw value.
