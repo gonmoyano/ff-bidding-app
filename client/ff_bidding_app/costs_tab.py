@@ -268,20 +268,18 @@ class CostsTab(QtWidgets.QMainWindow):
 
         # Initialize column headers
         self.total_cost_spreadsheet.set_cell_value(0, 0, "Category")
-        self.total_cost_spreadsheet.set_cell_value(0, 1, "Price")
+        self.total_cost_spreadsheet.set_cell_value(0, 1, "Amount")
 
         # Initialize row labels (Category column)
         row_labels = ["Shot Costs", "Asset Costs", "Misc", "Total Cost"]
         for row, label in enumerate(row_labels, start=1):
             self.total_cost_spreadsheet.set_cell_value(row, 0, label)
 
-        # Initialize Price column with formulas
-        # Note: The 'Shots Cost' and 'Assets Cost' tabs use TableWithTotalsBar
-        # which calculates totals externally. Values are updated via _update_total_cost_summary()
-        # but we initialize with placeholder values that will be replaced.
-        self.total_cost_spreadsheet.set_cell_value(1, 1, "$0.00")  # Shot Costs
-        self.total_cost_spreadsheet.set_cell_value(2, 1, "$0.00")  # Asset Costs
-        self.total_cost_spreadsheet.set_cell_value(3, 1, "$0.00")  # Misc
+        # Initialize Amount column with default values
+        # Values are updated via _update_total_cost_summary()
+        self.total_cost_spreadsheet.set_cell_value(1, 1, 0)  # Shot Costs
+        self.total_cost_spreadsheet.set_cell_value(2, 1, 0)  # Asset Costs
+        self.total_cost_spreadsheet.set_cell_value(3, 1, 0)  # Misc
         # Total Cost formula: sum of B2:B4
         self.total_cost_spreadsheet.set_cell_value(4, 1, "=B2+B3+B4")
 
@@ -553,12 +551,10 @@ class CostsTab(QtWidgets.QMainWindow):
                 self.shots_cost_widget.load_bidding_scenes([])
             if hasattr(self, 'asset_cost_widget'):
                 self.asset_cost_widget.load_bidding_scenes([])
-            # Clear Misc spreadsheet
-            if hasattr(self, 'misc_cost_spreadsheet'):
-                self.misc_cost_spreadsheet.load_data_from_dict({})
-            # Clear Total Cost spreadsheet
-            if hasattr(self, 'total_cost_spreadsheet'):
-                self.total_cost_spreadsheet.load_data_from_dict({})
+            # Initialize Misc spreadsheet with defaults (empty)
+            self._initialize_misc_spreadsheet_defaults()
+            # Initialize Total Cost spreadsheet with defaults
+            self._initialize_total_cost_spreadsheet_defaults()
 
     def refresh_for_rate_card_change(self):
         """Refresh all cost tables when the rate card changes.
@@ -1534,11 +1530,14 @@ class CostsTab(QtWidgets.QMainWindow):
             logger.error(f"Failed to save Misc spreadsheet to ShotGrid: {e}", exc_info=True)
 
     def _load_misc_spreadsheet_from_shotgrid(self):
-        """Load Misc Cost spreadsheet data from ShotGrid."""
-        if not self.current_bid_id:
+        """Load Misc Cost spreadsheet data from ShotGrid, or initialize with defaults."""
+        if not hasattr(self, 'misc_cost_spreadsheet'):
             return
 
-        if not hasattr(self, 'misc_cost_spreadsheet'):
+        # Always clear and initialize first
+        self._initialize_misc_spreadsheet_defaults()
+
+        if not self.current_bid_id:
             return
 
         try:
@@ -1552,10 +1551,19 @@ class CostsTab(QtWidgets.QMainWindow):
                 self.misc_cost_spreadsheet.load_data_from_dict(data_dict)
                 logger.info(f"Loaded Misc spreadsheet data from ShotGrid ({len(data_dict)} cells)")
             else:
-                logger.debug("No Misc spreadsheet data found in ShotGrid")
+                logger.info("No Misc spreadsheet data found in ShotGrid - using defaults")
 
         except Exception as e:
             logger.error(f"Failed to load Misc spreadsheet from ShotGrid: {e}", exc_info=True)
+
+    def _initialize_misc_spreadsheet_defaults(self):
+        """Initialize Misc spreadsheet with empty defaults."""
+        if not hasattr(self, 'misc_cost_spreadsheet'):
+            return
+
+        # Clear all data
+        self.misc_cost_spreadsheet.load_data_from_dict({})
+        logger.debug("Initialized Misc spreadsheet with empty defaults")
 
     def _save_total_cost_spreadsheet_to_shotgrid(self):
         """Save Total Cost spreadsheet data to ShotGrid."""
@@ -1587,11 +1595,14 @@ class CostsTab(QtWidgets.QMainWindow):
             logger.error(f"Failed to save Total Cost spreadsheet to ShotGrid: {e}", exc_info=True)
 
     def _load_total_cost_spreadsheet_from_shotgrid(self):
-        """Load Total Cost spreadsheet data from ShotGrid."""
-        if not self.current_bid_id:
+        """Load Total Cost spreadsheet data from ShotGrid, or initialize with defaults."""
+        if not hasattr(self, 'total_cost_spreadsheet'):
             return
 
-        if not hasattr(self, 'total_cost_spreadsheet'):
+        # Always clear and initialize with defaults first
+        self._initialize_total_cost_spreadsheet_defaults()
+
+        if not self.current_bid_id:
             return
 
         try:
@@ -1605,10 +1616,44 @@ class CostsTab(QtWidgets.QMainWindow):
                 self.total_cost_spreadsheet.load_data_from_dict(data_dict)
                 logger.info(f"Loaded Total Cost spreadsheet data from ShotGrid ({len(data_dict)} cells)")
             else:
-                logger.debug("No Total Cost spreadsheet data found in ShotGrid")
+                logger.info("No Total Cost spreadsheet data found in ShotGrid - using defaults")
 
         except Exception as e:
             logger.error(f"Failed to load Total Cost spreadsheet from ShotGrid: {e}", exc_info=True)
+
+    def _initialize_total_cost_spreadsheet_defaults(self):
+        """Initialize Total Cost spreadsheet with default structure."""
+        if not hasattr(self, 'total_cost_spreadsheet'):
+            return
+
+        # Clear all existing data
+        self.total_cost_spreadsheet.load_data_from_dict({})
+
+        # Set up the default structure:
+        # Row 0: Headers (Category, Amount)
+        # Row 1: Shot Costs
+        # Row 2: Asset Costs
+        # Row 3: Misc
+        # Row 4: Total Cost (formula)
+
+        # Column headers
+        self.total_cost_spreadsheet.set_cell_value(0, 0, "Category")
+        self.total_cost_spreadsheet.set_cell_value(0, 1, "Amount")
+
+        # Row labels
+        self.total_cost_spreadsheet.set_cell_value(1, 0, "Shot Costs")
+        self.total_cost_spreadsheet.set_cell_value(2, 0, "Asset Costs")
+        self.total_cost_spreadsheet.set_cell_value(3, 0, "Misc")
+        self.total_cost_spreadsheet.set_cell_value(4, 0, "Total Cost")
+
+        # Amount values (will be updated by _update_total_cost_summary)
+        self.total_cost_spreadsheet.set_cell_value(1, 1, 0)  # Shot Costs
+        self.total_cost_spreadsheet.set_cell_value(2, 1, 0)  # Asset Costs
+        self.total_cost_spreadsheet.set_cell_value(3, 1, 0)  # Misc
+        # Total Cost formula: sum of B2:B4
+        self.total_cost_spreadsheet.set_cell_value(4, 1, "=B2+B3+B4")
+
+        logger.debug("Initialized Total Cost spreadsheet with defaults")
 
     def get_view_menu_actions(self):
         """Get toggle view actions for all docks.
