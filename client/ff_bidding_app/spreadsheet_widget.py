@@ -626,11 +626,17 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.table_view.setStyleSheet("""
             QTableView {
                 selection-background-color: transparent;
-                selection-color: inherit;
+                selection-color: white;
+            }
+            QTableView::item {
+                color: white;
             }
             QTableView::item:selected {
                 background-color: transparent;
-                color: inherit;
+                color: white;
+            }
+            QTableView::item:focus {
+                color: white;
             }
             QTableView QLineEdit {
                 color: white;

@@ -266,14 +266,24 @@ class CostsTab(QtWidgets.QMainWindow):
             parent=self
         )
 
-        # Initialize with labels
-        row_labels = ["Shot Costs", "Asset Costs", "Misc", "Total Cost"]
+        # Initialize column headers
         self.total_cost_spreadsheet.set_cell_value(0, 0, "Category")
-        self.total_cost_spreadsheet.set_cell_value(0, 1, "Amount")
+        self.total_cost_spreadsheet.set_cell_value(0, 1, "Price")
 
+        # Initialize row labels (Category column)
+        row_labels = ["Shot Costs", "Asset Costs", "Misc", "Total Cost"]
         for row, label in enumerate(row_labels, start=1):
             self.total_cost_spreadsheet.set_cell_value(row, 0, label)
-            self.total_cost_spreadsheet.set_cell_value(row, 1, "$0.00")
+
+        # Initialize Price column with formulas
+        # Note: The 'Shots Cost' and 'Assets Cost' tabs use TableWithTotalsBar
+        # which calculates totals externally. Values are updated via _update_total_cost_summary()
+        # but we initialize with placeholder values that will be replaced.
+        self.total_cost_spreadsheet.set_cell_value(1, 1, "$0.00")  # Shot Costs
+        self.total_cost_spreadsheet.set_cell_value(2, 1, "$0.00")  # Asset Costs
+        self.total_cost_spreadsheet.set_cell_value(3, 1, "$0.00")  # Misc
+        # Total Cost formula: sum of B2:B4
+        self.total_cost_spreadsheet.set_cell_value(4, 1, "=B2+B3+B4")
 
         # Set column widths
         self.total_cost_spreadsheet.table_view.setColumnWidth(0, 200)
@@ -332,14 +342,12 @@ class CostsTab(QtWidgets.QMainWindow):
                 except (ValueError, AttributeError):
                     pass
 
-            # Calculate grand total
-            grand_total = shot_total + asset_total + misc_total
-
-            # Update the summary spreadsheet (rows 1-4, column 1)
-            self.total_cost_spreadsheet.set_cell_value(1, 1, self._format_currency(shot_total))
-            self.total_cost_spreadsheet.set_cell_value(2, 1, self._format_currency(asset_total))
-            self.total_cost_spreadsheet.set_cell_value(3, 1, self._format_currency(misc_total))
-            self.total_cost_spreadsheet.set_cell_value(4, 1, self._format_currency(grand_total))
+            # Update the summary spreadsheet (rows 1-3, column 1)
+            # Row 4 has a formula =B2+B3+B4 that calculates Total Cost automatically
+            self.total_cost_spreadsheet.set_cell_value(1, 1, shot_total)  # Shot Costs
+            self.total_cost_spreadsheet.set_cell_value(2, 1, asset_total)  # Asset Costs
+            self.total_cost_spreadsheet.set_cell_value(3, 1, misc_total)   # Misc
+            # Don't set row 4 (Total Cost) - it has a formula =B2+B3+B4
 
         except Exception as e:
             logger.error(f"Error updating Total Cost summary: {e}", exc_info=True)
@@ -430,15 +438,16 @@ class CostsTab(QtWidgets.QMainWindow):
     def _setup_cross_tab_formulas(self):
         """Set up cross-tab formula references between cost sheets."""
         # Create a dictionary of sheet models for cross-tab references
+        # Use names with spaces for user-friendly formula references like 'Shots Cost'!A1
         sheet_models = {}
 
-        # Add Shot Costs model
+        # Add Shot Costs model (accessible via 'Shots Cost'!ref)
         if hasattr(self, 'shots_cost_widget') and hasattr(self.shots_cost_widget, 'model'):
-            sheet_models['ShotCosts'] = self.shots_cost_widget.model
+            sheet_models['Shots Cost'] = self.shots_cost_widget.model
 
-        # Add Asset Costs model
+        # Add Asset Costs model (accessible via 'Assets Cost'!ref)
         if hasattr(self, 'asset_cost_widget') and hasattr(self.asset_cost_widget, 'model'):
-            sheet_models['AssetCosts'] = self.asset_cost_widget.model
+            sheet_models['Assets Cost'] = self.asset_cost_widget.model
 
         # Add Misc Costs spreadsheet model
         if hasattr(self, 'misc_cost_spreadsheet') and hasattr(self.misc_cost_spreadsheet, 'model'):
