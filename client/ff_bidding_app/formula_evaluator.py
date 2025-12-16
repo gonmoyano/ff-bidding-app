@@ -333,6 +333,111 @@ class FormulaEvaluator:
         # Convert to numpy array for formulas library
         return np.array(values) if values else [[0]]
 
+    def _get_simple_sheet_reference_value(self, formula: str, current_row: int = None) -> Any:
+        """Check if formula is a simple sheet reference and return its raw value.
+
+        This handles cases like =Misc!A1 or ='Sheet Name'!B2 where we want to
+        return the raw value (including text) without converting to 0.
+
+        Args:
+            formula: The formula string starting with =
+            current_row: Current row for header-based references
+
+        Returns:
+            The raw cell value if it's a simple reference, None otherwise
+        """
+        # Remove the = prefix
+        ref = formula[1:].strip()
+
+        # Pattern 1: Quoted sheet name - 'Sheet Name'!CellRef
+        match = re.match(r"^'([^']+)'!([A-Z]+\d+|\$?[A-Z]+\$?\d+)$", ref, re.IGNORECASE)
+        if match:
+            sheet_name = match.group(1)
+            cell_ref = match.group(2).replace('$', '')
+
+            if sheet_name in self.sheet_models:
+                target_model = self.sheet_models[sheet_name]
+                return self._get_raw_cell_value_from_model(cell_ref, target_model)
+            return "#REF!"
+
+        # Pattern 2: Unquoted sheet name - SheetName!CellRef
+        match = re.match(r"^([a-zA-Z_][a-zA-Z0-9_ ]*)!([A-Z]+\d+|\$?[A-Z]+\$?\d+)$", ref, re.IGNORECASE)
+        if match:
+            sheet_name = match.group(1)
+            cell_ref = match.group(2).replace('$', '')
+
+            if sheet_name in self.sheet_models:
+                target_model = self.sheet_models[sheet_name]
+                return self._get_raw_cell_value_from_model(cell_ref, target_model)
+            return "#REF!"
+
+        # Pattern 3: Quoted sheet name with header reference - 'Sheet Name'!field.row
+        match = re.match(r"^'([^']+)'!([a-zA-Z_][a-zA-Z0-9_]*)\.(\d+)$", ref)
+        if match:
+            sheet_name = match.group(1)
+            field_name = match.group(2)
+            row_num = int(match.group(3))
+
+            if sheet_name in self.sheet_models:
+                target_model = self.sheet_models[sheet_name]
+                standard_ref = self.resolve_header_reference(f"{field_name}.{row_num}", model=target_model)
+                if standard_ref:
+                    return self._get_raw_cell_value_from_model(standard_ref, target_model)
+            return "#REF!"
+
+        # Pattern 4: Unquoted sheet name with header reference - SheetName!field.row
+        match = re.match(r"^([a-zA-Z_][a-zA-Z0-9_ ]*)!([a-zA-Z_][a-zA-Z0-9_]*)\.(\d+)$", ref)
+        if match:
+            sheet_name = match.group(1)
+            field_name = match.group(2)
+            row_num = int(match.group(3))
+
+            if sheet_name in self.sheet_models:
+                target_model = self.sheet_models[sheet_name]
+                standard_ref = self.resolve_header_reference(f"{field_name}.{row_num}", model=target_model)
+                if standard_ref:
+                    return self._get_raw_cell_value_from_model(standard_ref, target_model)
+            return "#REF!"
+
+        # Not a simple sheet reference
+        return None
+
+    def _get_raw_cell_value_from_model(self, ref: str, model) -> Any:
+        """Get the raw value of a cell from a model without converting text to 0.
+
+        Args:
+            ref: Cell reference like "A1", "B2"
+            model: The table model to fetch from
+
+        Returns:
+            Raw cell value (number, string, or empty string)
+        """
+        ref = ref.strip().replace('$', '')
+        match = re.match(r'^([A-Z]+)(\d+)$', ref.upper())
+        if not match or not model:
+            return ""
+
+        col_letter, row_num = match.groups()
+        col = self.letter_to_col(col_letter)
+        row = int(row_num) - 1  # Convert to 0-based
+
+        # Check bounds
+        if row < 0 or col < 0 or row >= model.rowCount() or col >= model.columnCount():
+            return ""
+
+        # Get the raw value from the model
+        index = model.index(row, col)
+        value = model.data(index, QtCore.Qt.EditRole)
+
+        # If value is a formula, get the calculated value
+        if isinstance(value, str) and value.startswith('='):
+            value = model.data(index, QtCore.Qt.DisplayRole)
+
+        # Return the value as-is (don't convert text to 0)
+        if value is None:
+            return ""
+        return value
+
     def evaluate(self, formula: str, row: int = None, col: int = None) -> Any:
         """Evaluate a formula and return the result.
 
@@ -353,6 +458,12 @@ class FormulaEvaluator:
         if not formula.startswith('='):
             # Not a formula, return as-is
             return formula
+
+        # Check if it's a simple cross-sheet reference (e.g., =Misc!A1 or ='Sheet Name'!B2)
+        # These should return the raw value (including text) without converting to 0
+        simple_ref = self._get_simple_sheet_reference_value(formula, row)
+        if simple_ref is not None:
+            return simple_ref
 
         # Check for formulas library availability
         if not formulas or not self.parser:
