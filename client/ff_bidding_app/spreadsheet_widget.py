@@ -414,6 +414,23 @@ class SpreadsheetTableView(QtWidgets.QTableView):
 class SpreadsheetModel(QtCore.QAbstractTableModel):
     """Model for spreadsheet data with formula support."""
 
+    # Excel-compatible format codes
+    FORMAT_GENERAL = "General"
+    FORMAT_NUMBER = "#,##0.00"
+    FORMAT_NUMBER_NO_DECIMAL = "#,##0"
+    FORMAT_CURRENCY_USD = "$#,##0.00"
+    FORMAT_CURRENCY_EUR = "[$€]#,##0.00"
+    FORMAT_CURRENCY_GBP = "[$£]#,##0.00"
+    FORMAT_PERCENTAGE = "0.00%"
+    FORMAT_PERCENTAGE_NO_DECIMAL = "0%"
+    FORMAT_DATE_MDY = "mm/dd/yyyy"
+    FORMAT_DATE_DMY = "dd/mm/yyyy"
+    FORMAT_DATE_YMD = "yyyy-mm-dd"
+    FORMAT_TIME = "hh:mm:ss"
+    FORMAT_DATETIME = "yyyy-mm-dd hh:mm:ss"
+    FORMAT_TEXT = "@"
+    FORMAT_ACCOUNTING = '_($* #,##0.00_);_($* (#,##0.00);_($* "-"??_);_(@_)'
+
     def __init__(self, rows=100, cols=26, parent=None):
         """Initialize the spreadsheet model.
 
@@ -427,6 +444,7 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         self._cols = cols
         self._data = {}  # Dict of (row, col) -> value
         self._formulas = {}  # Dict of (row, col) -> formula string
+        self._formats = {}  # Dict of (row, col) -> Excel-compatible format string
         self._evaluated_cache = {}  # Dict of (row, col) -> evaluated result
         self.formula_evaluator = None
 
@@ -486,11 +504,9 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
             # Evaluate the formula
             result = self.formula_evaluator.evaluate(formula, row, col)
 
-            # Format the result
-            if isinstance(result, (int, float)):
-                formatted = f"{result:,.2f}"
-            else:
-                formatted = str(result)
+            # Apply cell format if set, otherwise use auto-detection
+            cell_format = self._formats.get((row, col))
+            formatted = self._apply_format(result, cell_format)
 
             # Cache the result
             self._evaluated_cache[(row, col)] = formatted
@@ -498,6 +514,133 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
 
         except Exception:
             return "#ERROR"
+
+    def _apply_format(self, value, cell_format=None):
+        """Apply Excel-compatible format to a value.
+
+        Args:
+            value: The value to format
+            cell_format: Excel-compatible format string (or None for auto-detection)
+
+        Returns:
+            Formatted string
+        """
+        if value is None or value == "":
+            return ""
+
+        # If no format specified, auto-detect based on value type
+        if not cell_format or cell_format == self.FORMAT_GENERAL:
+            if isinstance(value, (int, float)):
+                # Default number format with commas and 2 decimals
+                return f"{value:,.2f}"
+            return str(value)
+
+        # Apply specific formats
+        try:
+            if cell_format == self.FORMAT_TEXT:
+                return str(value)
+
+            # Convert to number if needed
+            if isinstance(value, str):
+                try:
+                    value = float(value.replace(',', '').replace('$', '').replace('%', ''))
+                except ValueError:
+                    return str(value)
+
+            if cell_format == self.FORMAT_NUMBER:
+                return f"{value:,.2f}"
+            elif cell_format == self.FORMAT_NUMBER_NO_DECIMAL:
+                return f"{value:,.0f}"
+            elif cell_format == self.FORMAT_CURRENCY_USD:
+                return f"${value:,.2f}"
+            elif cell_format == self.FORMAT_CURRENCY_EUR:
+                return f"€{value:,.2f}"
+            elif cell_format == self.FORMAT_CURRENCY_GBP:
+                return f"£{value:,.2f}"
+            elif cell_format == self.FORMAT_PERCENTAGE:
+                return f"{value * 100:.2f}%"
+            elif cell_format == self.FORMAT_PERCENTAGE_NO_DECIMAL:
+                return f"{value * 100:.0f}%"
+            elif cell_format == self.FORMAT_ACCOUNTING:
+                if value >= 0:
+                    return f"$ {value:,.2f} "
+                else:
+                    return f"$ ({abs(value):,.2f})"
+            elif cell_format.startswith("#") or cell_format.startswith("0"):
+                # Generic number format - use default
+                return f"{value:,.2f}"
+            else:
+                return f"{value:,.2f}"
+        except (ValueError, TypeError):
+            return str(value)
+
+    def get_cell_format(self, row, col):
+        """Get the format for a cell.
+
+        Args:
+            row: Row index
+            col: Column index
+
+        Returns:
+            Excel-compatible format string or None
+        """
+        return self._formats.get((row, col))
+
+    def set_cell_format(self, row, col, cell_format):
+        """Set the format for a cell.
+
+        Args:
+            row: Row index
+            col: Column index
+            cell_format: Excel-compatible format string (or None to clear)
+        """
+        if cell_format:
+            self._formats[(row, col)] = cell_format
+        else:
+            self._formats.pop((row, col), None)
+
+        # Clear cache to force re-formatting
+        self._evaluated_cache.pop((row, col), None)
+
+        # Emit dataChanged to refresh display
+        index = self.index(row, col)
+        self.dataChanged.emit(index, index, [Qt.DisplayRole])
+
+    def detect_format(self, value):
+        """Auto-detect format based on value content.
+
+        Args:
+            value: The value to analyze
+
+        Returns:
+            Suggested Excel-compatible format string
+        """
+        if value is None or value == "":
+            return self.FORMAT_GENERAL
+
+        value_str = str(value).strip()
+
+        # Check for percentage
+        if value_str.endswith('%'):
+            return self.FORMAT_PERCENTAGE
+
+        # Check for currency symbols
+        if value_str.startswith('$') or '$' in value_str:
+            return self.FORMAT_CURRENCY_USD
+        if value_str.startswith('€') or '€' in value_str:
+            return self.FORMAT_CURRENCY_EUR
+        if value_str.startswith('£') or '£' in value_str:
+            return self.FORMAT_CURRENCY_GBP
+
+        # Check if numeric
+        try:
+            cleaned = value_str.replace(',', '').replace('$', '').replace('€', '').replace('£', '')
+            float(cleaned)
+            return self.FORMAT_NUMBER
+        except ValueError:
+            pass
+
+        return self.FORMAT_GENERAL
 
     def setData(self, index, value, role=Qt.EditRole):
         """Set data for the given index."""
@@ -743,6 +886,56 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         insert_col_left = menu.addAction("Insert Column Left")
         insert_col_right = menu.addAction("Insert Column Right")
         delete_column = menu.addAction("Delete Column")
+        menu.addSeparator()
+
+        # Format submenu
+        format_menu = menu.addMenu("Format")
+
+        # General format
+        format_general = format_menu.addAction("General")
+        format_menu.addSeparator()
+
+        # Number formats
+        number_menu = format_menu.addMenu("Number")
+        format_number = number_menu.addAction("1,234.56  (#,##0.00)")
+        format_number_no_dec = number_menu.addAction("1,235  (#,##0)")
+
+        # Currency formats
+        currency_menu = format_menu.addMenu("Currency")
+        format_currency_usd = currency_menu.addAction("$1,234.56  ($#,##0.00)")
+        format_currency_eur = currency_menu.addAction("€1,234.56  ([$€]#,##0.00)")
+        format_currency_gbp = currency_menu.addAction("£1,234.56  ([$£]#,##0.00)")
+
+        # Accounting format
+        format_accounting = format_menu.addAction("Accounting")
+        format_menu.addSeparator()
+
+        # Percentage formats
+        percentage_menu = format_menu.addMenu("Percentage")
+        format_percentage = percentage_menu.addAction("12.34%  (0.00%)")
+        format_percentage_no_dec = percentage_menu.addAction("12%  (0%)")
+        format_menu.addSeparator()
+
+        # Text format
+        format_text = format_menu.addAction("Text  (@)")
+
+        # Show current format with checkmark
+        current_format = self.model.get_cell_format(index.row(), index.column())
+        format_actions = {
+            SpreadsheetModel.FORMAT_GENERAL: format_general,
+            SpreadsheetModel.FORMAT_NUMBER: format_number,
+            SpreadsheetModel.FORMAT_NUMBER_NO_DECIMAL: format_number_no_dec,
+            SpreadsheetModel.FORMAT_CURRENCY_USD: format_currency_usd,
+            SpreadsheetModel.FORMAT_CURRENCY_EUR: format_currency_eur,
+            SpreadsheetModel.FORMAT_CURRENCY_GBP: format_currency_gbp,
+            SpreadsheetModel.FORMAT_ACCOUNTING: format_accounting,
+            SpreadsheetModel.FORMAT_PERCENTAGE: format_percentage,
+            SpreadsheetModel.FORMAT_PERCENTAGE_NO_DECIMAL: format_percentage_no_dec,
+            SpreadsheetModel.FORMAT_TEXT: format_text,
+        }
+        if current_format in format_actions:
+            format_actions[current_format].setCheckable(True)
+            format_actions[current_format].setChecked(True)
 
         # Show menu and get action
         action = menu.exec_(self.table_view.viewport().mapToGlobal(position))
@@ -759,6 +952,37 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             self._insert_column_right(index.column())
         elif action == delete_column:
             self._delete_column(index.column())
+        # Format actions
+        elif action == format_general:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_GENERAL)
+        elif action == format_number:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_NUMBER)
+        elif action == format_number_no_dec:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_NUMBER_NO_DECIMAL)
+        elif action == format_currency_usd:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_CURRENCY_USD)
+        elif action == format_currency_eur:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_CURRENCY_EUR)
+        elif action == format_currency_gbp:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_CURRENCY_GBP)
+        elif action == format_accounting:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_ACCOUNTING)
+        elif action == format_percentage:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_PERCENTAGE)
+        elif action == format_percentage_no_dec:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_PERCENTAGE_NO_DECIMAL)
+        elif action == format_text:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_TEXT)
+
+    def _set_cell_format(self, index, cell_format):
+        """Set the format for a cell.
+
+        Args:
+            index: QModelIndex of the cell
+            cell_format: Excel-compatible format string
+        """
+        self.model.set_cell_format(index.row(), index.column(), cell_format)
+        logger.info(f"Set cell ({index.row()},{index.column()}) format to: {cell_format}")
 
     def _insert_row_above(self, row):
         """Insert a new row above the specified row."""
@@ -985,23 +1209,28 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.model.setData(index, value, Qt.EditRole)
 
     def get_data_as_dict(self):
-        """Export all data as a dictionary."""
+        """Export all data as a dictionary including formats."""
         data = {}
         for row in range(self.model.rowCount()):
             for col in range(self.model.columnCount()):
                 value = self.model._data.get((row, col))
                 formula = self.model._formulas.get((row, col))
-                if value or formula:
-                    data[(row, col)] = {
+                cell_format = self.model._formats.get((row, col))
+                if value or formula or cell_format:
+                    cell_data = {
                         'value': value,
                         'formula': formula,
                     }
+                    if cell_format:
+                        cell_data['format'] = cell_format
+                    data[(row, col)] = cell_data
         return data
 
     def load_data_from_dict(self, data):
-        """Load data from a dictionary."""
+        """Load data from a dictionary including formats."""
         self.model._data.clear()
         self.model._formulas.clear()
+        self.model._formats.clear()
         self.model._evaluated_cache.clear()
 
         for (row, col), cell_data in data.items():
@@ -1009,6 +1238,10 @@ class SpreadsheetWidget(QtWidgets.QWidget):
                 self.model._formulas[(row, col)] = cell_data['formula']
             elif cell_data.get('value'):
                 self.model._data[(row, col)] = cell_data['value']
+
+            # Load format if present
+            if cell_data.get('format'):
+                self.model._formats[(row, col)] = cell_data['format']
 
         # Refresh the view
         self.model.layoutChanged.emit()

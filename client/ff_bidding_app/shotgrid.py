@@ -2667,11 +2667,11 @@ class ShotgridClient:
         results = self.sg.find(
             "CustomEntity16",
             filters,
-            ["id", "sg_cell", "sg_formula", "sg_parent"]
+            ["id", "sg_cell", "sg_formula", "sg_format", "sg_parent"]
         )
         return results
 
-    def create_spreadsheet_item(self, project_id, spreadsheet_id, cell, formula=None, value=None):
+    def create_spreadsheet_item(self, project_id, spreadsheet_id, cell, formula=None, value=None, cell_format=None):
         """
         Create a new SpreadsheetItem (CustomEntity16) entity.
 
@@ -2681,6 +2681,7 @@ class ShotgridClient:
             cell: Cell reference (e.g., "A1", "B2")
             formula: Optional formula string (e.g., "=A1+B1")
             value: Optional raw value (stored in sg_formula if no formula)
+            cell_format: Optional Excel-compatible format string (e.g., "#,##0.00", "$#,##0.00")
 
         Returns:
             Created SpreadsheetItem entity dictionary
@@ -2698,10 +2699,14 @@ class ShotgridClient:
         elif value is not None:
             data["sg_formula"] = str(value) if value else ""
 
+        # Store format if provided
+        if cell_format:
+            data["sg_format"] = cell_format
+
         result = self.sg.create("CustomEntity16", data)
         return result
 
-    def update_spreadsheet_item(self, item_id, formula=None, value=None):
+    def update_spreadsheet_item(self, item_id, formula=None, value=None, cell_format=None):
         """
         Update a SpreadsheetItem (CustomEntity16).
 
@@ -2709,6 +2714,7 @@ class ShotgridClient:
             item_id: SpreadsheetItem ID
             formula: Optional new formula string
             value: Optional new value (stored in sg_formula if no formula)
+            cell_format: Optional Excel-compatible format string
 
         Returns:
             Updated SpreadsheetItem entity dictionary
@@ -2719,6 +2725,10 @@ class ShotgridClient:
             data["sg_formula"] = formula
         elif value is not None:
             data["sg_formula"] = str(value) if value else ""
+
+        # Update format if provided
+        if cell_format is not None:
+            data["sg_format"] = cell_format
 
         if data:
             result = self.sg.update("CustomEntity16", int(item_id), data)
@@ -2751,7 +2761,7 @@ class ShotgridClient:
             bid_id: Bid ID
             spreadsheet_type: Type of spreadsheet ('misc' or 'total_cost')
             data_dict: Dictionary from SpreadsheetWidget.get_data_as_dict()
-                       Format: {(row, col): {'value': ..., 'formula': ...}, ...}
+                       Format: {(row, col): {'value': ..., 'formula': ..., 'format': ...}, ...}
 
         Returns:
             Spreadsheet entity dictionary
@@ -2781,17 +2791,24 @@ class ShotgridClient:
 
             formula = cell_data.get('formula')
             value = cell_data.get('value')
+            cell_format = cell_data.get('format')
 
             # Determine what to store in sg_formula
             sg_formula_value = formula if formula else (str(value) if value is not None else "")
 
             if cell_ref in existing_by_cell:
-                # Update existing item if value changed
+                # Update existing item if value or format changed
                 existing_item = existing_by_cell[cell_ref]
+                update_data = {}
+
                 if existing_item.get("sg_formula") != sg_formula_value:
-                    self.sg.update("CustomEntity16", int(existing_item["id"]), {
-                        "sg_formula": sg_formula_value
-                    })
+                    update_data["sg_formula"] = sg_formula_value
+
+                if cell_format and existing_item.get("sg_format") != cell_format:
+                    update_data["sg_format"] = cell_format
+
+                if update_data:
+                    self.sg.update("CustomEntity16", int(existing_item["id"]), update_data)
                     updated_count += 1
             else:
                 # Create new item
@@ -2800,7 +2817,8 @@ class ShotgridClient:
                     spreadsheet_id=spreadsheet_id,
                     cell=cell_ref,
                     formula=formula,
-                    value=value
+                    value=value,
+                    cell_format=cell_format
                 )
                 created_count += 1
 
@@ -2823,7 +2841,7 @@ class ShotgridClient:
 
         Returns:
             Dictionary in format for SpreadsheetWidget.load_data_from_dict()
-            Format: {(row, col): {'value': ..., 'formula': ...}, ...}
+            Format: {(row, col): {'value': ..., 'formula': ..., 'format': ...}, ...}
             Returns empty dict if no spreadsheet found.
         """
         spreadsheet = self.get_spreadsheet_for_bid(bid_id, spreadsheet_type)
@@ -2853,6 +2871,8 @@ class ShotgridClient:
 
             # sg_formula stores both formulas (starting with =) and plain values
             sg_formula = item.get("sg_formula", "")
+            # sg_format stores Excel-compatible format string
+            sg_format = item.get("sg_format", "")
 
             # Determine if it's a formula or a plain value
             if sg_formula and sg_formula.startswith("="):
@@ -2862,10 +2882,16 @@ class ShotgridClient:
                 formula = None
                 value = sg_formula
 
-            data_dict[(row, col)] = {
+            cell_data = {
                 'value': value,
                 'formula': formula
             }
+
+            # Include format if present
+            if sg_format:
+                cell_data['format'] = sg_format
+
+            data_dict[(row, col)] = cell_data
 
         logger.info(f"Loaded {len(data_dict)} cells from Spreadsheet for bid {bid_id}, type={spreadsheet_type}")
         return data_dict
