@@ -486,6 +486,103 @@ class FormulaEvaluator:
         # Not a simple sheet reference
         return None
 
+    def _evaluate_cross_sheet_function(self, formula: str) -> Any:
+        """Evaluate common functions with cross-sheet range references.
+
+        Handles formulas like:
+        - =SUM('Shots Cost'!Y1:Y5)
+        - =AVERAGE('Sheet Name'!A1:A10)
+        - =MIN(SheetName!B1:B20)
+        - =MAX('Sheet'!C1:C5)
+        - =COUNT('Sheet'!D1:D10)
+
+        Args:
+            formula: The formula string starting with =
+
+        Returns:
+            The calculated result, or None if not a recognized cross-sheet function
+        """
+        import numpy as np
+
+        # Remove the = prefix
+        expr = formula[1:].strip()
+
+        # Pattern for function with cross-sheet range
+        # Matches: FUNC('Sheet Name'!A1:B2) or FUNC(SheetName!A1:B2)
+        # Quoted sheet name
+        match = re.match(
+            r"^(SUM|AVERAGE|AVG|MIN|MAX|COUNT|COUNTA)\s*\(\s*'([^']+)'!([A-Z]+\d+):([A-Z]+\d+)\s*\)$",
+            expr,
+            re.IGNORECASE
+        )
+        if not match:
+            # Unquoted sheet name
+            match = re.match(
+                r"^(SUM|AVERAGE|AVG|MIN|MAX|COUNT|COUNTA)\s*\(\s*([a-zA-Z_][a-zA-Z0-9_ ]*?)!([A-Z]+\d+):([A-Z]+\d+)\s*\)$",
+                expr,
+                re.IGNORECASE
+            )
+
+        if not match:
+            return None
+
+        func_name = match.group(1).upper()
+        sheet_name = match.group(2)
+        start_ref = match.group(3)
+        end_ref = match.group(4)
+
+        # Check if sheet exists
+        if sheet_name not in self.sheet_models:
+            logger.warning(f"Sheet not found: '{sheet_name}'")
+            return "#REF!"
+
+        target_model = self.sheet_models[sheet_name]
+
+        # Get the range values
+        range_ref = f"'{sheet_name}'!{start_ref}:{end_ref}"
+        values = self._get_range_values(range_ref)
+
+        # Flatten the 2D array for calculations
+        if isinstance(values, np.ndarray):
+            flat_values = values.flatten().tolist()
+        else:
+            flat_values = [v for row in values for v in row]
+
+        # Filter out non-numeric values for most functions
+        numeric_values = []
+        for v in flat_values:
+            if isinstance(v, (int, float)):
+                numeric_values.append(v)
+            elif isinstance(v, str):
+                try:
+                    cleaned = v.replace(',', '').replace('$', '').replace('€', '').replace('£', '').strip()
+                    if cleaned:
+                        numeric_values.append(float(cleaned))
+                except (ValueError, TypeError):
+                    pass
+
+        if not numeric_values:
+            if func_name in ('COUNT', 'COUNTA'):
+                return 0
+            return 0
+
+        # Calculate based on function
+        if func_name == 'SUM':
+            return sum(numeric_values)
+        elif func_name in ('AVERAGE', 'AVG'):
+            return sum(numeric_values) / len(numeric_values)
+        elif func_name == 'MIN':
+            return min(numeric_values)
+        elif func_name == 'MAX':
+            return max(numeric_values)
+        elif func_name == 'COUNT':
+            return len(numeric_values)
+        elif func_name == 'COUNTA':
+            # Count non-empty values (including text)
+            return len([v for v in flat_values if v is not None and v != "" and v != 0])
+
+        return None
+
     def _get_raw_cell_value_from_model(self, ref: str, model) -> Any:
         """Get the raw value of a cell from a model without converting text to 0.
 
@@ -564,6 +661,12 @@ class FormulaEvaluator:
         simple_ref = self._get_simple_sheet_reference_value(formula, row)
         if simple_ref is not None:
             return simple_ref
+
+        # Check if it's a cross-sheet function (e.g., =SUM('Shots Cost'!Y1:Y5))
+        # Handle these manually since the formulas library may not support sheet references
+        cross_sheet_result = self._evaluate_cross_sheet_function(formula)
+        if cross_sheet_result is not None:
+            return cross_sheet_result
 
         # Check for formulas library availability
         if not formulas or not self.parser:
