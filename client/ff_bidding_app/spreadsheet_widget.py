@@ -870,17 +870,31 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
 
             # Evaluate the formula
             result = self.formula_evaluator.evaluate(formula, row, col)
+            result_str = str(result) if result is not None else ""
 
-            # Check if result contains text value marker (for numeric-only columns)
-            if col in self._numeric_only_columns:
-                result_str = str(result) if result is not None else ""
-                # Check for text marker in result
-                if self.TEXT_VALUE_MARKER in result_str:
-                    # Extract the original text value for the error message
+            # Check if result contains text value marker
+            if self.TEXT_VALUE_MARKER in result_str:
+                if col in self._numeric_only_columns:
+                    # Numeric column - show error for text values
                     formatted = "#TYPE! (text not allowed in this column)"
                     self._evaluated_cache[(row, col)] = formatted
                     return formatted
-                # Validate that result is actually numeric (skip error codes starting with #)
+                else:
+                    # Non-numeric column - extract and return the actual text value
+                    # Format is "__TEXT_VALUE__:actual_value" or quoted version
+                    import re
+                    # Match pattern like "__TEXT_VALUE__:value" or "\"__TEXT_VALUE__:value\""
+                    match = re.search(r'__TEXT_VALUE__:(.+?)(?:"|$)', result_str)
+                    if match:
+                        formatted = match.group(1)
+                    else:
+                        # Fallback: just remove the marker prefix
+                        formatted = result_str.replace(f'"{self.TEXT_VALUE_MARKER}:', '').rstrip('"')
+                    self._evaluated_cache[(row, col)] = formatted
+                    return formatted
+
+            # For numeric-only columns, validate that result is actually numeric
+            if col in self._numeric_only_columns:
                 try:
                     if result_str and not result_str.startswith('#'):
                         float(str(result).replace(',', '').replace('$', ''))
