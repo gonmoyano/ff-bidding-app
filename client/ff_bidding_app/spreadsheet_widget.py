@@ -992,6 +992,7 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.model._rows += 1
         new_data = {}
         new_formulas = {}
+        new_formats = {}
 
         for (r, c), value in self.model._data.items():
             if r >= row:
@@ -1000,16 +1001,33 @@ class SpreadsheetWidget(QtWidgets.QWidget):
                 new_data[(r, c)] = value
 
         for (r, c), formula in self.model._formulas.items():
+            # Update formula references to account for the inserted row
+            updated_formula = self._update_formula_for_row_insertion(formula, row)
             if r >= row:
-                new_formulas[(r + 1, c)] = formula
+                new_formulas[(r + 1, c)] = updated_formula
             else:
-                new_formulas[(r, c)] = formula
+                new_formulas[(r, c)] = updated_formula
+
+        # Shift formats
+        for (r, c), fmt in self.model._formats.items():
+            if r >= row:
+                new_formats[(r + 1, c)] = fmt
+            else:
+                new_formats[(r, c)] = fmt
 
         self.model._data = new_data
         self.model._formulas = new_formulas
+        self.model._formats = new_formats
         self.model._evaluated_cache.clear()
 
         self.model.endInsertRows()
+
+        # Emit dataChanged to trigger save to ShotGrid
+        self.model.dataChanged.emit(
+            self.model.index(0, 0),
+            self.model.index(self.model.rowCount() - 1, self.model.columnCount() - 1),
+            [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]
+        )
         logger.info(f"Inserted row above row {row + 1}")
 
     def _insert_row_below(self, row):
@@ -1028,6 +1046,7 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.model._rows -= 1
         new_data = {}
         new_formulas = {}
+        new_formats = {}
 
         for (r, c), value in self.model._data.items():
             if r == row:
@@ -1049,11 +1068,28 @@ class SpreadsheetWidget(QtWidgets.QWidget):
                 updated_formula = self._update_formula_for_row_deletion(formula, row)
                 new_formulas[(r, c)] = updated_formula
 
+        # Shift formats
+        for (r, c), fmt in self.model._formats.items():
+            if r == row:
+                continue  # Skip the deleted row
+            elif r > row:
+                new_formats[(r - 1, c)] = fmt
+            else:
+                new_formats[(r, c)] = fmt
+
         self.model._data = new_data
         self.model._formulas = new_formulas
+        self.model._formats = new_formats
         self.model._evaluated_cache.clear()
 
         self.model.endRemoveRows()
+
+        # Emit dataChanged to trigger save to ShotGrid
+        self.model.dataChanged.emit(
+            self.model.index(0, 0),
+            self.model.index(self.model.rowCount() - 1, self.model.columnCount() - 1),
+            [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]
+        )
         logger.info(f"Deleted row {row + 1}")
 
     def _delete_column(self, col):
@@ -1068,6 +1104,7 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.model._cols -= 1
         new_data = {}
         new_formulas = {}
+        new_formats = {}
 
         for (r, c), value in self.model._data.items():
             if c == col:
@@ -1089,11 +1126,28 @@ class SpreadsheetWidget(QtWidgets.QWidget):
                 updated_formula = self._update_formula_for_column_deletion(formula, col)
                 new_formulas[(r, c)] = updated_formula
 
+        # Shift formats
+        for (r, c), fmt in self.model._formats.items():
+            if c == col:
+                continue  # Skip the deleted column
+            elif c > col:
+                new_formats[(r, c - 1)] = fmt
+            else:
+                new_formats[(r, c)] = fmt
+
         self.model._data = new_data
         self.model._formulas = new_formulas
+        self.model._formats = new_formats
         self.model._evaluated_cache.clear()
 
         self.model.endRemoveColumns()
+
+        # Emit dataChanged to trigger save to ShotGrid
+        self.model.dataChanged.emit(
+            self.model.index(0, 0),
+            self.model.index(self.model.rowCount() - 1, self.model.columnCount() - 1),
+            [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]
+        )
         logger.info(f"Deleted column {self.model._column_name(col)}")
 
     def _insert_column_left(self, col):
@@ -1104,6 +1158,7 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.model._cols += 1
         new_data = {}
         new_formulas = {}
+        new_formats = {}
 
         for (r, c), value in self.model._data.items():
             if c >= col:
@@ -1112,16 +1167,33 @@ class SpreadsheetWidget(QtWidgets.QWidget):
                 new_data[(r, c)] = value
 
         for (r, c), formula in self.model._formulas.items():
+            # Update formula references to account for the inserted column
+            updated_formula = self._update_formula_for_column_insertion(formula, col)
             if c >= col:
-                new_formulas[(r, c + 1)] = formula
+                new_formulas[(r, c + 1)] = updated_formula
             else:
-                new_formulas[(r, c)] = formula
+                new_formulas[(r, c)] = updated_formula
+
+        # Shift formats
+        for (r, c), fmt in self.model._formats.items():
+            if c >= col:
+                new_formats[(r, c + 1)] = fmt
+            else:
+                new_formats[(r, c)] = fmt
 
         self.model._data = new_data
         self.model._formulas = new_formulas
+        self.model._formats = new_formats
         self.model._evaluated_cache.clear()
 
         self.model.endInsertColumns()
+
+        # Emit dataChanged to trigger save to ShotGrid
+        self.model.dataChanged.emit(
+            self.model.index(0, 0),
+            self.model.index(self.model.rowCount() - 1, self.model.columnCount() - 1),
+            [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]
+        )
         logger.info(f"Inserted column left of {self.model._column_name(col)}")
 
     def _insert_column_right(self, col):
@@ -1188,6 +1260,72 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             # If not absolute column reference and col > deleted_col, shift left
             if not col_abs and col_idx > deleted_col:
                 new_col_letter = self.model._column_name(col_idx - 1)
+                return f"{col_abs}{new_col_letter}{row_abs}{row_num}"
+
+            return match.group(0)
+
+        return re.sub(pattern, replace_ref, formula)
+
+    def _update_formula_for_row_insertion(self, formula, inserted_row):
+        """Update cell references in a formula after a row insertion.
+
+        Args:
+            formula: The formula string (e.g., "=SUM(A1:A10)")
+            inserted_row: The row where a new row was inserted (0-based)
+
+        Returns:
+            Updated formula string with row references shifted down
+        """
+        import re
+
+        # Pattern to match cell references like A1, B2, $A$1, etc.
+        pattern = r'(\$?)([A-Z]+)(\$?)(\d+)'
+
+        def replace_ref(match):
+            col_abs = match.group(1)  # $ before column
+            col_letter = match.group(2)
+            row_abs = match.group(3)  # $ before row
+            row_num = int(match.group(4))
+
+            # Convert to 0-based
+            row_idx = row_num - 1
+
+            # If not absolute row reference and row >= inserted_row, increment
+            if not row_abs and row_idx >= inserted_row:
+                new_row_num = row_num + 1
+                return f"{col_abs}{col_letter}{row_abs}{new_row_num}"
+
+            return match.group(0)
+
+        return re.sub(pattern, replace_ref, formula)
+
+    def _update_formula_for_column_insertion(self, formula, inserted_col):
+        """Update cell references in a formula after a column insertion.
+
+        Args:
+            formula: The formula string (e.g., "=SUM(A1:B10)")
+            inserted_col: The column where a new column was inserted (0-based)
+
+        Returns:
+            Updated formula string with column references shifted right
+        """
+        import re
+
+        # Pattern to match cell references like A1, B2, $A$1, etc.
+        pattern = r'(\$?)([A-Z]+)(\$?)(\d+)'
+
+        def replace_ref(match):
+            col_abs = match.group(1)  # $ before column
+            col_letter = match.group(2)
+            row_abs = match.group(3)  # $ before row
+            row_num = match.group(4)
+
+            # Convert column letter to index
+            col_idx = self.model.letter_to_col(col_letter)
+
+            # If not absolute column reference and col >= inserted_col, shift right
+            if not col_abs and col_idx >= inserted_col:
+                new_col_letter = self.model._column_name(col_idx + 1)
                 return f"{col_abs}{new_col_letter}{row_abs}{row_num}"
 
             return match.group(0)
