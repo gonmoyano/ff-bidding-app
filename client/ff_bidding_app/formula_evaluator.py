@@ -429,8 +429,24 @@ class FormulaEvaluator:
         index = model.index(row, col)
         value = model.data(index, QtCore.Qt.EditRole)
 
-        # If value is a formula, get the calculated value
+        # If value is a formula, evaluate it using the model's formula evaluator
         if isinstance(value, str) and value.startswith('='):
+            # Try to get the model's formula evaluator
+            if hasattr(model, 'formula_evaluator') and model.formula_evaluator:
+                try:
+                    result = model.formula_evaluator.evaluate(value, row, col)
+                    # Clean up the result - remove formatting for numeric values
+                    if isinstance(result, str):
+                        # Try to extract numeric value from formatted string like "$1,234.56"
+                        cleaned = result.replace(',', '').replace('$', '').replace('€', '').replace('£', '').strip()
+                        try:
+                            return float(cleaned)
+                        except (ValueError, TypeError):
+                            return result
+                    return result
+                except Exception:
+                    pass
+            # Fallback: try DisplayRole which might have the calculated value
             value = model.data(index, QtCore.Qt.DisplayRole)
 
         # Return the value as-is (don't convert text to 0)
