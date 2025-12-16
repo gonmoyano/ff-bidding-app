@@ -2742,10 +2742,9 @@ class ShotgridClient:
         """
         Save spreadsheet data to ShotGrid.
 
-        This method handles the full save workflow:
+        This method handles the full save workflow with optimized updates:
         1. Gets or creates the Spreadsheet entity
-        2. Deletes existing SpreadsheetItems
-        3. Creates new SpreadsheetItems for each cell
+        2. Updates existing items, creates new ones, deletes removed ones
 
         Args:
             project_id: Project ID
@@ -2763,29 +2762,55 @@ class ShotgridClient:
             spreadsheet = self.create_spreadsheet(project_id, bid_id, spreadsheet_type)
         spreadsheet_id = spreadsheet["id"]
 
-        # Delete existing items
+        # Get existing items and build a map by cell reference
         existing_items = self.get_spreadsheet_items(spreadsheet_id)
-        for item in existing_items:
-            self.sg.delete("CustomEntity16", int(item["id"]))
+        existing_by_cell = {item.get("sg_cell", ""): item for item in existing_items}
 
-        # Create new items for each cell
+        # Track which cells we've processed
+        processed_cells = set()
+        created_count = 0
+        updated_count = 0
+        deleted_count = 0
+
+        # Update or create items for each cell in data_dict
         for (row, col), cell_data in data_dict.items():
             # Convert row/col to cell reference (e.g., A1, B2)
             col_letter = chr(ord('A') + col) if col < 26 else f"A{chr(ord('A') + col - 26)}"
             cell_ref = f"{col_letter}{row + 1}"
+            processed_cells.add(cell_ref)
 
             formula = cell_data.get('formula')
             value = cell_data.get('value')
 
-            self.create_spreadsheet_item(
-                project_id=project_id,
-                spreadsheet_id=spreadsheet_id,
-                cell=cell_ref,
-                formula=formula,
-                value=value
-            )
+            # Determine what to store in sg_formula
+            sg_formula_value = formula if formula else (str(value) if value is not None else "")
 
-        logger.info(f"Saved {len(data_dict)} cells to Spreadsheet {spreadsheet_id}")
+            if cell_ref in existing_by_cell:
+                # Update existing item if value changed
+                existing_item = existing_by_cell[cell_ref]
+                if existing_item.get("sg_formula") != sg_formula_value:
+                    self.sg.update("CustomEntity16", int(existing_item["id"]), {
+                        "sg_formula": sg_formula_value
+                    })
+                    updated_count += 1
+            else:
+                # Create new item
+                self.create_spreadsheet_item(
+                    project_id=project_id,
+                    spreadsheet_id=spreadsheet_id,
+                    cell=cell_ref,
+                    formula=formula,
+                    value=value
+                )
+                created_count += 1
+
+        # Delete items for cells that no longer exist in data_dict
+        for cell_ref, item in existing_by_cell.items():
+            if cell_ref not in processed_cells:
+                self.sg.delete("CustomEntity16", int(item["id"]))
+                deleted_count += 1
+
+        logger.info(f"Saved Spreadsheet {spreadsheet_id}: {created_count} created, {updated_count} updated, {deleted_count} deleted")
         return spreadsheet
 
     def load_spreadsheet_data(self, bid_id, spreadsheet_type):

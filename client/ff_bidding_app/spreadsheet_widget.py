@@ -632,6 +632,12 @@ class SpreadsheetWidget(QtWidgets.QWidget):
                 background-color: transparent;
                 color: inherit;
             }
+            QTableView QLineEdit {
+                color: white;
+                background-color: #3d3d3d;
+                selection-background-color: #4472C4;
+                selection-color: white;
+            }
         """)
 
         # Enable context menu
