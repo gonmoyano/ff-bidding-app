@@ -491,6 +491,7 @@ class FormulaEvaluator:
 
         Handles formulas like:
         - =SUM('Shots Cost'!Y1:Y5)
+        - =SUM('Shots Cost'!Y:Y)  (entire column)
         - =AVERAGE('Sheet Name'!A1:A10)
         - =MIN(SheetName!B1:B20)
         - =MAX('Sheet'!C1:C5)
@@ -507,29 +508,67 @@ class FormulaEvaluator:
         # Remove the = prefix
         expr = formula[1:].strip()
 
-        # Pattern for function with cross-sheet range
-        # Matches: FUNC('Sheet Name'!A1:B2) or FUNC(SheetName!A1:B2)
-        # Quoted sheet name
+        func_name = None
+        sheet_name = None
+        start_ref = None
+        end_ref = None
+        is_column_ref = False
+
+        # Pattern 1: Function with cell range - FUNC('Sheet Name'!A1:B2)
         match = re.match(
             r"^(SUM|AVERAGE|AVG|MIN|MAX|COUNT|COUNTA)\s*\(\s*'([^']+)'!([A-Z]+\d+):([A-Z]+\d+)\s*\)$",
             expr,
             re.IGNORECASE
         )
-        if not match:
-            # Unquoted sheet name
+        if match:
+            func_name = match.group(1).upper()
+            sheet_name = match.group(2)
+            start_ref = match.group(3)
+            end_ref = match.group(4)
+
+        # Pattern 2: Function with cell range (unquoted) - FUNC(SheetName!A1:B2)
+        if not func_name:
             match = re.match(
                 r"^(SUM|AVERAGE|AVG|MIN|MAX|COUNT|COUNTA)\s*\(\s*([a-zA-Z_][a-zA-Z0-9_ ]*?)!([A-Z]+\d+):([A-Z]+\d+)\s*\)$",
                 expr,
                 re.IGNORECASE
             )
+            if match:
+                func_name = match.group(1).upper()
+                sheet_name = match.group(2)
+                start_ref = match.group(3)
+                end_ref = match.group(4)
 
-        if not match:
+        # Pattern 3: Function with entire column - FUNC('Sheet Name'!Y:Y)
+        if not func_name:
+            match = re.match(
+                r"^(SUM|AVERAGE|AVG|MIN|MAX|COUNT|COUNTA)\s*\(\s*'([^']+)'!([A-Z]+):([A-Z]+)\s*\)$",
+                expr,
+                re.IGNORECASE
+            )
+            if match:
+                func_name = match.group(1).upper()
+                sheet_name = match.group(2)
+                start_ref = match.group(3)
+                end_ref = match.group(4)
+                is_column_ref = True
+
+        # Pattern 4: Function with entire column (unquoted) - FUNC(SheetName!Y:Y)
+        if not func_name:
+            match = re.match(
+                r"^(SUM|AVERAGE|AVG|MIN|MAX|COUNT|COUNTA)\s*\(\s*([a-zA-Z_][a-zA-Z0-9_ ]*?)!([A-Z]+):([A-Z]+)\s*\)$",
+                expr,
+                re.IGNORECASE
+            )
+            if match:
+                func_name = match.group(1).upper()
+                sheet_name = match.group(2)
+                start_ref = match.group(3)
+                end_ref = match.group(4)
+                is_column_ref = True
+
+        if not func_name:
             return None
-
-        func_name = match.group(1).upper()
-        sheet_name = match.group(2)
-        start_ref = match.group(3)
-        end_ref = match.group(4)
 
         # Check if sheet exists
         if sheet_name not in self.sheet_models:
@@ -537,6 +576,14 @@ class FormulaEvaluator:
             return "#REF!"
 
         target_model = self.sheet_models[sheet_name]
+
+        # Handle column references (Y:Y) by converting to full range
+        if is_column_ref:
+            # Get the row count from the target model
+            row_count = target_model.rowCount()
+            # Convert column letters to range (e.g., Y:Y -> Y1:Y{row_count})
+            start_ref = f"{start_ref}1"
+            end_ref = f"{end_ref}{row_count}"
 
         # Get the range values
         range_ref = f"'{sheet_name}'!{start_ref}:{end_ref}"
