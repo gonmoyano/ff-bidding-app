@@ -298,7 +298,11 @@ class CostsTab(QtWidgets.QMainWindow):
         return widget
 
     def _update_total_cost_summary(self):
-        """Update the Total Cost summary table with live totals from each dock."""
+        """Update the Total Cost summary table with live totals from each dock.
+
+        Only updates cells that don't contain user-entered formulas.
+        This preserves cross-tab references like =Misc!A1 that the user may have set.
+        """
         try:
             # Get Shot Costs total
             shot_total = 0.0
@@ -341,11 +345,36 @@ class CostsTab(QtWidgets.QMainWindow):
                     pass
 
             # Update the summary spreadsheet (rows 1-3, column 1)
-            # Row 4 has a formula =B2+B3+B4 that calculates Total Cost automatically
-            self.total_cost_spreadsheet.set_cell_value(1, 1, shot_total)  # Shot Costs
-            self.total_cost_spreadsheet.set_cell_value(2, 1, asset_total)  # Asset Costs
-            self.total_cost_spreadsheet.set_cell_value(3, 1, misc_total)   # Misc
-            # Don't set row 4 (Total Cost) - it has a formula =B2+B3+B4
+            # Only update cells that don't have user-entered formulas
+            # This preserves cross-tab references like =Misc!A1
+            model = self.total_cost_spreadsheet.model
+
+            # Shot Costs (B2 = row 1, col 1) - only update if no formula
+            if not model.get_cell_formula(1, 1):
+                self.total_cost_spreadsheet.set_cell_value(1, 1, shot_total)
+            else:
+                # Clear cache to force formula re-evaluation
+                model._evaluated_cache.pop((1, 1), None)
+
+            # Asset Costs (B3 = row 2, col 1) - only update if no formula
+            if not model.get_cell_formula(2, 1):
+                self.total_cost_spreadsheet.set_cell_value(2, 1, asset_total)
+            else:
+                # Clear cache to force formula re-evaluation
+                model._evaluated_cache.pop((2, 1), None)
+
+            # Misc (B4 = row 3, col 1) - only update if no formula
+            if not model.get_cell_formula(3, 1):
+                self.total_cost_spreadsheet.set_cell_value(3, 1, misc_total)
+            else:
+                # Clear cache to force formula re-evaluation
+                model._evaluated_cache.pop((3, 1), None)
+
+            # Total Cost (B5 = row 4, col 1) - always has formula, just clear cache
+            model._evaluated_cache.pop((4, 1), None)
+
+            # Refresh the view to show updated values
+            model.layoutChanged.emit()
 
         except Exception as e:
             logger.error(f"Error updating Total Cost summary: {e}", exc_info=True)
