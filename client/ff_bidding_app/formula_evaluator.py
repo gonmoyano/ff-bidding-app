@@ -23,6 +23,9 @@ except ImportError:
 class FormulaEvaluator:
     """Evaluates formulas using Excel-compatible formulas library."""
 
+    # Special marker for text values that should trigger type errors in numeric columns
+    TEXT_VALUE_MARKER = "__TEXT_VALUE__"
+
     def __init__(self, table_model=None, sheet_models=None):
         """Initialize the formula evaluator.
 
@@ -508,9 +511,8 @@ class FormulaEvaluator:
                     float(value)
                     return str(value)
                 except (ValueError, TypeError):
-                    # It's a text string, return as 0 or handle as text
-                    # For formulas, text in calculations usually becomes 0
-                    return "0"
+                    # It's a text string - return a marker so the model can show an error
+                    return f'"{self.TEXT_VALUE_MARKER}:{value}"'
             else:
                 return str(value)
 
@@ -561,10 +563,9 @@ class FormulaEvaluator:
                     print(f"[CROSS-TAB] Returning numeric string '{value}'")
                     return str(value)
                 except (ValueError, TypeError):
-                    # It's a text string, return as 0 or handle as text
-                    # For formulas, text in calculations usually becomes 0
-                    print(f"[CROSS-TAB] Text value, returning '0'")
-                    return "0"
+                    # It's a text string - return a marker so the model can show an error
+                    print(f"[CROSS-TAB] Text value detected: '{value}', returning TEXT_VALUE_MARKER")
+                    return f'"{self.TEXT_VALUE_MARKER}:{value}"'
             else:
                 print(f"[CROSS-TAB] Returning str(value) = '{value}'")
                 return str(value)

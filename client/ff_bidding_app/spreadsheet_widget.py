@@ -771,6 +771,9 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
     # Signal emitted when status messages should be shown
     statusMessageChanged = QtCore.Signal(str, bool)  # message, is_error
 
+    # Special marker for text values that should be detected in numeric columns
+    TEXT_VALUE_MARKER = "__TEXT_VALUE__"
+
     def __init__(self, rows=100, cols=26, parent=None):
         """Initialize the spreadsheet model.
 
@@ -786,6 +789,10 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         self._formulas = {}  # Dict of (row, col) -> formula string
         self._evaluated_cache = {}  # Dict of (row, col) -> evaluated result
         self.formula_evaluator = None
+
+        # Column type configuration
+        self._numeric_only_columns = set()  # Columns that only allow numeric values
+        self._no_conversion_columns = set()  # Columns where data should not be converted
 
         # Undo/redo stacks
         self.undo_stack = []
@@ -835,6 +842,22 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
 
         return None
 
+    def set_numeric_only_columns(self, columns):
+        """Set which columns should only allow numeric values.
+
+        Args:
+            columns: List or set of column indices that only allow numbers
+        """
+        self._numeric_only_columns = set(columns)
+
+    def set_no_conversion_columns(self, columns):
+        """Set which columns should not have data type conversion.
+
+        Args:
+            columns: List or set of column indices where data should stay as-is
+        """
+        self._no_conversion_columns = set(columns)
+
     def _get_evaluated_value(self, row, col, formula):
         """Evaluate a formula and return the result."""
         if not self.formula_evaluator:
@@ -847,6 +870,30 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
 
             # Evaluate the formula
             result = self.formula_evaluator.evaluate(formula, row, col)
+
+            # Check if result contains text value marker (for numeric-only columns)
+            if col in self._numeric_only_columns:
+                result_str = str(result) if result is not None else ""
+                # Check for text marker in result
+                if self.TEXT_VALUE_MARKER in result_str:
+                    # Extract the original text value for the error message
+                    formatted = "#TYPE! (text not allowed in this column)"
+                    self._evaluated_cache[(row, col)] = formatted
+                    return formatted
+                # Validate that result is actually numeric (skip error codes starting with #)
+                try:
+                    if result_str and not result_str.startswith('#'):
+                        float(str(result).replace(',', '').replace('$', ''))
+                except (ValueError, TypeError):
+                    formatted = "#TYPE! (text not allowed in this column)"
+                    self._evaluated_cache[(row, col)] = formatted
+                    return formatted
+
+            # For no-conversion columns, return as-is without formatting
+            if col in self._no_conversion_columns:
+                formatted = str(result) if result is not None else ""
+                self._evaluated_cache[(row, col)] = formatted
+                return formatted
 
             # Format the result
             if isinstance(result, (int, float)):

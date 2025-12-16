@@ -581,6 +581,13 @@ class CostsTab(QtWidgets.QMainWindow):
             # Set the formula evaluator on the spreadsheet
             self.total_cost_spreadsheet.set_formula_evaluator(self.total_cost_formula_evaluator)
 
+            # Configure column types for Total Cost Summary:
+            # Column A (index 0): No data conversion - allows any type of data
+            # Column B (index 1): Numeric only - shows error if text is referenced
+            self.total_cost_spreadsheet.model.set_no_conversion_columns([0])
+            self.total_cost_spreadsheet.model.set_numeric_only_columns([1])
+            logger.info("Set up column type configuration for Total Cost Summary: Column A=no conversion, Column B=numeric only")
+
             logger.info("Set up cross-tab formula references for Total Cost Summary")
 
         logger.info("Set up cross-tab formula references for all cost sheets")
