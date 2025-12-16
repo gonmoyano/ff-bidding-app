@@ -2667,7 +2667,7 @@ class ShotgridClient:
         results = self.sg.find(
             "CustomEntity16",
             filters,
-            ["id", "sg_cell", "sg_formula", "sg_value", "sg_parent"]
+            ["id", "sg_cell", "sg_formula", "sg_parent"]
         )
         return results
 
@@ -2680,7 +2680,7 @@ class ShotgridClient:
             spreadsheet_id: Parent Spreadsheet ID (CustomEntity15)
             cell: Cell reference (e.g., "A1", "B2")
             formula: Optional formula string (e.g., "=A1+B1")
-            value: Optional raw value (used if no formula)
+            value: Optional raw value (stored in sg_formula if no formula)
 
         Returns:
             Created SpreadsheetItem entity dictionary
@@ -2692,10 +2692,11 @@ class ShotgridClient:
             "sg_cell": cell
         }
 
+        # Store formula or value in sg_formula field (no separate sg_value field exists)
         if formula:
             data["sg_formula"] = formula
-        if value is not None:
-            data["sg_value"] = str(value) if value else ""
+        elif value is not None:
+            data["sg_formula"] = str(value) if value else ""
 
         result = self.sg.create("CustomEntity16", data)
         return result
@@ -2707,16 +2708,17 @@ class ShotgridClient:
         Args:
             item_id: SpreadsheetItem ID
             formula: Optional new formula string
-            value: Optional new value
+            value: Optional new value (stored in sg_formula if no formula)
 
         Returns:
             Updated SpreadsheetItem entity dictionary
         """
         data = {}
+        # Store formula or value in sg_formula field
         if formula is not None:
             data["sg_formula"] = formula
-        if value is not None:
-            data["sg_value"] = str(value) if value else ""
+        elif value is not None:
+            data["sg_formula"] = str(value) if value else ""
 
         if data:
             result = self.sg.update("CustomEntity16", int(item_id), data)
@@ -2824,8 +2826,16 @@ class ShotgridClient:
             col -= 1  # Make 0-indexed
             row = int(row_str) - 1  # Make 0-indexed
 
-            formula = item.get("sg_formula")
-            value = item.get("sg_value")
+            # sg_formula stores both formulas (starting with =) and plain values
+            sg_formula = item.get("sg_formula", "")
+
+            # Determine if it's a formula or a plain value
+            if sg_formula and sg_formula.startswith("="):
+                formula = sg_formula
+                value = None
+            else:
+                formula = None
+                value = sg_formula
 
             data_dict[(row, col)] = {
                 'value': value,
