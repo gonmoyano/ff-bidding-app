@@ -4251,13 +4251,23 @@ class BidSelectorWidget(QtWidgets.QWidget):
             bid_type = select_dialog.get_new_bid_type()
 
             try:
+                # Link new Bid to current RFQ via sg_parent_rfq field
+                parent_rfq_id = None
+                if self.current_rfq:
+                    parent_rfq_id = self.current_rfq.get("id")
+                    logger.info(f"Linking new Bid to RFQ {parent_rfq_id}")
+
                 bid = self.sg_session.create_bid(
                     self.current_project_id,
                     bid_name,
-                    bid_type
+                    bid_type,
+                    parent_rfq_id=parent_rfq_id
                 )
                 bid_id = bid["id"]
                 logger.info(f"Created new Bid: {bid_id} - {bid_name}")
+
+                # Create Price List for new Bid and link to Base Rate Card
+                self._create_price_list_for_new_bid(bid_id, bid_name)
             except Exception as e:
                 logger.error(f"Failed to create Bid: {e}", exc_info=True)
                 QtWidgets.QMessageBox.critical(
@@ -4399,6 +4409,78 @@ class BidSelectorWidget(QtWidgets.QWidget):
             logger.info(f"Refreshed Price Lists dropdown")
 
         logger.info("Completed post-import refresh")
+
+    def _create_price_list_for_new_bid(self, bid_id, bid_name):
+        """Create a Price List for a new Bid and link it to Base Rate Card.
+
+        This is called when creating a new Bid from Excel import to set up
+        the Price List with the Base Rate Card (first available Rate Card).
+
+        Args:
+            bid_id: ID of the newly created Bid
+            bid_name: Name of the Bid (used for Price List name)
+        """
+        try:
+            # Create Price List with sg_parent_bid link
+            price_list_name = f"{bid_name} - Price List"
+            price_list_data = {
+                "code": price_list_name,
+                "project": {"type": "Project", "id": self.current_project_id},
+                "sg_parent_bid": {"type": "CustomEntity06", "id": bid_id}
+            }
+            new_price_list = self.sg_session.sg.create("CustomEntity10", price_list_data)
+            new_price_list_id = new_price_list['id']
+            logger.info(f"Created Price List '{price_list_name}' (ID: {new_price_list_id}) for new Bid")
+
+            # Find and set the Base Rate Card (first available Rate Card)
+            try:
+                rate_cards = self.sg_session.sg.find(
+                    "CustomNonProjectEntity01",
+                    [],
+                    ["id", "code"],
+                    order=[{"field_name": "code", "direction": "asc"}]
+                )
+                if rate_cards:
+                    base_rate_card = rate_cards[0]
+                    self.sg_session.sg.update(
+                        "CustomEntity10",
+                        new_price_list_id,
+                        {"sg_rate_card": {"type": "CustomNonProjectEntity01", "id": base_rate_card['id']}}
+                    )
+                    logger.info(f"Set Base Rate Card '{base_rate_card.get('code')}' (ID: {base_rate_card['id']}) on Price List")
+            except Exception as e:
+                logger.warning(f"Could not set Base Rate Card on Price List: {e}")
+
+            # Link Price List to Bid
+            self.sg_session.sg.update(
+                "CustomEntity06",
+                bid_id,
+                {"sg_price_list": {"type": "CustomEntity10", "id": new_price_list_id}}
+            )
+            logger.info(f"Linked Price List to Bid {bid_id}")
+
+            # Create initial empty Line Item row
+            try:
+                line_item_data = {
+                    "code": "New Line Item",
+                    "project": {"type": "Project", "id": self.current_project_id},
+                    "sg_parent_pricelist": {"type": "CustomEntity10", "id": new_price_list_id}
+                }
+                new_line_item = self.sg_session.sg.create("CustomEntity03", line_item_data)
+                # Link Line Item to Price List via sg_line_items field
+                self.sg_session.sg.update(
+                    "CustomEntity10",
+                    new_price_list_id,
+                    {"sg_line_items": [{"type": "CustomEntity03", "id": new_line_item['id']}]}
+                )
+                logger.info(f"Created initial Line Item for Price List")
+            except Exception as e:
+                logger.warning(f"Could not create initial Line Item for Price List: {e}")
+
+        except Exception as e:
+            logger.error(f"Failed to create Price List for new Bid: {e}", exc_info=True)
+            # Don't fail the import - just log the warning
+            logger.warning("Import will continue without Price List setup")
 
     def _deduplicate_entity_refs(self, entity_refs):
         """
