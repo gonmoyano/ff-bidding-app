@@ -1053,10 +1053,10 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
         /* Table View - consistent styling across Mac/Windows */
         QTableView, QTableWidget {
-            background-color: #353535;
-            alternate-background-color: #3a3a3a;
+            background-color: #2b2b2b;
+            alternate-background-color: #2b2b2b;
             color: #e0e0e0;
-            gridline-color: #555555;
+            gridline-color: #3a3a3a;
             border: none;
             selection-background-color: #4a9eff;
             selection-color: #ffffff;

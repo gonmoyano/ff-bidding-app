@@ -74,7 +74,7 @@ class EntityPillWidget(QtWidgets.QWidget):
         # Calculate effective height
         effective_height = self._calculate_effective_height()
 
-        # Entity name label
+        # Entity name label with text elision for long names
         self.name_label = QtWidgets.QLabel(self.entity_name)
         self.name_label.setStyleSheet(f"""
             QLabel {{
@@ -86,6 +86,10 @@ class EntityPillWidget(QtWidgets.QWidget):
         """)
         self.name_label.setCursor(QtCore.Qt.PointingHandCursor)
         self.name_label.mousePressEvent = self._on_label_clicked
+        # Limit pill width to prevent extending beyond cell boundaries
+        self.name_label.setMaximumWidth(120)
+        # Add tooltip with full name in case it's truncated
+        self.name_label.setToolTip(self.entity_name)
 
         # Add tooltip for invalid pills showing the asset name
         if not self.is_valid:
@@ -219,8 +223,10 @@ class EntityPillWidget(QtWidgets.QWidget):
             QSize: Preferred size
         """
         effective_height = self._calculate_effective_height()
-        # Width is based on content, height is constrained
-        width = self.name_label.sizeHint().width() + 30  # Add space for close button and margins
+        # Width is based on content but capped to prevent overflow
+        # Max label width (120) + close button (16) + margins (10) + spacing (3) = 149
+        label_width = min(self.name_label.sizeHint().width(), 120)
+        width = label_width + 30  # Add space for close button and margins
         return QtCore.QSize(width, effective_height)
 
 
@@ -302,9 +308,9 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         # Set object name for stylesheet targeting
         self.setObjectName("entityReferenceWidget")
 
-        # Main layout
+        # Main layout - no margins to align with table cell boundaries
         main_layout = QtWidgets.QVBoxLayout(self)
-        main_layout.setContentsMargins(2, 2, 2, 2)
+        main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
         # Scroll area for pills (in case of many entities)
@@ -319,7 +325,7 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
 
         # Container for pills with flow layout
         self.pills_container = QtWidgets.QWidget()
-        self.pills_layout = FlowLayout(self.pills_container, margin=2, h_spacing=4, v_spacing=4)
+        self.pills_layout = FlowLayout(self.pills_container, margin=4, h_spacing=4, v_spacing=4)
 
         self._scroll_area.setWidget(self.pills_container)
         main_layout.addWidget(self._scroll_area)
@@ -338,6 +344,10 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
 
         # Enable auto-fill background so paintEvent can draw
         self.setAutoFillBackground(False)
+
+        # Ensure widget clips children to its bounds (prevents pills extending beyond cell)
+        self.setContentsMargins(0, 0, 0, 0)
+        self._scroll_area.viewport().setAutoFillBackground(False)
 
     def _populate_entities(self):
         """Create pill widgets for all entities."""
