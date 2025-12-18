@@ -27,6 +27,63 @@ Usage:
 from PySide6 import QtWidgets, QtCore, QtGui
 
 
+class ResizeHandle(QtWidgets.QWidget):
+    """A draggable resize handle widget for panel resizing."""
+
+    # Signals
+    resize_started = QtCore.Signal(int)  # Emitted when resize starts, with global x position
+    resize_moved = QtCore.Signal(int)  # Emitted during resize drag, with global x position
+    resize_finished = QtCore.Signal()  # Emitted when resize ends
+
+    def __init__(self, parent=None):
+        """Initialize the resize handle.
+
+        Args:
+            parent: Parent widget
+        """
+        super().__init__(parent)
+
+        self.setMouseTracking(True)
+        self.setCursor(QtCore.Qt.SizeHorCursor)
+        self._is_dragging = False
+
+        # Style the resize handle
+        self.setStyleSheet("""
+            ResizeHandle {
+                background-color: #4a4a4a;
+            }
+            ResizeHandle:hover {
+                background-color: #5a5a5a;
+            }
+        """)
+
+    def mousePressEvent(self, event):
+        """Handle mouse press to start resize."""
+        if event.button() == QtCore.Qt.LeftButton:
+            self._is_dragging = True
+            self.resize_started.emit(event.globalPos().x())
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Handle mouse move during resize."""
+        if self._is_dragging:
+            self.resize_moved.emit(event.globalPos().x())
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release to end resize."""
+        if event.button() == QtCore.Qt.LeftButton and self._is_dragging:
+            self._is_dragging = False
+            self.resize_finished.emit()
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+
 class SlidingOverlayPanel(QtWidgets.QWidget):
     """A panel that slides in from the right edge as an overlay."""
 
@@ -75,8 +132,23 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
 
     def _build_ui(self):
         """Build the panel UI."""
-        # Main layout for the panel
-        self.main_layout = QtWidgets.QVBoxLayout(self)
+        # Use horizontal layout to place resize handle on the left
+        outer_layout = QtWidgets.QHBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        # Create resize handle on the left edge
+        self.resize_handle = ResizeHandle(self)
+        self.resize_handle.setFixedWidth(self._resize_edge_width)
+        self.resize_handle.resize_started.connect(self._on_resize_started)
+        self.resize_handle.resize_moved.connect(self._on_resize_moved)
+        self.resize_handle.resize_finished.connect(self._on_resize_finished)
+        outer_layout.addWidget(self.resize_handle)
+
+        # Container for the main content (header + content)
+        main_container = QtWidgets.QWidget()
+        main_container.setObjectName("mainContainer")
+        self.main_layout = QtWidgets.QVBoxLayout(main_container)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
 
@@ -152,14 +224,15 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
 
         self.main_layout.addWidget(self.content_container, 1)
 
-        # Apply styling - thicker left border indicates resize handle
+        outer_layout.addWidget(main_container, 1)
+
+        # Apply styling
         self.setStyleSheet("""
             SlidingOverlayPanel {
                 background-color: #2b2b2b;
-                border-left: 4px solid #4a4a4a;
             }
-            SlidingOverlayPanel:hover {
-                border-left: 4px solid #5a5a5a;
+            QWidget#mainContainer {
+                background-color: #2b2b2b;
             }
             QWidget#contentContainer {
                 background-color: #2b2b2b;
@@ -335,72 +408,50 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
         """
         return self.panel_width
 
-    def _is_on_resize_edge(self, pos):
-        """Check if the position is on the left resize edge.
+    def _on_resize_started(self, global_x):
+        """Handle resize start from the resize handle.
 
         Args:
-            pos: QPoint position relative to the widget
-
-        Returns:
-            bool: True if on resize edge
+            global_x: Global x position when resize started
         """
-        return pos.x() <= self._resize_edge_width
+        self._is_resizing = True
+        self._resize_start_x = global_x
+        self._resize_start_width = self.panel_width
 
-    def mousePressEvent(self, event):
-        """Handle mouse press for resize."""
-        if event.button() == QtCore.Qt.LeftButton and self._is_on_resize_edge(event.pos()):
-            self._is_resizing = True
-            self._resize_start_x = event.globalPos().x()
-            self._resize_start_width = self.panel_width
-            event.accept()
-        else:
-            super().mousePressEvent(event)
+    def _on_resize_moved(self, global_x):
+        """Handle resize drag from the resize handle.
 
-    def mouseMoveEvent(self, event):
-        """Handle mouse move for resize cursor and dragging."""
-        if self._is_resizing:
-            # Calculate new width based on drag distance
-            delta = self._resize_start_x - event.globalPos().x()
-            new_width = self._resize_start_width + delta
-
-            # Clamp to min/max
-            new_width = max(self.min_panel_width, min(self.max_panel_width, new_width))
-
-            # Update panel width and position
-            if new_width != self.panel_width:
-                self.panel_width = new_width
-                if self.parent():
-                    parent_rect = self.parent().rect()
-                    self.setGeometry(
-                        parent_rect.width() - self.panel_width,
-                        0,
-                        self.panel_width,
-                        parent_rect.height()
-                    )
-            event.accept()
-        else:
-            # Update cursor based on position
-            if self._is_on_resize_edge(event.pos()):
-                self.setCursor(QtCore.Qt.SizeHorCursor)
-            else:
-                self.setCursor(QtCore.Qt.ArrowCursor)
-            super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        """Handle mouse release to end resize."""
-        if event.button() == QtCore.Qt.LeftButton and self._is_resizing:
-            self._is_resizing = False
-            # Emit signal with the new panel width for persistence
-            self.panel_resized.emit(self.panel_width)
-            event.accept()
-        else:
-            super().mouseReleaseEvent(event)
-
-    def leaveEvent(self, event):
-        """Reset cursor when leaving widget."""
+        Args:
+            global_x: Current global x position
+        """
         if not self._is_resizing:
-            self.setCursor(QtCore.Qt.ArrowCursor)
-        super().leaveEvent(event)
+            return
+
+        # Calculate new width based on drag distance
+        # Dragging left (smaller x) = larger panel width
+        delta = self._resize_start_x - global_x
+        new_width = self._resize_start_width + delta
+
+        # Clamp to min/max
+        new_width = max(self.min_panel_width, min(self.max_panel_width, new_width))
+
+        # Update panel width and position
+        if new_width != self.panel_width:
+            self.panel_width = new_width
+            if self.parent():
+                parent_rect = self.parent().rect()
+                self.setGeometry(
+                    parent_rect.width() - self.panel_width,
+                    0,
+                    self.panel_width,
+                    parent_rect.height()
+                )
+
+    def _on_resize_finished(self):
+        """Handle resize end from the resize handle."""
+        self._is_resizing = False
+        # Emit signal with the new panel width for persistence
+        self.panel_resized.emit(self.panel_width)
 
 
 class OverlayBackground(QtWidgets.QWidget):
