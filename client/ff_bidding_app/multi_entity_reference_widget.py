@@ -52,10 +52,10 @@ class EntityPillWidget(QtWidgets.QWidget):
         # Try 'code' first (used by Asset items), then 'name', finally fallback to ID
         self.entity_name = entity.get("code") or entity.get("name") or f"ID {entity.get('id', 'N/A')}"
 
-        # Colors for custom painting - blue for valid, red for invalid
+        # Colors for custom painting - use same blue as table selection for consistency
         if self.is_valid:
-            self.bg_color = QtGui.QColor("#4a90e2")  # Blue for valid
-            self.border_color = QtGui.QColor("#357abd")
+            self.bg_color = QtGui.QColor("#4a9eff")  # Match table selection blue
+            self.border_color = QtGui.QColor("#3a8adf")
             self.text_color = "#ffffff"
         else:
             self.bg_color = QtGui.QColor("#e74c3c")  # Red for invalid
@@ -690,17 +690,17 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
 
     def _update_visual_state(self):
         """Update the widget's visual appearance based on selection and editing states."""
-        # Determine background and border colors
+        # Determine background and border colors - use #4a9eff to match table selection
         if self._is_editing:
             # Editing mode: blue border, dark background
             self.bg_color = QtGui.QColor("#2b2b2b")
-            self.border_color = QtGui.QColor("#0078d4")
+            self.border_color = QtGui.QColor("#4a9eff")
             self.border_width = 2
             state = "editing"
         elif self._is_selected:
-            # Selected mode: blue background
-            self.bg_color = QtGui.QColor("#0078d4")
-            self.border_color = QtGui.QColor("#0078d4")
+            # Selected mode: blue background matching table selection
+            self.bg_color = QtGui.QColor("#4a9eff")
+            self.border_color = QtGui.QColor("#4a9eff")
             self.border_width = 1
             state = "selected"
         else:
@@ -708,8 +708,6 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
             self.bg_color = QtGui.QColor("#2b2b2b")
             # Border not drawn in normal state (table grid lines show through)
             state = "normal"
-
-        print(f"DEBUG: _update_visual_state() - state={state}, bg={self.bg_color.name()}, border={self.border_color.name()} {self.border_width}px")
 
         # Trigger repaint with new colors
         self.update()
