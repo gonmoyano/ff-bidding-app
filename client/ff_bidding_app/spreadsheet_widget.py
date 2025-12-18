@@ -39,25 +39,17 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         """Paint the table and add blue border with fill handle."""
         super().paintEvent(event)
 
-        # Get current selection (use drag start if dragging, otherwise use current)
-        if self._is_dragging_fill_handle and self._drag_start_index:
-            current = self._drag_start_index
-        else:
-            current = self.currentIndex()
+        # Get current selection
+        current = self.currentIndex()
+        selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
 
-        if not current.isValid():
-            return
-
-        # Get the visual rect of the current cell
-        rect = self.visualRect(current)
-        if rect.isEmpty():
+        if not current.isValid() and not selection:
             return
 
         painter = QtGui.QPainter(self.viewport())
 
-        # If dragging, draw preview of fill range
-        if self._is_dragging_fill_handle and self._drag_current_index and self._drag_current_index != self._drag_start_index:
-            # Draw light gray overlay on cells being filled
+        # If dragging fill handle, draw preview of fill range
+        if self._is_dragging_fill_handle and self._drag_start_index and self._drag_current_index and self._drag_current_index != self._drag_start_index:
             start_row = self._drag_start_index.row()
             start_col = self._drag_start_index.column()
             end_row = self._drag_current_index.row()
@@ -73,19 +65,53 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                     if not cell_rect.isEmpty():
                         painter.drawRect(cell_rect)
 
-        # Draw blue border around selected cell
-        painter.setPen(QtGui.QPen(QtGui.QColor("#4472C4"), 2))
-        painter.drawRect(rect.adjusted(1, 1, -1, -1))
+        # Draw border around all selected cells
+        if selection:
+            # Find bounding rectangle of selection
+            min_row = min(idx.row() for idx in selection)
+            max_row = max(idx.row() for idx in selection)
+            min_col = min(idx.column() for idx in selection)
+            max_col = max(idx.column() for idx in selection)
 
-        # Draw fill handle (small square at bottom-right)
-        handle_size = 6
-        handle_x = rect.right() - handle_size // 2
-        handle_y = rect.bottom() - handle_size // 2
-        self._fill_handle_rect = QtCore.QRect(handle_x, handle_y, handle_size, handle_size)
+            # Get visual rect of bounding selection
+            top_left_rect = self.visualRect(self.model().index(min_row, min_col))
+            bottom_right_rect = self.visualRect(self.model().index(max_row, max_col))
 
-        painter.setBrush(QtGui.QColor("#4472C4"))
-        painter.setPen(Qt.NoPen)
-        painter.drawRect(self._fill_handle_rect)
+            if not top_left_rect.isEmpty() and not bottom_right_rect.isEmpty():
+                # Combine into selection bounding rect
+                selection_rect = top_left_rect.united(bottom_right_rect)
+
+                # Draw blue border around entire selection
+                painter.setPen(QtGui.QPen(QtGui.QColor("#4472C4"), 2))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRect(selection_rect.adjusted(1, 1, -1, -1))
+
+                # Draw fill handle at bottom-right of selection
+                handle_size = 6
+                handle_x = selection_rect.right() - handle_size // 2
+                handle_y = selection_rect.bottom() - handle_size // 2
+                self._fill_handle_rect = QtCore.QRect(handle_x, handle_y, handle_size, handle_size)
+
+                painter.setBrush(QtGui.QColor("#4472C4"))
+                painter.setPen(Qt.NoPen)
+                painter.drawRect(self._fill_handle_rect)
+        elif current.isValid():
+            # Single cell selected - draw border around it
+            rect = self.visualRect(current)
+            if not rect.isEmpty():
+                painter.setPen(QtGui.QPen(QtGui.QColor("#4472C4"), 2))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRect(rect.adjusted(1, 1, -1, -1))
+
+                # Draw fill handle
+                handle_size = 6
+                handle_x = rect.right() - handle_size // 2
+                handle_y = rect.bottom() - handle_size // 2
+                self._fill_handle_rect = QtCore.QRect(handle_x, handle_y, handle_size, handle_size)
+
+                painter.setBrush(QtGui.QColor("#4472C4"))
+                painter.setPen(Qt.NoPen)
+                painter.drawRect(self._fill_handle_rect)
 
         painter.end()
 
@@ -217,9 +243,23 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         return re.sub(pattern, replace_ref, formula)
 
     def keyPressEvent(self, event):
-        """Handle keyboard events for copy/cut/paste operations."""
+        """Handle keyboard events for copy/cut/paste/undo/redo operations."""
         key = event.key()
         modifiers = event.modifiers()
+
+        # Check for Ctrl+Z (Undo)
+        if key == Qt.Key_Z and (modifiers & Qt.ControlModifier):
+            logger.info("Ctrl+Z detected - undoing")
+            self._undo()
+            event.accept()
+            return
+
+        # Check for Ctrl+Y (Redo)
+        if key == Qt.Key_Y and (modifiers & Qt.ControlModifier):
+            logger.info("Ctrl+Y detected - redoing")
+            self._redo()
+            event.accept()
+            return
 
         # Check for Ctrl+C (Copy)
         if key == Qt.Key_C and (modifiers & Qt.ControlModifier):
@@ -251,40 +291,77 @@ class SpreadsheetTableView(QtWidgets.QTableView):
 
         super().keyPressEvent(event)
 
+    def _undo(self):
+        """Undo the last change."""
+        model = self.model()
+        if model and hasattr(model, 'undo'):
+            model.undo()
+
+    def _redo(self):
+        """Redo the last undone change."""
+        model = self.model()
+        if model and hasattr(model, 'redo'):
+            model.redo()
+
     def _copy_selection(self):
-        """Copy the current cell to clipboard."""
-        current = self.currentIndex()
-        if not current.isValid():
+        """Copy selected cells to clipboard."""
+        selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
+        if not selection:
             return
 
         model = self.model()
         if not model:
             return
 
-        # Get the cell's formula or value (EditRole shows formula if present)
-        value = model.data(current, Qt.EditRole)
-        if value is None:
-            value = ""
+        # Sort by row then column
+        selection = sorted(selection, key=lambda idx: (idx.row(), idx.column()))
+
+        # Find bounding rectangle
+        min_row = min(idx.row() for idx in selection)
+        max_row = max(idx.row() for idx in selection)
+        min_col = min(idx.column() for idx in selection)
+        max_col = max(idx.column() for idx in selection)
+
+        # Build clipboard data structure: dict of relative (row, col) -> value
+        clipboard_cells = {}
+        clipboard_text_rows = []
+
+        for row in range(min_row, max_row + 1):
+            row_values = []
+            for col in range(min_col, max_col + 1):
+                index = model.index(row, col)
+                # Check if this cell is in selection
+                if index in selection:
+                    value = model.data(index, Qt.EditRole)
+                    if value is None:
+                        value = ""
+                    clipboard_cells[(row - min_row, col - min_col)] = value
+                    display_value = model.data(index, Qt.DisplayRole)
+                    row_values.append(str(display_value) if display_value else "")
+                else:
+                    row_values.append("")
+            clipboard_text_rows.append("\t".join(row_values))
 
         # Store in internal clipboard
         self._clipboard_data = {
-            'value': value,
-            'row': current.row(),
-            'col': current.column()
+            'cells': clipboard_cells,
+            'rows': max_row - min_row + 1,
+            'cols': max_col - min_col + 1,
+            'source_row': min_row,
+            'source_col': min_col
         }
         self._clipboard_is_cut = False
 
-        # Also copy to system clipboard as text
+        # Also copy to system clipboard as tab-separated text
         clipboard = QtWidgets.QApplication.clipboard()
-        display_value = model.data(current, Qt.DisplayRole)
-        clipboard.setText(str(display_value) if display_value else "")
+        clipboard.setText("\n".join(clipboard_text_rows))
 
-        logger.info(f"Copied cell ({current.row()},{current.column()}): {value}")
+        logger.info(f"Copied {len(clipboard_cells)} cells from ({min_row},{min_col}) to ({max_row},{max_col})")
 
     def _cut_selection(self):
-        """Cut the current cell to clipboard."""
-        current = self.currentIndex()
-        if not current.isValid():
+        """Cut selected cells to clipboard."""
+        selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
+        if not selection:
             return
 
         # First copy the data
@@ -293,10 +370,13 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         # Mark as cut operation
         self._clipboard_is_cut = True
 
-        logger.info(f"Cut cell ({current.row()},{current.column()})")
+        # Store the original selection for clearing after paste
+        self._cut_selection_indexes = list(selection)
+
+        logger.info(f"Cut {len(selection)} cells")
 
     def _paste_selection(self):
-        """Paste clipboard data to the current cell."""
+        """Paste clipboard data to current cell or selection."""
         current = self.currentIndex()
         if not current.isValid():
             return
@@ -305,56 +385,177 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         if not model:
             return
 
-        # Try internal clipboard first
-        if self._clipboard_data:
-            source_row = self._clipboard_data.get('row', 0)
-            source_col = self._clipboard_data.get('col', 0)
-            value = self._clipboard_data.get('value', '')
+        # Collect all changes for a single undo command
+        changes = []
 
-            logger.info(f"Pasting from internal clipboard: {value}")
+        # Try internal clipboard first (multi-cell)
+        if self._clipboard_data and 'cells' in self._clipboard_data:
+            cells = self._clipboard_data['cells']
+            source_row = self._clipboard_data.get('source_row', 0)
+            source_col = self._clipboard_data.get('source_col', 0)
 
-            # If it's a formula and we're pasting to a different cell, adjust references
-            if isinstance(value, str) and value.startswith('='):
-                row_offset = current.row() - source_row
-                col_offset = current.column() - source_col
+            target_row = current.row()
+            target_col = current.column()
 
-                if row_offset != 0 or col_offset != 0:
-                    adjusted_value = self._adjust_formula_for_paste(value, row_offset, col_offset)
-                    logger.info(f"Adjusted formula from {value} to {adjusted_value}")
-                    value = adjusted_value
+            # Calculate offset from source to target
+            row_offset = target_row - source_row
+            col_offset = target_col - source_col
 
-            # Set the data
-            model.setData(current, value, Qt.EditRole)
+            # Collect paste changes
+            for (rel_row, rel_col), value in cells.items():
+                paste_row = target_row + rel_row
+                paste_col = target_col + rel_col
 
-            # If it was a cut operation, clear the source cell
-            if self._clipboard_is_cut and self._clipboard_data:
-                source_index = model.index(source_row, source_col)
-                model.setData(source_index, "", Qt.EditRole)
+                # Check bounds
+                if paste_row >= model.rowCount() or paste_col >= model.columnCount():
+                    continue
+
+                # If it's a formula, adjust references
+                new_formula = None
+                new_value = None
+                if isinstance(value, str) and value.startswith('='):
+                    new_formula = self._adjust_formula_for_paste(value, row_offset + rel_row, col_offset + rel_col)
+                else:
+                    new_value = value
+
+                # Get old values
+                old_value = model._data.get((paste_row, paste_col), None)
+                old_formula = model._formulas.get((paste_row, paste_col), None)
+
+                changes.append({
+                    'row': paste_row,
+                    'col': paste_col,
+                    'old_value': old_value,
+                    'new_value': new_value,
+                    'old_formula': old_formula,
+                    'new_formula': new_formula
+                })
+
+            # If it was a cut operation, also add deletions for source cells
+            if self._clipboard_is_cut and hasattr(self, '_cut_selection_indexes'):
+                for source_index in self._cut_selection_indexes:
+                    src_row, src_col = source_index.row(), source_index.column()
+                    old_value = model._data.get((src_row, src_col), None)
+                    old_formula = model._formulas.get((src_row, src_col), None)
+                    changes.append({
+                        'row': src_row,
+                        'col': src_col,
+                        'old_value': old_value,
+                        'new_value': None,
+                        'old_formula': old_formula,
+                        'new_formula': None
+                    })
                 self._clipboard_is_cut = False
-                logger.info(f"Cleared source cell ({source_row},{source_col}) after cut")
+                self._cut_selection_indexes = []
 
-            logger.info(f"Pasted to cell ({current.row()},{current.column()}): {value}")
         else:
-            # Try system clipboard
+            # Try system clipboard (tab-separated text)
             clipboard = QtWidgets.QApplication.clipboard()
             text = clipboard.text()
             if text:
-                model.setData(current, text, Qt.EditRole)
-                logger.info(f"Pasted from system clipboard to ({current.row()},{current.column()}): {text}")
+                # Parse tab-separated values
+                rows = text.split('\n')
+                # Remove trailing empty row if present
+                if rows and rows[-1] == '':
+                    rows = rows[:-1]
+
+                target_row = current.row()
+                target_col = current.column()
+
+                for row_offset, row_text in enumerate(rows):
+                    cols = row_text.split('\t')
+                    for col_offset, cell_value in enumerate(cols):
+                        paste_row = target_row + row_offset
+                        paste_col = target_col + col_offset
+
+                        # Check bounds
+                        if paste_row >= model.rowCount() or paste_col >= model.columnCount():
+                            continue
+
+                        # Get old values
+                        old_value = model._data.get((paste_row, paste_col), None)
+                        old_formula = model._formulas.get((paste_row, paste_col), None)
+
+                        # Determine if new value is formula or value
+                        new_formula = None
+                        new_value = None
+                        if cell_value.startswith('='):
+                            new_formula = cell_value
+                        else:
+                            new_value = cell_value
+
+                        changes.append({
+                            'row': paste_row,
+                            'col': paste_col,
+                            'old_value': old_value,
+                            'new_value': new_value,
+                            'old_formula': old_formula,
+                            'new_formula': new_formula
+                        })
+
+        # Execute paste via command
+        if changes:
+            command = SpreadsheetPasteCommand(changes, model)
+            model._in_undo_redo = True
+            try:
+                command.redo()
+            finally:
+                model._in_undo_redo = False
+
+            # Add to undo stack
+            model.undo_stack.append(command)
+            model.redo_stack.clear()
+
+            # Clear dependent cache
+            model._clear_dependent_cache()
+
+            logger.info(f"Pasted {len(changes)} cells")
 
     def _delete_selection(self):
-        """Delete the content of the current cell."""
-        current = self.currentIndex()
-        if not current.isValid():
+        """Delete the content of selected cells."""
+        selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
+        if not selection:
             return
 
         model = self.model()
         if not model:
             return
 
-        # Clear the cell
-        model.setData(current, "", Qt.EditRole)
-        logger.info(f"Deleted cell ({current.row()},{current.column()})")
+        # Collect deletions for a single undo command
+        deletions = []
+        for index in selection:
+            row, col = index.row(), index.column()
+            old_value = model._data.get((row, col), None)
+            old_formula = model._formulas.get((row, col), None)
+
+            # Only include cells that have content
+            if old_value is not None or old_formula is not None:
+                deletions.append({
+                    'row': row,
+                    'col': col,
+                    'old_value': old_value,
+                    'old_formula': old_formula
+                })
+
+        if not deletions:
+            return
+
+        # Execute delete via command
+        command = SpreadsheetDeleteCommand(deletions, model)
+        model._in_undo_redo = True
+        try:
+            command.redo()
+        finally:
+            model._in_undo_redo = False
+
+        # Add to undo stack
+        model.undo_stack.append(command)
+        model.redo_stack.clear()
+
+        # Clear dependent cache
+        model._clear_dependent_cache()
+
+        logger.info(f"Deleted {len(deletions)} cells")
 
     def _adjust_formula_for_paste(self, formula, row_offset, col_offset):
         """Adjust formula references when pasting to a different cell.
@@ -411,8 +612,167 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         return re.sub(pattern, replace_ref, formula)
 
 
+class SpreadsheetEditCommand:
+    """Command pattern for undo/redo of single cell edits in spreadsheet."""
+
+    def __init__(self, model, row, col, old_value, new_value, old_formula, new_formula):
+        """Initialize the edit command.
+
+        Args:
+            model: SpreadsheetModel instance
+            row: Row index
+            col: Column index
+            old_value: Previous value in _data
+            new_value: New value in _data
+            old_formula: Previous formula in _formulas (or None)
+            new_formula: New formula in _formulas (or None)
+        """
+        self.model = model
+        self.row = row
+        self.col = col
+        self.old_value = old_value
+        self.new_value = new_value
+        self.old_formula = old_formula
+        self.new_formula = new_formula
+
+    def undo(self):
+        """Undo the edit - restore old value/formula."""
+        self._apply_cell_data(self.old_value, self.old_formula)
+
+    def redo(self):
+        """Redo the edit - apply new value/formula."""
+        self._apply_cell_data(self.new_value, self.new_formula)
+
+    def _apply_cell_data(self, value, formula):
+        """Apply value or formula to the cell."""
+        # Clear cache
+        self.model._evaluated_cache.pop((self.row, self.col), None)
+
+        if formula:
+            # It's a formula
+            self.model._formulas[(self.row, self.col)] = formula
+            self.model._data.pop((self.row, self.col), None)
+        else:
+            # It's a value
+            if value:
+                self.model._data[(self.row, self.col)] = value
+            else:
+                self.model._data.pop((self.row, self.col), None)
+            self.model._formulas.pop((self.row, self.col), None)
+
+        # Clear dependent cache and emit change
+        self.model._clear_dependent_cache()
+        index = self.model.index(self.row, self.col)
+        self.model.dataChanged.emit(index, index, [Qt.DisplayRole, Qt.EditRole])
+
+
+class SpreadsheetPasteCommand:
+    """Command pattern for undo/redo of paste operations in spreadsheet."""
+
+    def __init__(self, changes, model):
+        """Initialize paste command.
+
+        Args:
+            changes: List of dicts with keys: row, col, old_value, new_value,
+                    old_formula, new_formula
+            model: SpreadsheetModel instance
+        """
+        self.changes = changes
+        self.model = model
+
+    def undo(self):
+        """Undo all paste changes."""
+        for change in self.changes:
+            self._apply_cell_data(
+                change['row'], change['col'],
+                change['old_value'], change['old_formula']
+            )
+
+    def redo(self):
+        """Redo all paste changes."""
+        for change in self.changes:
+            self._apply_cell_data(
+                change['row'], change['col'],
+                change['new_value'], change['new_formula']
+            )
+
+    def _apply_cell_data(self, row, col, value, formula):
+        """Apply value or formula to a cell."""
+        # Clear cache
+        self.model._evaluated_cache.pop((row, col), None)
+
+        if formula:
+            # It's a formula
+            self.model._formulas[(row, col)] = formula
+            self.model._data.pop((row, col), None)
+        else:
+            # It's a value
+            if value:
+                self.model._data[(row, col)] = value
+            else:
+                self.model._data.pop((row, col), None)
+            self.model._formulas.pop((row, col), None)
+
+        # Emit change for this cell
+        index = self.model.index(row, col)
+        self.model.dataChanged.emit(index, index, [Qt.DisplayRole, Qt.EditRole])
+
+
+class SpreadsheetDeleteCommand:
+    """Command pattern for undo/redo of delete operations in spreadsheet."""
+
+    def __init__(self, deletions, model):
+        """Initialize delete command.
+
+        Args:
+            deletions: List of dicts with keys: row, col, old_value, old_formula
+            model: SpreadsheetModel instance
+        """
+        self.deletions = deletions
+        self.model = model
+
+    def undo(self):
+        """Undo deletions - restore old values."""
+        for deletion in self.deletions:
+            self._apply_cell_data(
+                deletion['row'], deletion['col'],
+                deletion['old_value'], deletion['old_formula']
+            )
+
+    def redo(self):
+        """Redo deletions - clear cells again."""
+        for deletion in self.deletions:
+            self._apply_cell_data(
+                deletion['row'], deletion['col'],
+                None, None
+            )
+
+    def _apply_cell_data(self, row, col, value, formula):
+        """Apply value or formula to a cell."""
+        self.model._evaluated_cache.pop((row, col), None)
+
+        if formula:
+            self.model._formulas[(row, col)] = formula
+            self.model._data.pop((row, col), None)
+        else:
+            if value:
+                self.model._data[(row, col)] = value
+            else:
+                self.model._data.pop((row, col), None)
+            self.model._formulas.pop((row, col), None)
+
+        index = self.model.index(row, col)
+        self.model.dataChanged.emit(index, index, [Qt.DisplayRole, Qt.EditRole])
+
+
 class SpreadsheetModel(QtCore.QAbstractTableModel):
-    """Model for spreadsheet data with formula support."""
+    """Model for spreadsheet data with formula support and undo/redo."""
+
+    # Signal emitted when status messages should be shown
+    statusMessageChanged = QtCore.Signal(str, bool)  # message, is_error
+
+    # Special marker for text values that should be detected in numeric columns
+    TEXT_VALUE_MARKER = "__TEXT_VALUE__"
 
     # Excel-compatible format codes
     FORMAT_GENERAL = "General"
@@ -447,6 +807,15 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         self._formats = {}  # Dict of (row, col) -> Excel-compatible format string
         self._evaluated_cache = {}  # Dict of (row, col) -> evaluated result
         self.formula_evaluator = None
+
+        # Column type configuration
+        self._numeric_only_columns = set()  # Columns that only allow numeric values
+        self._no_conversion_columns = set()  # Columns where data should not be converted
+
+        # Undo/redo stacks
+        self.undo_stack = []
+        self.redo_stack = []
+        self._in_undo_redo = False  # Flag to prevent creating undo commands during undo/redo
 
     def rowCount(self, parent=QtCore.QModelIndex()):
         """Return the number of rows."""
@@ -491,6 +860,22 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
 
         return None
 
+    def set_numeric_only_columns(self, columns):
+        """Set which columns should only allow numeric values.
+
+        Args:
+            columns: List or set of column indices that only allow numbers
+        """
+        self._numeric_only_columns = set(columns)
+
+    def set_no_conversion_columns(self, columns):
+        """Set which columns should not have data type conversion.
+
+        Args:
+            columns: List or set of column indices where data should stay as-is
+        """
+        self._no_conversion_columns = set(columns)
+
     def _get_evaluated_value(self, row, col, formula):
         """Evaluate a formula and return the result."""
         if not self.formula_evaluator:
@@ -503,6 +888,44 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
 
             # Evaluate the formula
             result = self.formula_evaluator.evaluate(formula, row, col)
+            result_str = str(result) if result is not None else ""
+
+            # Check if result contains text value marker
+            if self.TEXT_VALUE_MARKER in result_str:
+                if col in self._numeric_only_columns:
+                    # Numeric column - show error for text values
+                    formatted = "#TYPE! (text not allowed in this column)"
+                    self._evaluated_cache[(row, col)] = formatted
+                    return formatted
+                else:
+                    # Non-numeric column - extract and return the actual text value
+                    # Format is "__TEXT_VALUE__:actual_value" or quoted version
+                    import re
+                    # Match pattern like "__TEXT_VALUE__:value" or "\"__TEXT_VALUE__:value\""
+                    match = re.search(r'__TEXT_VALUE__:(.+?)(?:"|$)', result_str)
+                    if match:
+                        formatted = match.group(1)
+                    else:
+                        # Fallback: just remove the marker prefix
+                        formatted = result_str.replace(f'"{self.TEXT_VALUE_MARKER}:', '').rstrip('"')
+                    self._evaluated_cache[(row, col)] = formatted
+                    return formatted
+
+            # For numeric-only columns, validate that result is actually numeric
+            if col in self._numeric_only_columns:
+                try:
+                    if result_str and not result_str.startswith('#'):
+                        float(str(result).replace(',', '').replace('$', ''))
+                except (ValueError, TypeError):
+                    formatted = "#TYPE! (text not allowed in this column)"
+                    self._evaluated_cache[(row, col)] = formatted
+                    return formatted
+
+            # For no-conversion columns, return as-is without formatting
+            if col in self._no_conversion_columns:
+                formatted = str(result) if result is not None else ""
+                self._evaluated_cache[(row, col)] = formatted
+                return formatted
 
             # Apply cell format if set, otherwise use auto-detection
             cell_format = self._formats.get((row, col))
@@ -650,19 +1073,43 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         if role == Qt.EditRole:
             row, col = index.row(), index.column()
 
+            # Get old values for undo
+            old_value = self._data.get((row, col), None)
+            old_formula = self._formulas.get((row, col), None)
+
             # Clear the cache for this cell
             self._evaluated_cache.pop((row, col), None)
 
             # Check if it's a formula (starts with =)
-            value_str = str(value).strip()
+            value_str = str(value).strip() if value else ""
+            new_formula = None
+            new_value = None
+
             if value_str.startswith('='):
                 # Store as formula
+                new_formula = value_str
                 self._formulas[(row, col)] = value_str
                 self._data.pop((row, col), None)
             else:
                 # Store as regular value
-                self._data[(row, col)] = value_str
+                new_value = value_str
+                if value_str:
+                    self._data[(row, col)] = value_str
+                else:
+                    self._data.pop((row, col), None)
                 self._formulas.pop((row, col), None)
+
+            # Create undo command (if not in undo/redo operation)
+            if not self._in_undo_redo:
+                # Only create command if there's an actual change
+                if old_value != new_value or old_formula != new_formula:
+                    command = SpreadsheetEditCommand(
+                        self, row, col,
+                        old_value, new_value,
+                        old_formula, new_formula
+                    )
+                    self.undo_stack.append(command)
+                    self.redo_stack.clear()  # Clear redo stack on new edit
 
             # Clear cache for dependent cells
             self._clear_dependent_cache()
@@ -738,6 +1185,51 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         # Clear cache when evaluator changes
         self._evaluated_cache.clear()
 
+    def undo(self):
+        """Undo the last change."""
+        if not self.undo_stack:
+            return False
+
+        command = self.undo_stack.pop()
+        self._in_undo_redo = True
+        try:
+            command.undo()
+        finally:
+            self._in_undo_redo = False
+
+        self.redo_stack.append(command)
+
+        # Clear cache after undo
+        self._clear_dependent_cache()
+
+        self.statusMessageChanged.emit("Undone", False)
+        return True
+
+    def redo(self):
+        """Redo the last undone change."""
+        if not self.redo_stack:
+            return False
+
+        command = self.redo_stack.pop()
+        self._in_undo_redo = True
+        try:
+            command.redo()
+        finally:
+            self._in_undo_redo = False
+
+        self.undo_stack.append(command)
+
+        # Clear cache after redo
+        self._clear_dependent_cache()
+
+        self.statusMessageChanged.emit("Redone", False)
+        return True
+
+    def clear_undo_history(self):
+        """Clear the undo/redo history."""
+        self.undo_stack.clear()
+        self.redo_stack.clear()
+
 
 class SpreadsheetWidget(QtWidgets.QWidget):
     """Full-featured spreadsheet widget with Excel formula support."""
@@ -763,9 +1255,9 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.table_view = SpreadsheetTableView()
         self.table_view.setAlternatingRowColors(False)  # Disable alternating colors
         self.table_view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
-        self.table_view.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)  # Single selection for fill handle
+        self.table_view.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)  # Multi-cell selection
 
-        # Custom selection styling - transparent background with blue border drawn in paintEvent
+        # Custom selection styling - blue background with white text
         self.table_view.setStyleSheet("""
             QTableView {
                 selection-background-color: transparent;

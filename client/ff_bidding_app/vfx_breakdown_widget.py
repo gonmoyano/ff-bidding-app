@@ -637,6 +637,14 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self.table_view.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
         self.table_view.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.table_view.setAlternatingRowColors(False)
+
+        # Selection styling - white text on blue background
+        self.table_view.setStyleSheet("""
+            QTableView::item:selected {
+                background-color: #4472C4;
+                color: white;
+            }
+        """)
         self.table_view.setWordWrap(True)
         self.table_view.setTextElideMode(QtCore.Qt.ElideNone)  # Don't truncate text with "..."
 

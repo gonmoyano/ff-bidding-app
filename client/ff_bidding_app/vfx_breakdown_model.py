@@ -198,10 +198,13 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
 
         # Get the cell value
         value = index.data(QtCore.Qt.DisplayRole)
+        is_selected = option.state & QtWidgets.QStyle.State_Selected
 
-        # Determine background color based on validation
-        # Colors match the Asset pills in VFX Breakdown table
-        if value and str(value).strip():
+        # Determine background color based on validation and selection
+        if is_selected:
+            # Selected - use selection color
+            bg_color = QtGui.QColor("#4472C4")
+        elif value and str(value).strip():
             # Normalize the value for comparison (strip whitespace)
             normalized_value = str(value).strip()
             if normalized_value in self.normalized_valid_values:
@@ -217,13 +220,9 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
         # Draw background
         painter.fillRect(option.rect, bg_color)
 
-        # Draw selection highlight if selected
-        if option.state & QtWidgets.QStyle.State_Selected:
-            painter.fillRect(option.rect, option.palette.highlight())
-
-        # Draw the text - use white text for colored backgrounds
-        if value and str(value).strip():
-            painter.setPen(QtGui.QColor("#ffffff"))  # White text on colored background
+        # Draw the text - use white text for colored backgrounds or selection
+        if is_selected or (value and str(value).strip()):
+            painter.setPen(QtGui.QColor("#ffffff"))  # White text
         else:
             painter.setPen(option.palette.text().color())  # Default text color for empty cells
 

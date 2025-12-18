@@ -23,6 +23,9 @@ except ImportError:
 class FormulaEvaluator:
     """Evaluates formulas using Excel-compatible formulas library."""
 
+    # Special marker for text values that should trigger type errors in numeric columns
+    TEXT_VALUE_MARKER = "__TEXT_VALUE__"
+
     def __init__(self, table_model=None, sheet_models=None):
         """Initialize the formula evaluator.
 
@@ -40,6 +43,27 @@ class FormulaEvaluator:
             pass
         else:
             pass
+
+    def _get_sheet_model_case_insensitive(self, sheet_name: str):
+        """Get a sheet model by name with case-insensitive matching.
+
+        Args:
+            sheet_name: The sheet name to look up (e.g., "misc", "Misc", "MISC")
+
+        Returns:
+            Tuple of (actual_sheet_name, model) if found, (None, None) if not found
+        """
+        # Try exact match first
+        if sheet_name in self.sheet_models:
+            return sheet_name, self.sheet_models[sheet_name]
+
+        # Try case-insensitive match
+        sheet_name_lower = sheet_name.lower()
+        for name, model in self.sheet_models.items():
+            if name.lower() == sheet_name_lower:
+                return name, model
+
+        return None, None
 
     @staticmethod
     def col_index_to_letter(col):
@@ -214,6 +238,7 @@ class FormulaEvaluator:
         ref = ref.strip().replace('$', '')
         match = re.match(r'^([A-Z]+)(\d+)$', ref.upper())
         if not match or not model:
+            print(f"[CROSS-TAB] _get_cell_value_from_model: Invalid ref '{ref}' or no model")
             return 0
 
         col_letter, row_num = match.groups()
@@ -222,16 +247,23 @@ class FormulaEvaluator:
 
         # Check if the row and column are valid for this model
         if row < 0 or col < 0 or row >= model.rowCount() or col >= model.columnCount():
+            print(f"[CROSS-TAB] _get_cell_value_from_model: Out of bounds - ref={ref}, row={row}, col={col}")
             return 0
+
+        # Debug: Log the model's internal data for SpreadsheetModel
+        if hasattr(model, '_data'):
+            print(f"[CROSS-TAB] _get_cell_value_from_model: ref={ref}, model._data keys={list(model._data.keys())}, value at ({row},{col})={model._data.get((row, col), 'NOT_FOUND')}")
 
         # Get the raw value from the model
         index = model.index(row, col)
         value = model.data(index, QtCore.Qt.EditRole)
+        print(f"[CROSS-TAB] _get_cell_value_from_model: ref={ref}, EditRole value='{value}'")
 
         # If value is a formula, get the calculated value instead
         if isinstance(value, str) and value.startswith('='):
             # Get the display value which should be calculated
             value = model.data(index, QtCore.Qt.DisplayRole)
+            print(f"[CROSS-TAB] _get_cell_value_from_model: Formula detected, DisplayRole value='{value}'")
 
         # Try to convert to number
         try:
@@ -796,6 +828,9 @@ class FormulaEvaluator:
         Returns:
             Processed formula with ROW(), COLUMN(), INDIRECT(), and header refs replaced
         """
+        original_formula = formula
+        print(f"[CROSS-TAB] _preprocess_formula: Input formula='{formula}' at row={row}, col={col}")
+
         # Replace sheet references and header-based references
         # This handles: 'Sheet Name'!cmp.1, Price!cmp, cmp.1, cmp
         def replace_sheet_reference_quoted(match):
@@ -804,13 +839,12 @@ class FormulaEvaluator:
             cell_ref = match.group(2)
             full_ref = match.group(0)
 
-            # Check if sheet exists
-            if sheet_name not in self.sheet_models:
+            # Check if sheet exists (case-insensitive)
+            actual_name, target_model = self._get_sheet_model_case_insensitive(sheet_name)
+            if target_model is None:
                 available_sheets = list(self.sheet_models.keys()) if self.sheet_models else []
                 logger.warning(f"Sheet not found: '{sheet_name}' in reference {full_ref}. Available sheets: {available_sheets}")
                 return "#REF!"
-
-            target_model = self.sheet_models[sheet_name]
 
             # Check if it's already a standard cell reference (A1, B2, etc.)
             # Standard cell references don't need header resolution
@@ -838,9 +872,8 @@ class FormulaEvaluator:
                     float(value)
                     return str(value)
                 except (ValueError, TypeError):
-                    # It's a text string, return as 0 or handle as text
-                    # For formulas, text in calculations usually becomes 0
-                    return "0"
+                    # It's a text string - return a marker so the model can show an error
+                    return f'"{self.TEXT_VALUE_MARKER}:{value}"'
             else:
                 return str(value)
 
@@ -850,13 +883,17 @@ class FormulaEvaluator:
             cell_ref = match.group(2)
             full_ref = match.group(0)
 
-            # Check if sheet exists
-            if sheet_name not in self.sheet_models:
+            print(f"[CROSS-TAB] Matched '{full_ref}' -> sheet='{sheet_name}', cell_ref='{cell_ref}'")
+            print(f"[CROSS-TAB] Available sheets = {list(self.sheet_models.keys()) if self.sheet_models else []}")
+
+            # Check if sheet exists (case-insensitive)
+            actual_name, target_model = self._get_sheet_model_case_insensitive(sheet_name)
+            if target_model is None:
                 available_sheets = list(self.sheet_models.keys()) if self.sheet_models else []
-                logger.warning(f"Sheet not found: '{sheet_name}' in reference {full_ref}. Available sheets: {available_sheets}")
+                print(f"[CROSS-TAB] ERROR: Sheet not found: '{sheet_name}'. Available: {available_sheets}")
                 return "#REF!"
 
-            target_model = self.sheet_models[sheet_name]
+            print(f"[CROSS-TAB] Found model for '{actual_name}', model type={type(target_model).__name__}")
 
             # Check if it's already a standard cell reference (A1, B2, etc.)
             # Standard cell references don't need header resolution
@@ -873,21 +910,25 @@ class FormulaEvaluator:
 
             # Fetch the actual value from the target sheet
             value = self._get_cell_value_from_model(standard_ref, target_model)
+            print(f"[CROSS-TAB] Got value '{value}' (type={type(value).__name__}) from {actual_name}!{standard_ref}")
 
             # Return the value as a literal
             if value is None or value == "":
+                print(f"[CROSS-TAB] Value is None/empty, returning '0'")
                 return "0"
             elif isinstance(value, str):
                 # If it's a string, we need to quote it for the formula
                 # But if it's a number string, keep it as number
                 try:
                     float(value)
+                    print(f"[CROSS-TAB] Returning numeric string '{value}'")
                     return str(value)
                 except (ValueError, TypeError):
-                    # It's a text string, return as 0 or handle as text
-                    # For formulas, text in calculations usually becomes 0
-                    return "0"
+                    # It's a text string - return a marker so the model can show an error
+                    print(f"[CROSS-TAB] Text value detected: '{value}', returning TEXT_VALUE_MARKER")
+                    return f'"{self.TEXT_VALUE_MARKER}:{value}"'
             else:
+                print(f"[CROSS-TAB] Returning str(value) = '{value}'")
                 return str(value)
 
         def replace_local_reference(match):
@@ -1002,6 +1043,9 @@ class FormulaEvaluator:
             formula,
             flags=re.IGNORECASE
         )
+
+        if formula != original_formula:
+            print(f"[CROSS-TAB] _preprocess_formula: Transformed '{original_formula}' -> '{formula}'")
 
         return formula
 

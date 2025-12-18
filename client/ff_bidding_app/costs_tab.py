@@ -421,6 +421,9 @@ class CostsTab(QtWidgets.QMainWindow):
 
     def _on_shots_data_changed(self):
         """Handle data changes in the Shots Cost model - recalculate totals and update summary."""
+        # Clear cross-tab formula caches so references to ShotCosts update
+        self._clear_cross_tab_caches()
+
         if hasattr(self, 'shots_cost_totals_wrapper') and hasattr(self, 'shots_cost_widget'):
             if hasattr(self.shots_cost_widget, 'model') and self.shots_cost_widget.model:
                 try:
@@ -435,6 +438,9 @@ class CostsTab(QtWidgets.QMainWindow):
 
     def _on_assets_data_changed(self):
         """Handle data changes in the Assets Cost model - recalculate totals and update summary."""
+        # Clear cross-tab formula caches so references to AssetCosts update
+        self._clear_cross_tab_caches()
+
         if hasattr(self, 'asset_cost_totals_wrapper') and hasattr(self, 'asset_cost_widget'):
             if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
                 try:
@@ -446,6 +452,48 @@ class CostsTab(QtWidgets.QMainWindow):
                     self._update_total_cost_summary()
                 except (ValueError, AttributeError):
                     pass
+
+    def _clear_cross_tab_caches(self, source=None):
+        """Clear formula caches on all spreadsheets to ensure cross-tab references update.
+
+        Args:
+            source: The source model that triggered the change (to avoid clearing its own cache again)
+        """
+        from PySide6.QtCore import Qt
+
+        # Prevent recursive calls
+        if getattr(self, '_clearing_caches', False):
+            logger.info("_clear_cross_tab_caches: Skipping (already clearing)")
+            return
+        self._clearing_caches = True
+
+        logger.info(f"_clear_cross_tab_caches: Starting (source={type(source).__name__ if source else None})")
+
+        try:
+            # Clear Misc spreadsheet cache (only if not the source)
+            if hasattr(self, 'misc_cost_spreadsheet') and hasattr(self.misc_cost_spreadsheet, 'model'):
+                model = self.misc_cost_spreadsheet.model
+                if model != source and hasattr(model, '_evaluated_cache'):
+                    logger.info(f"_clear_cross_tab_caches: Clearing Misc cache (had {len(model._evaluated_cache)} entries)")
+                    model._evaluated_cache.clear()
+                    # Emit dataChanged for all cells to force repaint
+                    top_left = model.index(0, 0)
+                    bottom_right = model.index(model.rowCount() - 1, model.columnCount() - 1)
+                    model.dataChanged.emit(top_left, bottom_right, [Qt.DisplayRole])
+
+            # Clear TotalCost spreadsheet cache (only if not the source)
+            if hasattr(self, 'total_cost_spreadsheet') and hasattr(self.total_cost_spreadsheet, 'model'):
+                model = self.total_cost_spreadsheet.model
+                if model != source and hasattr(model, '_evaluated_cache'):
+                    logger.info(f"_clear_cross_tab_caches: Clearing TotalCost cache (had {len(model._evaluated_cache)} entries)")
+                    model._evaluated_cache.clear()
+                    # Emit dataChanged for all cells to force repaint
+                    top_left = model.index(0, 0)
+                    bottom_right = model.index(model.rowCount() - 1, model.columnCount() - 1)
+                    model.dataChanged.emit(top_left, bottom_right, [Qt.DisplayRole])
+        finally:
+            self._clearing_caches = False
+            logger.info("_clear_cross_tab_caches: Done")
 
     def _on_misc_data_changed(self):
         """Handle data changes in the Misc Cost spreadsheet - update summary and save."""
@@ -618,7 +666,7 @@ class CostsTab(QtWidgets.QMainWindow):
                     vfx_shot_work = row_data.get("sg_vfx_shot_work")
                     if vfx_shot_work and vfx_shot_work in self.line_items_price_map:
                         row_data["_line_item_price"] = self.line_items_price_map[vfx_shot_work]
-                        logger.debug(f"  Updated row {row_idx}: {vfx_shot_work} -> price {self.line_items_price_map[vfx_shot_work]}")
+                        logger.info(f"  Updated row {row_idx}: {vfx_shot_work} -> price {self.line_items_price_map[vfx_shot_work]}")
             # Notify view to refresh
             model.layoutChanged.emit()
             logger.info(f"  Updated {len(model.all_bidding_scenes_data)} rows in Shots Cost model")
