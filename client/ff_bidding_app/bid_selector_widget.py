@@ -2464,8 +2464,12 @@ class ImportBidDialog(QtWidgets.QDialog):
                             if row_idx > 0:
                                 logger.info(f"Excel R{row_idx}C{col_idx}: Numeric 0/1, value={cell.value} -> '{converted}'")
                         else:
-                            # Regular number - just convert to string
-                            row_values.append(str(cell.value))
+                            # Regular number - check if float is actually a whole number
+                            # to avoid "1.0" instead of "1" for integers stored as floats
+                            if isinstance(cell.value, float) and cell.value.is_integer():
+                                row_values.append(str(int(cell.value)))
+                            else:
+                                row_values.append(str(cell.value))
                     elif isinstance(cell.value, datetime):
                         # Date/datetime value - check if it might be a misinterpreted fraction
                         # Common date formats that might be fractions: m/d, m/d/yy, d/m, etc.

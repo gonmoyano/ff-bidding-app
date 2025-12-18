@@ -1490,6 +1490,10 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         if isinstance(value, bool):
             return "Yes" if value else "No"
 
+        # Handle floats that are actually whole numbers (e.g., 1.0 -> "1")
+        if isinstance(value, float) and value.is_integer():
+            return str(int(value))
+
         return str(value)
 
     def get_bidding_scene_data_for_row(self, row):
