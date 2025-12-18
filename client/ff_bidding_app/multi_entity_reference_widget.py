@@ -308,8 +308,14 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         # Set object name for stylesheet targeting
         self.setObjectName("entityReferenceWidget")
 
-        # Ensure child widgets are clipped to widget bounds (prevents pills extending beyond cell)
+        # CRITICAL: Ensure widget clips all children to its bounds
         self.setAttribute(QtCore.Qt.WA_OpaquePaintEvent, False)
+
+        # Set size policy to prevent widget from expanding beyond allocated space
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Ignored,  # Don't grow horizontally
+            QtWidgets.QSizePolicy.Fixed      # Fixed height
+        )
 
         # Main layout - no margins to align with table cell boundaries
         main_layout = QtWidgets.QVBoxLayout(self)
@@ -321,8 +327,7 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         self._scroll_area = QtWidgets.QScrollArea()
         self._scroll_area.setWidgetResizable(True)
         self._scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
-        # Hide scroll bars by default for cleaner look in small cells
-        # Scroll bars will appear automatically when content overflows
+        # Hide scroll bars - content will be clipped
         self._scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self._scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
 
@@ -345,11 +350,8 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         """)
         self.pills_container.setObjectName("pillsContainer")
 
-        # Enable auto-fill background so paintEvent can draw
+        # Disable auto-fill so paintEvent controls background
         self.setAutoFillBackground(False)
-
-        # Ensure widget clips children to its bounds (prevents pills extending beyond cell)
-        self.setContentsMargins(0, 0, 0, 0)
         self._scroll_area.viewport().setAutoFillBackground(False)
 
     def _populate_entities(self):
