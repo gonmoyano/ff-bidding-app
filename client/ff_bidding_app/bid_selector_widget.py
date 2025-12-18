@@ -1683,6 +1683,7 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         "sg_lgt_mandays": "float",
         "sg_fx_mandays": "float",
         "sg_cmp_mandays": "float",
+        "sg_io_mandays": "float",
     }
 
     # Entity type mapping
