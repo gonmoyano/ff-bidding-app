@@ -158,8 +158,12 @@ class BiddingTab(QtWidgets.QWidget):
         # Add docked container to splitter (costs_tab will be added based on docked state)
         self.main_splitter.addWidget(self.docked_costs_container)
 
-        # Set up splitter sizes (70% tabs, 30% costs when docked)
-        self.main_splitter.setSizes([700, 300])
+        # Set up splitter sizes - restore saved sizes or use default (70% tabs, 30% costs)
+        saved_splitter_sizes = self.app_settings.get("biddingTab/splitterSizes", [700, 300])
+        self.main_splitter.setSizes(saved_splitter_sizes)
+
+        # Connect splitter signal to save sizes when resized
+        self.main_splitter.splitterMoved.connect(self._on_splitter_moved)
 
         # Hide docked container initially (unless it was docked before)
         self.docked_costs_container.setVisible(self._costs_panel_docked)
@@ -167,9 +171,11 @@ class BiddingTab(QtWidgets.QWidget):
         main_layout.addWidget(self.main_splitter, 1)  # Stretch to fill remaining space
 
         # Create the sliding overlay panel for Costs (when not docked)
+        # Restore saved panel width or use default
+        saved_panel_width = self.app_settings.get("biddingTab/costsPanelWidth", 600)
         self.costs_overlay_panel = SlidingOverlayPanelWithBackground(
             parent=self,
-            panel_width=600,
+            panel_width=saved_panel_width,
             animation_duration=300,
             background_opacity=0.3,
             close_on_background_click=True,
@@ -177,6 +183,7 @@ class BiddingTab(QtWidgets.QWidget):
         )
         self.costs_overlay_panel.set_title("Costs")
         self.costs_overlay_panel.dock_requested.connect(self._dock_costs_panel)
+        self.costs_overlay_panel.panel_resized.connect(self._on_costs_panel_resized)
 
         # Place costs_tab in the correct container based on docked state
         if self._costs_panel_docked:
@@ -300,6 +307,26 @@ class BiddingTab(QtWidgets.QWidget):
         self.costs_overlay_panel.show_panel()
 
         logger.info("Costs panel undocked")
+
+    def _on_costs_panel_resized(self, width):
+        """Handle costs panel resize - save the new width to settings.
+
+        Args:
+            width: New panel width in pixels
+        """
+        self.app_settings.set("biddingTab/costsPanelWidth", width)
+        logger.debug(f"Saved costs panel width: {width}")
+
+    def _on_splitter_moved(self, pos, index):
+        """Handle splitter resize - save the new sizes to settings.
+
+        Args:
+            pos: New position of the splitter handle
+            index: Index of the splitter handle that was moved
+        """
+        sizes = self.main_splitter.sizes()
+        self.app_settings.set("biddingTab/splitterSizes", sizes)
+        logger.debug(f"Saved splitter sizes: {sizes}")
 
     def is_costs_panel_docked(self):
         """Check if the Costs panel is currently docked.
