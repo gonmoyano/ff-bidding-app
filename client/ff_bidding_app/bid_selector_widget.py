@@ -1517,11 +1517,6 @@ class SelectBidDialog(QtWidgets.QDialog):
         self.assets_checkbox.setEnabled(self.available_sheets.get("assets", False))
         entity_layout.addWidget(self.assets_checkbox)
 
-        self.scenes_checkbox = create_checkbox_with_checkmark("Scenes")
-        self.scenes_checkbox.setChecked(self.available_sheets.get("scenes", False))
-        self.scenes_checkbox.setEnabled(self.available_sheets.get("scenes", False))
-        entity_layout.addWidget(self.scenes_checkbox)
-
         self.rates_checkbox = create_checkbox_with_checkmark("Rates")
         self.rates_checkbox.setChecked(self.available_sheets.get("rates", False))
         self.rates_checkbox.setEnabled(self.available_sheets.get("rates", False))
@@ -1593,7 +1588,6 @@ class SelectBidDialog(QtWidgets.QDialog):
         if not any([
             self.breakdown_checkbox.isChecked(),
             self.assets_checkbox.isChecked(),
-            self.scenes_checkbox.isChecked(),
             self.rates_checkbox.isChecked()
         ]):
             QtWidgets.QMessageBox.warning(
@@ -1627,7 +1621,6 @@ class SelectBidDialog(QtWidgets.QDialog):
         return {
             "breakdown": self.breakdown_checkbox.isChecked(),
             "assets": self.assets_checkbox.isChecked(),
-            "scenes": self.scenes_checkbox.isChecked(),
             "rates": self.rates_checkbox.isChecked()
         }
 
@@ -1670,12 +1663,6 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         "sg_bidding_notes": "text",
     }
 
-    # ShotGrid field definitions for Scenes (placeholder - customize as needed)
-    SCENE_REQUIRED_FIELDS = {
-        "code": "text",
-        "description": "text",
-    }
-
     # ShotGrid field definitions for Line Items (CustomEntity03)
     # Note: Actual import auto-discovers all fields ending with "_mandays"
     # These are common fields shown in the column mapping dialog
@@ -1711,12 +1698,6 @@ class ColumnMappingDialog(QtWidgets.QDialog):
             "fields": ASSET_ITEM_REQUIRED_FIELDS,
             "mapping_key": "assets"
         },
-        "scenes": {
-            "name": "Scenes",
-            "entity_type": "Scene",
-            "fields": SCENE_REQUIRED_FIELDS,
-            "mapping_key": "scenes"
-        },
         "rates": {
             "name": "Rates",
             "entity_type": "CustomEntity03",  # Line Items
@@ -1746,7 +1727,6 @@ class ColumnMappingDialog(QtWidgets.QDialog):
             self.excel_columns_dict = {
                 "breakdown": excel_columns,
                 "assets": excel_columns,
-                "scenes": excel_columns,
                 "rates": excel_columns
             }
         else:
@@ -2180,7 +2160,6 @@ class ImportBidDialog(QtWidgets.QDialog):
         self.tab_config = {
             "VFX Breakdown": (["vfx", "breakdown", "break"], None),
             "Assets": (["asset", "assets"], None),
-            "Scene": (["scene", "scenes"], None),
             "Rates": (["rate", "rates", "pricing", "price"], None)
         }
 
@@ -4152,8 +4131,6 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         excel_columns_dict["breakdown"] = list(data["VFX Breakdown"].columns)
                     if "Assets" in data:
                         excel_columns_dict["assets"] = list(data["Assets"].columns)
-                    if "Scene" in data:
-                        excel_columns_dict["scenes"] = list(data["Scene"].columns)
                     if "Rates" in data:
                         excel_columns_dict["rates"] = list(data["Rates"].columns)
 
@@ -4195,7 +4172,6 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 available_sheets = {
                     "breakdown": "VFX Breakdown" in data,
                     "assets": "Assets" in data,
-                    "scenes": "Scene" in data,
                     "rates": "Rates" in data
                 }
 
@@ -4300,7 +4276,6 @@ class BidSelectorWidget(QtWidgets.QWidget):
         results = {
             "breakdown": {"created": 0, "entity_id": None},
             "assets": {"created": 0, "entity_id": None},
-            "scenes": {"created": 0, "entity_id": None},
             "rates": {"created": 0, "entity_id": None, "failed": 0}
         }
 
@@ -4328,13 +4303,6 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 )
                 results["breakdown"]["created"] = created
                 results["breakdown"]["entity_id"] = entity_id
-
-            # Import Scenes
-            if selected_entity_types.get("scenes") and "Scene" in data:
-                scenes_mapping = all_mappings.get("scenes", {})
-                created, entity_id = self._import_scenes(data["Scene"], scenes_mapping, bid_id, bid_name)
-                results["scenes"]["created"] = created
-                results["scenes"]["entity_id"] = entity_id
 
             # Import Rates
             if selected_entity_types.get("rates") and "Rates" in data:
@@ -4367,8 +4335,6 @@ class BidSelectorWidget(QtWidgets.QWidget):
             summary_lines.append(f"✓ Created {results['breakdown']['created']} VFX Breakdown items")
         if results["assets"]["created"] > 0:
             summary_lines.append(f"✓ Created {results['assets']['created']} Asset items")
-        if results["scenes"]["created"] > 0:
-            summary_lines.append(f"✓ Created {results['scenes']['created']} Scene items")
         if results["rates"]["created"] > 0:
             failed_count = results["rates"].get("failed", 0)
             if failed_count > 0:
