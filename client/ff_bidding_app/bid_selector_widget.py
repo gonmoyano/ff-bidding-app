@@ -1652,6 +1652,7 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         "sg_vfx_breakdown_scene": "text",
         "sg_vfx_description": "text",
         "sg_vfx_questions": "text",
+        "sg_vfx_shot_work": "text",
         "sg_vfx_supervisor_notes": "text",
         "sg_vfx_type": "text",
     }
