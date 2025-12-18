@@ -106,7 +106,6 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
 
         self.panel_width = panel_width
         self.min_panel_width = 300  # Minimum width when resizing
-        self.max_panel_width = 1200  # Maximum width when resizing
         self.animation_duration = animation_duration
         self._is_visible = False
         self._show_dock_button = show_dock_button
@@ -396,9 +395,10 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
         """Set the panel width.
 
         Args:
-            width: New panel width in pixels (will be clamped to min/max)
+            width: New panel width in pixels (will be clamped to min and parent width)
         """
-        self.panel_width = max(self.min_panel_width, min(self.max_panel_width, width))
+        max_width = self.parent().rect().width() if self.parent() else 10000
+        self.panel_width = max(self.min_panel_width, min(max_width, width))
 
     def get_panel_width(self):
         """Get the current panel width.
@@ -432,8 +432,9 @@ class SlidingOverlayPanel(QtWidgets.QWidget):
         delta = self._resize_start_x - global_x
         new_width = self._resize_start_width + delta
 
-        # Clamp to min/max
-        new_width = max(self.min_panel_width, min(self.max_panel_width, new_width))
+        # Clamp to min and parent width (allow full window width)
+        max_width = self.parent().rect().width() if self.parent() else 10000
+        new_width = max(self.min_panel_width, min(max_width, new_width))
 
         # Update panel width and position
         if new_width != self.panel_width:
