@@ -1051,6 +1051,33 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             color: #ffffff;
         }
 
+        /* Table View - consistent styling across Mac/Windows */
+        QTableView, QTableWidget {
+            background-color: #353535;
+            alternate-background-color: #3a3a3a;
+            color: #e0e0e0;
+            gridline-color: #555555;
+            border: none;
+            selection-background-color: #4a9eff;
+            selection-color: #ffffff;
+        }
+
+        QTableView::item, QTableWidget::item {
+            padding: 4px;
+            border: none;
+        }
+
+        QTableView::item:selected, QTableWidget::item:selected {
+            background-color: #4a9eff;
+            color: #ffffff;
+        }
+
+        /* Corner widget between headers */
+        QTableView QTableCornerButton::section, QTableWidget QTableCornerButton::section {
+            background-color: #404040;
+            border: 1px solid #555555;
+        }
+
         QHeaderView::section {
             background-color: #404040;
             color: #e0e0e0;
