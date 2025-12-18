@@ -308,6 +308,9 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         # Set object name for stylesheet targeting
         self.setObjectName("entityReferenceWidget")
 
+        # Ensure child widgets are clipped to widget bounds (prevents pills extending beyond cell)
+        self.setAttribute(QtCore.Qt.WA_OpaquePaintEvent, False)
+
         # Main layout - no margins to align with table cell boundaries
         main_layout = QtWidgets.QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -488,6 +491,11 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
             event (QResizeEvent): The resize event
         """
         super().resizeEvent(event)
+
+        # Set clip region to ensure content doesn't extend beyond widget bounds
+        region = QtGui.QRegion(self.rect())
+        self.setMask(region)
+
         # Skip pill height updates if flag is set (during manual row resize)
         if self._skip_resize_pill_updates:
             return
@@ -630,20 +638,17 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
 
-        # Get the widget rectangle
+        # Get the widget rectangle and clip to it to prevent drawing beyond cell bounds
         rect = self.rect()
+        painter.setClipRect(rect)
 
-        # Draw background (always fill)
-        painter.fillRect(rect, self.bg_color)
-
-        # Always draw border - use blue when selected/editing, grid color otherwise
+        # Only draw background when selected or editing, otherwise let table background show through
         if self._is_selected or self._is_editing:
+            painter.fillRect(rect, self.bg_color)
             painter.setPen(QtGui.QPen(self.border_color, self.border_width))
-        else:
-            painter.setPen(QtGui.QPen(self.grid_border_color, self.border_width))
-        painter.setBrush(QtCore.Qt.NoBrush)
-        # Draw rect without fill, adjusted to fit within widget bounds
-        painter.drawRect(rect.adjusted(0, 0, -1, -1))
+            painter.setBrush(QtCore.Qt.NoBrush)
+            # Draw border adjusted to fit within widget bounds
+            painter.drawRect(rect.adjusted(0, 0, -1, -1))
 
         # Draw overflow indicator dots if needed
         has_overflow, num_dots, dot_x_start, dot_y = self._calculate_overflow_info()
