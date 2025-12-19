@@ -1784,8 +1784,8 @@ class RateCardDialog(QtWidgets.QDialog):
 
         layout.addWidget(selector_group)
 
-        # Create Rate Card widget
-        self.rate_card_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=True, settings_key="rate_card_dialog", parent=self)
+        # Create Rate Card widget (no toolbar/search bar needed)
+        self.rate_card_widget = VFXBreakdownWidget(self.sg_session, show_toolbar=False, settings_key="rate_card_dialog", parent=self)
 
         # Set context provider
         self.rate_card_widget.context_provider = self
