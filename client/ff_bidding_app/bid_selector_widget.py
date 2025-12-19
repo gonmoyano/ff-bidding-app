@@ -1377,38 +1377,36 @@ class SelectBidDialog(QtWidgets.QDialog):
         bid_group = QtWidgets.QGroupBox("Bid Selection")
         bid_layout = QtWidgets.QVBoxLayout()
 
-        # Style for selected/unselected option frames
-        self.selected_frame_style = """
-            QFrame {
-                background-color: rgba(0, 120, 212, 0.15);
+        # Style for radio buttons with visible indicator
+        radio_style = """
+            QRadioButton {
+                spacing: 8px;
+            }
+            QRadioButton::indicator {
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                border: 2px solid #555555;
+                background-color: #2b2b2b;
+            }
+            QRadioButton::indicator:checked {
                 border: 2px solid #0078d4;
-                border-radius: 6px;
-                padding: 8px;
+                background-color: #0078d4;
             }
-        """
-        self.unselected_frame_style = """
-            QFrame {
-                background-color: transparent;
-                border: 2px solid transparent;
-                border-radius: 6px;
-                padding: 8px;
+            QRadioButton::indicator:checked::after {
+                background-color: white;
             }
         """
 
-        # Existing bid option frame
-        self.existing_bid_frame = QtWidgets.QFrame()
-        self.existing_bid_frame.setStyleSheet(self.selected_frame_style)
-        existing_frame_layout = QtWidgets.QVBoxLayout(self.existing_bid_frame)
-        existing_frame_layout.setContentsMargins(8, 8, 8, 8)
-        existing_frame_layout.setSpacing(8)
-
+        # Existing bid option
         self.existing_bid_radio = QtWidgets.QRadioButton("Add to existing Bid")
+        self.existing_bid_radio.setStyleSheet(radio_style)
         self.existing_bid_radio.setChecked(True)
         self.existing_bid_radio.toggled.connect(self._on_bid_option_changed)
-        existing_frame_layout.addWidget(self.existing_bid_radio)
+        bid_layout.addWidget(self.existing_bid_radio)
 
         existing_bid_container = QtWidgets.QHBoxLayout()
-        existing_bid_container.addSpacing(24)
+        existing_bid_container.addSpacing(30)
         bid_label = QtWidgets.QLabel("Select Bid:")
         existing_bid_container.addWidget(bid_label)
 
@@ -1417,23 +1415,18 @@ class SelectBidDialog(QtWidgets.QDialog):
         for bid in self.existing_bids:
             self.bid_combo.addItem(bid.get("code", "Unknown"), bid.get("id"))
         existing_bid_container.addWidget(self.bid_combo, stretch=1)
-        existing_frame_layout.addLayout(existing_bid_container)
+        bid_layout.addLayout(existing_bid_container)
 
-        bid_layout.addWidget(self.existing_bid_frame)
+        bid_layout.addSpacing(10)
 
-        # New bid option frame
-        self.new_bid_frame = QtWidgets.QFrame()
-        self.new_bid_frame.setStyleSheet(self.unselected_frame_style)
-        new_frame_layout = QtWidgets.QVBoxLayout(self.new_bid_frame)
-        new_frame_layout.setContentsMargins(8, 8, 8, 8)
-        new_frame_layout.setSpacing(8)
-
+        # New bid option
         self.new_bid_radio = QtWidgets.QRadioButton("Create new Bid")
+        self.new_bid_radio.setStyleSheet(radio_style)
         self.new_bid_radio.toggled.connect(self._on_bid_option_changed)
-        new_frame_layout.addWidget(self.new_bid_radio)
+        bid_layout.addWidget(self.new_bid_radio)
 
         new_bid_container = QtWidgets.QVBoxLayout()
-        new_bid_container.setContentsMargins(24, 0, 0, 0)
+        new_bid_container.setContentsMargins(30, 0, 0, 0)
 
         name_layout = QtWidgets.QHBoxLayout()
         name_label = QtWidgets.QLabel("Bid Name:")
@@ -1452,9 +1445,7 @@ class SelectBidDialog(QtWidgets.QDialog):
         type_layout.addWidget(self.type_combo, stretch=1)
         new_bid_container.addLayout(type_layout)
 
-        new_frame_layout.addLayout(new_bid_container)
-
-        bid_layout.addWidget(self.new_bid_frame)
+        bid_layout.addLayout(new_bid_container)
 
         bid_group.setLayout(bid_layout)
         layout.addWidget(bid_group)
@@ -1583,14 +1574,6 @@ class SelectBidDialog(QtWidgets.QDialog):
     def _on_bid_option_changed(self):
         """Handle bid option radio button changes."""
         is_existing = self.existing_bid_radio.isChecked()
-
-        # Update frame styles to highlight selected option
-        self.existing_bid_frame.setStyleSheet(
-            self.selected_frame_style if is_existing else self.unselected_frame_style
-        )
-        self.new_bid_frame.setStyleSheet(
-            self.selected_frame_style if not is_existing else self.unselected_frame_style
-        )
 
         # Enable/disable existing bid controls
         self.bid_combo.setEnabled(is_existing)
