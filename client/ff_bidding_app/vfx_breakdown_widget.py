@@ -681,6 +681,10 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Install event filter
         self.table_view.installEventFilter(self)
 
+        # Add toolbar to layout BEFORE table view (if it exists)
+        if self.toolbar_widget:
+            layout.addWidget(self.toolbar_widget)
+
         layout.addWidget(self.table_view)
 
         # Update template dropdown
