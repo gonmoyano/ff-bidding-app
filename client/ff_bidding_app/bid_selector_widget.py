@@ -2131,6 +2131,190 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         return all_mappings
 
 
+class ImportErrorDialog(QtWidgets.QDialog):
+    """Dialog to display import errors with a copyable log output."""
+
+    def __init__(self, error_title, error_messages, parent=None):
+        """Initialize the error dialog.
+
+        Args:
+            error_title: Title describing the error context
+            error_messages: List of error message strings
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.setWindowTitle("Import Error")
+        self.setMinimumSize(600, 400)
+        self.resize(700, 450)
+
+        # Build the log text
+        self.log_text = self._build_log_text(error_title, error_messages)
+
+        self._setup_ui(error_title)
+
+    def _build_log_text(self, error_title, error_messages):
+        """Build the log text from error messages.
+
+        Args:
+            error_title: Title for the error section
+            error_messages: List of error message strings
+
+        Returns:
+            str: Formatted log text
+        """
+        lines = [
+            "=" * 60,
+            f"IMPORT ERROR: {error_title}",
+            "=" * 60,
+            "",
+        ]
+
+        for i, msg in enumerate(error_messages, 1):
+            lines.append(f"[Error {i}] {msg}")
+
+        lines.extend([
+            "",
+            "=" * 60,
+            "Import was stopped due to the error(s) above.",
+            "Please fix the issues and try again.",
+            "=" * 60,
+        ])
+
+        return "\n".join(lines)
+
+    def _setup_ui(self, error_title):
+        """Set up the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        # Header label
+        header_label = QtWidgets.QLabel(
+            f"<b>Import stopped due to error:</b> {error_title}"
+        )
+        header_label.setWordWrap(True)
+        header_label.setStyleSheet("color: #d32f2f; font-size: 14px;")
+        layout.addWidget(header_label)
+
+        # Description
+        desc_label = QtWidgets.QLabel(
+            "The import process was stopped. Review the error details below and fix the issues in your Excel file before trying again."
+        )
+        desc_label.setWordWrap(True)
+        desc_label.setStyleSheet("color: #666; margin-bottom: 8px;")
+        layout.addWidget(desc_label)
+
+        # Log text area
+        self.log_text_edit = QtWidgets.QPlainTextEdit()
+        self.log_text_edit.setPlainText(self.log_text)
+        self.log_text_edit.setReadOnly(True)
+        self.log_text_edit.setFont(QtGui.QFont("Consolas", 10) if hasattr(QtGui, 'QFont') else QtGui.QFont("monospace", 10))
+        self.log_text_edit.setStyleSheet("""
+            QPlainTextEdit {
+                background-color: #1e1e1e;
+                color: #f0f0f0;
+                border: 1px solid #444;
+                border-radius: 4px;
+                padding: 8px;
+            }
+        """)
+        layout.addWidget(self.log_text_edit, 1)
+
+        # Button row
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.setSpacing(10)
+
+        # Copy button
+        self.copy_btn = QtWidgets.QPushButton("Copy to Clipboard")
+        self.copy_btn.setMinimumWidth(140)
+        self.copy_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+            QPushButton:pressed {
+                background-color: #1565C0;
+            }
+        """)
+        self.copy_btn.clicked.connect(self._copy_to_clipboard)
+        button_layout.addWidget(self.copy_btn)
+
+        button_layout.addStretch()
+
+        # Close button
+        self.close_btn = QtWidgets.QPushButton("Close")
+        self.close_btn.setMinimumWidth(100)
+        self.close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #757575;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #616161;
+            }
+            QPushButton:pressed {
+                background-color: #424242;
+            }
+        """)
+        self.close_btn.clicked.connect(self.accept)
+        button_layout.addWidget(self.close_btn)
+
+        layout.addLayout(button_layout)
+
+    def _copy_to_clipboard(self):
+        """Copy the log text to clipboard."""
+        clipboard = QtWidgets.QApplication.clipboard()
+        clipboard.setText(self.log_text)
+
+        # Show feedback - temporarily change button text
+        original_text = self.copy_btn.text()
+        self.copy_btn.setText("Copied!")
+        self.copy_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+        """)
+
+        # Reset after a short delay
+        QtCore.QTimer.singleShot(1500, lambda: self._reset_copy_button(original_text))
+
+    def _reset_copy_button(self, original_text):
+        """Reset the copy button to its original state."""
+        self.copy_btn.setText(original_text)
+        self.copy_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+            QPushButton:pressed {
+                background-color: #1565C0;
+            }
+        """)
+
+
 class ImportBidDialog(QtWidgets.QDialog):
     """Dialog for importing bid data from an Excel file with tabs for different data types."""
 
@@ -4282,14 +4466,14 @@ class BidSelectorWidget(QtWidgets.QWidget):
         results = {
             "breakdown": {"created": 0, "entity_id": None},
             "assets": {"created": 0, "entity_id": None},
-            "rates": {"created": 0, "entity_id": None, "failed": 0}
+            "rates": {"created": 0, "entity_id": None}
         }
 
         try:
             # Import Assets first (so Breakdown can reference them)
             if selected_entity_types.get("assets") and "Assets" in data:
                 assets_mapping = all_mappings.get("assets", {})
-                created, entity_id = self._import_assets(
+                created, entity_id, error = self._import_assets(
                     data["Assets"],
                     assets_mapping,
                     bid_id,
@@ -4298,10 +4482,14 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 results["assets"]["created"] = created
                 results["assets"]["entity_id"] = entity_id
 
+                if error:
+                    self._show_import_error("Assets Import Failed", [error])
+                    return
+
             # Import Breakdown (can now reference Assets)
             if selected_entity_types.get("breakdown") and "VFX Breakdown" in data:
                 breakdown_mapping = all_mappings.get("breakdown", {})
-                created, entity_id = self._import_vfx_breakdown(
+                created, entity_id, error = self._import_vfx_breakdown(
                     data["VFX Breakdown"],
                     breakdown_mapping,
                     bid_id,
@@ -4310,13 +4498,20 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 results["breakdown"]["created"] = created
                 results["breakdown"]["entity_id"] = entity_id
 
+                if error:
+                    self._show_import_error("VFX Breakdown Import Failed", [error])
+                    return
+
             # Import Rates
             if selected_entity_types.get("rates") and "Rates" in data:
                 rates_mapping = all_mappings.get("rates", {})
-                created, entity_id, failed = self._import_rates(data["Rates"], rates_mapping, bid_id, bid_name)
+                created, entity_id, error = self._import_rates(data["Rates"], rates_mapping, bid_id, bid_name)
                 results["rates"]["created"] = created
                 results["rates"]["entity_id"] = entity_id
-                results["rates"]["failed"] = failed
+
+                if error:
+                    self._show_import_error("Rates Import Failed", [error])
+                    return
 
             # Show success message
             self._show_import_success(results, data)
@@ -4326,36 +4521,32 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         except Exception as e:
             logger.error(f"Import failed: {e}", exc_info=True)
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Import Error",
-                f"Import failed:\n{str(e)}"
-            )
+            self._show_import_error("Import Failed", [str(e)])
+
+    def _show_import_error(self, error_title, error_messages):
+        """Show error dialog with copyable log output.
+
+        Args:
+            error_title: Title describing the error context
+            error_messages: List of error message strings
+        """
+        dialog = ImportErrorDialog(error_title, error_messages, self)
+        dialog.exec_()
 
     def _show_import_success(self, results, data):
         """Show success message after import."""
         summary_lines = ["Successfully imported Excel data:\n"]
-        has_failures = False
 
         if results["breakdown"]["created"] > 0:
             summary_lines.append(f"✓ Created {results['breakdown']['created']} VFX Breakdown items")
         if results["assets"]["created"] > 0:
             summary_lines.append(f"✓ Created {results['assets']['created']} Asset items")
         if results["rates"]["created"] > 0:
-            failed_count = results["rates"].get("failed", 0)
-            if failed_count > 0:
-                summary_lines.append(f"✓ Created {results['rates']['created']} Rate items ({failed_count} failed)")
-                has_failures = True
-            else:
-                summary_lines.append(f"✓ Created {results['rates']['created']} Rate items")
-
-        # Add warning if there were failures
-        if has_failures:
-            summary_lines.append("\n⚠ Some items failed to import. Check the logs for details.")
+            summary_lines.append(f"✓ Created {results['rates']['created']} Rate items")
 
         QtWidgets.QMessageBox.information(
             self,
-            "Import Successful" if not has_failures else "Import Completed with Errors",
+            "Import Successful",
             "\n".join(summary_lines)
         )
 
@@ -4577,12 +4768,12 @@ class BidSelectorWidget(QtWidgets.QWidget):
             bid_name: Name of the Bid for versioning
 
         Returns:
-            tuple: (Number of records created, VFX Breakdown ID)
+            tuple: (Number of records created, VFX Breakdown ID, error_message or None)
         """
         import pandas as pd
 
         if df is None or len(df) == 0:
-            return 0, None
+            return 0, None, None
 
         logger.info(f"Starting VFX Breakdown import with {len(df)} rows for Bid: {bid_name} ({bid_id})")
         logger.info(f"Column mapping: {column_mapping}")
@@ -4649,12 +4840,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         except Exception as e:
             logger.error(f"Failed to create VFX Breakdown: {e}", exc_info=True)
             progress.close()
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to create VFX Breakdown:\n{str(e)}"
-            )
-            return 0, None
+            return 0, None, f"Failed to create VFX Breakdown: {str(e)}"
 
         progress.setValue(1)
         QtWidgets.QApplication.processEvents()
@@ -4759,20 +4945,19 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 logger.info(f"Created CustomEntity02: {result['id']} with code '{sg_data.get('code', 'N/A')}' linked to VFX Breakdown {breakdown_id}")
 
             except Exception as e:
-                failed_count += 1
                 logger.error(f"Failed to create CustomEntity02 for row {index}: {e}", exc_info=True)
+                progress.close()
+                row_code = sg_data.get('code', f'Row {index + 1}')
+                error_msg = f"Failed to create breakdown item '{row_code}' (Row {index + 1}): {str(e)}"
+                return created_count, breakdown_id, error_msg
 
         # Close progress dialog
         progress.setValue(total_steps)
         progress.close()
 
-        # Log summary (detailed message shown at end of all imports)
-        if failed_count > 0:
-            logger.warning(f"Created VFX Breakdown '{breakdown_name}' with {created_count} items ({failed_count} failed)")
-        else:
-            logger.info(f"Successfully created VFX Breakdown '{breakdown_name}' with {created_count} items")
+        logger.info(f"Successfully created VFX Breakdown '{breakdown_name}' with {created_count} items")
 
-        return created_count, breakdown_id
+        return created_count, breakdown_id, None
 
     def _import_assets(self, df, column_mapping, bid_id, bid_name):
         """Import Assets data to ShotGrid.
@@ -4784,12 +4969,12 @@ class BidSelectorWidget(QtWidgets.QWidget):
             bid_name: Name of the Bid for versioning
 
         Returns:
-            tuple: (Number of records created, Bid Assets ID)
+            tuple: (Number of records created, Bid Assets ID, error_message or None)
         """
         import pandas as pd
 
         if df is None or len(df) == 0:
-            return 0, None
+            return 0, None, None
 
         logger.info(f"Starting Assets import with {len(df)} rows")
         logger.info(f"Column mapping: {column_mapping}")
@@ -4806,19 +4991,10 @@ class BidSelectorWidget(QtWidgets.QWidget):
             duplicates = codes[codes.duplicated()].unique()
 
             if len(duplicates) > 0:
-                duplicate_list = "\n".join([f"  - {code}" for code in duplicates])
-                error_msg = (
-                    f"Duplicate asset names found in the Assets sheet:\n\n"
-                    f"{duplicate_list}\n\n"
-                    f"Please fix the Excel file to ensure all asset names are unique before importing."
-                )
+                duplicate_list = ", ".join([str(code) for code in duplicates])
+                error_msg = f"Duplicate asset names found in the Assets sheet: {duplicate_list}. Please fix the Excel file to ensure all asset names are unique before importing."
                 logger.error(f"Duplicate assets found: {list(duplicates)}")
-                QtWidgets.QMessageBox.critical(
-                    self,
-                    "Duplicate Assets Found",
-                    error_msg
-                )
-                return 0, None
+                return 0, None, error_msg
 
         # Step 2: Determine version number for Bid Assets
         # Query existing Bid Assets with pattern: {bid_name}-Bid Assets-v*
@@ -4882,12 +5058,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         except Exception as e:
             logger.error(f"Failed to create Bid Assets: {e}", exc_info=True)
             progress.close()
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to create Bid Assets:\n{str(e)}"
-            )
-            return 0, None
+            return 0, None, f"Failed to create Bid Assets: {str(e)}"
 
         progress.setValue(1)
         QtWidgets.QApplication.processEvents()
@@ -4902,11 +5073,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
             logger.info(f"Linked Bid Assets {bid_assets_id} to Bid {bid_id}")
         except Exception as e:
             logger.error(f"Failed to link Bid Assets to Bid: {e}", exc_info=True)
-            QtWidgets.QMessageBox.warning(
-                self,
-                "Warning",
-                f"Bid Assets created but failed to link to Bid:\n{str(e)}"
-            )
+            # Non-fatal, continue with import
 
         # Step 7: Create Asset items (CustomEntity07) linked to Bid Assets
         created_count = 0
@@ -4971,34 +5138,29 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 # Validate that asset has a code
                 asset_code = sg_data.get("code")
                 if not asset_code:
-                    logger.warning(f"Row {index}: No code specified, skipping")
-                    failed_count += 1
-                    continue
+                    logger.error(f"Row {index + 1}: No asset code specified")
+                    progress.close()
+                    return created_count, bid_assets_id, f"Row {index + 1}: No asset code specified. Each asset must have a code."
 
                 # Always create new asset - each import creates fresh Asset items
-                try:
-                    result = self.sg_session.sg.create("CustomEntity07", sg_data)
-                    created_count += 1
-                    logger.info(f"Created new CustomEntity07 (Asset): {result['id']} with code '{asset_code}' linked to Bid Assets {bid_assets_id}")
-                except Exception as e:
-                    logger.error(f"Failed to create asset for row {index}: {e}", exc_info=True)
-                    failed_count += 1
+                result = self.sg_session.sg.create("CustomEntity07", sg_data)
+                created_count += 1
+                logger.info(f"Created new CustomEntity07 (Asset): {result['id']} with code '{asset_code}' linked to Bid Assets {bid_assets_id}")
 
             except Exception as e:
-                failed_count += 1
                 logger.error(f"Failed to process Asset item for row {index}: {e}", exc_info=True)
+                progress.close()
+                asset_code = sg_data.get('code', f'Row {index + 1}')
+                error_msg = f"Failed to create asset '{asset_code}' (Row {index + 1}): {str(e)}"
+                return created_count, bid_assets_id, error_msg
 
         # Close progress dialog
         progress.setValue(total_steps)
         progress.close()
 
-        # Log summary (detailed message shown at end of all imports)
-        if failed_count > 0:
-            logger.warning(f"Created Bid Assets '{bid_assets_name}' with {created_count} Asset items ({failed_count} failed)")
-        else:
-            logger.info(f"Successfully created Bid Assets '{bid_assets_name}' with {created_count} Asset items")
+        logger.info(f"Successfully created Bid Assets '{bid_assets_name}' with {created_count} Asset items")
 
-        return created_count, bid_assets_id
+        return created_count, bid_assets_id, None
 
     def _import_scenes(self, df, column_mapping, bid_id, bid_name):
         """Import Scenes data to ShotGrid.
@@ -5034,12 +5196,12 @@ class BidSelectorWidget(QtWidgets.QWidget):
             bid_name: Name of the Bid for versioning
 
         Returns:
-            tuple: (Number of Line Items created, Price List ID, Number of Line Items failed)
+            tuple: (Number of Line Items created, Price List ID, error_message or None)
         """
         import pandas as pd
 
         if df is None or len(df) == 0:
-            return 0, None, 0
+            return 0, None, None
 
         logger.info(f"Starting Rates import with {len(df)} rows for Bid: {bid_name} ({bid_id})")
         logger.info(f"Column mapping: {column_mapping}")
@@ -5075,12 +5237,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
 
         except Exception as e:
             logger.error(f"Failed to fetch schema for CustomEntity03: {e}", exc_info=True)
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to fetch Line Items schema:\n{str(e)}"
-            )
-            return 0, None, 0
+            return 0, None, f"Failed to fetch Line Items schema: {str(e)}"
 
         # Step 2: Determine version number for Price List
         # Query existing Price Lists with pattern: {bid_name}-Rates-v*
@@ -5144,12 +5301,7 @@ class BidSelectorWidget(QtWidgets.QWidget):
         except Exception as e:
             logger.error(f"Failed to create Price List: {e}", exc_info=True)
             progress.close()
-            QtWidgets.QMessageBox.critical(
-                self,
-                "Error",
-                f"Failed to create Price List:\n{str(e)}"
-            )
-            return 0, None, 0
+            return 0, None, f"Failed to create Price List: {str(e)}"
 
         progress.setValue(1)
         QtWidgets.QApplication.processEvents()
@@ -5246,8 +5398,11 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 logger.info(f"Created Line Item (CustomEntity03): {result['id']} with code '{sg_data.get('code', 'N/A')}'")
 
             except Exception as e:
-                failed_count += 1
                 logger.error(f"Failed to create Line Item for row {index}: {e}", exc_info=True)
+                progress.close()
+                row_code = sg_data.get('code', f'Row {index + 1}')
+                error_msg = f"Failed to create Line Item '{row_code}' (Row {index + 1}): {str(e)}"
+                return created_count, price_list_id, error_msg
 
         # Step 6: Link all created Line Items to the Price List via sg_line_items field
         if created_line_item_ids:
@@ -5272,13 +5427,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
         progress.setValue(total_steps)
         progress.close()
 
-        # Log summary
-        if failed_count > 0:
-            logger.warning(f"Created Price List '{price_list_name}' with {created_count} Line Items ({failed_count} failed)")
-        else:
-            logger.info(f"Successfully created Price List '{price_list_name}' with {created_count} Line Items")
+        logger.info(f"Successfully created Price List '{price_list_name}' with {created_count} Line Items")
 
-        return created_count, price_list_id, failed_count
+        return created_count, price_list_id, None
 
     def _refresh_vfx_breakdown_dropdown(self):
         """Refresh the VFX Breakdown dropdown in the VFX Breakdown tab.
