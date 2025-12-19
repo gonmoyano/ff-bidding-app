@@ -5178,9 +5178,8 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 # Validate that asset has a code
                 asset_code = sg_data.get("code")
                 if not asset_code:
-                    logger.error(f"Row {index + 1}: No asset code specified")
-                    progress.close()
-                    return created_count, bid_assets_id, f"Row {index + 1}: No asset code specified. Each asset must have a code."
+                    logger.warning(f"Row {index + 1}: No asset code specified, skipping")
+                    continue
 
                 # Always create new asset - each import creates fresh Asset items
                 result = self.sg_session.sg.create("CustomEntity07", sg_data)
