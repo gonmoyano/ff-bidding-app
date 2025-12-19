@@ -72,9 +72,23 @@ class ShotGridUpdateRunnable(QtCore.QRunnable):
 class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
     """Custom delegate for rendering checkboxes with custom styling."""
 
-    def __init__(self, parent=None):
-        """Initialize the delegate."""
+    def __init__(self, parent=None, checked_color=None):
+        """Initialize the delegate.
+
+        Args:
+            parent: Parent widget
+            checked_color: Custom color for checked state (default: "#0078d4" blue)
+        """
         super().__init__(parent)
+        self.checked_color = checked_color or "#0078d4"
+
+    def set_checked_color(self, color):
+        """Set the color for checked checkboxes.
+
+        Args:
+            color: Color string (e.g., "#6b5b95" for purple)
+        """
+        self.checked_color = color
 
     def paint(self, painter, option, index):
         """Paint the checkbox with custom styling."""
@@ -118,8 +132,8 @@ class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
 
             # Set up pen and brush for border
             if is_checked:
-                # Checked: blue border
-                pen = QtGui.QPen(QtGui.QColor("#0078d4"), pen_width)
+                # Checked: use custom color (default blue, can be purple)
+                pen = QtGui.QPen(QtGui.QColor(self.checked_color), pen_width)
                 painter.setPen(pen)
                 painter.setBrush(QtGui.QColor("#2b2b2b"))
             else:
@@ -134,7 +148,7 @@ class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
 
             # Draw tick if checked
             if is_checked:
-                painter.setPen(QtGui.QPen(QtGui.QColor("#0078d4"), pen_width))
+                painter.setPen(QtGui.QPen(QtGui.QColor(self.checked_color), pen_width))
                 font = painter.font()
                 font.setPixelSize(int(16 * dpi_scale))
                 font.setBold(True)

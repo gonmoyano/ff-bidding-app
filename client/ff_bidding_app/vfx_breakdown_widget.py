@@ -523,6 +523,10 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         # Custom pill colors for entity reference widgets (None = use defaults)
         self._pill_colors = None
 
+        # Custom checkbox color (None = use default blue)
+        self._checkbox_color = None
+        self._checkbox_delegates = []  # Store checkbox delegates for color updates
+
         # Create the model
         self.model = VFXBreakdownModel(sg_session, parent=self)
 
@@ -775,8 +779,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                     #         self.table_view.setItemDelegateForColumn(col_idx, delegate)
                     if field_info.get("data_type") == "checkbox":
                         # Use custom checkbox delegate for checkbox fields
-                        delegate = CheckBoxDelegate(self.table_view)
+                        delegate = CheckBoxDelegate(self.table_view, checked_color=self._checkbox_color)
                         self.table_view.setItemDelegateForColumn(col_idx, delegate)
+                        self._checkbox_delegates.append(delegate)
 
         self.model.load_bidding_scenes(bidding_scenes)
 
@@ -931,6 +936,22 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                     widget.set_pill_colors(colors)
         except ValueError:
             pass  # Column not found
+
+    def set_checkbox_color(self, color):
+        """Set custom color for checkbox widgets in this table.
+
+        Args:
+            color (str): Color string (e.g., "#6b5b95" for purple)
+        """
+        self._checkbox_color = color
+
+        # Update existing checkbox delegates
+        for delegate in self._checkbox_delegates:
+            delegate.set_checked_color(color)
+
+        # Force repaint to apply new colors
+        if self.table_view and self.table_view.viewport():
+            self.table_view.viewport().update()
 
     def _on_bid_assets_changed_from_widget(self, widget, entities):
         """Handle when bid assets are changed in a cell widget, looking up position dynamically.

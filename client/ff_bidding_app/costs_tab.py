@@ -245,6 +245,9 @@ class CostsTab(QtWidgets.QMainWindow):
             'invalid_border': '#c0392b'
         })
 
+        # Apply purple checkbox color for the Costs panel
+        self.shots_cost_widget.set_checkbox_color('#6b5b95')
+
         # Now intercept the layout and replace table_view with wrapped version
         layout = self.shots_cost_widget.layout()
 
@@ -280,6 +283,9 @@ class CostsTab(QtWidgets.QMainWindow):
             'invalid_bg': '#e74c3c',
             'invalid_border': '#c0392b'
         })
+
+        # Apply purple checkbox color for the Costs panel
+        self.asset_cost_widget.set_checkbox_color('#6b5b95')
 
         # Configure the model to use Asset-specific columns and entity type
         if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
