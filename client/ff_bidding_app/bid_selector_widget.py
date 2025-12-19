@@ -2155,7 +2155,11 @@ class ColumnMappingDialog(QtWidgets.QDialog):
 
 
 class ImportErrorDialog(QtWidgets.QDialog):
-    """Dialog to display import errors with a copyable log output."""
+    """Dialog to display import errors with a copyable log output and skip option."""
+
+    # Return codes
+    STOP_IMPORT = 0
+    SKIP_AND_CONTINUE = 1
 
     def __init__(self, error_title, error_messages, parent=None):
         """Initialize the error dialog.
@@ -2169,6 +2173,7 @@ class ImportErrorDialog(QtWidgets.QDialog):
         self.setWindowTitle("Import Error")
         self.setMinimumSize(600, 400)
         self.resize(700, 450)
+        self.result_code = self.STOP_IMPORT
 
         # Build the log text
         self.log_text = self._build_log_text(error_title, error_messages)
@@ -2198,8 +2203,7 @@ class ImportErrorDialog(QtWidgets.QDialog):
         lines.extend([
             "",
             "=" * 60,
-            "Import was stopped due to the error(s) above.",
-            "Please fix the issues and try again.",
+            "You can skip this item and continue importing, or stop the import.",
             "=" * 60,
         ])
 
@@ -2213,7 +2217,7 @@ class ImportErrorDialog(QtWidgets.QDialog):
 
         # Header label
         header_label = QtWidgets.QLabel(
-            f"<b>Import stopped due to error:</b> {error_title}"
+            f"<b>Import error:</b> {error_title}"
         )
         header_label.setWordWrap(True)
         header_label.setStyleSheet("color: #d32f2f; font-size: 14px;")
@@ -2221,10 +2225,10 @@ class ImportErrorDialog(QtWidgets.QDialog):
 
         # Description
         desc_label = QtWidgets.QLabel(
-            "The import process was stopped. Review the error details below and fix the issues in your Excel file before trying again."
+            "An error occurred during import. You can <b>Skip</b> this item and continue with the remaining items, or <b>Stop</b> the import entirely."
         )
         desc_label.setWordWrap(True)
-        desc_label.setStyleSheet("color: #666; margin-bottom: 8px;")
+        desc_label.setStyleSheet("color: #aaa; margin-bottom: 8px;")
         layout.addWidget(desc_label)
 
         # Log text area
@@ -2271,10 +2275,32 @@ class ImportErrorDialog(QtWidgets.QDialog):
 
         button_layout.addStretch()
 
-        # Close button
-        self.close_btn = QtWidgets.QPushButton("Close")
-        self.close_btn.setMinimumWidth(100)
-        self.close_btn.setStyleSheet("""
+        # Skip button - continue import without this item
+        self.skip_btn = QtWidgets.QPushButton("Skip && Continue")
+        self.skip_btn.setMinimumWidth(120)
+        self.skip_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #FF9800;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #F57C00;
+            }
+            QPushButton:pressed {
+                background-color: #E65100;
+            }
+        """)
+        self.skip_btn.clicked.connect(self._on_skip_clicked)
+        button_layout.addWidget(self.skip_btn)
+
+        # Stop button - stop the import
+        self.stop_btn = QtWidgets.QPushButton("Stop Import")
+        self.stop_btn.setMinimumWidth(100)
+        self.stop_btn.setStyleSheet("""
             QPushButton {
                 background-color: #757575;
                 color: white;
@@ -2290,8 +2316,8 @@ class ImportErrorDialog(QtWidgets.QDialog):
                 background-color: #424242;
             }
         """)
-        self.close_btn.clicked.connect(self.accept)
-        button_layout.addWidget(self.close_btn)
+        self.stop_btn.clicked.connect(self._on_stop_clicked)
+        button_layout.addWidget(self.stop_btn)
 
         layout.addLayout(button_layout)
 
@@ -2336,6 +2362,24 @@ class ImportErrorDialog(QtWidgets.QDialog):
                 background-color: #1565C0;
             }
         """)
+
+    def _on_skip_clicked(self):
+        """Handle Skip button click - continue import without this item."""
+        self.result_code = self.SKIP_AND_CONTINUE
+        self.accept()
+
+    def _on_stop_clicked(self):
+        """Handle Stop button click - stop the import."""
+        self.result_code = self.STOP_IMPORT
+        self.accept()
+
+    def get_result(self):
+        """Get the result code after dialog is closed.
+
+        Returns:
+            int: SKIP_AND_CONTINUE or STOP_IMPORT
+        """
+        return self.result_code
 
 
 class ImportBidDialog(QtWidgets.QDialog):
@@ -4506,8 +4550,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 results["assets"]["entity_id"] = entity_id
 
                 if error:
-                    self._show_import_error("Assets Import Failed", [error])
-                    return
+                    should_continue = self._show_import_error("Assets Import Failed", [error])
+                    if not should_continue:
+                        return
 
             # Import Breakdown (can now reference Assets)
             if selected_entity_types.get("breakdown") and "VFX Breakdown" in data:
@@ -4522,8 +4567,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 results["breakdown"]["entity_id"] = entity_id
 
                 if error:
-                    self._show_import_error("VFX Breakdown Import Failed", [error])
-                    return
+                    should_continue = self._show_import_error("VFX Breakdown Import Failed", [error])
+                    if not should_continue:
+                        return
 
             # Import Rates
             if selected_entity_types.get("rates") and "Rates" in data:
@@ -4533,8 +4579,9 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 results["rates"]["entity_id"] = entity_id
 
                 if error:
-                    self._show_import_error("Rates Import Failed", [error])
-                    return
+                    should_continue = self._show_import_error("Rates Import Failed", [error])
+                    if not should_continue:
+                        return
 
             # Show success message
             self._show_import_success(results, data)
@@ -4547,14 +4594,18 @@ class BidSelectorWidget(QtWidgets.QWidget):
             self._show_import_error("Import Failed", [str(e)])
 
     def _show_import_error(self, error_title, error_messages):
-        """Show error dialog with copyable log output.
+        """Show error dialog with copyable log output and skip/stop options.
 
         Args:
             error_title: Title describing the error context
             error_messages: List of error message strings
+
+        Returns:
+            bool: True if user chose to skip and continue, False if user chose to stop
         """
         dialog = ImportErrorDialog(error_title, error_messages, self)
         dialog.exec_()
+        return dialog.get_result() == ImportErrorDialog.SKIP_AND_CONTINUE
 
     def _show_import_success(self, results, data):
         """Show success message after import."""
