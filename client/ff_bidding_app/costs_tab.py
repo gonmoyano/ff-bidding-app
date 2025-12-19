@@ -1671,7 +1671,7 @@ class CostsTab(QtWidgets.QMainWindow):
     # ------------------------------------------------------------------
 
     def _save_misc_spreadsheet_to_shotgrid(self):
-        """Save Misc Cost spreadsheet data to ShotGrid."""
+        """Save Misc Cost spreadsheet data to ShotGrid including formatting."""
         if not self.current_bid_id or not self.current_project_id:
             logger.warning("Cannot save Misc spreadsheet - no bid selected")
             return
@@ -1687,20 +1687,26 @@ class CostsTab(QtWidgets.QMainWindow):
                 logger.debug("No data to save for Misc spreadsheet")
                 return
 
-            # Save to ShotGrid
+            # Get cell metadata and sheet metadata for formatting persistence
+            cell_meta_dict = self.misc_cost_spreadsheet.model.get_all_cell_meta()
+            sheet_meta = self.misc_cost_spreadsheet.model.get_sheet_meta()
+
+            # Save to ShotGrid with metadata
             self.sg_session.save_spreadsheet_data(
                 project_id=self.current_project_id,
                 bid_id=self.current_bid_id,
                 spreadsheet_type="misc",
-                data_dict=data_dict
+                data_dict=data_dict,
+                cell_meta_dict=cell_meta_dict,
+                sheet_meta=sheet_meta
             )
-            logger.info(f"Saved Misc spreadsheet data to ShotGrid ({len(data_dict)} cells)")
+            logger.info(f"Saved Misc spreadsheet data to ShotGrid ({len(data_dict)} cells, {len(cell_meta_dict)} formatted)")
 
         except Exception as e:
             logger.error(f"Failed to save Misc spreadsheet to ShotGrid: {e}", exc_info=True)
 
     def _load_misc_spreadsheet_from_shotgrid(self):
-        """Load Misc Cost spreadsheet data from ShotGrid, or initialize with defaults."""
+        """Load Misc Cost spreadsheet data from ShotGrid including formatting, or initialize with defaults."""
         if not hasattr(self, 'misc_cost_spreadsheet'):
             return
 
@@ -1711,15 +1717,34 @@ class CostsTab(QtWidgets.QMainWindow):
             return
 
         try:
-            # Load from ShotGrid
-            data_dict = self.sg_session.load_spreadsheet_data(
+            # Load from ShotGrid (now returns tuple with metadata)
+            result = self.sg_session.load_spreadsheet_data(
                 bid_id=self.current_bid_id,
                 spreadsheet_type="misc"
             )
 
+            # Handle both old (dict only) and new (tuple) return formats
+            if isinstance(result, tuple):
+                data_dict, cell_meta_dict, sheet_meta = result
+            else:
+                data_dict = result
+                cell_meta_dict = {}
+                sheet_meta = {}
+
             if data_dict:
                 self.misc_cost_spreadsheet.load_data_from_dict(data_dict)
-                logger.info(f"Loaded Misc spreadsheet data from ShotGrid ({len(data_dict)} cells)")
+
+                # Load cell metadata if present
+                if cell_meta_dict:
+                    self.misc_cost_spreadsheet.model.load_cell_meta(cell_meta_dict)
+
+                # Load sheet metadata if present (column widths, row heights, merged cells)
+                if sheet_meta:
+                    self.misc_cost_spreadsheet.model.load_sheet_meta(sheet_meta)
+                    # Apply saved column/row sizes to view
+                    self.misc_cost_spreadsheet.apply_saved_sizes()
+
+                logger.info(f"Loaded Misc spreadsheet data from ShotGrid ({len(data_dict)} cells, {len(cell_meta_dict)} formatted)")
             else:
                 logger.info("No Misc spreadsheet data found in ShotGrid - using defaults")
 
@@ -1736,7 +1761,7 @@ class CostsTab(QtWidgets.QMainWindow):
         logger.debug("Initialized Misc spreadsheet with empty defaults")
 
     def _save_total_cost_spreadsheet_to_shotgrid(self):
-        """Save Total Cost spreadsheet data to ShotGrid."""
+        """Save Total Cost spreadsheet data to ShotGrid including formatting."""
         if not self.current_bid_id or not self.current_project_id:
             logger.warning("Cannot save Total Cost spreadsheet - no bid selected")
             return
@@ -1752,20 +1777,26 @@ class CostsTab(QtWidgets.QMainWindow):
                 logger.debug("No data to save for Total Cost spreadsheet")
                 return
 
-            # Save to ShotGrid
+            # Get cell metadata and sheet metadata for formatting persistence
+            cell_meta_dict = self.total_cost_spreadsheet.model.get_all_cell_meta()
+            sheet_meta = self.total_cost_spreadsheet.model.get_sheet_meta()
+
+            # Save to ShotGrid with metadata
             self.sg_session.save_spreadsheet_data(
                 project_id=self.current_project_id,
                 bid_id=self.current_bid_id,
                 spreadsheet_type="total_cost",
-                data_dict=data_dict
+                data_dict=data_dict,
+                cell_meta_dict=cell_meta_dict,
+                sheet_meta=sheet_meta
             )
-            logger.info(f"Saved Total Cost spreadsheet data to ShotGrid ({len(data_dict)} cells)")
+            logger.info(f"Saved Total Cost spreadsheet data to ShotGrid ({len(data_dict)} cells, {len(cell_meta_dict)} formatted)")
 
         except Exception as e:
             logger.error(f"Failed to save Total Cost spreadsheet to ShotGrid: {e}", exc_info=True)
 
     def _load_total_cost_spreadsheet_from_shotgrid(self):
-        """Load Total Cost spreadsheet data from ShotGrid, or initialize with defaults."""
+        """Load Total Cost spreadsheet data from ShotGrid including formatting, or initialize with defaults."""
         if not hasattr(self, 'total_cost_spreadsheet'):
             return
 
@@ -1776,15 +1807,34 @@ class CostsTab(QtWidgets.QMainWindow):
             return
 
         try:
-            # Load from ShotGrid
-            data_dict = self.sg_session.load_spreadsheet_data(
+            # Load from ShotGrid (now returns tuple with metadata)
+            result = self.sg_session.load_spreadsheet_data(
                 bid_id=self.current_bid_id,
                 spreadsheet_type="total_cost"
             )
 
+            # Handle both old (dict only) and new (tuple) return formats
+            if isinstance(result, tuple):
+                data_dict, cell_meta_dict, sheet_meta = result
+            else:
+                data_dict = result
+                cell_meta_dict = {}
+                sheet_meta = {}
+
             if data_dict:
                 self.total_cost_spreadsheet.load_data_from_dict(data_dict)
-                logger.info(f"Loaded Total Cost spreadsheet data from ShotGrid ({len(data_dict)} cells)")
+
+                # Load cell metadata if present
+                if cell_meta_dict:
+                    self.total_cost_spreadsheet.model.load_cell_meta(cell_meta_dict)
+
+                # Load sheet metadata if present (column widths, row heights, merged cells)
+                if sheet_meta:
+                    self.total_cost_spreadsheet.model.load_sheet_meta(sheet_meta)
+                    # Apply saved column/row sizes to view
+                    self.total_cost_spreadsheet.apply_saved_sizes()
+
+                logger.info(f"Loaded Total Cost spreadsheet data from ShotGrid ({len(data_dict)} cells, {len(cell_meta_dict)} formatted)")
             else:
                 logger.info("No Total Cost spreadsheet data found in ShotGrid - using defaults")
 
