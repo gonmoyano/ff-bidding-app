@@ -1694,6 +1694,46 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         toolbar_layout.setContentsMargins(5, 5, 5, 5)
         toolbar_layout.setSpacing(5)
 
+        # Apply purple/violet theme to toolbar
+        self.toolbar.setStyleSheet("""
+            QWidget {
+                background-color: #3d3a4e;
+                border-bottom: 2px solid #6b5b95;
+            }
+            QLabel {
+                color: #d0c4f0;
+                background-color: transparent;
+                border: none;
+            }
+            QLineEdit {
+                background-color: #2d2a3e;
+                color: white;
+                border: 1px solid #6b5b95;
+                border-radius: 3px;
+                padding: 4px 8px;
+            }
+            QLineEdit:focus {
+                border-color: #9b8bc5;
+            }
+            QPushButton {
+                background-color: #6b5b95;
+                color: white;
+                border: 1px solid #8b7bb5;
+                border-radius: 3px;
+                padding: 4px 12px;
+                min-width: 60px;
+            }
+            QPushButton:hover {
+                background-color: #7b6ba5;
+            }
+            QPushButton:pressed {
+                background-color: #5b4b85;
+            }
+            QFrame {
+                background-color: #6b5b95;
+            }
+        """)
+
         # Search box
         search_label = QtWidgets.QLabel("Search:")
         toolbar_layout.addWidget(search_label)
@@ -1722,7 +1762,7 @@ class SpreadsheetWidget(QtWidgets.QWidget):
 
         # Formula bar label
         formula_label = QtWidgets.QLabel("fx")
-        formula_label.setStyleSheet("font-weight: bold; padding: 2px;")
+        formula_label.setStyleSheet("font-weight: bold; padding: 2px; color: #d0c4f0; background-color: transparent; border: none;")
         toolbar_layout.addWidget(formula_label)
 
         # Formula bar
@@ -1733,7 +1773,7 @@ class SpreadsheetWidget(QtWidgets.QWidget):
 
         # Row count label
         self.row_count_label = QtWidgets.QLabel("Showing 0 of 0 rows")
-        self.row_count_label.setStyleSheet("color: #606060; padding: 2px 4px;")
+        self.row_count_label.setStyleSheet("color: #b0a4d0; padding: 2px 4px; background-color: transparent; border: none;")
         toolbar_layout.addWidget(self.row_count_label)
 
         # Connect row count updates

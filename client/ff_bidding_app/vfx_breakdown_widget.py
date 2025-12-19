@@ -570,7 +570,73 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Create a container widget for the toolbar contents
             self.toolbar_widget = QtWidgets.QWidget()
             toolbar_layout = QtWidgets.QHBoxLayout(self.toolbar_widget)
-            toolbar_layout.setContentsMargins(0, 0, 0, 0)
+            toolbar_layout.setContentsMargins(5, 5, 5, 5)
+
+            # Apply purple/violet theme to toolbar
+            self.toolbar_widget.setStyleSheet("""
+                QWidget {
+                    background-color: #3d3a4e;
+                    border-bottom: 2px solid #6b5b95;
+                }
+                QLabel {
+                    color: #d0c4f0;
+                    background-color: transparent;
+                    border: none;
+                }
+                QLineEdit {
+                    background-color: #2d2a3e;
+                    color: white;
+                    border: 1px solid #6b5b95;
+                    border-radius: 3px;
+                    padding: 4px 8px;
+                }
+                QLineEdit:focus {
+                    border-color: #9b8bc5;
+                }
+                QPushButton {
+                    background-color: #6b5b95;
+                    color: white;
+                    border: 1px solid #8b7bb5;
+                    border-radius: 3px;
+                    padding: 4px 12px;
+                    min-width: 60px;
+                }
+                QPushButton:hover {
+                    background-color: #7b6ba5;
+                }
+                QPushButton:pressed {
+                    background-color: #5b4b85;
+                }
+                QComboBox {
+                    background-color: #2d2a3e;
+                    color: white;
+                    border: 1px solid #6b5b95;
+                    border-radius: 3px;
+                    padding: 4px 8px;
+                }
+                QComboBox:hover {
+                    border-color: #9b8bc5;
+                }
+                QComboBox::drop-down {
+                    border: none;
+                    background-color: #6b5b95;
+                    width: 20px;
+                }
+                QSlider::groove:horizontal {
+                    background-color: #2d2a3e;
+                    height: 6px;
+                    border-radius: 3px;
+                }
+                QSlider::handle:horizontal {
+                    background-color: #9b8bc5;
+                    width: 14px;
+                    margin: -4px 0;
+                    border-radius: 7px;
+                }
+                QSlider::handle:horizontal:hover {
+                    background-color: #ab9bd5;
+                }
+            """)
 
             # Global search box
             search_label = QtWidgets.QLabel("Search:")

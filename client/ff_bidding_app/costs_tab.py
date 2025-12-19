@@ -112,6 +112,9 @@ class CostsTab(QtWidgets.QMainWindow):
             QtWidgets.QTabWidget.North
         )
 
+        # Apply purple/violet theme to the Costs panel
+        self._apply_costs_panel_style()
+
         # Create cost docks
         self._create_cost_docks()
 
@@ -122,6 +125,51 @@ class CostsTab(QtWidgets.QMainWindow):
         QtCore.QTimer.singleShot(0, self.load_layout)
 
         logger.info("CostsTab initialized")
+
+    def _apply_costs_panel_style(self):
+        """Apply a purple/violet theme to the Costs panel for visual distinction."""
+        # Light purple/violet color scheme
+        self.setStyleSheet("""
+            /* Main Costs panel background */
+            CostsTab {
+                background-color: #2d2a3e;
+            }
+
+            /* Dock widget tabs - purple theme */
+            QTabBar::tab {
+                background-color: #3d3a4e;
+                color: #b8b8b8;
+                padding: 8px 16px;
+                margin-right: 2px;
+                border: 1px solid #5a4f7a;
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+            }
+
+            QTabBar::tab:selected {
+                background-color: #6b5b95;
+                color: white;
+                border-color: #8b7bb5;
+            }
+
+            QTabBar::tab:hover:!selected {
+                background-color: #4d4a5e;
+            }
+
+            /* Dock widget styling */
+            QDockWidget {
+                color: #d0d0d0;
+                titlebar-close-icon: none;
+                titlebar-normal-icon: none;
+            }
+
+            QDockWidget::title {
+                background-color: #3d3a4e;
+                padding: 6px;
+                border: 1px solid #5a4f7a;
+            }
+        """)
 
     def _create_cost_docks(self):
         """Create the individual cost dock widgets."""

@@ -139,23 +139,23 @@ class TableWithTotalsBar(QtWidgets.QWidget):
 
     def set_blue_columns(self, column_indices):
         """
-        Mark specific columns to have blue background in totals bar.
+        Mark specific columns to have highlighted purple background in totals bar.
 
         Args:
-            column_indices: List of column indices that should be blue
+            column_indices: List of column indices that should be highlighted
         """
         self.blue_columns = set(column_indices)
 
-        # Reapply styling to all existing cells to update blue columns
+        # Reapply styling to all existing cells to update highlighted columns
         for col in range(self.cols):
             item = self.totals_bar.item(0, col)
             if item:
-                is_blue_column = col in self.blue_columns
-                if is_blue_column:
-                    item.setBackground(QtGui.QColor("#0078d4"))
+                is_highlighted = col in self.blue_columns
+                if is_highlighted:
+                    item.setBackground(QtGui.QColor("#7b68ee"))  # Medium slate purple
                     item.setForeground(QtGui.QColor("white"))
                 else:
-                    item.setBackground(QtGui.QColor("#3a3a3a"))
+                    item.setBackground(QtGui.QColor("#4d3d6e"))  # Standard purple
                     item.setForeground(QtGui.QColor("#ffffff"))
 
     def set_formula_evaluator(self, formula_evaluator):
@@ -370,12 +370,17 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         # Disable gridlines for continuous bar appearance
         self.totals_bar.setShowGrid(False)
 
-        # Styling - Dark theme matching VFX table
+        # Styling - Purple/violet theme for Costs panel
         self.totals_bar.setStyleSheet("""
             QTableWidget {
-                background-color: #3a3a3a;
-                border-top: 2px solid #555555;
+                background-color: #4d3d6e;
+                border-top: 2px solid #8b7bb5;
                 font-weight: bold;
+            }
+            QHeaderView::section {
+                background-color: #4d3d6e;
+                color: #d0c4f0;
+                border: none;
             }
         """)
 
@@ -386,11 +391,11 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         self.totals_bar.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self.totals_bar.setFocusPolicy(Qt.NoFocus)
 
-        # Initialize cells with default dark gray background
+        # Initialize cells with purple theme background
         for col in range(self.cols):
             item = QtWidgets.QTableWidgetItem("")
             item.setTextAlignment(Qt.AlignCenter)
-            item.setBackground(QtGui.QColor("#3a3a3a"))
+            item.setBackground(QtGui.QColor("#4d3d6e"))
             item.setForeground(QtGui.QColor("#ffffff"))
             font = item.font()
             font.setBold(True)
