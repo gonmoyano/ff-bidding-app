@@ -59,8 +59,11 @@ class TableWithTotalsBar(QtWidgets.QWidget):
             model = existing_table.model()
             self.cols = model.columnCount() if model else 0
 
-        # Track which columns have blue styling
+        # Track which columns have highlighted styling
         self.blue_columns = set()
+
+        # Custom highlight color (default blue, can be changed to purple)
+        self.highlight_color = "#0078d4"
 
         # Formula evaluator for calculating totals from formula cells
         self.formula_evaluator = formula_evaluator
@@ -139,24 +142,35 @@ class TableWithTotalsBar(QtWidgets.QWidget):
 
     def set_blue_columns(self, column_indices):
         """
-        Mark specific columns to have blue background in totals bar.
+        Mark specific columns to have highlighted background in totals bar.
 
         Args:
-            column_indices: List of column indices that should be blue
+            column_indices: List of column indices that should be highlighted
         """
         self.blue_columns = set(column_indices)
 
-        # Reapply styling to all existing cells to update blue columns
+        # Reapply styling to all existing cells to update highlighted columns
         for col in range(self.cols):
             item = self.totals_bar.item(0, col)
             if item:
-                is_blue_column = col in self.blue_columns
-                if is_blue_column:
-                    item.setBackground(QtGui.QColor("#0078d4"))
+                is_highlighted = col in self.blue_columns
+                if is_highlighted:
+                    item.setBackground(QtGui.QColor(self.highlight_color))
                     item.setForeground(QtGui.QColor("white"))
                 else:
-                    item.setBackground(QtGui.QColor("#3a3a3a"))
+                    item.setBackground(QtGui.QColor("#3a3a3a"))  # Standard dark
                     item.setForeground(QtGui.QColor("#ffffff"))
+
+    def set_highlight_color(self, color):
+        """
+        Set the highlight color for marked columns in the totals bar.
+
+        Args:
+            color: Color string (e.g., "#6b5b95" for purple)
+        """
+        self.highlight_color = color
+        # Reapply styling to update color on highlighted columns
+        self.set_blue_columns(self.blue_columns)
 
     def set_formula_evaluator(self, formula_evaluator):
         """
@@ -370,12 +384,17 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         # Disable gridlines for continuous bar appearance
         self.totals_bar.setShowGrid(False)
 
-        # Styling - Dark theme matching VFX table
+        # Styling - default dark theme
         self.totals_bar.setStyleSheet("""
             QTableWidget {
                 background-color: #3a3a3a;
-                border-top: 2px solid #555555;
+                border-top: 2px solid #505050;
                 font-weight: bold;
+            }
+            QHeaderView::section {
+                background-color: #3a3a3a;
+                color: #cccccc;
+                border: none;
             }
         """)
 
@@ -386,7 +405,7 @@ class TableWithTotalsBar(QtWidgets.QWidget):
         self.totals_bar.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self.totals_bar.setFocusPolicy(Qt.NoFocus)
 
-        # Initialize cells with default dark gray background
+        # Initialize cells with default dark theme background
         for col in range(self.cols):
             item = QtWidgets.QTableWidgetItem("")
             item.setTextAlignment(Qt.AlignCenter)

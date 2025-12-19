@@ -1444,17 +1444,17 @@ class PackageManagerApp(QtWidgets.QMainWindow):
         self.costs_btn.setToolTip("Show/Hide Costs Panel")
         self.costs_btn.setStyleSheet("""
             QPushButton {
-                background-color: #4a9eff;
+                background-color: #6b5b95;
                 color: white;
                 font-weight: bold;
                 padding: 6px 12px;
                 border-radius: 4px;
             }
             QPushButton:hover {
-                background-color: #5eb3ff;
+                background-color: #7b6ba5;
             }
             QPushButton:pressed {
-                background-color: #3a8eef;
+                background-color: #5b4b85;
             }
         """)
         self.costs_btn.clicked.connect(self._toggle_costs_panel)

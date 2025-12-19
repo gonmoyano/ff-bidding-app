@@ -72,9 +72,23 @@ class ShotGridUpdateRunnable(QtCore.QRunnable):
 class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
     """Custom delegate for rendering checkboxes with custom styling."""
 
-    def __init__(self, parent=None):
-        """Initialize the delegate."""
+    def __init__(self, parent=None, checked_color=None):
+        """Initialize the delegate.
+
+        Args:
+            parent: Parent widget
+            checked_color: Custom color for checked state (default: "#0078d4" blue)
+        """
         super().__init__(parent)
+        self.checked_color = checked_color or "#0078d4"
+
+    def set_checked_color(self, color):
+        """Set the color for checked checkboxes.
+
+        Args:
+            color: Color string (e.g., "#6b5b95" for purple)
+        """
+        self.checked_color = color
 
     def paint(self, painter, option, index):
         """Paint the checkbox with custom styling."""
@@ -118,8 +132,8 @@ class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
 
             # Set up pen and brush for border
             if is_checked:
-                # Checked: blue border
-                pen = QtGui.QPen(QtGui.QColor("#0078d4"), pen_width)
+                # Checked: use custom color (default blue, can be purple)
+                pen = QtGui.QPen(QtGui.QColor(self.checked_color), pen_width)
                 painter.setPen(pen)
                 painter.setBrush(QtGui.QColor("#2b2b2b"))
             else:
@@ -134,7 +148,7 @@ class CheckBoxDelegate(QtWidgets.QStyledItemDelegate):
 
             # Draw tick if checked
             if is_checked:
-                painter.setPen(QtGui.QPen(QtGui.QColor("#0078d4"), pen_width))
+                painter.setPen(QtGui.QPen(QtGui.QColor(self.checked_color), pen_width))
                 font = painter.font()
                 font.setPixelSize(int(16 * dpi_scale))
                 font.setBold(True)
@@ -168,20 +182,23 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
     """Custom delegate for combo box cells with List field values and validation coloring.
 
     Based on ComboBoxDelegate from vfx_breakdown_tab.py, with added paint() method
-    for validation coloring (blue for valid, red for invalid values).
+    for validation coloring (customizable color for valid, red for invalid values).
     """
 
-    def __init__(self, list_values, parent=None):
+    def __init__(self, list_values, parent=None, valid_color=None):
         """Initialize the delegate.
 
         Args:
             list_values: List of valid string values for the dropdown
             parent: Parent widget
+            valid_color: Custom color for valid values (default: "#4a90e2" blue)
         """
         super().__init__(parent)
         self.list_values = list_values or []
         # Store normalized versions for validation
         self.normalized_valid_values = {str(v).strip(): v for v in self.list_values if v}
+        # Custom color for valid values (default blue, can be changed to purple)
+        self.valid_color = valid_color or "#4a90e2"
 
     def update_valid_values(self, valid_values):
         """Update the list of valid values and trigger repaint.
@@ -208,11 +225,11 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
             # Normalize the value for comparison (strip whitespace)
             normalized_value = str(value).strip()
             if normalized_value in self.normalized_valid_values:
-                # Valid value - blue background matching Asset pill
-                bg_color = QtGui.QColor("#4a90e2")  # Same as valid Asset pill
+                # Valid value - use custom color (default blue, can be purple)
+                bg_color = QtGui.QColor(self.valid_color)
             else:
                 # Invalid value - red background matching invalid Asset pill
-                bg_color = QtGui.QColor("#e74c3c")  # Same as invalid Asset pill
+                bg_color = QtGui.QColor("#e74c3c")
         else:
             # Empty value - default background
             bg_color = option.palette.base().color()
@@ -655,6 +672,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         self.formula_evaluator = None
         self.compound_sort_columns = []
 
+        # Custom price column color (default blue, can be changed to purple)
+        self.price_column_color = "#0078d4"
+
         # Filtering state
         self.global_search_text = ""
 
@@ -776,9 +796,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
                 return QtGui.QColor("#888888")
 
         elif role == QtCore.Qt.BackgroundRole:
-            # Blue background for calculated Price field (matching tab blue)
+            # Colored background for calculated Price field (default blue, can be purple)
             if field_name == "_calc_price":
-                return QtGui.QColor("#0078d4")
+                return QtGui.QColor(self.price_column_color)
 
         elif role == QtCore.Qt.ToolTipRole:
             # Show cell reference (e.g., A1, B2, C3)

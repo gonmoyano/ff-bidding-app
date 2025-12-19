@@ -35,7 +35,13 @@ class EntityPillWidget(QtWidgets.QWidget):
     MIN_HEIGHT = 16  # Minimum height to remain readable
     MAX_HEIGHT = 60  # Maximum height to prevent pills from becoming too tall
 
-    def __init__(self, entity, is_valid=True, max_height=None, parent=None):
+    # Class-level default colors (can be overridden per-instance or globally)
+    default_valid_bg = "#4a9eff"  # Match table selection blue
+    default_valid_border = "#3a8adf"
+    default_invalid_bg = "#e74c3c"  # Red for invalid
+    default_invalid_border = "#c0392b"
+
+    def __init__(self, entity, is_valid=True, max_height=None, custom_colors=None, parent=None):
         """
         Initialize an entity pill widget.
 
@@ -43,6 +49,7 @@ class EntityPillWidget(QtWidgets.QWidget):
             entity (dict): ShotGrid entity dict with 'type', 'id', 'name' keys
             is_valid (bool): Whether this entity reference is valid (exists in current bid's assets)
             max_height (int): Maximum height for the pill (for clipping to cell size)
+            custom_colors (dict): Optional dict with 'valid_bg', 'valid_border', 'invalid_bg', 'invalid_border' keys
             parent (QWidget): Parent widget
         """
         super().__init__(parent)
@@ -52,14 +59,18 @@ class EntityPillWidget(QtWidgets.QWidget):
         # Try 'code' first (used by Asset items), then 'name', finally fallback to ID
         self.entity_name = entity.get("code") or entity.get("name") or f"ID {entity.get('id', 'N/A')}"
 
-        # Colors for custom painting - use same blue as table selection for consistency
+        # Colors for custom painting - use custom colors if provided, otherwise defaults
         if self.is_valid:
-            self.bg_color = QtGui.QColor("#4a9eff")  # Match table selection blue
-            self.border_color = QtGui.QColor("#3a8adf")
+            valid_bg = custom_colors.get('valid_bg', self.default_valid_bg) if custom_colors else self.default_valid_bg
+            valid_border = custom_colors.get('valid_border', self.default_valid_border) if custom_colors else self.default_valid_border
+            self.bg_color = QtGui.QColor(valid_bg)
+            self.border_color = QtGui.QColor(valid_border)
             self.text_color = "#ffffff"
         else:
-            self.bg_color = QtGui.QColor("#e74c3c")  # Red for invalid
-            self.border_color = QtGui.QColor("#c0392b")
+            invalid_bg = custom_colors.get('invalid_bg', self.default_invalid_bg) if custom_colors else self.default_invalid_bg
+            invalid_border = custom_colors.get('invalid_border', self.default_invalid_border) if custom_colors else self.default_invalid_border
+            self.bg_color = QtGui.QColor(invalid_bg)
+            self.border_color = QtGui.QColor(invalid_border)
             self.text_color = "#ffffff"
 
         self._setup_ui()
@@ -247,7 +258,7 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
 
     entitiesChanged = QtCore.Signal(list)  # Emits list of entity dicts
 
-    def __init__(self, entities=None, allow_add=True, valid_entity_ids=None, parent=None):
+    def __init__(self, entities=None, allow_add=True, valid_entity_ids=None, pill_colors=None, parent=None):
         """
         Initialize the multi-entity reference widget.
 
@@ -256,6 +267,8 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
             allow_add (bool): Whether to show the Add button
             valid_entity_ids (set): Set of valid entity names for the current bid (for validation)
                                     Note: Despite the name, this now uses names for matching
+            pill_colors (dict): Optional custom colors for pills with keys:
+                               'valid_bg', 'valid_border', 'invalid_bg', 'invalid_border'
             parent (QWidget): Parent widget
         """
         super().__init__(parent)
@@ -266,6 +279,7 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         self._is_editing = False   # Track edit state
         self._pill_max_height = None  # Max height for pills (calculated from widget height)
         self._skip_resize_pill_updates = False  # Skip pill height updates during manual row resize
+        self._pill_colors = pill_colors  # Custom pill colors
 
         # Colors for custom painting
         self.bg_color = QtGui.QColor("#2b2b2b")      # Normal background
@@ -387,9 +401,25 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
             entity_name = entity.get('code') or entity.get('name')
             is_valid = entity_name in self._valid_entity_names if entity_name else False
 
-        pill = EntityPillWidget(entity, is_valid=is_valid, max_height=self._pill_max_height, parent=self)
+        pill = EntityPillWidget(
+            entity,
+            is_valid=is_valid,
+            max_height=self._pill_max_height,
+            custom_colors=self._pill_colors,
+            parent=self
+        )
         pill.removeRequested.connect(self._on_pill_remove)
         self.pills_layout.addWidget(pill)
+
+    def set_pill_colors(self, colors):
+        """Set custom colors for pills.
+
+        Args:
+            colors (dict): Dict with 'valid_bg', 'valid_border', 'invalid_bg', 'invalid_border' keys
+        """
+        self._pill_colors = colors
+        # Rebuild pills to apply new colors
+        self._populate_entities()
 
     def _add_add_button(self):
         """Add the '+' button for adding new entities."""

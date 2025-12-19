@@ -112,6 +112,9 @@ class CostsTab(QtWidgets.QMainWindow):
             QtWidgets.QTabWidget.North
         )
 
+        # Apply purple/violet theme to the Costs panel
+        self._apply_costs_panel_style()
+
         # Create cost docks
         self._create_cost_docks()
 
@@ -122,6 +125,62 @@ class CostsTab(QtWidgets.QMainWindow):
         QtCore.QTimer.singleShot(0, self.load_layout)
 
         logger.info("CostsTab initialized")
+
+    def _apply_costs_panel_style(self):
+        """Apply a purple/violet theme to specific elements in the Costs panel."""
+        # Only style specific elements: selected tabs, scrollbars
+        self.setStyleSheet("""
+            /* Dock widget tabs - only selected tab is purple */
+            QTabBar::tab:selected {
+                background-color: #6b5b95;
+                color: white;
+                border: 1px solid #8b7bb5;
+                border-bottom: none;
+            }
+
+            /* Scrollbars - purple theme */
+            QScrollBar:vertical {
+                background-color: #2d2d30;
+                width: 12px;
+                border: none;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #6b5b95;
+                min-height: 20px;
+                border-radius: 4px;
+                margin: 2px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #7b6ba5;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
+
+            QScrollBar:horizontal {
+                background-color: #2d2d30;
+                height: 12px;
+                border: none;
+            }
+            QScrollBar::handle:horizontal {
+                background-color: #6b5b95;
+                min-width: 20px;
+                border-radius: 4px;
+                margin: 2px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background-color: #7b6ba5;
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                width: 0px;
+            }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+                background: none;
+            }
+        """)
 
     def _create_cost_docks(self):
         """Create the individual cost dock widgets."""
@@ -178,6 +237,20 @@ class CostsTab(QtWidgets.QMainWindow):
             parent=self
         )
 
+        # Apply purple pill colors for the Costs panel
+        self.shots_cost_widget.set_pill_colors({
+            'valid_bg': '#6b5b95',
+            'valid_border': '#5b4b85',
+            'invalid_bg': '#e74c3c',
+            'invalid_border': '#c0392b'
+        })
+
+        # Apply purple checkbox color for the Costs panel
+        self.shots_cost_widget.set_checkbox_color('#6b5b95')
+
+        # Apply purple price column color for the Costs panel
+        self.shots_cost_widget.set_price_column_color('#6b5b95')
+
         # Now intercept the layout and replace table_view with wrapped version
         layout = self.shots_cost_widget.layout()
 
@@ -189,6 +262,8 @@ class CostsTab(QtWidgets.QMainWindow):
             self.shots_cost_widget.table_view,
             app_settings=self.app_settings
         )
+        # Apply purple highlight color for the totals bar
+        self.shots_cost_totals_wrapper.set_highlight_color('#6b5b95')
 
         # Add wrapper back to layout
         layout.addWidget(self.shots_cost_totals_wrapper)
@@ -205,6 +280,20 @@ class CostsTab(QtWidgets.QMainWindow):
             settings_key="asset_cost",  # Unique settings key for Asset Cost table
             parent=self
         )
+
+        # Apply purple pill colors for the Costs panel
+        self.asset_cost_widget.set_pill_colors({
+            'valid_bg': '#6b5b95',
+            'valid_border': '#5b4b85',
+            'invalid_bg': '#e74c3c',
+            'invalid_border': '#c0392b'
+        })
+
+        # Apply purple checkbox color for the Costs panel
+        self.asset_cost_widget.set_checkbox_color('#6b5b95')
+
+        # Apply purple price column color for the Costs panel
+        self.asset_cost_widget.set_price_column_color('#6b5b95')
 
         # Configure the model to use Asset-specific columns and entity type
         if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
@@ -228,6 +317,8 @@ class CostsTab(QtWidgets.QMainWindow):
             self.asset_cost_widget.table_view,
             app_settings=self.app_settings
         )
+        # Apply purple highlight color for the totals bar
+        self.asset_cost_totals_wrapper.set_highlight_color('#6b5b95')
 
         # Add wrapper back to layout
         layout.addWidget(self.asset_cost_totals_wrapper)
@@ -1227,11 +1318,12 @@ class CostsTab(QtWidgets.QMainWindow):
                     # Column not present
                     return
 
-                # Create or update the delegate
+                # Create or update the delegate with purple color for Costs panel
                 if self.vfx_shot_work_delegate is None:
                     self.vfx_shot_work_delegate = ValidatedComboBoxDelegate(
                         self.line_item_names,
-                        self.shots_cost_widget.table_view
+                        self.shots_cost_widget.table_view,
+                        valid_color="#6b5b95"  # Purple for Costs panel
                     )
                     self.shots_cost_widget.table_view.setItemDelegateForColumn(col_idx, self.vfx_shot_work_delegate)
 
@@ -1485,11 +1577,12 @@ class CostsTab(QtWidgets.QMainWindow):
                     # Column not present
                     return
 
-                # Create or update the delegate
+                # Create or update the delegate with purple color for Costs panel
                 if not hasattr(self, 'asset_type_delegate') or self.asset_type_delegate is None:
                     self.asset_type_delegate = ValidatedComboBoxDelegate(
                         self.line_item_names,
-                        self.asset_cost_widget.table_view
+                        self.asset_cost_widget.table_view,
+                        valid_color="#6b5b95"  # Purple for Costs panel
                     )
                     self.asset_cost_widget.table_view.setItemDelegateForColumn(col_idx, self.asset_type_delegate)
 
