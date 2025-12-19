@@ -311,16 +311,46 @@ class FormulaEvaluator:
         """Expand a range reference and get all values.
 
         Args:
-            range_ref: Range reference like "A1:A3" or "A1:B3"
+            range_ref: Range reference like "A1:A3", "A1:B3", or "'Sheet Name'!Y1:Y5"
 
         Returns:
             2D list of values for the range
         """
         import numpy as np
 
+        # Check for cross-sheet range reference
+        # Pattern: 'Sheet Name'!A1:B2 or SheetName!A1:B2
+        sheet_name = None
+        target_model = self.table_model
+
+        # Check for quoted sheet name: 'Sheet Name'!range
+        match = re.match(r"^'([^']+)'!(.+)$", range_ref)
+        if match:
+            sheet_name = match.group(1)
+            range_ref = match.group(2)
+            if sheet_name in self.sheet_models:
+                target_model = self.sheet_models[sheet_name]
+            else:
+                logger.warning(f"Sheet not found: '{sheet_name}'")
+                return [[0]]
+
+        # Check for unquoted sheet name: SheetName!range
+        if not sheet_name:
+            match = re.match(r"^([a-zA-Z_][a-zA-Z0-9_ ]*)!(.+)$", range_ref)
+            if match:
+                sheet_name = match.group(1)
+                range_ref = match.group(2)
+                if sheet_name in self.sheet_models:
+                    target_model = self.sheet_models[sheet_name]
+                else:
+                    logger.warning(f"Sheet not found: '{sheet_name}'")
+                    return [[0]]
+
         # Parse the range (e.g., "A1:A3")
         if ':' not in range_ref:
-            return [[self.get_cell_value(range_ref)]]
+            # Single cell reference
+            value = self._get_cell_value_for_range(range_ref, target_model, sheet_name)
+            return [[value]]
 
         parts = range_ref.split(':')
         if len(parts) != 2:
@@ -330,8 +360,8 @@ class FormulaEvaluator:
         end_ref = parts[1].strip().replace('$', '')
 
         # Parse start and end coordinates
-        start_coords = self.parse_cell_reference(start_ref)
-        end_coords = self.parse_cell_reference(end_ref)
+        start_coords = self._parse_cell_reference_simple(start_ref)
+        end_coords = self._parse_cell_reference_simple(end_ref)
 
         if not start_coords or not end_coords:
             return [[0]]
@@ -351,11 +381,330 @@ class FormulaEvaluator:
             row_values = []
             for col in range(start_col, end_col + 1):
                 cell_ref = f"{self.col_index_to_letter(col)}{row + 1}"
-                row_values.append(self.get_cell_value(cell_ref))
+                value = self._get_cell_value_for_range(cell_ref, target_model, sheet_name)
+                row_values.append(value)
             values.append(row_values)
 
         # Convert to numpy array for formulas library
         return np.array(values) if values else [[0]]
+
+    def _parse_cell_reference_simple(self, ref: str) -> Optional[Tuple[int, int]]:
+        """Parse cell reference like 'A1' into (row, col) without model bounds check.
+
+        Args:
+            ref: Cell reference like "A1", "$B$2", "C10"
+
+        Returns:
+            Tuple of (row, col) or None if invalid
+        """
+        ref = ref.strip().replace('$', '')
+        match = re.match(r'^([A-Z]+)(\d+)$', ref.upper())
+        if match:
+            col_letter, row_num = match.groups()
+            col = self.letter_to_col(col_letter)
+            row = int(row_num) - 1  # Convert to 0-based
+            return (row, col)
+        return None
+
+    def _get_cell_value_for_range(self, ref: str, model, sheet_name: str = None) -> Any:
+        """Get a cell value for range calculations, handling cross-sheet references.
+
+        Args:
+            ref: Cell reference like "A1", "B2"
+            model: The table model to fetch from
+            sheet_name: Optional sheet name for logging
+
+        Returns:
+            Cell value (number or 0 for non-numeric)
+        """
+        if model is None:
+            return 0
+
+        # Use _get_raw_cell_value_from_model which handles formula evaluation
+        value = self._get_raw_cell_value_from_model(ref, model)
+
+        # Convert to number for calculations
+        if value is None or value == "":
+            return 0
+
+        try:
+            if isinstance(value, (int, float)):
+                return value
+            if isinstance(value, str):
+                # Handle percentage
+                if value.endswith('%'):
+                    return float(value[:-1]) / 100
+                # Remove formatting characters
+                cleaned = value.replace(',', '').replace('$', '').replace('€', '').replace('£', '').strip()
+                return float(cleaned) if cleaned else 0
+            return 0
+        except (ValueError, TypeError):
+            return 0
+
+    def _get_simple_sheet_reference_value(self, formula: str, current_row: int = None) -> Any:
+        """Check if formula is a simple sheet reference and return its raw value.
+
+        This handles cases like =Misc!A1 or ='Sheet Name'!B2 where we want to
+        return the raw value (including text) without converting to 0.
+
+        Args:
+            formula: The formula string starting with =
+            current_row: Current row for header-based references
+
+        Returns:
+            The raw cell value if it's a simple reference, None otherwise
+        """
+        # Remove the = prefix
+        ref = formula[1:].strip()
+
+        # Pattern 1: Quoted sheet name - 'Sheet Name'!CellRef
+        match = re.match(r"^'([^']+)'!([A-Z]+\d+|\$?[A-Z]+\$?\d+)$", ref, re.IGNORECASE)
+        if match:
+            sheet_name = match.group(1)
+            cell_ref = match.group(2).replace('$', '')
+
+            if sheet_name in self.sheet_models:
+                target_model = self.sheet_models[sheet_name]
+                return self._get_raw_cell_value_from_model(cell_ref, target_model)
+            return "#REF!"
+
+        # Pattern 2: Unquoted sheet name - SheetName!CellRef
+        match = re.match(r"^([a-zA-Z_][a-zA-Z0-9_ ]*)!([A-Z]+\d+|\$?[A-Z]+\$?\d+)$", ref, re.IGNORECASE)
+        if match:
+            sheet_name = match.group(1)
+            cell_ref = match.group(2).replace('$', '')
+
+            if sheet_name in self.sheet_models:
+                target_model = self.sheet_models[sheet_name]
+                return self._get_raw_cell_value_from_model(cell_ref, target_model)
+            return "#REF!"
+
+        # Pattern 3: Quoted sheet name with header reference - 'Sheet Name'!field.row
+        match = re.match(r"^'([^']+)'!([a-zA-Z_][a-zA-Z0-9_]*)\.(\d+)$", ref)
+        if match:
+            sheet_name = match.group(1)
+            field_name = match.group(2)
+            row_num = int(match.group(3))
+
+            if sheet_name in self.sheet_models:
+                target_model = self.sheet_models[sheet_name]
+                standard_ref = self.resolve_header_reference(f"{field_name}.{row_num}", model=target_model)
+                if standard_ref:
+                    return self._get_raw_cell_value_from_model(standard_ref, target_model)
+            return "#REF!"
+
+        # Pattern 4: Unquoted sheet name with header reference - SheetName!field.row
+        match = re.match(r"^([a-zA-Z_][a-zA-Z0-9_ ]*)!([a-zA-Z_][a-zA-Z0-9_]*)\.(\d+)$", ref)
+        if match:
+            sheet_name = match.group(1)
+            field_name = match.group(2)
+            row_num = int(match.group(3))
+
+            if sheet_name in self.sheet_models:
+                target_model = self.sheet_models[sheet_name]
+                standard_ref = self.resolve_header_reference(f"{field_name}.{row_num}", model=target_model)
+                if standard_ref:
+                    return self._get_raw_cell_value_from_model(standard_ref, target_model)
+            return "#REF!"
+
+        # Not a simple sheet reference
+        return None
+
+    def _evaluate_cross_sheet_function(self, formula: str) -> Any:
+        """Evaluate common functions with cross-sheet range references.
+
+        Handles formulas like:
+        - =SUM('Shots Cost'!Y1:Y5)
+        - =SUM('Shots Cost'!Y:Y)  (entire column)
+        - =AVERAGE('Sheet Name'!A1:A10)
+        - =MIN(SheetName!B1:B20)
+        - =MAX('Sheet'!C1:C5)
+        - =COUNT('Sheet'!D1:D10)
+
+        Args:
+            formula: The formula string starting with =
+
+        Returns:
+            The calculated result, or None if not a recognized cross-sheet function
+        """
+        import numpy as np
+
+        # Remove the = prefix
+        expr = formula[1:].strip()
+
+        func_name = None
+        sheet_name = None
+        start_ref = None
+        end_ref = None
+        is_column_ref = False
+
+        # Pattern 1: Function with cell range - FUNC('Sheet Name'!A1:B2)
+        match = re.match(
+            r"^(SUM|AVERAGE|AVG|MIN|MAX|COUNT|COUNTA)\s*\(\s*'([^']+)'!([A-Z]+\d+):([A-Z]+\d+)\s*\)$",
+            expr,
+            re.IGNORECASE
+        )
+        if match:
+            func_name = match.group(1).upper()
+            sheet_name = match.group(2)
+            start_ref = match.group(3)
+            end_ref = match.group(4)
+
+        # Pattern 2: Function with cell range (unquoted) - FUNC(SheetName!A1:B2)
+        if not func_name:
+            match = re.match(
+                r"^(SUM|AVERAGE|AVG|MIN|MAX|COUNT|COUNTA)\s*\(\s*([a-zA-Z_][a-zA-Z0-9_ ]*?)!([A-Z]+\d+):([A-Z]+\d+)\s*\)$",
+                expr,
+                re.IGNORECASE
+            )
+            if match:
+                func_name = match.group(1).upper()
+                sheet_name = match.group(2)
+                start_ref = match.group(3)
+                end_ref = match.group(4)
+
+        # Pattern 3: Function with entire column - FUNC('Sheet Name'!Y:Y)
+        if not func_name:
+            match = re.match(
+                r"^(SUM|AVERAGE|AVG|MIN|MAX|COUNT|COUNTA)\s*\(\s*'([^']+)'!([A-Z]+):([A-Z]+)\s*\)$",
+                expr,
+                re.IGNORECASE
+            )
+            if match:
+                func_name = match.group(1).upper()
+                sheet_name = match.group(2)
+                start_ref = match.group(3)
+                end_ref = match.group(4)
+                is_column_ref = True
+
+        # Pattern 4: Function with entire column (unquoted) - FUNC(SheetName!Y:Y)
+        if not func_name:
+            match = re.match(
+                r"^(SUM|AVERAGE|AVG|MIN|MAX|COUNT|COUNTA)\s*\(\s*([a-zA-Z_][a-zA-Z0-9_ ]*?)!([A-Z]+):([A-Z]+)\s*\)$",
+                expr,
+                re.IGNORECASE
+            )
+            if match:
+                func_name = match.group(1).upper()
+                sheet_name = match.group(2)
+                start_ref = match.group(3)
+                end_ref = match.group(4)
+                is_column_ref = True
+
+        if not func_name:
+            return None
+
+        # Check if sheet exists
+        if sheet_name not in self.sheet_models:
+            logger.warning(f"Sheet not found: '{sheet_name}'")
+            return "#REF!"
+
+        target_model = self.sheet_models[sheet_name]
+
+        # Handle column references (Y:Y) by converting to full range
+        if is_column_ref:
+            # Get the row count from the target model
+            row_count = target_model.rowCount()
+            # Convert column letters to range (e.g., Y:Y -> Y1:Y{row_count})
+            start_ref = f"{start_ref}1"
+            end_ref = f"{end_ref}{row_count}"
+
+        # Get the range values
+        range_ref = f"'{sheet_name}'!{start_ref}:{end_ref}"
+        values = self._get_range_values(range_ref)
+
+        # Flatten the 2D array for calculations
+        if isinstance(values, np.ndarray):
+            flat_values = values.flatten().tolist()
+        else:
+            flat_values = [v for row in values for v in row]
+
+        # Filter out non-numeric values for most functions
+        numeric_values = []
+        for v in flat_values:
+            if isinstance(v, (int, float)):
+                numeric_values.append(v)
+            elif isinstance(v, str):
+                try:
+                    cleaned = v.replace(',', '').replace('$', '').replace('€', '').replace('£', '').strip()
+                    if cleaned:
+                        numeric_values.append(float(cleaned))
+                except (ValueError, TypeError):
+                    pass
+
+        if not numeric_values:
+            if func_name in ('COUNT', 'COUNTA'):
+                return 0
+            return 0
+
+        # Calculate based on function
+        if func_name == 'SUM':
+            return sum(numeric_values)
+        elif func_name in ('AVERAGE', 'AVG'):
+            return sum(numeric_values) / len(numeric_values)
+        elif func_name == 'MIN':
+            return min(numeric_values)
+        elif func_name == 'MAX':
+            return max(numeric_values)
+        elif func_name == 'COUNT':
+            return len(numeric_values)
+        elif func_name == 'COUNTA':
+            # Count non-empty values (including text)
+            return len([v for v in flat_values if v is not None and v != "" and v != 0])
+
+        return None
+
+    def _get_raw_cell_value_from_model(self, ref: str, model) -> Any:
+        """Get the raw value of a cell from a model without converting text to 0.
+
+        Args:
+            ref: Cell reference like "A1", "B2"
+            model: The table model to fetch from
+
+        Returns:
+            Raw cell value (number, string, or empty string)
+        """
+        ref = ref.strip().replace('$', '')
+        match = re.match(r'^([A-Z]+)(\d+)$', ref.upper())
+        if not match or not model:
+            return ""
+
+        col_letter, row_num = match.groups()
+        col = self.letter_to_col(col_letter)
+        row = int(row_num) - 1  # Convert to 0-based
+
+        # Check bounds
+        if row < 0 or col < 0 or row >= model.rowCount() or col >= model.columnCount():
+            return ""
+
+        # Get the raw value from the model
+        index = model.index(row, col)
+        value = model.data(index, QtCore.Qt.EditRole)
+
+        # If value is a formula, evaluate it using the model's formula evaluator
+        if isinstance(value, str) and value.startswith('='):
+            # Try to get the model's formula evaluator
+            if hasattr(model, 'formula_evaluator') and model.formula_evaluator:
+                try:
+                    result = model.formula_evaluator.evaluate(value, row, col)
+                    # Clean up the result - remove formatting for numeric values
+                    if isinstance(result, str):
+                        # Try to extract numeric value from formatted string like "$1,234.56"
+                        cleaned = result.replace(',', '').replace('$', '').replace('€', '').replace('£', '').strip()
+                        try:
+                            return float(cleaned)
+                        except (ValueError, TypeError):
+                            return result
+                    return result
+                except Exception:
+                    pass
+            # Fallback: try DisplayRole which might have the calculated value
+            value = model.data(index, QtCore.Qt.DisplayRole)
+
+        # Return the value as-is (don't convert text to 0)
+        if value is None:
+            return ""
+        return value
 
     def evaluate(self, formula: str, row: int = None, col: int = None) -> Any:
         """Evaluate a formula and return the result.
@@ -377,6 +726,18 @@ class FormulaEvaluator:
         if not formula.startswith('='):
             # Not a formula, return as-is
             return formula
+
+        # Check if it's a simple cross-sheet reference (e.g., =Misc!A1 or ='Sheet Name'!B2)
+        # These should return the raw value (including text) without converting to 0
+        simple_ref = self._get_simple_sheet_reference_value(formula, row)
+        if simple_ref is not None:
+            return simple_ref
+
+        # Check if it's a cross-sheet function (e.g., =SUM('Shots Cost'!Y1:Y5))
+        # Handle these manually since the formulas library may not support sheet references
+        cross_sheet_result = self._evaluate_cross_sheet_function(formula)
+        if cross_sheet_result is not None:
+            return cross_sheet_result
 
         # Check for formulas library availability
         if not formulas or not self.parser:

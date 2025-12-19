@@ -52,10 +52,10 @@ class EntityPillWidget(QtWidgets.QWidget):
         # Try 'code' first (used by Asset items), then 'name', finally fallback to ID
         self.entity_name = entity.get("code") or entity.get("name") or f"ID {entity.get('id', 'N/A')}"
 
-        # Colors for custom painting - blue for valid, red for invalid
+        # Colors for custom painting - use same blue as table selection for consistency
         if self.is_valid:
-            self.bg_color = QtGui.QColor("#4a90e2")  # Blue for valid
-            self.border_color = QtGui.QColor("#357abd")
+            self.bg_color = QtGui.QColor("#4a9eff")  # Match table selection blue
+            self.border_color = QtGui.QColor("#3a8adf")
             self.text_color = "#ffffff"
         else:
             self.bg_color = QtGui.QColor("#e74c3c")  # Red for invalid
@@ -74,7 +74,7 @@ class EntityPillWidget(QtWidgets.QWidget):
         # Calculate effective height
         effective_height = self._calculate_effective_height()
 
-        # Entity name label
+        # Entity name label with text elision for long names
         self.name_label = QtWidgets.QLabel(self.entity_name)
         self.name_label.setStyleSheet(f"""
             QLabel {{
@@ -86,6 +86,10 @@ class EntityPillWidget(QtWidgets.QWidget):
         """)
         self.name_label.setCursor(QtCore.Qt.PointingHandCursor)
         self.name_label.mousePressEvent = self._on_label_clicked
+        # Limit pill width to prevent extending beyond cell boundaries
+        self.name_label.setMaximumWidth(120)
+        # Add tooltip with full name in case it's truncated
+        self.name_label.setToolTip(self.entity_name)
 
         # Add tooltip for invalid pills showing the asset name
         if not self.is_valid:
@@ -219,8 +223,10 @@ class EntityPillWidget(QtWidgets.QWidget):
             QSize: Preferred size
         """
         effective_height = self._calculate_effective_height()
-        # Width is based on content, height is constrained
-        width = self.name_label.sizeHint().width() + 30  # Add space for close button and margins
+        # Width is based on content but capped to prevent overflow
+        # Max label width (120) + close button (16) + margins (10) + spacing (3) = 149
+        label_width = min(self.name_label.sizeHint().width(), 120)
+        width = label_width + 30  # Add space for close button and margins
         return QtCore.QSize(width, effective_height)
 
 
@@ -302,9 +308,18 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         # Set object name for stylesheet targeting
         self.setObjectName("entityReferenceWidget")
 
-        # Main layout
+        # CRITICAL: Ensure widget clips all children to its bounds
+        self.setAttribute(QtCore.Qt.WA_OpaquePaintEvent, False)
+
+        # Set size policy to prevent widget from expanding beyond allocated space
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Ignored,  # Don't grow horizontally
+            QtWidgets.QSizePolicy.Fixed      # Fixed height
+        )
+
+        # Main layout - no margins to align with table cell boundaries
         main_layout = QtWidgets.QVBoxLayout(self)
-        main_layout.setContentsMargins(2, 2, 2, 2)
+        main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
         # Scroll area for pills (in case of many entities)
@@ -312,14 +327,13 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         self._scroll_area = QtWidgets.QScrollArea()
         self._scroll_area.setWidgetResizable(True)
         self._scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
-        # Hide scroll bars by default for cleaner look in small cells
-        # Scroll bars will appear automatically when content overflows
+        # Hide scroll bars - content will be clipped
         self._scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self._scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
 
         # Container for pills with flow layout
         self.pills_container = QtWidgets.QWidget()
-        self.pills_layout = FlowLayout(self.pills_container, margin=2, h_spacing=4, v_spacing=4)
+        self.pills_layout = FlowLayout(self.pills_container, margin=4, h_spacing=4, v_spacing=4)
 
         self._scroll_area.setWidget(self.pills_container)
         main_layout.addWidget(self._scroll_area)
@@ -336,8 +350,9 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         """)
         self.pills_container.setObjectName("pillsContainer")
 
-        # Enable auto-fill background so paintEvent can draw
+        # Disable auto-fill so paintEvent controls background
         self.setAutoFillBackground(False)
+        self._scroll_area.viewport().setAutoFillBackground(False)
 
     def _populate_entities(self):
         """Create pill widgets for all entities."""
@@ -478,6 +493,11 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
             event (QResizeEvent): The resize event
         """
         super().resizeEvent(event)
+
+        # Set clip region to ensure content doesn't extend beyond widget bounds
+        region = QtGui.QRegion(self.rect())
+        self.setMask(region)
+
         # Skip pill height updates if flag is set (during manual row resize)
         if self._skip_resize_pill_updates:
             return
@@ -620,20 +640,17 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
         painter = QtGui.QPainter(self)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
 
-        # Get the widget rectangle
+        # Get the widget rectangle and clip to it to prevent drawing beyond cell bounds
         rect = self.rect()
+        painter.setClipRect(rect)
 
-        # Draw background (always fill)
-        painter.fillRect(rect, self.bg_color)
-
-        # Always draw border - use blue when selected/editing, grid color otherwise
+        # Only draw background when selected or editing, otherwise let table background show through
         if self._is_selected or self._is_editing:
+            painter.fillRect(rect, self.bg_color)
             painter.setPen(QtGui.QPen(self.border_color, self.border_width))
-        else:
-            painter.setPen(QtGui.QPen(self.grid_border_color, self.border_width))
-        painter.setBrush(QtCore.Qt.NoBrush)
-        # Draw rect without fill, adjusted to fit within widget bounds
-        painter.drawRect(rect.adjusted(0, 0, -1, -1))
+            painter.setBrush(QtCore.Qt.NoBrush)
+            # Draw border adjusted to fit within widget bounds
+            painter.drawRect(rect.adjusted(0, 0, -1, -1))
 
         # Draw overflow indicator dots if needed
         has_overflow, num_dots, dot_x_start, dot_y = self._calculate_overflow_info()
@@ -675,17 +692,17 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
 
     def _update_visual_state(self):
         """Update the widget's visual appearance based on selection and editing states."""
-        # Determine background and border colors
+        # Determine background and border colors - use #4a9eff to match table selection
         if self._is_editing:
             # Editing mode: blue border, dark background
             self.bg_color = QtGui.QColor("#2b2b2b")
-            self.border_color = QtGui.QColor("#0078d4")
+            self.border_color = QtGui.QColor("#4a9eff")
             self.border_width = 2
             state = "editing"
         elif self._is_selected:
-            # Selected mode: blue background
-            self.bg_color = QtGui.QColor("#0078d4")
-            self.border_color = QtGui.QColor("#0078d4")
+            # Selected mode: blue background matching table selection
+            self.bg_color = QtGui.QColor("#4a9eff")
+            self.border_color = QtGui.QColor("#4a9eff")
             self.border_width = 1
             state = "selected"
         else:
@@ -693,8 +710,6 @@ class MultiEntityReferenceWidget(QtWidgets.QWidget):
             self.bg_color = QtGui.QColor("#2b2b2b")
             # Border not drawn in normal state (table grid lines show through)
             state = "normal"
-
-        print(f"DEBUG: _update_visual_state() - state={state}, bg={self.bg_color.name()}, border={self.border_color.name()} {self.border_width}px")
 
         # Trigger repaint with new colors
         self.update()

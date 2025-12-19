@@ -774,6 +774,23 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
     # Special marker for text values that should be detected in numeric columns
     TEXT_VALUE_MARKER = "__TEXT_VALUE__"
 
+    # Excel-compatible format codes
+    FORMAT_GENERAL = "General"
+    FORMAT_NUMBER = "#,##0.00"
+    FORMAT_NUMBER_NO_DECIMAL = "#,##0"
+    FORMAT_CURRENCY_USD = "$#,##0.00"
+    FORMAT_CURRENCY_EUR = "[$€]#,##0.00"
+    FORMAT_CURRENCY_GBP = "[$£]#,##0.00"
+    FORMAT_PERCENTAGE = "0.00%"
+    FORMAT_PERCENTAGE_NO_DECIMAL = "0%"
+    FORMAT_DATE_MDY = "mm/dd/yyyy"
+    FORMAT_DATE_DMY = "dd/mm/yyyy"
+    FORMAT_DATE_YMD = "yyyy-mm-dd"
+    FORMAT_TIME = "hh:mm:ss"
+    FORMAT_DATETIME = "yyyy-mm-dd hh:mm:ss"
+    FORMAT_TEXT = "@"
+    FORMAT_ACCOUNTING = '_($* #,##0.00_);_($* (#,##0.00);_($* "-"??_);_(@_)'
+
     def __init__(self, rows=100, cols=26, parent=None):
         """Initialize the spreadsheet model.
 
@@ -787,6 +804,7 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         self._cols = cols
         self._data = {}  # Dict of (row, col) -> value
         self._formulas = {}  # Dict of (row, col) -> formula string
+        self._formats = {}  # Dict of (row, col) -> Excel-compatible format string
         self._evaluated_cache = {}  # Dict of (row, col) -> evaluated result
         self.formula_evaluator = None
 
@@ -909,11 +927,9 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
                 self._evaluated_cache[(row, col)] = formatted
                 return formatted
 
-            # Format the result
-            if isinstance(result, (int, float)):
-                formatted = f"{result:,.2f}"
-            else:
-                formatted = str(result)
+            # Apply cell format if set, otherwise use auto-detection
+            cell_format = self._formats.get((row, col))
+            formatted = self._apply_format(result, cell_format)
 
             # Cache the result
             self._evaluated_cache[(row, col)] = formatted
@@ -921,6 +937,133 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
 
         except Exception:
             return "#ERROR"
+
+    def _apply_format(self, value, cell_format=None):
+        """Apply Excel-compatible format to a value.
+
+        Args:
+            value: The value to format
+            cell_format: Excel-compatible format string (or None for auto-detection)
+
+        Returns:
+            Formatted string
+        """
+        if value is None or value == "":
+            return ""
+
+        # If no format specified, auto-detect based on value type
+        if not cell_format or cell_format == self.FORMAT_GENERAL:
+            if isinstance(value, (int, float)):
+                # Default number format with commas and 2 decimals
+                return f"{value:,.2f}"
+            return str(value)
+
+        # Apply specific formats
+        try:
+            if cell_format == self.FORMAT_TEXT:
+                return str(value)
+
+            # Convert to number if needed
+            if isinstance(value, str):
+                try:
+                    value = float(value.replace(',', '').replace('$', '').replace('%', ''))
+                except ValueError:
+                    return str(value)
+
+            if cell_format == self.FORMAT_NUMBER:
+                return f"{value:,.2f}"
+            elif cell_format == self.FORMAT_NUMBER_NO_DECIMAL:
+                return f"{value:,.0f}"
+            elif cell_format == self.FORMAT_CURRENCY_USD:
+                return f"${value:,.2f}"
+            elif cell_format == self.FORMAT_CURRENCY_EUR:
+                return f"€{value:,.2f}"
+            elif cell_format == self.FORMAT_CURRENCY_GBP:
+                return f"£{value:,.2f}"
+            elif cell_format == self.FORMAT_PERCENTAGE:
+                return f"{value * 100:.2f}%"
+            elif cell_format == self.FORMAT_PERCENTAGE_NO_DECIMAL:
+                return f"{value * 100:.0f}%"
+            elif cell_format == self.FORMAT_ACCOUNTING:
+                if value >= 0:
+                    return f"$ {value:,.2f} "
+                else:
+                    return f"$ ({abs(value):,.2f})"
+            elif cell_format.startswith("#") or cell_format.startswith("0"):
+                # Generic number format - use default
+                return f"{value:,.2f}"
+            else:
+                return f"{value:,.2f}"
+        except (ValueError, TypeError):
+            return str(value)
+
+    def get_cell_format(self, row, col):
+        """Get the format for a cell.
+
+        Args:
+            row: Row index
+            col: Column index
+
+        Returns:
+            Excel-compatible format string or None
+        """
+        return self._formats.get((row, col))
+
+    def set_cell_format(self, row, col, cell_format):
+        """Set the format for a cell.
+
+        Args:
+            row: Row index
+            col: Column index
+            cell_format: Excel-compatible format string (or None to clear)
+        """
+        if cell_format:
+            self._formats[(row, col)] = cell_format
+        else:
+            self._formats.pop((row, col), None)
+
+        # Clear cache to force re-formatting
+        self._evaluated_cache.pop((row, col), None)
+
+        # Emit dataChanged to refresh display
+        index = self.index(row, col)
+        self.dataChanged.emit(index, index, [Qt.DisplayRole])
+
+    def detect_format(self, value):
+        """Auto-detect format based on value content.
+
+        Args:
+            value: The value to analyze
+
+        Returns:
+            Suggested Excel-compatible format string
+        """
+        if value is None or value == "":
+            return self.FORMAT_GENERAL
+
+        value_str = str(value).strip()
+
+        # Check for percentage
+        if value_str.endswith('%'):
+            return self.FORMAT_PERCENTAGE
+
+        # Check for currency symbols
+        if value_str.startswith('$') or '$' in value_str:
+            return self.FORMAT_CURRENCY_USD
+        if value_str.startswith('€') or '€' in value_str:
+            return self.FORMAT_CURRENCY_EUR
+        if value_str.startswith('£') or '£' in value_str:
+            return self.FORMAT_CURRENCY_GBP
+
+        # Check if numeric
+        try:
+            cleaned = value_str.replace(',', '').replace('$', '').replace('€', '').replace('£', '')
+            float(cleaned)
+            return self.FORMAT_NUMBER
+        except ValueError:
+            pass
+
+        return self.FORMAT_GENERAL
 
     def setData(self, index, value, role=Qt.EditRole):
         """Set data for the given index."""
@@ -1117,12 +1260,24 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         # Custom selection styling - blue background with white text
         self.table_view.setStyleSheet("""
             QTableView {
-                selection-background-color: #4472C4;
+                selection-background-color: transparent;
                 selection-color: white;
             }
-            QTableView::item:selected {
-                background-color: #4472C4;
+            QTableView::item {
                 color: white;
+            }
+            QTableView::item:selected {
+                background-color: transparent;
+                color: white;
+            }
+            QTableView::item:focus {
+                color: white;
+            }
+            QTableView QLineEdit {
+                color: white;
+                background-color: #3d3d3d;
+                selection-background-color: #4472C4;
+                selection-color: white;
             }
         """)
 
@@ -1223,6 +1378,56 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         insert_col_left = menu.addAction("Insert Column Left")
         insert_col_right = menu.addAction("Insert Column Right")
         delete_column = menu.addAction("Delete Column")
+        menu.addSeparator()
+
+        # Format submenu
+        format_menu = menu.addMenu("Format")
+
+        # General format
+        format_general = format_menu.addAction("General")
+        format_menu.addSeparator()
+
+        # Number formats
+        number_menu = format_menu.addMenu("Number")
+        format_number = number_menu.addAction("1,234.56  (#,##0.00)")
+        format_number_no_dec = number_menu.addAction("1,235  (#,##0)")
+
+        # Currency formats
+        currency_menu = format_menu.addMenu("Currency")
+        format_currency_usd = currency_menu.addAction("$1,234.56  ($#,##0.00)")
+        format_currency_eur = currency_menu.addAction("€1,234.56  ([$€]#,##0.00)")
+        format_currency_gbp = currency_menu.addAction("£1,234.56  ([$£]#,##0.00)")
+
+        # Accounting format
+        format_accounting = format_menu.addAction("Accounting")
+        format_menu.addSeparator()
+
+        # Percentage formats
+        percentage_menu = format_menu.addMenu("Percentage")
+        format_percentage = percentage_menu.addAction("12.34%  (0.00%)")
+        format_percentage_no_dec = percentage_menu.addAction("12%  (0%)")
+        format_menu.addSeparator()
+
+        # Text format
+        format_text = format_menu.addAction("Text  (@)")
+
+        # Show current format with checkmark
+        current_format = self.model.get_cell_format(index.row(), index.column())
+        format_actions = {
+            SpreadsheetModel.FORMAT_GENERAL: format_general,
+            SpreadsheetModel.FORMAT_NUMBER: format_number,
+            SpreadsheetModel.FORMAT_NUMBER_NO_DECIMAL: format_number_no_dec,
+            SpreadsheetModel.FORMAT_CURRENCY_USD: format_currency_usd,
+            SpreadsheetModel.FORMAT_CURRENCY_EUR: format_currency_eur,
+            SpreadsheetModel.FORMAT_CURRENCY_GBP: format_currency_gbp,
+            SpreadsheetModel.FORMAT_ACCOUNTING: format_accounting,
+            SpreadsheetModel.FORMAT_PERCENTAGE: format_percentage,
+            SpreadsheetModel.FORMAT_PERCENTAGE_NO_DECIMAL: format_percentage_no_dec,
+            SpreadsheetModel.FORMAT_TEXT: format_text,
+        }
+        if current_format in format_actions:
+            format_actions[current_format].setCheckable(True)
+            format_actions[current_format].setChecked(True)
 
         # Show menu and get action
         action = menu.exec_(self.table_view.viewport().mapToGlobal(position))
@@ -1239,6 +1444,37 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             self._insert_column_right(index.column())
         elif action == delete_column:
             self._delete_column(index.column())
+        # Format actions
+        elif action == format_general:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_GENERAL)
+        elif action == format_number:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_NUMBER)
+        elif action == format_number_no_dec:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_NUMBER_NO_DECIMAL)
+        elif action == format_currency_usd:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_CURRENCY_USD)
+        elif action == format_currency_eur:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_CURRENCY_EUR)
+        elif action == format_currency_gbp:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_CURRENCY_GBP)
+        elif action == format_accounting:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_ACCOUNTING)
+        elif action == format_percentage:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_PERCENTAGE)
+        elif action == format_percentage_no_dec:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_PERCENTAGE_NO_DECIMAL)
+        elif action == format_text:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_TEXT)
+
+    def _set_cell_format(self, index, cell_format):
+        """Set the format for a cell.
+
+        Args:
+            index: QModelIndex of the cell
+            cell_format: Excel-compatible format string
+        """
+        self.model.set_cell_format(index.row(), index.column(), cell_format)
+        logger.info(f"Set cell ({index.row()},{index.column()}) format to: {cell_format}")
 
     def _insert_row_above(self, row):
         """Insert a new row above the specified row."""
@@ -1248,6 +1484,7 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.model._rows += 1
         new_data = {}
         new_formulas = {}
+        new_formats = {}
 
         for (r, c), value in self.model._data.items():
             if r >= row:
@@ -1256,16 +1493,33 @@ class SpreadsheetWidget(QtWidgets.QWidget):
                 new_data[(r, c)] = value
 
         for (r, c), formula in self.model._formulas.items():
+            # Update formula references to account for the inserted row
+            updated_formula = self._update_formula_for_row_insertion(formula, row)
             if r >= row:
-                new_formulas[(r + 1, c)] = formula
+                new_formulas[(r + 1, c)] = updated_formula
             else:
-                new_formulas[(r, c)] = formula
+                new_formulas[(r, c)] = updated_formula
+
+        # Shift formats
+        for (r, c), fmt in self.model._formats.items():
+            if r >= row:
+                new_formats[(r + 1, c)] = fmt
+            else:
+                new_formats[(r, c)] = fmt
 
         self.model._data = new_data
         self.model._formulas = new_formulas
+        self.model._formats = new_formats
         self.model._evaluated_cache.clear()
 
         self.model.endInsertRows()
+
+        # Emit dataChanged to trigger save to ShotGrid
+        self.model.dataChanged.emit(
+            self.model.index(0, 0),
+            self.model.index(self.model.rowCount() - 1, self.model.columnCount() - 1),
+            [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]
+        )
         logger.info(f"Inserted row above row {row + 1}")
 
     def _insert_row_below(self, row):
@@ -1284,6 +1538,7 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.model._rows -= 1
         new_data = {}
         new_formulas = {}
+        new_formats = {}
 
         for (r, c), value in self.model._data.items():
             if r == row:
@@ -1305,11 +1560,28 @@ class SpreadsheetWidget(QtWidgets.QWidget):
                 updated_formula = self._update_formula_for_row_deletion(formula, row)
                 new_formulas[(r, c)] = updated_formula
 
+        # Shift formats
+        for (r, c), fmt in self.model._formats.items():
+            if r == row:
+                continue  # Skip the deleted row
+            elif r > row:
+                new_formats[(r - 1, c)] = fmt
+            else:
+                new_formats[(r, c)] = fmt
+
         self.model._data = new_data
         self.model._formulas = new_formulas
+        self.model._formats = new_formats
         self.model._evaluated_cache.clear()
 
         self.model.endRemoveRows()
+
+        # Emit dataChanged to trigger save to ShotGrid
+        self.model.dataChanged.emit(
+            self.model.index(0, 0),
+            self.model.index(self.model.rowCount() - 1, self.model.columnCount() - 1),
+            [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]
+        )
         logger.info(f"Deleted row {row + 1}")
 
     def _delete_column(self, col):
@@ -1324,6 +1596,7 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.model._cols -= 1
         new_data = {}
         new_formulas = {}
+        new_formats = {}
 
         for (r, c), value in self.model._data.items():
             if c == col:
@@ -1345,11 +1618,28 @@ class SpreadsheetWidget(QtWidgets.QWidget):
                 updated_formula = self._update_formula_for_column_deletion(formula, col)
                 new_formulas[(r, c)] = updated_formula
 
+        # Shift formats
+        for (r, c), fmt in self.model._formats.items():
+            if c == col:
+                continue  # Skip the deleted column
+            elif c > col:
+                new_formats[(r, c - 1)] = fmt
+            else:
+                new_formats[(r, c)] = fmt
+
         self.model._data = new_data
         self.model._formulas = new_formulas
+        self.model._formats = new_formats
         self.model._evaluated_cache.clear()
 
         self.model.endRemoveColumns()
+
+        # Emit dataChanged to trigger save to ShotGrid
+        self.model.dataChanged.emit(
+            self.model.index(0, 0),
+            self.model.index(self.model.rowCount() - 1, self.model.columnCount() - 1),
+            [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]
+        )
         logger.info(f"Deleted column {self.model._column_name(col)}")
 
     def _insert_column_left(self, col):
@@ -1360,6 +1650,7 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.model._cols += 1
         new_data = {}
         new_formulas = {}
+        new_formats = {}
 
         for (r, c), value in self.model._data.items():
             if c >= col:
@@ -1368,16 +1659,33 @@ class SpreadsheetWidget(QtWidgets.QWidget):
                 new_data[(r, c)] = value
 
         for (r, c), formula in self.model._formulas.items():
+            # Update formula references to account for the inserted column
+            updated_formula = self._update_formula_for_column_insertion(formula, col)
             if c >= col:
-                new_formulas[(r, c + 1)] = formula
+                new_formulas[(r, c + 1)] = updated_formula
             else:
-                new_formulas[(r, c)] = formula
+                new_formulas[(r, c)] = updated_formula
+
+        # Shift formats
+        for (r, c), fmt in self.model._formats.items():
+            if c >= col:
+                new_formats[(r, c + 1)] = fmt
+            else:
+                new_formats[(r, c)] = fmt
 
         self.model._data = new_data
         self.model._formulas = new_formulas
+        self.model._formats = new_formats
         self.model._evaluated_cache.clear()
 
         self.model.endInsertColumns()
+
+        # Emit dataChanged to trigger save to ShotGrid
+        self.model.dataChanged.emit(
+            self.model.index(0, 0),
+            self.model.index(self.model.rowCount() - 1, self.model.columnCount() - 1),
+            [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]
+        )
         logger.info(f"Inserted column left of {self.model._column_name(col)}")
 
     def _insert_column_right(self, col):
@@ -1450,6 +1758,72 @@ class SpreadsheetWidget(QtWidgets.QWidget):
 
         return re.sub(pattern, replace_ref, formula)
 
+    def _update_formula_for_row_insertion(self, formula, inserted_row):
+        """Update cell references in a formula after a row insertion.
+
+        Args:
+            formula: The formula string (e.g., "=SUM(A1:A10)")
+            inserted_row: The row where a new row was inserted (0-based)
+
+        Returns:
+            Updated formula string with row references shifted down
+        """
+        import re
+
+        # Pattern to match cell references like A1, B2, $A$1, etc.
+        pattern = r'(\$?)([A-Z]+)(\$?)(\d+)'
+
+        def replace_ref(match):
+            col_abs = match.group(1)  # $ before column
+            col_letter = match.group(2)
+            row_abs = match.group(3)  # $ before row
+            row_num = int(match.group(4))
+
+            # Convert to 0-based
+            row_idx = row_num - 1
+
+            # If not absolute row reference and row >= inserted_row, increment
+            if not row_abs and row_idx >= inserted_row:
+                new_row_num = row_num + 1
+                return f"{col_abs}{col_letter}{row_abs}{new_row_num}"
+
+            return match.group(0)
+
+        return re.sub(pattern, replace_ref, formula)
+
+    def _update_formula_for_column_insertion(self, formula, inserted_col):
+        """Update cell references in a formula after a column insertion.
+
+        Args:
+            formula: The formula string (e.g., "=SUM(A1:B10)")
+            inserted_col: The column where a new column was inserted (0-based)
+
+        Returns:
+            Updated formula string with column references shifted right
+        """
+        import re
+
+        # Pattern to match cell references like A1, B2, $A$1, etc.
+        pattern = r'(\$?)([A-Z]+)(\$?)(\d+)'
+
+        def replace_ref(match):
+            col_abs = match.group(1)  # $ before column
+            col_letter = match.group(2)
+            row_abs = match.group(3)  # $ before row
+            row_num = match.group(4)
+
+            # Convert column letter to index
+            col_idx = self.model.letter_to_col(col_letter)
+
+            # If not absolute column reference and col >= inserted_col, shift right
+            if not col_abs and col_idx >= inserted_col:
+                new_col_letter = self.model._column_name(col_idx + 1)
+                return f"{col_abs}{new_col_letter}{row_abs}{row_num}"
+
+            return match.group(0)
+
+        return re.sub(pattern, replace_ref, formula)
+
     def set_formula_evaluator(self, evaluator):
         """Set the formula evaluator."""
         self.formula_evaluator = evaluator
@@ -1465,23 +1839,28 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.model.setData(index, value, Qt.EditRole)
 
     def get_data_as_dict(self):
-        """Export all data as a dictionary."""
+        """Export all data as a dictionary including formats."""
         data = {}
         for row in range(self.model.rowCount()):
             for col in range(self.model.columnCount()):
                 value = self.model._data.get((row, col))
                 formula = self.model._formulas.get((row, col))
-                if value or formula:
-                    data[(row, col)] = {
+                cell_format = self.model._formats.get((row, col))
+                if value or formula or cell_format:
+                    cell_data = {
                         'value': value,
                         'formula': formula,
                     }
+                    if cell_format:
+                        cell_data['format'] = cell_format
+                    data[(row, col)] = cell_data
         return data
 
     def load_data_from_dict(self, data):
-        """Load data from a dictionary."""
+        """Load data from a dictionary including formats."""
         self.model._data.clear()
         self.model._formulas.clear()
+        self.model._formats.clear()
         self.model._evaluated_cache.clear()
 
         for (row, col), cell_data in data.items():
@@ -1489,6 +1868,10 @@ class SpreadsheetWidget(QtWidgets.QWidget):
                 self.model._formulas[(row, col)] = cell_data['formula']
             elif cell_data.get('value'):
                 self.model._data[(row, col)] = cell_data['value']
+
+            # Load format if present
+            if cell_data.get('format'):
+                self.model._formats[(row, col)] = cell_data['format']
 
         # Refresh the view
         self.model.layoutChanged.emit()

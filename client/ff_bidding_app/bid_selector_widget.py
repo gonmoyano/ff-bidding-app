@@ -1517,11 +1517,6 @@ class SelectBidDialog(QtWidgets.QDialog):
         self.assets_checkbox.setEnabled(self.available_sheets.get("assets", False))
         entity_layout.addWidget(self.assets_checkbox)
 
-        self.scenes_checkbox = create_checkbox_with_checkmark("Scenes")
-        self.scenes_checkbox.setChecked(self.available_sheets.get("scenes", False))
-        self.scenes_checkbox.setEnabled(self.available_sheets.get("scenes", False))
-        entity_layout.addWidget(self.scenes_checkbox)
-
         self.rates_checkbox = create_checkbox_with_checkmark("Rates")
         self.rates_checkbox.setChecked(self.available_sheets.get("rates", False))
         self.rates_checkbox.setEnabled(self.available_sheets.get("rates", False))
@@ -1593,7 +1588,6 @@ class SelectBidDialog(QtWidgets.QDialog):
         if not any([
             self.breakdown_checkbox.isChecked(),
             self.assets_checkbox.isChecked(),
-            self.scenes_checkbox.isChecked(),
             self.rates_checkbox.isChecked()
         ]):
             QtWidgets.QMessageBox.warning(
@@ -1627,7 +1621,6 @@ class SelectBidDialog(QtWidgets.QDialog):
         return {
             "breakdown": self.breakdown_checkbox.isChecked(),
             "assets": self.assets_checkbox.isChecked(),
-            "scenes": self.scenes_checkbox.isChecked(),
             "rates": self.rates_checkbox.isChecked()
         }
 
@@ -1659,6 +1652,7 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         "sg_vfx_breakdown_scene": "text",
         "sg_vfx_description": "text",
         "sg_vfx_questions": "text",
+        "sg_vfx_shot_work": "text",
         "sg_vfx_supervisor_notes": "text",
         "sg_vfx_type": "text",
     }
@@ -1668,12 +1662,6 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         "code": "text",
         "sg_bid_asset_type": "list",
         "sg_bidding_notes": "text",
-    }
-
-    # ShotGrid field definitions for Scenes (placeholder - customize as needed)
-    SCENE_REQUIRED_FIELDS = {
-        "code": "text",
-        "description": "text",
     }
 
     # ShotGrid field definitions for Line Items (CustomEntity03)
@@ -1695,6 +1683,7 @@ class ColumnMappingDialog(QtWidgets.QDialog):
         "sg_lgt_mandays": "float",
         "sg_fx_mandays": "float",
         "sg_cmp_mandays": "float",
+        "sg_io_mandays": "float",
     }
 
     # Entity type mapping
@@ -1710,12 +1699,6 @@ class ColumnMappingDialog(QtWidgets.QDialog):
             "entity_type": "CustomEntity07",
             "fields": ASSET_ITEM_REQUIRED_FIELDS,
             "mapping_key": "assets"
-        },
-        "scenes": {
-            "name": "Scenes",
-            "entity_type": "Scene",
-            "fields": SCENE_REQUIRED_FIELDS,
-            "mapping_key": "scenes"
         },
         "rates": {
             "name": "Rates",
@@ -1746,7 +1729,6 @@ class ColumnMappingDialog(QtWidgets.QDialog):
             self.excel_columns_dict = {
                 "breakdown": excel_columns,
                 "assets": excel_columns,
-                "scenes": excel_columns,
                 "rates": excel_columns
             }
         else:
@@ -2180,7 +2162,6 @@ class ImportBidDialog(QtWidgets.QDialog):
         self.tab_config = {
             "VFX Breakdown": (["vfx", "breakdown", "break"], None),
             "Assets": (["asset", "assets"], None),
-            "Scene": (["scene", "scenes"], None),
             "Rates": (["rate", "rates", "pricing", "price"], None)
         }
 
@@ -2484,8 +2465,12 @@ class ImportBidDialog(QtWidgets.QDialog):
                             if row_idx > 0:
                                 logger.info(f"Excel R{row_idx}C{col_idx}: Numeric 0/1, value={cell.value} -> '{converted}'")
                         else:
-                            # Regular number - just convert to string
-                            row_values.append(str(cell.value))
+                            # Regular number - check if float is actually a whole number
+                            # to avoid "1.0" instead of "1" for integers stored as floats
+                            if isinstance(cell.value, float) and cell.value.is_integer():
+                                row_values.append(str(int(cell.value)))
+                            else:
+                                row_values.append(str(cell.value))
                     elif isinstance(cell.value, datetime):
                         # Date/datetime value - check if it might be a misinterpreted fraction
                         # Common date formats that might be fractions: m/d, m/d/yy, d/m, etc.
@@ -4152,8 +4137,6 @@ class BidSelectorWidget(QtWidgets.QWidget):
                         excel_columns_dict["breakdown"] = list(data["VFX Breakdown"].columns)
                     if "Assets" in data:
                         excel_columns_dict["assets"] = list(data["Assets"].columns)
-                    if "Scene" in data:
-                        excel_columns_dict["scenes"] = list(data["Scene"].columns)
                     if "Rates" in data:
                         excel_columns_dict["rates"] = list(data["Rates"].columns)
 
@@ -4195,7 +4178,6 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 available_sheets = {
                     "breakdown": "VFX Breakdown" in data,
                     "assets": "Assets" in data,
-                    "scenes": "Scene" in data,
                     "rates": "Rates" in data
                 }
 
@@ -4251,13 +4233,23 @@ class BidSelectorWidget(QtWidgets.QWidget):
             bid_type = select_dialog.get_new_bid_type()
 
             try:
+                # Link new Bid to current RFQ via sg_parent_rfq field
+                parent_rfq_id = None
+                if self.current_rfq:
+                    parent_rfq_id = self.current_rfq.get("id")
+                    logger.info(f"Linking new Bid to RFQ {parent_rfq_id}")
+
                 bid = self.sg_session.create_bid(
                     self.current_project_id,
                     bid_name,
-                    bid_type
+                    bid_type,
+                    parent_rfq_id=parent_rfq_id
                 )
                 bid_id = bid["id"]
                 logger.info(f"Created new Bid: {bid_id} - {bid_name}")
+
+                # Create Price List for new Bid and link to Base Rate Card
+                self._create_price_list_for_new_bid(bid_id, bid_name)
             except Exception as e:
                 logger.error(f"Failed to create Bid: {e}", exc_info=True)
                 QtWidgets.QMessageBox.critical(
@@ -4290,7 +4282,6 @@ class BidSelectorWidget(QtWidgets.QWidget):
         results = {
             "breakdown": {"created": 0, "entity_id": None},
             "assets": {"created": 0, "entity_id": None},
-            "scenes": {"created": 0, "entity_id": None},
             "rates": {"created": 0, "entity_id": None, "failed": 0}
         }
 
@@ -4318,13 +4309,6 @@ class BidSelectorWidget(QtWidgets.QWidget):
                 )
                 results["breakdown"]["created"] = created
                 results["breakdown"]["entity_id"] = entity_id
-
-            # Import Scenes
-            if selected_entity_types.get("scenes") and "Scene" in data:
-                scenes_mapping = all_mappings.get("scenes", {})
-                created, entity_id = self._import_scenes(data["Scene"], scenes_mapping, bid_id, bid_name)
-                results["scenes"]["created"] = created
-                results["scenes"]["entity_id"] = entity_id
 
             # Import Rates
             if selected_entity_types.get("rates") and "Rates" in data:
@@ -4357,8 +4341,6 @@ class BidSelectorWidget(QtWidgets.QWidget):
             summary_lines.append(f"✓ Created {results['breakdown']['created']} VFX Breakdown items")
         if results["assets"]["created"] > 0:
             summary_lines.append(f"✓ Created {results['assets']['created']} Asset items")
-        if results["scenes"]["created"] > 0:
-            summary_lines.append(f"✓ Created {results['scenes']['created']} Scene items")
         if results["rates"]["created"] > 0:
             failed_count = results["rates"].get("failed", 0)
             if failed_count > 0:
@@ -4399,6 +4381,78 @@ class BidSelectorWidget(QtWidgets.QWidget):
             logger.info(f"Refreshed Price Lists dropdown")
 
         logger.info("Completed post-import refresh")
+
+    def _create_price_list_for_new_bid(self, bid_id, bid_name):
+        """Create a Price List for a new Bid and link it to Base Rate Card.
+
+        This is called when creating a new Bid from Excel import to set up
+        the Price List with the Base Rate Card (first available Rate Card).
+
+        Args:
+            bid_id: ID of the newly created Bid
+            bid_name: Name of the Bid (used for Price List name)
+        """
+        try:
+            # Create Price List with sg_parent_bid link
+            price_list_name = f"{bid_name} - Price List"
+            price_list_data = {
+                "code": price_list_name,
+                "project": {"type": "Project", "id": self.current_project_id},
+                "sg_parent_bid": {"type": "CustomEntity06", "id": bid_id}
+            }
+            new_price_list = self.sg_session.sg.create("CustomEntity10", price_list_data)
+            new_price_list_id = new_price_list['id']
+            logger.info(f"Created Price List '{price_list_name}' (ID: {new_price_list_id}) for new Bid")
+
+            # Find and set the Base Rate Card (first available Rate Card)
+            try:
+                rate_cards = self.sg_session.sg.find(
+                    "CustomNonProjectEntity01",
+                    [],
+                    ["id", "code"],
+                    order=[{"field_name": "code", "direction": "asc"}]
+                )
+                if rate_cards:
+                    base_rate_card = rate_cards[0]
+                    self.sg_session.sg.update(
+                        "CustomEntity10",
+                        new_price_list_id,
+                        {"sg_rate_card": {"type": "CustomNonProjectEntity01", "id": base_rate_card['id']}}
+                    )
+                    logger.info(f"Set Base Rate Card '{base_rate_card.get('code')}' (ID: {base_rate_card['id']}) on Price List")
+            except Exception as e:
+                logger.warning(f"Could not set Base Rate Card on Price List: {e}")
+
+            # Link Price List to Bid
+            self.sg_session.sg.update(
+                "CustomEntity06",
+                bid_id,
+                {"sg_price_list": {"type": "CustomEntity10", "id": new_price_list_id}}
+            )
+            logger.info(f"Linked Price List to Bid {bid_id}")
+
+            # Create initial empty Line Item row
+            try:
+                line_item_data = {
+                    "code": "New Line Item",
+                    "project": {"type": "Project", "id": self.current_project_id},
+                    "sg_parent_pricelist": {"type": "CustomEntity10", "id": new_price_list_id}
+                }
+                new_line_item = self.sg_session.sg.create("CustomEntity03", line_item_data)
+                # Link Line Item to Price List via sg_line_items field
+                self.sg_session.sg.update(
+                    "CustomEntity10",
+                    new_price_list_id,
+                    {"sg_line_items": [{"type": "CustomEntity03", "id": new_line_item['id']}]}
+                )
+                logger.info(f"Created initial Line Item for Price List")
+            except Exception as e:
+                logger.warning(f"Could not create initial Line Item for Price List: {e}")
+
+        except Exception as e:
+            logger.error(f"Failed to create Price List for new Bid: {e}", exc_info=True)
+            # Don't fail the import - just log the warning
+            logger.warning("Import will continue without Price List setup")
 
     def _deduplicate_entity_refs(self, entity_refs):
         """

@@ -874,6 +874,13 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Explicitly update pill heights for the initial height
             widget.update_for_height(current_row_height)
 
+            # CRITICAL: Constrain widget width to match cell width exactly
+            # This prevents the widget from extending beyond cell boundaries
+            cell_rect = self.table_view.visualRect(index)
+            if cell_rect.isValid() and cell_rect.width() > 0:
+                widget.setFixedWidth(cell_rect.width())
+                widget.setMaximumWidth(cell_rect.width())
+
             # Connect signal to update model when entities change
             # Use functools.partial to properly bind the widget so we can look up its position dynamically
             widget.entitiesChanged.connect(
@@ -1951,11 +1958,33 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         field_name = self.model.column_fields[logical_index]
 
+        # Update MultiEntityReferenceWidget widths if sg_bid_assets column was resized
+        if field_name == "sg_bid_assets":
+            self._update_bid_assets_widget_widths(new_size)
+
         # Get current widths
         widths = self._get_current_column_widths()
 
         # Save to settings
         self.app_settings.set_column_widths(self.settings_key, widths)
+
+    def _update_bid_assets_widget_widths(self, new_width):
+        """Update the width of all MultiEntityReferenceWidgets to match column width.
+
+        Args:
+            new_width: The new column width in pixels
+        """
+        try:
+            assets_col_idx = self.model.column_fields.index("sg_bid_assets")
+        except ValueError:
+            return
+
+        for row in range(self.model.rowCount()):
+            index = self.model.index(row, assets_col_idx)
+            widget = self.table_view.indexWidget(index)
+            if widget and isinstance(widget, MultiEntityReferenceWidget):
+                widget.setFixedWidth(new_width)
+                widget.setMaximumWidth(new_width)
 
 
     def _get_current_column_widths(self):

@@ -1,6 +1,8 @@
 """Simplified Shotgrid client for FF Package Manager."""
 import logging
 import os
+import re
+import threading
 
 try:
     from shotgun_api3 import Shotgun
@@ -48,12 +50,23 @@ class ShotgridClient:
         self.site_url = site_url or os.getenv("SG_URL", "")
         self.script_name = script_name or os.getenv("SG_SCRIPT", "")
         self.api_key = api_key or os.getenv("SG_KEY", "")
-        self._sg = None
+
+        # Thread-local connections: each thread gets its own ShotGrid connection
+        # This solves the SSL connection thread-safety issue
+        self._connections = {}
+        self._connections_lock = threading.Lock()
+
+        # Thread-safe schema caches with RLock for re-entrant access
+        self._schema_lock = threading.RLock()
         self._field_schema_cache = {}
         self._entity_schema_cache = {}
 
     def connect(self):
-        """Connect to Shotgrid."""
+        """Connect to Shotgrid.
+
+        Returns a thread-local connection. Each thread gets its own ShotGrid
+        connection to avoid SSL connection thread-safety issues.
+        """
         if Shotgun is None:
             raise RuntimeError(
                 "shotgun_api3 not installed. "
@@ -66,18 +79,27 @@ class ShotgridClient:
                 "or set SG_URL, SG_SCRIPT, SG_KEY environment variables."
             )
 
-        if self._sg is None:
-            self._sg = Shotgun(
-                base_url=self.site_url,
-                script_name=self.script_name,
-                api_key=self.api_key
-            )
+        thread_id = threading.current_thread().ident
 
-        return self._sg
+        # Fast path: check if connection exists without lock
+        if thread_id in self._connections:
+            return self._connections[thread_id]
+
+        # Slow path: create new connection with lock
+        with self._connections_lock:
+            # Double-check after acquiring lock
+            if thread_id not in self._connections:
+                logger.debug(f"Creating new ShotGrid connection for thread {thread_id}")
+                self._connections[thread_id] = Shotgun(
+                    base_url=self.site_url,
+                    script_name=self.script_name,
+                    api_key=self.api_key
+                )
+            return self._connections[thread_id]
 
     @property
     def sg(self):
-        """Get or create Shotgrid connection."""
+        """Get or create Shotgrid connection for the current thread."""
         return self.connect()
 
     def get_projects(self, fields=None, status=None):
@@ -251,20 +273,26 @@ class ShotgridClient:
     # ------------------------------------------------------------------
 
     def get_field_schema(self, entity_type, field_name):
-        """Read schema information for a specific field and cache the result."""
+        """Read schema information for a specific field and cache the result.
 
+        Thread-safe: Uses RLock to protect cache access.
+        """
         cache_key = (entity_type, field_name)
-        if cache_key not in self._field_schema_cache:
-            schema = self.sg.schema_field_read(entity_type, field_name)
-            self._field_schema_cache[cache_key] = schema.get(field_name, {})
-        return self._field_schema_cache[cache_key]
+        with self._schema_lock:
+            if cache_key not in self._field_schema_cache:
+                schema = self.sg.schema_field_read(entity_type, field_name)
+                self._field_schema_cache[cache_key] = schema.get(field_name, {})
+            return self._field_schema_cache[cache_key]
 
     def get_entity_schema(self, entity_type):
-        """Read and cache the schema for an entity type."""
+        """Read and cache the schema for an entity type.
 
-        if entity_type not in self._entity_schema_cache:
-            self._entity_schema_cache[entity_type] = self.sg.schema_read(entity_type)
-        return self._entity_schema_cache[entity_type]
+        Thread-safe: Uses RLock to protect cache access.
+        """
+        with self._schema_lock:
+            if entity_type not in self._entity_schema_cache:
+                self._entity_schema_cache[entity_type] = self.sg.schema_read(entity_type)
+            return self._entity_schema_cache[entity_type]
 
     def get_bidding_scenes_for_vfx_breakdown(self, vfx_breakdown_id, fields=None, order=None):
         """
@@ -2550,67 +2578,40 @@ class ShotgridClient:
         return result
 
     # ------------------------------------------------------------------
-    # Spreadsheet Management (CustomEntity15) - For storing misc table data
+    # Spreadsheet Management (CustomEntity15) and SpreadsheetItem (CustomEntity16)
     # ------------------------------------------------------------------
 
-    def _row_col_to_cell_notation(self, row, col):
-        """Convert row and column indices to Excel-style cell notation (e.g., A1, B10).
+    def get_spreadsheet_for_bid(self, bid_id, spreadsheet_type):
+        """
+        Get a Spreadsheet (CustomEntity15) for a bid by type.
 
         Args:
-            row: Row index (0-based)
-            col: Column index (0-based)
+            bid_id: Bid ID (CustomEntity06)
+            spreadsheet_type: Type of spreadsheet ('misc' or 'total_cost')
 
         Returns:
-            str: Cell notation like "A1", "B10", "AA5"
+            Spreadsheet entity dictionary or None if not found
         """
-        # Convert column index to letter(s)
-        col_str = ""
-        col_num = col
-        while col_num >= 0:
-            col_str = chr(ord('A') + (col_num % 26)) + col_str
-            col_num = col_num // 26 - 1
-            if col_num < 0:
-                break
+        filters = [
+            ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": int(bid_id)}],
+            ["sg_type", "is", spreadsheet_type]
+        ]
 
-        # Row is 1-based in Excel notation
-        return f"{col_str}{row + 1}"
+        result = self.sg.find_one(
+            "CustomEntity15",
+            filters,
+            ["id", "code", "sg_type", "sg_parent_bid"]
+        )
+        return result
 
-    def _cell_notation_to_row_col(self, cell_notation):
-        """Convert Excel-style cell notation to row and column indices.
+    def create_spreadsheet(self, project_id, bid_id, spreadsheet_type, code=None):
+        """
+        Create a new Spreadsheet (CustomEntity15) entity.
 
         Args:
-            cell_notation: Cell notation like "A1", "B10", "AA5"
-
-        Returns:
-            tuple: (row, col) as 0-based indices
-        """
-        import re
-        match = re.match(r'^([A-Z]+)(\d+)$', cell_notation.upper())
-        if not match:
-            raise ValueError(f"Invalid cell notation: {cell_notation}")
-
-        col_str = match.group(1)
-        row_num = int(match.group(2))
-
-        # Convert column letters to index
-        col = 0
-        for char in col_str:
-            col = col * 26 + (ord(char) - ord('A') + 1)
-        col -= 1  # Convert to 0-based
-
-        # Row is 0-based internally
-        row = row_num - 1
-
-        return row, col
-
-    def create_spreadsheet(self, project_id, bid_id, spreadsheet_type="misc", code=None):
-        """
-        Create a new Spreadsheet (CustomEntity15) entity in ShotGrid.
-
-        Args:
-            project_id: ID of the project
-            bid_id: ID of the parent Bid (CustomEntity06)
-            spreadsheet_type: Type of spreadsheet (default: "misc")
+            project_id: Project ID
+            bid_id: Bid ID to link via sg_parent_bid
+            spreadsheet_type: Type of spreadsheet ('misc' or 'total_cost')
             code: Optional name/code for the spreadsheet
 
         Returns:
@@ -2623,58 +2624,16 @@ class ShotgridClient:
             "code": code,
             "project": {"type": "Project", "id": int(project_id)},
             "sg_parent_bid": {"type": "CustomEntity06", "id": int(bid_id)},
-            "sg_type": spreadsheet_type,
+            "sg_type": spreadsheet_type
         }
 
         result = self.sg.create("CustomEntity15", data)
-        logger.info(f"Created Spreadsheet: {result.get('id')} for bid {bid_id}, type {spreadsheet_type}")
+        logger.info(f"Created Spreadsheet {result.get('id')} for bid {bid_id}, type={spreadsheet_type}")
         return result
-
-    def get_spreadsheet_for_bid(self, bid_id, spreadsheet_type="misc", fields=None):
-        """
-        Get a Spreadsheet (CustomEntity15) for a specific Bid and type.
-
-        Args:
-            bid_id: ID of the Bid (CustomEntity06)
-            spreadsheet_type: Type of spreadsheet to find (default: "misc")
-            fields: List of fields to return
-
-        Returns:
-            Spreadsheet entity dictionary or None if not found
-        """
-        if fields is None:
-            fields = ["id", "code", "sg_parent_bid", "sg_type", "created_at", "updated_at"]
-
-        filters = [
-            ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": int(bid_id)}],
-            ["sg_type", "is", spreadsheet_type]
-        ]
-
-        return self.sg.find_one("CustomEntity15", filters, fields)
-
-    def get_spreadsheets_for_bid(self, bid_id, fields=None):
-        """
-        Get all Spreadsheets (CustomEntity15) for a specific Bid.
-
-        Args:
-            bid_id: ID of the Bid (CustomEntity06)
-            fields: List of fields to return
-
-        Returns:
-            List of Spreadsheet entity dictionaries
-        """
-        if fields is None:
-            fields = ["id", "code", "sg_parent_bid", "sg_type", "created_at", "updated_at"]
-
-        filters = [
-            ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": int(bid_id)}]
-        ]
-
-        return self.sg.find("CustomEntity15", filters, fields)
 
     def delete_spreadsheet(self, spreadsheet_id):
         """
-        Delete a Spreadsheet (CustomEntity15) entity.
+        Delete a Spreadsheet (CustomEntity15) and all its items.
 
         Args:
             spreadsheet_id: Spreadsheet ID
@@ -2682,88 +2641,106 @@ class ShotgridClient:
         Returns:
             bool: True if successful
         """
+        # First delete all SpreadsheetItems linked to this Spreadsheet
+        items = self.get_spreadsheet_items(spreadsheet_id)
+        for item in items:
+            self.sg.delete("CustomEntity16", int(item["id"]))
+
+        # Then delete the Spreadsheet itself
         result = self.sg.delete("CustomEntity15", int(spreadsheet_id))
         return result
 
-    # ------------------------------------------------------------------
-    # Spreadsheet Item Management (CustomEntity16) - For storing cells
-    # ------------------------------------------------------------------
-
-    def create_spreadsheet_item(self, project_id, spreadsheet_id, row, col, formula=None, code=None):
+    def get_spreadsheet_items(self, spreadsheet_id):
         """
-        Create a new Spreadsheet Item (CustomEntity16) entity in ShotGrid.
+        Get all SpreadsheetItems (CustomEntity16) for a Spreadsheet.
 
         Args:
-            project_id: ID of the project
-            spreadsheet_id: ID of the parent Spreadsheet (CustomEntity15)
-            row: Row index of the cell (0-based)
-            col: Column index of the cell (0-based)
-            formula: The cell content (value or formula)
-            code: Optional name/code for the item
+            spreadsheet_id: Spreadsheet ID (CustomEntity15)
 
         Returns:
-            Created Spreadsheet Item entity dictionary
+            List of SpreadsheetItem dictionaries
         """
-        # Convert row/col to cell notation (e.g., A1, B10)
-        cell_notation = self._row_col_to_cell_notation(row, col)
-
-        if code is None:
-            code = f"cell_{cell_notation}"
-
-        data = {
-            "code": code,
-            "project": {"type": "Project", "id": int(project_id)},
-            "sg_parent": {"type": "CustomEntity15", "id": int(spreadsheet_id)},
-            "sg_cell": cell_notation,
-        }
-
-        if formula is not None:
-            data["sg_formula"] = str(formula)
-
-        result = self.sg.create("CustomEntity16", data)
-        logger.debug(f"Created Spreadsheet Item: {result.get('id')} at {cell_notation}")
-        return result
-
-    def get_spreadsheet_items(self, spreadsheet_id, fields=None):
-        """
-        Get all Spreadsheet Items (CustomEntity16) for a specific Spreadsheet.
-
-        Args:
-            spreadsheet_id: ID of the Spreadsheet (CustomEntity15)
-            fields: List of fields to return
-
-        Returns:
-            List of Spreadsheet Item entity dictionaries
-        """
-        if fields is None:
-            fields = ["id", "code", "sg_parent", "sg_cell", "sg_formula"]
-
         filters = [
             ["sg_parent", "is", {"type": "CustomEntity15", "id": int(spreadsheet_id)}]
         ]
 
-        return self.sg.find("CustomEntity16", filters, fields)
+        results = self.sg.find(
+            "CustomEntity16",
+            filters,
+            ["id", "sg_cell", "sg_formula", "sg_format", "sg_parent"]
+        )
+        return results
 
-    def update_spreadsheet_item(self, item_id, data):
+    def create_spreadsheet_item(self, project_id, spreadsheet_id, cell, formula=None, value=None, cell_format=None):
         """
-        Update a Spreadsheet Item (CustomEntity16) entity.
+        Create a new SpreadsheetItem (CustomEntity16) entity.
 
         Args:
-            item_id: Spreadsheet Item ID
-            data: Dictionary of fields to update
+            project_id: Project ID
+            spreadsheet_id: Parent Spreadsheet ID (CustomEntity15)
+            cell: Cell reference (e.g., "A1", "B2")
+            formula: Optional formula string (e.g., "=A1+B1")
+            value: Optional raw value (stored in sg_formula if no formula)
+            cell_format: Optional Excel-compatible format string (e.g., "#,##0.00", "$#,##0.00")
 
         Returns:
-            Updated Spreadsheet Item entity dictionary
+            Created SpreadsheetItem entity dictionary
         """
-        result = self.sg.update("CustomEntity16", int(item_id), data)
+        data = {
+            "code": cell,  # Use cell as code for easy identification
+            "project": {"type": "Project", "id": int(project_id)},
+            "sg_parent": {"type": "CustomEntity15", "id": int(spreadsheet_id)},
+            "sg_cell": cell
+        }
+
+        # Store formula or value in sg_formula field (no separate sg_value field exists)
+        if formula:
+            data["sg_formula"] = formula
+        elif value is not None:
+            data["sg_formula"] = str(value) if value else ""
+
+        # Store format if provided
+        if cell_format:
+            data["sg_format"] = cell_format
+
+        result = self.sg.create("CustomEntity16", data)
         return result
+
+    def update_spreadsheet_item(self, item_id, formula=None, value=None, cell_format=None):
+        """
+        Update a SpreadsheetItem (CustomEntity16).
+
+        Args:
+            item_id: SpreadsheetItem ID
+            formula: Optional new formula string
+            value: Optional new value (stored in sg_formula if no formula)
+            cell_format: Optional Excel-compatible format string
+
+        Returns:
+            Updated SpreadsheetItem entity dictionary
+        """
+        data = {}
+        # Store formula or value in sg_formula field
+        if formula is not None:
+            data["sg_formula"] = formula
+        elif value is not None:
+            data["sg_formula"] = str(value) if value else ""
+
+        # Update format if provided
+        if cell_format is not None:
+            data["sg_format"] = cell_format
+
+        if data:
+            result = self.sg.update("CustomEntity16", int(item_id), data)
+            return result
+        return None
 
     def delete_spreadsheet_item(self, item_id):
         """
-        Delete a Spreadsheet Item (CustomEntity16) entity.
+        Delete a SpreadsheetItem (CustomEntity16).
 
         Args:
-            item_id: Spreadsheet Item ID
+            item_id: SpreadsheetItem ID
 
         Returns:
             bool: True if successful
@@ -2771,116 +2748,177 @@ class ShotgridClient:
         result = self.sg.delete("CustomEntity16", int(item_id))
         return result
 
-    def delete_all_spreadsheet_items(self, spreadsheet_id):
+    def save_spreadsheet_data(self, project_id, bid_id, spreadsheet_type, data_dict):
         """
-        Delete all Spreadsheet Items for a specific Spreadsheet.
+        Save spreadsheet data to ShotGrid.
+
+        This method handles the full save workflow with optimized updates:
+        1. Gets or creates the Spreadsheet entity
+        2. Updates existing items, creates new ones, deletes removed ones
 
         Args:
-            spreadsheet_id: ID of the Spreadsheet (CustomEntity15)
+            project_id: Project ID
+            bid_id: Bid ID
+            spreadsheet_type: Type of spreadsheet ('misc' or 'total_cost')
+            data_dict: Dictionary from SpreadsheetWidget.get_data_as_dict()
+                       Format: {(row, col): {'value': ..., 'formula': ..., 'format': ...}, ...}
 
         Returns:
-            int: Number of items deleted
+            Spreadsheet entity dictionary
         """
-        items = self.get_spreadsheet_items(spreadsheet_id, fields=["id"])
-        count = 0
-        for item in items:
-            try:
-                self.delete_spreadsheet_item(item["id"])
-                count += 1
-            except Exception as e:
-                logger.error(f"Failed to delete Spreadsheet Item {item['id']}: {e}")
-        return count
-
-    def save_spreadsheet_data(self, project_id, bid_id, spreadsheet_type, cell_data):
-        """
-        Save spreadsheet data to ShotGrid, creating or updating the Spreadsheet
-        and its Items as needed.
-
-        Args:
-            project_id: ID of the project
-            bid_id: ID of the Bid
-            spreadsheet_type: Type of spreadsheet (e.g., "misc")
-            cell_data: Dictionary mapping (row, col) tuples to cell content
-                       Format: {(row, col): {'value': val, 'formula': formula}, ...}
-
-        Returns:
-            dict: The Spreadsheet entity with its items saved
-        """
-        # Find or create the spreadsheet
+        # Get or create Spreadsheet
         spreadsheet = self.get_spreadsheet_for_bid(bid_id, spreadsheet_type)
-
         if not spreadsheet:
             spreadsheet = self.create_spreadsheet(project_id, bid_id, spreadsheet_type)
-            logger.info(f"Created new spreadsheet for bid {bid_id}, type {spreadsheet_type}")
-        else:
-            # Delete existing items before saving new ones
-            deleted_count = self.delete_all_spreadsheet_items(spreadsheet["id"])
-            logger.info(f"Deleted {deleted_count} existing items from spreadsheet {spreadsheet['id']}")
-
         spreadsheet_id = spreadsheet["id"]
 
-        # Create items for each cell
-        items_created = 0
-        for (row, col), content in cell_data.items():
-            # Determine what to store in sg_formula
-            # Priority: formula > value
-            formula = content.get('formula') or content.get('value') or ''
+        # Get existing items and build a map by cell reference
+        existing_items = self.get_spreadsheet_items(spreadsheet_id)
+        existing_by_cell = {item.get("sg_cell", ""): item for item in existing_items}
 
-            if formula:  # Only create items for non-empty cells
+        # Track which cells we've processed
+        processed_cells = set()
+        created_count = 0
+        updated_count = 0
+        deleted_count = 0
+
+        # Update or create items for each cell in data_dict
+        for (row, col), cell_data in data_dict.items():
+            # Convert row/col to cell reference (e.g., A1, B2)
+            col_letter = chr(ord('A') + col) if col < 26 else f"A{chr(ord('A') + col - 26)}"
+            cell_ref = f"{col_letter}{row + 1}"
+            processed_cells.add(cell_ref)
+
+            formula = cell_data.get('formula')
+            value = cell_data.get('value')
+            cell_format = cell_data.get('format')
+
+            # Determine what to store in sg_formula
+            sg_formula_value = formula if formula else (str(value) if value is not None else "")
+
+            if cell_ref in existing_by_cell:
+                # Update existing item if value or format changed
+                existing_item = existing_by_cell[cell_ref]
+                update_data = {}
+
+                if existing_item.get("sg_formula") != sg_formula_value:
+                    update_data["sg_formula"] = sg_formula_value
+
+                if cell_format and existing_item.get("sg_format") != cell_format:
+                    update_data["sg_format"] = cell_format
+
+                if update_data:
+                    self.sg.update("CustomEntity16", int(existing_item["id"]), update_data)
+                    updated_count += 1
+            else:
+                # Create new item
                 self.create_spreadsheet_item(
                     project_id=project_id,
                     spreadsheet_id=spreadsheet_id,
-                    row=row,
-                    col=col,
-                    formula=formula
+                    cell=cell_ref,
+                    formula=formula,
+                    value=value,
+                    cell_format=cell_format
                 )
-                items_created += 1
+                created_count += 1
 
-        logger.info(f"Saved {items_created} cells to spreadsheet {spreadsheet_id}")
+        # Delete items for cells that no longer exist in data_dict
+        for cell_ref, item in existing_by_cell.items():
+            if cell_ref not in processed_cells:
+                self.sg.delete("CustomEntity16", int(item["id"]))
+                deleted_count += 1
+
+        logger.info(f"Saved Spreadsheet {spreadsheet_id}: {created_count} created, {updated_count} updated, {deleted_count} deleted")
         return spreadsheet
 
-    def load_spreadsheet_data(self, bid_id, spreadsheet_type="misc"):
+    def load_spreadsheet_data(self, bid_id, spreadsheet_type):
         """
         Load spreadsheet data from ShotGrid.
 
         Args:
-            bid_id: ID of the Bid
-            spreadsheet_type: Type of spreadsheet (e.g., "misc")
+            bid_id: Bid ID
+            spreadsheet_type: Type of spreadsheet ('misc' or 'total_cost')
 
         Returns:
-            dict: Cell data in format {(row, col): {'value': None, 'formula': formula}, ...}
-                  Returns empty dict if no spreadsheet found
+            Dictionary in format for SpreadsheetWidget.load_data_from_dict()
+            Format: {(row, col): {'value': ..., 'formula': ..., 'format': ...}, ...}
+            Returns empty dict if no spreadsheet found.
         """
         spreadsheet = self.get_spreadsheet_for_bid(bid_id, spreadsheet_type)
-
         if not spreadsheet:
             return {}
 
         items = self.get_spreadsheet_items(spreadsheet["id"])
 
-        cell_data = {}
+        data_dict = {}
         for item in items:
-            cell_notation = item.get("sg_cell")
-            formula = item.get("sg_formula", "")
+            cell_ref = item.get("sg_cell", "")
+            if not cell_ref:
+                continue
 
-            if cell_notation:
-                try:
-                    row, col = self._cell_notation_to_row_col(cell_notation)
-                except ValueError as e:
-                    logger.warning(f"Invalid cell notation '{cell_notation}': {e}")
-                    continue
+            # Parse cell reference (e.g., "A1" -> row=0, col=0)
+            match = re.match(r'^([A-Z]+)(\d+)$', cell_ref.upper())
+            if not match:
+                continue
 
-                cell_data[(row, col)] = {
-                    'value': None,  # Value will be computed from formula
-                    'formula': formula if formula and formula.startswith('=') else None,
-                }
-                # If it's not a formula, store it as value
-                if formula and not formula.startswith('='):
-                    cell_data[(row, col)]['value'] = formula
-                    cell_data[(row, col)]['formula'] = None
+            col_str, row_str = match.groups()
+            # Convert column letters to index (A=0, B=1, ..., Z=25, AA=26, etc.)
+            col = 0
+            for char in col_str:
+                col = col * 26 + (ord(char) - ord('A') + 1)
+            col -= 1  # Make 0-indexed
+            row = int(row_str) - 1  # Make 0-indexed
 
-        logger.info(f"Loaded {len(cell_data)} cells from spreadsheet for bid {bid_id}")
-        return cell_data
+            # sg_formula stores both formulas (starting with =) and plain values
+            sg_formula = item.get("sg_formula", "")
+            # sg_format stores Excel-compatible format string
+            sg_format = item.get("sg_format", "")
+
+            # Determine if it's a formula or a plain value
+            if sg_formula and sg_formula.startswith("="):
+                formula = sg_formula
+                value = None
+            else:
+                formula = None
+                value = sg_formula
+
+            cell_data = {
+                'value': value,
+                'formula': formula
+            }
+
+            # Include format if present
+            if sg_format:
+                cell_data['format'] = sg_format
+
+            data_dict[(row, col)] = cell_data
+
+        logger.info(f"Loaded {len(data_dict)} cells from Spreadsheet for bid {bid_id}, type={spreadsheet_type}")
+        return data_dict
+
+    def close_connection(self, thread_id=None):
+        """Close the ShotGrid connection for a specific thread or current thread.
+
+        Args:
+            thread_id: Thread ID to close connection for. If None, uses current thread.
+        """
+        if thread_id is None:
+            thread_id = threading.current_thread().ident
+
+        with self._connections_lock:
+            if thread_id in self._connections:
+                # shotgun_api3 connections don't have an explicit close method,
+                # but we can remove the reference to allow garbage collection
+                del self._connections[thread_id]
+                logger.debug(f"Closed ShotGrid connection for thread {thread_id}")
+
+    def close_all_connections(self):
+        """Close all ShotGrid connections across all threads."""
+        with self._connections_lock:
+            thread_ids = list(self._connections.keys())
+            for thread_id in thread_ids:
+                del self._connections[thread_id]
+            logger.debug(f"Closed {len(thread_ids)} ShotGrid connection(s)")
 
     def __enter__(self):
         """Context manager entry."""
@@ -2888,8 +2926,8 @@ class ShotgridClient:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
-        self._sg = None
+        """Context manager exit - closes connection for current thread."""
+        self.close_connection()
 
 
 # Example usage

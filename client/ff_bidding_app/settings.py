@@ -274,7 +274,7 @@ class AppSettings:
             return formula
 
         # Fallback to hardcoded default
-        return "=('Rate Card'!model.1*model) + ('Rate Card'!tex.1*tex) + ('Rate Card'!rig.1*rig) + ('Rate Card'!mm.1*mm) + ('Rate Card'!prep.1*prep) + ('Rate Card'!gen.1*gen) + ('Rate Card'!anim.1*anim) + ('Rate Card'!lookdev.1*lookdev) + ('Rate Card'!lgt.1*lgt) + ('Rate Card'!fx.1*fx) + ('Rate Card'!cmp.1*cmp)"
+        return "=('Rate Card'!model.1*model) + ('Rate Card'!tex.1*tex) + ('Rate Card'!rig.1*rig) + ('Rate Card'!mm.1*mm) + ('Rate Card'!prep.1*prep) + ('Rate Card'!gen.1*gen) + ('Rate Card'!anim.1*anim) + ('Rate Card'!lookdev.1*lookdev) + ('Rate Card'!lgt.1*lgt) + ('Rate Card'!fx.1*fx) + ('Rate Card'!cmp.1*cmp) + ('Rate Card'!io.1*io)"
 
     def get_dpi_scale(self):
         """Get DPI scale factor for the application.
