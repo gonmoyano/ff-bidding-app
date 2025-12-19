@@ -168,20 +168,23 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
     """Custom delegate for combo box cells with List field values and validation coloring.
 
     Based on ComboBoxDelegate from vfx_breakdown_tab.py, with added paint() method
-    for validation coloring (blue for valid, red for invalid values).
+    for validation coloring (customizable color for valid, red for invalid values).
     """
 
-    def __init__(self, list_values, parent=None):
+    def __init__(self, list_values, parent=None, valid_color=None):
         """Initialize the delegate.
 
         Args:
             list_values: List of valid string values for the dropdown
             parent: Parent widget
+            valid_color: Custom color for valid values (default: "#4a90e2" blue)
         """
         super().__init__(parent)
         self.list_values = list_values or []
         # Store normalized versions for validation
         self.normalized_valid_values = {str(v).strip(): v for v in self.list_values if v}
+        # Custom color for valid values (default blue, can be changed to purple)
+        self.valid_color = valid_color or "#4a90e2"
 
     def update_valid_values(self, valid_values):
         """Update the list of valid values and trigger repaint.
@@ -208,11 +211,11 @@ class ValidatedComboBoxDelegate(QtWidgets.QStyledItemDelegate):
             # Normalize the value for comparison (strip whitespace)
             normalized_value = str(value).strip()
             if normalized_value in self.normalized_valid_values:
-                # Valid value - blue background matching Asset pill
-                bg_color = QtGui.QColor("#4a90e2")  # Same as valid Asset pill
+                # Valid value - use custom color (default blue, can be purple)
+                bg_color = QtGui.QColor(self.valid_color)
             else:
                 # Invalid value - red background matching invalid Asset pill
-                bg_color = QtGui.QColor("#e74c3c")  # Same as invalid Asset pill
+                bg_color = QtGui.QColor("#e74c3c")
         else:
             # Empty value - default background
             bg_color = option.palette.base().color()
