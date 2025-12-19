@@ -1378,6 +1378,8 @@ class SelectBidDialog(QtWidgets.QDialog):
         bid_layout = QtWidgets.QVBoxLayout()
 
         # Style for radio buttons with visible indicator
+        # Unchecked: dark gray background with gray border
+        # Checked: blue background with white inner dot (achieved via border)
         radio_style = """
             QRadioButton {
                 spacing: 8px;
@@ -1387,13 +1389,10 @@ class SelectBidDialog(QtWidgets.QDialog):
                 height: 18px;
                 border-radius: 9px;
                 border: 2px solid #555555;
-                background-color: #2b2b2b;
+                background-color: #3c3c3c;
             }
             QRadioButton::indicator:checked {
-                border: 2px solid #0078d4;
-                background-color: #0078d4;
-            }
-            QRadioButton::indicator:checked::after {
+                border: 5px solid #0078d4;
                 background-color: white;
             }
         """
