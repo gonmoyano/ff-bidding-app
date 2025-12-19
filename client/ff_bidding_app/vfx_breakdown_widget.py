@@ -953,6 +953,18 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         if self.table_view and self.table_view.viewport():
             self.table_view.viewport().update()
 
+    def set_price_column_color(self, color):
+        """Set custom color for the Price column background.
+
+        Args:
+            color (str): Color string (e.g., "#6b5b95" for purple)
+        """
+        if self.model:
+            self.model.price_column_color = color
+            # Force repaint to apply new colors
+            if self.table_view and self.table_view.viewport():
+                self.table_view.viewport().update()
+
     def _on_bid_assets_changed_from_widget(self, widget, entities):
         """Handle when bid assets are changed in a cell widget, looking up position dynamically.
 

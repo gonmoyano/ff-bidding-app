@@ -248,6 +248,9 @@ class CostsTab(QtWidgets.QMainWindow):
         # Apply purple checkbox color for the Costs panel
         self.shots_cost_widget.set_checkbox_color('#6b5b95')
 
+        # Apply purple price column color for the Costs panel
+        self.shots_cost_widget.set_price_column_color('#6b5b95')
+
         # Now intercept the layout and replace table_view with wrapped version
         layout = self.shots_cost_widget.layout()
 
@@ -259,6 +262,8 @@ class CostsTab(QtWidgets.QMainWindow):
             self.shots_cost_widget.table_view,
             app_settings=self.app_settings
         )
+        # Apply purple highlight color for the totals bar
+        self.shots_cost_totals_wrapper.set_highlight_color('#6b5b95')
 
         # Add wrapper back to layout
         layout.addWidget(self.shots_cost_totals_wrapper)
@@ -287,6 +292,9 @@ class CostsTab(QtWidgets.QMainWindow):
         # Apply purple checkbox color for the Costs panel
         self.asset_cost_widget.set_checkbox_color('#6b5b95')
 
+        # Apply purple price column color for the Costs panel
+        self.asset_cost_widget.set_price_column_color('#6b5b95')
+
         # Configure the model to use Asset-specific columns and entity type
         if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
             # Define Asset item column fields (including virtual price columns)
@@ -309,6 +317,8 @@ class CostsTab(QtWidgets.QMainWindow):
             self.asset_cost_widget.table_view,
             app_settings=self.app_settings
         )
+        # Apply purple highlight color for the totals bar
+        self.asset_cost_totals_wrapper.set_highlight_color('#6b5b95')
 
         # Add wrapper back to layout
         layout.addWidget(self.asset_cost_totals_wrapper)

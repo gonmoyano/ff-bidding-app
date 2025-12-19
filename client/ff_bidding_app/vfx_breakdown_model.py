@@ -672,6 +672,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
         self.formula_evaluator = None
         self.compound_sort_columns = []
 
+        # Custom price column color (default blue, can be changed to purple)
+        self.price_column_color = "#0078d4"
+
         # Filtering state
         self.global_search_text = ""
 
@@ -793,9 +796,9 @@ class VFXBreakdownModel(QtCore.QAbstractTableModel):
                 return QtGui.QColor("#888888")
 
         elif role == QtCore.Qt.BackgroundRole:
-            # Blue background for calculated Price field (matching tab blue)
+            # Colored background for calculated Price field (default blue, can be purple)
             if field_name == "_calc_price":
-                return QtGui.QColor("#0078d4")
+                return QtGui.QColor(self.price_column_color)
 
         elif role == QtCore.Qt.ToolTipRole:
             # Show cell reference (e.g., A1, B2, C3)

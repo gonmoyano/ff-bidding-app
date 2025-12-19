@@ -59,8 +59,11 @@ class TableWithTotalsBar(QtWidgets.QWidget):
             model = existing_table.model()
             self.cols = model.columnCount() if model else 0
 
-        # Track which columns have blue styling
+        # Track which columns have highlighted styling
         self.blue_columns = set()
+
+        # Custom highlight color (default blue, can be changed to purple)
+        self.highlight_color = "#0078d4"
 
         # Formula evaluator for calculating totals from formula cells
         self.formula_evaluator = formula_evaluator
@@ -139,7 +142,7 @@ class TableWithTotalsBar(QtWidgets.QWidget):
 
     def set_blue_columns(self, column_indices):
         """
-        Mark specific columns to have highlighted blue background in totals bar.
+        Mark specific columns to have highlighted background in totals bar.
 
         Args:
             column_indices: List of column indices that should be highlighted
@@ -152,11 +155,22 @@ class TableWithTotalsBar(QtWidgets.QWidget):
             if item:
                 is_highlighted = col in self.blue_columns
                 if is_highlighted:
-                    item.setBackground(QtGui.QColor("#0078d4"))  # Blue highlight
+                    item.setBackground(QtGui.QColor(self.highlight_color))
                     item.setForeground(QtGui.QColor("white"))
                 else:
                     item.setBackground(QtGui.QColor("#3a3a3a"))  # Standard dark
                     item.setForeground(QtGui.QColor("#ffffff"))
+
+    def set_highlight_color(self, color):
+        """
+        Set the highlight color for marked columns in the totals bar.
+
+        Args:
+            color: Color string (e.g., "#6b5b95" for purple)
+        """
+        self.highlight_color = color
+        # Reapply styling to update color on highlighted columns
+        self.set_blue_columns(self.blue_columns)
 
     def set_formula_evaluator(self, formula_evaluator):
         """
