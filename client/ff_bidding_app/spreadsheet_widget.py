@@ -771,6 +771,9 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
     # Signal emitted when status messages should be shown
     statusMessageChanged = QtCore.Signal(str, bool)  # message, is_error
 
+    # Signal emitted when row count changes (for filtering)
+    rowCountChanged = QtCore.Signal(int, int)  # visible_rows, total_rows
+
     # Special marker for text values that should be detected in numeric columns
     TEXT_VALUE_MARKER = "__TEXT_VALUE__"
 
@@ -816,6 +819,16 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         self.undo_stack = []
         self.redo_stack = []
         self._in_undo_redo = False  # Flag to prevent creating undo commands during undo/redo
+
+        # Search and filter state
+        self.global_search_text = ""
+        self._visible_rows = list(range(rows))  # Mapping from visible row index to actual row index
+        self._all_rows = list(range(rows))  # All row indices
+
+        # Sorting state
+        self.sort_column = None
+        self.sort_direction = None  # 'asc' or 'desc'
+        self.compound_sort_columns = []  # List of (column_index, direction) tuples
 
     def rowCount(self, parent=QtCore.QModelIndex()):
         """Return the number of rows."""
@@ -1185,6 +1198,212 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         # Clear cache when evaluator changes
         self._evaluated_cache.clear()
 
+    # ------------------------------------------------------------------
+    # Search and Sorting Methods
+    # ------------------------------------------------------------------
+
+    def set_global_search(self, search_text):
+        """Set the global search filter text.
+
+        Args:
+            search_text: Search string to filter rows
+        """
+        self.global_search_text = search_text.lower().strip()
+        self.apply_filters()
+
+    def apply_filters(self):
+        """Apply current search filter and re-emit data."""
+        self.beginResetModel()
+
+        # If no search text, show all rows
+        if not self.global_search_text:
+            self._visible_rows = list(self._all_rows)
+        else:
+            # Filter rows based on search text
+            self._visible_rows = []
+            for row_idx in self._all_rows:
+                if self._row_matches_search(row_idx):
+                    self._visible_rows.append(row_idx)
+
+        # Apply sorting after filtering
+        self._apply_sort()
+
+        self.endResetModel()
+
+        # Emit row count change signal
+        self.rowCountChanged.emit(len(self._visible_rows), len(self._all_rows))
+
+    def _row_matches_search(self, row_idx):
+        """Check if a row matches the current search text.
+
+        Args:
+            row_idx: The actual row index
+
+        Returns:
+            bool: True if the row matches the search
+        """
+        if not self.global_search_text:
+            return True
+
+        # Check all columns in this row
+        for col_idx in range(self._cols):
+            # Get the cell value
+            value = self._data.get((row_idx, col_idx), "")
+            if not value and (row_idx, col_idx) in self._formulas:
+                # Get evaluated value for formulas
+                formula = self._formulas[(row_idx, col_idx)]
+                value = self._get_evaluated_value(row_idx, col_idx, formula)
+
+            # Check if search text is in the value
+            if value and self.global_search_text in str(value).lower():
+                return True
+
+        return False
+
+    def set_sort(self, column_index, direction):
+        """Set single-column sorting.
+
+        Args:
+            column_index: Column index to sort by
+            direction: 'asc' or 'desc'
+        """
+        self.sort_column = column_index
+        self.sort_direction = direction
+        self.compound_sort_columns = []  # Clear compound sort when single sort is applied
+        self.apply_filters()
+
+    def set_compound_sort(self, sort_columns):
+        """Set multi-column (compound) sorting.
+
+        Args:
+            sort_columns: List of (column_index, direction) tuples, e.g., [(0, 'asc'), (2, 'desc')]
+        """
+        self.compound_sort_columns = sort_columns
+        self.sort_column = None
+        self.sort_direction = None
+        self.apply_filters()
+
+    def clear_sort(self):
+        """Clear all sorting."""
+        self.sort_column = None
+        self.sort_direction = None
+        self.compound_sort_columns = []
+        self.apply_filters()
+
+    def _apply_sort(self):
+        """Apply current sorting to visible rows."""
+        if self.compound_sort_columns:
+            # Apply compound (multi-column) sort
+            self._visible_rows = self._sort_rows_compound(self._visible_rows, self.compound_sort_columns)
+        elif self.sort_column is not None:
+            # Apply single-column sort
+            self._visible_rows = self._sort_rows_single(self._visible_rows, self.sort_column, self.sort_direction)
+
+    def _sort_rows_single(self, rows, column_index, direction):
+        """Sort rows by a single column.
+
+        Args:
+            rows: List of row indices to sort
+            column_index: Column index to sort by
+            direction: 'asc' or 'desc'
+
+        Returns:
+            Sorted list of row indices
+        """
+        def get_sort_value(row_idx):
+            value = self._data.get((row_idx, column_index), "")
+            if not value and (row_idx, column_index) in self._formulas:
+                formula = self._formulas[(row_idx, column_index)]
+                value = self._get_evaluated_value(row_idx, column_index, formula)
+
+            # Try to convert to number for numeric sorting
+            try:
+                return (0, float(str(value).replace(',', '').replace('$', '')))
+            except (ValueError, TypeError):
+                return (1, str(value).lower() if value else "")
+
+        reverse = direction == 'desc'
+        return sorted(rows, key=get_sort_value, reverse=reverse)
+
+    def _sort_rows_compound(self, rows, sort_columns):
+        """Sort rows by multiple columns.
+
+        Args:
+            rows: List of row indices to sort
+            sort_columns: List of (column_index, direction) tuples
+
+        Returns:
+            Sorted list of row indices
+        """
+        def get_compound_key(row_idx):
+            keys = []
+            for col_idx, direction in sort_columns:
+                value = self._data.get((row_idx, col_idx), "")
+                if not value and (row_idx, col_idx) in self._formulas:
+                    formula = self._formulas[(row_idx, col_idx)]
+                    value = self._get_evaluated_value(row_idx, col_idx, formula)
+
+                # Try to convert to number for numeric sorting
+                try:
+                    num_val = float(str(value).replace(',', '').replace('$', ''))
+                    # For descending, negate the numeric value
+                    if direction == 'desc':
+                        num_val = -num_val
+                    keys.append((0, num_val))
+                except (ValueError, TypeError):
+                    str_val = str(value).lower() if value else ""
+                    # For string sorting with desc, we'll handle it differently
+                    keys.append((1, str_val, direction))
+            return keys
+
+        # Custom comparator for compound sort
+        def compare_rows(row_a, row_b):
+            key_a = get_compound_key(row_a)
+            key_b = get_compound_key(row_b)
+
+            for i, (col_idx, direction) in enumerate(sort_columns):
+                ka = key_a[i]
+                kb = key_b[i]
+
+                # Compare type first (numbers before strings)
+                if ka[0] != kb[0]:
+                    return ka[0] - kb[0]
+
+                # Same type comparison
+                if ka[0] == 0:  # Numeric (already direction-adjusted)
+                    if ka[1] < kb[1]:
+                        return -1
+                    elif ka[1] > kb[1]:
+                        return 1
+                else:  # String
+                    str_a, dir_a = ka[1], ka[2]
+                    str_b, _ = kb[1], kb[2]
+                    if str_a < str_b:
+                        return -1 if dir_a == 'asc' else 1
+                    elif str_a > str_b:
+                        return 1 if dir_a == 'asc' else -1
+
+            return 0
+
+        import functools
+        return sorted(rows, key=functools.cmp_to_key(compare_rows))
+
+    def get_visible_row_count(self):
+        """Get the number of currently visible (filtered) rows.
+
+        Returns:
+            int: Number of visible rows
+        """
+        return len(self._visible_rows)
+
+    def get_total_row_count(self):
+        """Get the total number of rows (before filtering).
+
+        Returns:
+            int: Total number of rows
+        """
+        return len(self._all_rows)
+
     def undo(self):
         """Undo the last change."""
         if not self.undo_stack:
@@ -1229,6 +1448,161 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         """Clear the undo/redo history."""
         self.undo_stack.clear()
         self.redo_stack.clear()
+
+
+class SpreadsheetSortDialog(QtWidgets.QDialog):
+    """Dialog for setting up compound (multi-column) sorting in spreadsheets."""
+
+    def __init__(self, column_names, current_sort=None, parent=None):
+        """Initialize the compound sort dialog.
+
+        Args:
+            column_names: List of column display names (A, B, C, ...)
+            current_sort: Current sort configuration [(col_idx, direction), ...]
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        self.column_names = column_names
+        self.current_sort = current_sort or []
+
+        self.setWindowTitle("Compound Sorting")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+
+        self._build_ui()
+        self._load_current_sort()
+
+    def _build_ui(self):
+        """Build the dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Instructions
+        instructions = QtWidgets.QLabel(
+            "Add columns to sort by. Rows will be sorted by the first column, "
+            "then by the second column for ties, and so on."
+        )
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet("color: #808080; padding: 5px;")
+        layout.addWidget(instructions)
+
+        # Sort levels container
+        self.sort_levels_widget = QtWidgets.QWidget()
+        self.sort_levels_layout = QtWidgets.QVBoxLayout(self.sort_levels_widget)
+        self.sort_levels_layout.setContentsMargins(0, 0, 0, 0)
+        self.sort_levels_layout.setSpacing(5)
+        layout.addWidget(self.sort_levels_widget)
+
+        # Add level button
+        add_level_btn = QtWidgets.QPushButton("+ Add Sort Level")
+        add_level_btn.clicked.connect(self._add_sort_level)
+        layout.addWidget(add_level_btn)
+
+        layout.addStretch()
+
+        # Button box
+        button_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+        # Track sort level widgets
+        self.sort_level_widgets = []
+
+    def _add_sort_level(self, column_idx=0, direction='asc'):
+        """Add a new sort level row.
+
+        Args:
+            column_idx: Default column index
+            direction: Default direction ('asc' or 'desc')
+        """
+        level_widget = QtWidgets.QWidget()
+        level_layout = QtWidgets.QHBoxLayout(level_widget)
+        level_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Level label
+        level_num = len(self.sort_level_widgets) + 1
+        level_label = QtWidgets.QLabel(f"Level {level_num}:")
+        level_label.setMinimumWidth(50)
+        level_layout.addWidget(level_label)
+
+        # Column dropdown
+        column_combo = QtWidgets.QComboBox()
+        for i, name in enumerate(self.column_names):
+            column_combo.addItem(name, i)
+        column_combo.setCurrentIndex(column_idx)
+        level_layout.addWidget(column_combo, stretch=1)
+
+        # Direction dropdown
+        direction_combo = QtWidgets.QComboBox()
+        direction_combo.addItem("Ascending (A-Z, 0-9)", 'asc')
+        direction_combo.addItem("Descending (Z-A, 9-0)", 'desc')
+        direction_combo.setCurrentIndex(0 if direction == 'asc' else 1)
+        level_layout.addWidget(direction_combo, stretch=1)
+
+        # Remove button
+        remove_btn = QtWidgets.QPushButton("X")
+        remove_btn.setMaximumWidth(30)
+        remove_btn.clicked.connect(lambda: self._remove_sort_level(level_widget))
+        level_layout.addWidget(remove_btn)
+
+        self.sort_levels_layout.addWidget(level_widget)
+        self.sort_level_widgets.append({
+            'widget': level_widget,
+            'column_combo': column_combo,
+            'direction_combo': direction_combo
+        })
+
+        self._update_level_labels()
+
+    def _remove_sort_level(self, level_widget):
+        """Remove a sort level.
+
+        Args:
+            level_widget: The widget to remove
+        """
+        # Find and remove the level
+        for i, level in enumerate(self.sort_level_widgets):
+            if level['widget'] == level_widget:
+                self.sort_levels_layout.removeWidget(level_widget)
+                level_widget.deleteLater()
+                self.sort_level_widgets.pop(i)
+                break
+
+        self._update_level_labels()
+
+    def _update_level_labels(self):
+        """Update the level labels after add/remove."""
+        for i, level in enumerate(self.sort_level_widgets):
+            # Find the label in the widget's layout
+            layout = level['widget'].layout()
+            if layout and layout.count() > 0:
+                label_item = layout.itemAt(0)
+                if label_item and label_item.widget():
+                    label_item.widget().setText(f"Level {i + 1}:")
+
+    def _load_current_sort(self):
+        """Load the current sort configuration into the dialog."""
+        for col_idx, direction in self.current_sort:
+            self._add_sort_level(col_idx, direction)
+
+        # Add at least one empty level if none exist
+        if not self.sort_level_widgets:
+            self._add_sort_level()
+
+    def get_sort_configuration(self):
+        """Get the configured sort specification.
+
+        Returns:
+            List of (column_index, direction) tuples
+        """
+        sort_config = []
+        for level in self.sort_level_widgets:
+            col_idx = level['column_combo'].currentData()
+            direction = level['direction_combo'].currentData()
+            sort_config.append((col_idx, direction))
+        return sort_config
 
 
 class SpreadsheetWidget(QtWidgets.QWidget):
@@ -1308,6 +1682,9 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         # Create formula evaluator
         self.formula_evaluator = None
 
+        # Update initial row count label
+        self._update_row_count_label(rows, rows)
+
         logger.info(f"SpreadsheetWidget initialized with {rows} rows and {cols} columns")
 
     def _create_toolbar(self):
@@ -1316,6 +1693,32 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         toolbar_layout = QtWidgets.QHBoxLayout(self.toolbar)
         toolbar_layout.setContentsMargins(5, 5, 5, 5)
         toolbar_layout.setSpacing(5)
+
+        # Search box
+        search_label = QtWidgets.QLabel("Search:")
+        toolbar_layout.addWidget(search_label)
+
+        self.search_box = QtWidgets.QLineEdit()
+        self.search_box.setPlaceholderText("Search across all cells...")
+        self.search_box.setMaximumWidth(200)
+        self.search_box.textChanged.connect(self._on_search_changed)
+        toolbar_layout.addWidget(self.search_box)
+
+        # Clear button
+        self.clear_btn = QtWidgets.QPushButton("Clear")
+        self.clear_btn.clicked.connect(self._clear_filters)
+        toolbar_layout.addWidget(self.clear_btn)
+
+        # Compound Sorting button
+        self.compound_sort_btn = QtWidgets.QPushButton("Compound Sorting")
+        self.compound_sort_btn.clicked.connect(self._open_compound_sort_dialog)
+        toolbar_layout.addWidget(self.compound_sort_btn)
+
+        # Separator
+        separator = QtWidgets.QFrame()
+        separator.setFrameShape(QtWidgets.QFrame.VLine)
+        separator.setFrameShadow(QtWidgets.QFrame.Sunken)
+        toolbar_layout.addWidget(separator)
 
         # Formula bar label
         formula_label = QtWidgets.QLabel("fx")
@@ -1327,6 +1730,14 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.formula_bar.setPlaceholderText("Enter formula or value...")
         self.formula_bar.returnPressed.connect(self._on_formula_bar_enter)
         toolbar_layout.addWidget(self.formula_bar, 1)
+
+        # Row count label
+        self.row_count_label = QtWidgets.QLabel("Showing 0 of 0 rows")
+        self.row_count_label.setStyleSheet("color: #606060; padding: 2px 4px;")
+        toolbar_layout.addWidget(self.row_count_label)
+
+        # Connect row count updates
+        self.model.rowCountChanged.connect(self._update_row_count_label)
 
         # Connect selection change to update formula bar
         self.table_view.selectionModel().currentChanged.connect(self._on_selection_changed)
@@ -1357,6 +1768,71 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         if next_row < self.model.rowCount():
             next_index = self.model.index(next_row, current.column())
             self.table_view.setCurrentIndex(next_index)
+
+    def _on_search_changed(self, text):
+        """Handle search text change."""
+        self.model.set_global_search(text)
+
+    def _clear_filters(self):
+        """Clear all search and sorting filters."""
+        self.search_box.clear()
+        self.model.global_search_text = ""
+        self.model.clear_sort()
+        self._update_header_sort_indicators()
+
+    def _open_compound_sort_dialog(self):
+        """Open the compound sort dialog."""
+        # Get column names (A, B, C, ...)
+        column_names = [self.model._column_name(i) for i in range(self.model.columnCount())]
+
+        # Get current sort configuration
+        current_sort = self.model.compound_sort_columns.copy()
+        if not current_sort and self.model.sort_column is not None:
+            current_sort = [(self.model.sort_column, self.model.sort_direction or 'asc')]
+
+        # Create and show the dialog
+        dialog = SpreadsheetSortDialog(column_names, current_sort, parent=self)
+        if dialog.exec() == QtWidgets.QDialog.Accepted:
+            sort_config = dialog.get_sort_configuration()
+            if sort_config:
+                self.model.set_compound_sort(sort_config)
+            else:
+                self.model.clear_sort()
+            self._update_header_sort_indicators()
+
+    def _update_row_count_label(self, visible, total):
+        """Update the row count label.
+
+        Args:
+            visible: Number of visible rows
+            total: Total number of rows
+        """
+        self.row_count_label.setText(f"Showing {visible} of {total} rows")
+
+    def _update_header_sort_indicators(self):
+        """Update column header sort indicators."""
+        header = self.table_view.horizontalHeader()
+
+        # Clear all indicators first
+        for col in range(self.model.columnCount()):
+            header.setSortIndicatorShown(False)
+
+        # Show indicators for sorted columns
+        if self.model.compound_sort_columns:
+            # For compound sort, show indicator on first sorted column
+            if self.model.compound_sort_columns:
+                col_idx, direction = self.model.compound_sort_columns[0]
+                header.setSortIndicatorShown(True)
+                header.setSortIndicator(
+                    col_idx,
+                    Qt.AscendingOrder if direction == 'asc' else Qt.DescendingOrder
+                )
+        elif self.model.sort_column is not None:
+            header.setSortIndicatorShown(True)
+            header.setSortIndicator(
+                self.model.sort_column,
+                Qt.AscendingOrder if self.model.sort_direction == 'asc' else Qt.DescendingOrder
+            )
 
     def _show_context_menu(self, position):
         """Show context menu on right-click."""
