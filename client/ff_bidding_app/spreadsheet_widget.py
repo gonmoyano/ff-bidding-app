@@ -1347,7 +1347,12 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         logger.info(f"Cut {len(selection)} cells")
 
     def _paste_selection(self):
-        """Paste clipboard data to current cell or selection."""
+        """Paste clipboard data to current cell or selection.
+
+        Behavior:
+        - If single cell copied and multiple cells selected: fill all selected cells
+        - If multiple cells copied: paste starting at current cell position
+        """
         current = self.currentIndex()
         if not current.isValid():
             return
@@ -1355,6 +1360,9 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         model = self.model()
         if not model:
             return
+
+        # Get selected cells for potential fill operation
+        selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
 
         # Collect all changes for a single undo command
         changes = []
@@ -1365,42 +1373,80 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             source_row = self._clipboard_data.get('source_row', 0)
             source_col = self._clipboard_data.get('source_col', 0)
 
-            target_row = current.row()
-            target_col = current.column()
+            # Check if single cell copied to multiple selected cells (fill operation)
+            is_single_cell = len(cells) == 1
+            has_multiple_targets = len(selection) > 1
 
-            # Calculate offset from source to target
-            row_offset = target_row - source_row
-            col_offset = target_col - source_col
+            if is_single_cell and has_multiple_targets:
+                # Fill all selected cells with the single copied value
+                single_value = list(cells.values())[0]
 
-            # Collect paste changes
-            for (rel_row, rel_col), value in cells.items():
-                paste_row = target_row + rel_row
-                paste_col = target_col + rel_col
+                for index in selection:
+                    paste_row = index.row()
+                    paste_col = index.column()
 
-                # Check bounds
-                if paste_row >= model.rowCount() or paste_col >= model.columnCount():
-                    continue
+                    # Calculate offset for formula adjustment
+                    row_offset = paste_row - source_row
+                    col_offset = paste_col - source_col
 
-                # If it's a formula, adjust references
-                new_formula = None
-                new_value = None
-                if isinstance(value, str) and value.startswith('='):
-                    new_formula = self._adjust_formula_for_paste(value, row_offset + rel_row, col_offset + rel_col)
-                else:
-                    new_value = value
+                    # If it's a formula, adjust references
+                    new_formula = None
+                    new_value = None
+                    if isinstance(single_value, str) and single_value.startswith('='):
+                        new_formula = self._adjust_formula_for_paste(single_value, row_offset, col_offset)
+                    else:
+                        new_value = single_value
 
-                # Get old values
-                old_value = model._data.get((paste_row, paste_col), None)
-                old_formula = model._formulas.get((paste_row, paste_col), None)
+                    # Get old values
+                    old_value = model._data.get((paste_row, paste_col), None)
+                    old_formula = model._formulas.get((paste_row, paste_col), None)
 
-                changes.append({
-                    'row': paste_row,
-                    'col': paste_col,
-                    'old_value': old_value,
-                    'new_value': new_value,
-                    'old_formula': old_formula,
-                    'new_formula': new_formula
-                })
+                    changes.append({
+                        'row': paste_row,
+                        'col': paste_col,
+                        'old_value': old_value,
+                        'new_value': new_value,
+                        'old_formula': old_formula,
+                        'new_formula': new_formula
+                    })
+            else:
+                # Standard multi-cell paste: paste at current position
+                target_row = current.row()
+                target_col = current.column()
+
+                # Calculate offset from source to target
+                row_offset = target_row - source_row
+                col_offset = target_col - source_col
+
+                # Collect paste changes
+                for (rel_row, rel_col), value in cells.items():
+                    paste_row = target_row + rel_row
+                    paste_col = target_col + rel_col
+
+                    # Check bounds
+                    if paste_row >= model.rowCount() or paste_col >= model.columnCount():
+                        continue
+
+                    # If it's a formula, adjust references
+                    new_formula = None
+                    new_value = None
+                    if isinstance(value, str) and value.startswith('='):
+                        new_formula = self._adjust_formula_for_paste(value, row_offset + rel_row, col_offset + rel_col)
+                    else:
+                        new_value = value
+
+                    # Get old values
+                    old_value = model._data.get((paste_row, paste_col), None)
+                    old_formula = model._formulas.get((paste_row, paste_col), None)
+
+                    changes.append({
+                        'row': paste_row,
+                        'col': paste_col,
+                        'old_value': old_value,
+                        'new_value': new_value,
+                        'old_formula': old_formula,
+                        'new_formula': new_formula
+                    })
 
             # If it was a cut operation, also add deletions for source cells
             if self._clipboard_is_cut and hasattr(self, '_cut_selection_indexes'):
@@ -1430,18 +1476,17 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                 if rows and rows[-1] == '':
                     rows = rows[:-1]
 
-                target_row = current.row()
-                target_col = current.column()
+                # Check if single cell copied to multiple selected cells
+                is_single_cell = len(rows) == 1 and '\t' not in rows[0]
+                has_multiple_targets = len(selection) > 1
 
-                for row_offset, row_text in enumerate(rows):
-                    cols = row_text.split('\t')
-                    for col_offset, cell_value in enumerate(cols):
-                        paste_row = target_row + row_offset
-                        paste_col = target_col + col_offset
+                if is_single_cell and has_multiple_targets:
+                    # Fill all selected cells with the single value
+                    single_value = rows[0]
 
-                        # Check bounds
-                        if paste_row >= model.rowCount() or paste_col >= model.columnCount():
-                            continue
+                    for index in selection:
+                        paste_row = index.row()
+                        paste_col = index.column()
 
                         # Get old values
                         old_value = model._data.get((paste_row, paste_col), None)
@@ -1450,10 +1495,10 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                         # Determine if new value is formula or value
                         new_formula = None
                         new_value = None
-                        if cell_value.startswith('='):
-                            new_formula = cell_value
+                        if single_value.startswith('='):
+                            new_formula = single_value
                         else:
-                            new_value = cell_value
+                            new_value = single_value
 
                         changes.append({
                             'row': paste_row,
@@ -1463,6 +1508,41 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                             'old_formula': old_formula,
                             'new_formula': new_formula
                         })
+                else:
+                    # Standard paste at current position
+                    target_row = current.row()
+                    target_col = current.column()
+
+                    for row_offset, row_text in enumerate(rows):
+                        cols = row_text.split('\t')
+                        for col_offset, cell_value in enumerate(cols):
+                            paste_row = target_row + row_offset
+                            paste_col = target_col + col_offset
+
+                            # Check bounds
+                            if paste_row >= model.rowCount() or paste_col >= model.columnCount():
+                                continue
+
+                            # Get old values
+                            old_value = model._data.get((paste_row, paste_col), None)
+                            old_formula = model._formulas.get((paste_row, paste_col), None)
+
+                            # Determine if new value is formula or value
+                            new_formula = None
+                            new_value = None
+                            if cell_value.startswith('='):
+                                new_formula = cell_value
+                            else:
+                                new_value = cell_value
+
+                            changes.append({
+                                'row': paste_row,
+                                'col': paste_col,
+                                'old_value': old_value,
+                                'new_value': new_value,
+                                'old_formula': old_formula,
+                                'new_formula': new_formula
+                            })
 
         # Execute paste via command
         if changes:
