@@ -1278,10 +1278,12 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         """Copy selected cells to clipboard."""
         selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
         if not selection:
+            logger.debug("No selection to copy")
             return
 
         model = self.model()
         if not model:
+            logger.debug("No model for copy")
             return
 
         # Sort by row then column
@@ -1293,6 +1295,9 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         min_col = min(idx.column() for idx in selection)
         max_col = max(idx.column() for idx in selection)
 
+        # Build a set of selected (row, col) for efficient lookup
+        selected_cells = {(idx.row(), idx.column()) for idx in selection}
+
         # Build clipboard data structure: dict of relative (row, col) -> value
         clipboard_cells = {}
         clipboard_text_rows = []
@@ -1300,9 +1305,9 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         for row in range(min_row, max_row + 1):
             row_values = []
             for col in range(min_col, max_col + 1):
-                index = model.index(row, col)
                 # Check if this cell is in selection
-                if index in selection:
+                if (row, col) in selected_cells:
+                    index = model.index(row, col)
                     value = model.data(index, Qt.EditRole)
                     if value is None:
                         value = ""
@@ -1355,14 +1360,18 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         """
         current = self.currentIndex()
         if not current.isValid():
+            logger.debug("Paste: No valid current index")
             return
 
         model = self.model()
         if not model:
+            logger.debug("Paste: No model")
             return
 
         # Get selected cells for potential fill operation
         selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
+        logger.debug(f"Paste: current=({current.row()},{current.column()}), selection count={len(selection)}")
+        logger.debug(f"Paste: clipboard_data={self._clipboard_data is not None}, has cells={self._clipboard_data and 'cells' in self._clipboard_data}")
 
         # Collect all changes for a single undo command
         changes = []
@@ -1372,10 +1381,12 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             cells = self._clipboard_data['cells']
             source_row = self._clipboard_data.get('source_row', 0)
             source_col = self._clipboard_data.get('source_col', 0)
+            logger.debug(f"Paste: Using internal clipboard with {len(cells)} cells")
 
             # Check if single cell copied to multiple selected cells (fill operation)
             is_single_cell = len(cells) == 1
             has_multiple_targets = len(selection) > 1
+            logger.debug(f"Paste: is_single_cell={is_single_cell}, has_multiple_targets={has_multiple_targets}")
 
             if is_single_cell and has_multiple_targets:
                 # Fill all selected cells with the single copied value
