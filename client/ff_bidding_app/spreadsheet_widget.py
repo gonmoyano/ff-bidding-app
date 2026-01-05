@@ -56,10 +56,21 @@ class ColorPaletteWidget(QtWidgets.QWidget):
         for i, color in enumerate(COLOR_PALETTE):
             btn = QtWidgets.QPushButton()
             btn.setFixedSize(20, 20)
-            btn.setMinimumSize(20, 20)
-            btn.setMaximumSize(20, 20)
-            btn.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-            btn.setStyleSheet(f"background-color: {color}; border: 1px solid #555; min-width: 18px; min-height: 18px; max-width: 18px; max-height: 18px;")
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {color};
+                    border: 1px solid #555;
+                    min-width: 20px;
+                    max-width: 20px;
+                    min-height: 20px;
+                    max-height: 20px;
+                    padding: 0px;
+                    margin: 0px;
+                }}
+                QPushButton:hover {{
+                    border: 2px solid #FFF;
+                }}
+            """)
             btn.setCursor(Qt.PointingHandCursor)
             btn.clicked.connect(lambda checked, c=color: self.colorSelected.emit(c))
             layout.addWidget(btn, i // cols, i % cols)
@@ -656,11 +667,11 @@ class FormattingToolbar(QtWidgets.QWidget):
         self.align_center_btn.setChecked(align_h == "center")
         self.align_right_btn.setChecked(align_h == "right")
 
-        # Update colors
-        if cell_meta.get("font_color"):
-            self.font_color_btn.set_current_color(cell_meta["font_color"])
-        if cell_meta.get("bg_color"):
-            self.bg_color_btn.set_current_color(cell_meta["bg_color"])
+        # Update colors (always update, reset to default if not set)
+        font_color = cell_meta.get("font_color") or "#FFFFFF"
+        bg_color = cell_meta.get("bg_color") or ""
+        self.font_color_btn.set_current_color(font_color)
+        self.bg_color_btn.set_current_color(bg_color if bg_color else "#4472C4")
 
         # Unblock signals
         self.bold_btn.blockSignals(False)
