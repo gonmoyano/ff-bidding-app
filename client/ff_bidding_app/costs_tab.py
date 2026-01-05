@@ -740,6 +740,12 @@ class CostsTab(QtWidgets.QMainWindow):
             self.asset_cost_totals_wrapper.set_bid_id(self.current_bid_id)
             self.asset_cost_totals_wrapper.set_currency_symbol(currency_symbol)
 
+        # Update currency settings on spreadsheet widgets
+        if hasattr(self, 'misc_cost_spreadsheet'):
+            self.misc_cost_spreadsheet.set_currency_settings(currency_symbol, currency_position)
+        if hasattr(self, 'total_cost_spreadsheet'):
+            self.total_cost_spreadsheet.set_currency_settings(currency_symbol, currency_position)
+
         if bid_data and project_id:
             # Load Line Items first - needed for both VFX breakdown and asset cost pricing
             logger.info("Loading Line Items for pricing...")
@@ -880,6 +886,12 @@ class CostsTab(QtWidgets.QMainWindow):
             self.shots_cost_totals_wrapper.set_currency_symbol(currency_symbol)
         if hasattr(self, 'asset_cost_totals_wrapper'):
             self.asset_cost_totals_wrapper.set_currency_symbol(currency_symbol)
+
+        # Update currency settings on spreadsheet widgets
+        if hasattr(self, 'misc_cost_spreadsheet'):
+            self.misc_cost_spreadsheet.set_currency_settings(currency_symbol, currency_position)
+        if hasattr(self, 'total_cost_spreadsheet'):
+            self.total_cost_spreadsheet.set_currency_settings(currency_symbol, currency_position)
 
         # Recalculate totals in Shots Cost wrapper (will use updated currency)
         if hasattr(self, 'shots_cost_totals_wrapper') and hasattr(self, 'shots_cost_widget'):

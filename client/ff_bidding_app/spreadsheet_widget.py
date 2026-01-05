@@ -709,20 +709,13 @@ class FormattingToolbar(QtWidgets.QWidget):
         format_number_no_dec = number_menu.addAction("1,235  (#,##0)")
         format_number_no_dec.triggered.connect(lambda: self.formatChanged.emit("#,##0"))
 
-        # Currency formats submenu
-        currency_menu = menu.addMenu("Currency")
-        format_currency_usd = currency_menu.addAction("$1,234.56  ($#,##0.00)")
-        format_currency_usd.triggered.connect(lambda: self.formatChanged.emit("$#,##0.00"))
-        format_currency_eur = currency_menu.addAction("€1,234.56  ([$€]#,##0.00)")
-        format_currency_eur.triggered.connect(lambda: self.formatChanged.emit("[$€]#,##0.00"))
-        format_currency_gbp = currency_menu.addAction("£1,234.56  ([$£]#,##0.00)")
-        format_currency_gbp.triggered.connect(lambda: self.formatChanged.emit("[$£]#,##0.00"))
+        # Currency format (uses project settings)
+        format_currency = menu.addAction("Currency")
+        format_currency.triggered.connect(lambda: self.formatChanged.emit("CURRENCY"))
 
-        # Accounting format
+        # Accounting format (uses project currency)
         format_accounting = menu.addAction("Accounting")
-        format_accounting.triggered.connect(
-            lambda: self.formatChanged.emit('_($* #,##0.00_);_($* (#,##0.00);_($* "-"??_);_(@_)')
-        )
+        format_accounting.triggered.connect(lambda: self.formatChanged.emit("ACCOUNTING"))
         menu.addSeparator()
 
         # Percentage formats submenu
@@ -2259,9 +2252,7 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
     FORMAT_GENERAL = "General"
     FORMAT_NUMBER = "#,##0.00"
     FORMAT_NUMBER_NO_DECIMAL = "#,##0"
-    FORMAT_CURRENCY_USD = "$#,##0.00"
-    FORMAT_CURRENCY_EUR = "[$€]#,##0.00"
-    FORMAT_CURRENCY_GBP = "[$£]#,##0.00"
+    FORMAT_CURRENCY = "CURRENCY"  # Dynamic currency using project settings
     FORMAT_PERCENTAGE = "0.00%"
     FORMAT_PERCENTAGE_NO_DECIMAL = "0%"
     FORMAT_DATE_MDY = "mm/dd/yyyy"
@@ -2270,7 +2261,7 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
     FORMAT_TIME = "hh:mm:ss"
     FORMAT_DATETIME = "yyyy-mm-dd hh:mm:ss"
     FORMAT_TEXT = "@"
-    FORMAT_ACCOUNTING = '_($* #,##0.00_);_($* (#,##0.00);_($* "-"??_);_(@_)'
+    FORMAT_ACCOUNTING = "ACCOUNTING"  # Dynamic accounting using project currency
 
     def __init__(self, rows=100, cols=26, parent=None):
         """Initialize the spreadsheet model.
@@ -2318,6 +2309,32 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         self.sort_direction = None  # 'asc' or 'desc'
         self.compound_sort_columns = []  # List of (column_index, direction) tuples
 
+        # Currency settings (from bid/project configuration)
+        self._currency_symbol = "$"  # Default currency symbol
+        self._currency_position = "prepend"  # "prepend" (before value) or "append" (after value)
+
+    def set_currency_settings(self, symbol, position):
+        """Set the currency symbol and position for formatting.
+
+        Args:
+            symbol: Currency symbol (e.g., "$", "€", "£")
+            position: "prepend" (before value) or "append" (after value)
+        """
+        self._currency_symbol = symbol or "$"
+        self._currency_position = position or "prepend"
+        # Clear cache to force re-formatting
+        self._evaluated_cache.clear()
+        # Emit dataChanged to refresh display
+        self.layoutChanged.emit()
+
+    def get_currency_settings(self):
+        """Get the current currency settings.
+
+        Returns:
+            tuple: (symbol, position)
+        """
+        return self._currency_symbol, self._currency_position
+
     def rowCount(self, parent=QtCore.QModelIndex()):
         """Return the number of rows."""
         return self._rows
@@ -2345,7 +2362,17 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
                     return self._get_evaluated_value(row, col, formula)
             else:
                 # Regular value
-                return self._data.get((row, col), "")
+                value = self._data.get((row, col), "")
+                if role == Qt.EditRole:
+                    # When editing, show raw value
+                    return value
+                else:
+                    # When displaying, apply format if set
+                    if value != "" and value is not None:
+                        cell_format = self._formats.get((row, col))
+                        if cell_format and cell_format != self.FORMAT_GENERAL:
+                            return self._apply_format(value, cell_format)
+                    return value
 
         elif role == Qt.TextAlignmentRole:
             # Check if the cell contains a number
@@ -2475,21 +2502,29 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
                 return f"{value:,.2f}"
             elif cell_format == self.FORMAT_NUMBER_NO_DECIMAL:
                 return f"{value:,.0f}"
-            elif cell_format == self.FORMAT_CURRENCY_USD:
-                return f"${value:,.2f}"
-            elif cell_format == self.FORMAT_CURRENCY_EUR:
-                return f"€{value:,.2f}"
-            elif cell_format == self.FORMAT_CURRENCY_GBP:
-                return f"£{value:,.2f}"
+            elif cell_format == self.FORMAT_CURRENCY:
+                # Use dynamic currency settings from project/bid configuration
+                formatted_value = f"{value:,.2f}"
+                if self._currency_position == "append":
+                    return f"{formatted_value} {self._currency_symbol}"
+                else:
+                    return f"{self._currency_symbol}{formatted_value}"
             elif cell_format == self.FORMAT_PERCENTAGE:
                 return f"{value * 100:.2f}%"
             elif cell_format == self.FORMAT_PERCENTAGE_NO_DECIMAL:
                 return f"{value * 100:.0f}%"
             elif cell_format == self.FORMAT_ACCOUNTING:
+                # Use dynamic currency for accounting format
                 if value >= 0:
-                    return f"$ {value:,.2f} "
+                    if self._currency_position == "append":
+                        return f"{value:,.2f} {self._currency_symbol} "
+                    else:
+                        return f"{self._currency_symbol} {value:,.2f} "
                 else:
-                    return f"$ ({abs(value):,.2f})"
+                    if self._currency_position == "append":
+                        return f"({abs(value):,.2f}) {self._currency_symbol}"
+                    else:
+                        return f"{self._currency_symbol} ({abs(value):,.2f})"
             elif cell_format.startswith("#") or cell_format.startswith("0"):
                 # Generic number format - use default
                 return f"{value:,.2f}"
@@ -3997,13 +4032,10 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         format_number = number_menu.addAction("1,234.56  (#,##0.00)")
         format_number_no_dec = number_menu.addAction("1,235  (#,##0)")
 
-        # Currency formats
-        currency_menu = format_menu.addMenu("Currency")
-        format_currency_usd = currency_menu.addAction("$1,234.56  ($#,##0.00)")
-        format_currency_eur = currency_menu.addAction("€1,234.56  ([$€]#,##0.00)")
-        format_currency_gbp = currency_menu.addAction("£1,234.56  ([$£]#,##0.00)")
+        # Currency format (uses project settings)
+        format_currency = format_menu.addAction("Currency")
 
-        # Accounting format
+        # Accounting format (uses project currency)
         format_accounting = format_menu.addAction("Accounting")
         format_menu.addSeparator()
 
@@ -4022,9 +4054,7 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             SpreadsheetModel.FORMAT_GENERAL: format_general,
             SpreadsheetModel.FORMAT_NUMBER: format_number,
             SpreadsheetModel.FORMAT_NUMBER_NO_DECIMAL: format_number_no_dec,
-            SpreadsheetModel.FORMAT_CURRENCY_USD: format_currency_usd,
-            SpreadsheetModel.FORMAT_CURRENCY_EUR: format_currency_eur,
-            SpreadsheetModel.FORMAT_CURRENCY_GBP: format_currency_gbp,
+            SpreadsheetModel.FORMAT_CURRENCY: format_currency,
             SpreadsheetModel.FORMAT_ACCOUNTING: format_accounting,
             SpreadsheetModel.FORMAT_PERCENTAGE: format_percentage,
             SpreadsheetModel.FORMAT_PERCENTAGE_NO_DECIMAL: format_percentage_no_dec,
@@ -4063,12 +4093,8 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             self._set_cell_format(index, SpreadsheetModel.FORMAT_NUMBER)
         elif action == format_number_no_dec:
             self._set_cell_format(index, SpreadsheetModel.FORMAT_NUMBER_NO_DECIMAL)
-        elif action == format_currency_usd:
-            self._set_cell_format(index, SpreadsheetModel.FORMAT_CURRENCY_USD)
-        elif action == format_currency_eur:
-            self._set_cell_format(index, SpreadsheetModel.FORMAT_CURRENCY_EUR)
-        elif action == format_currency_gbp:
-            self._set_cell_format(index, SpreadsheetModel.FORMAT_CURRENCY_GBP)
+        elif action == format_currency:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_CURRENCY)
         elif action == format_accounting:
             self._set_cell_format(index, SpreadsheetModel.FORMAT_ACCOUNTING)
         elif action == format_percentage:
@@ -4464,6 +4490,15 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         """Set the value of a cell."""
         index = self.model.index(row, col)
         self.model.setData(index, value, Qt.EditRole)
+
+    def set_currency_settings(self, symbol, position):
+        """Set the currency symbol and position for formatting.
+
+        Args:
+            symbol: Currency symbol (e.g., "$", "€", "£")
+            position: "prepend" (before value) or "append" (after value)
+        """
+        self.model.set_currency_settings(symbol, position)
 
     def get_data_as_dict(self):
         """Export all data as a dictionary including formats."""
