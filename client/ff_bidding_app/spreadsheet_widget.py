@@ -1140,19 +1140,45 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         return re.sub(pattern, replace_ref, formula)
 
     def keyPressEvent(self, event):
-        """Handle special keyboard events that QShortcut doesn't handle well.
+        """Handle special keyboard events.
 
-        Note: Copy/paste/cut/undo/redo/formatting shortcuts are handled by
-        QShortcut in SpreadsheetWidget._setup_shortcuts() instead.
+        Clipboard shortcuts (Ctrl+C/V/X) must be handled here because QTableView's
+        base class has built-in clipboard handling that intercepts these keys
+        before QShortcut can process them.
         """
         key = event.key()
         modifiers = event.modifiers()
 
-        # Ctrl+H or Ctrl+F (Find & Replace)
-        if key in (Qt.Key_H, Qt.Key_F) and (modifiers & Qt.ControlModifier):
-            self._show_find_replace()
-            event.accept()
-            return
+        # Check for Ctrl/Cmd modifier (ControlModifier works for both Ctrl and Cmd)
+        has_ctrl = modifiers & Qt.ControlModifier
+
+        # Clipboard shortcuts - handle directly to prevent QTableView base class interception
+        if has_ctrl:
+            if key == Qt.Key_C:
+                self._copy_selection()
+                event.accept()
+                return
+            elif key == Qt.Key_V:
+                self._paste_selection()
+                event.accept()
+                return
+            elif key == Qt.Key_X:
+                self._cut_selection()
+                event.accept()
+                return
+            elif key == Qt.Key_Z:
+                self._undo()
+                event.accept()
+                return
+            elif key == Qt.Key_Y:
+                self._redo()
+                event.accept()
+                return
+            elif key in (Qt.Key_H, Qt.Key_F):
+                # Ctrl+H or Ctrl+F (Find & Replace)
+                self._show_find_replace()
+                event.accept()
+                return
 
         # F2 (Edit cell)
         if key == Qt.Key_F2:
