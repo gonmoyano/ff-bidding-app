@@ -2072,6 +2072,233 @@ class SpreadsheetTableView(QtWidgets.QTableView):
 
             logger.info(f"Pasted {len(changes)} cells")
 
+    def _paste_values_only(self):
+        """Paste only values and formulas from clipboard, without formats or cell meta.
+
+        Similar to _paste_selection but ignores formats and cell meta (decorations).
+        """
+        model = self.model()
+        if not model:
+            logger.debug("Paste Values: No model")
+            return
+
+        # Get selected cells - use top-left as pivot
+        selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
+        if not selection:
+            current = self.currentIndex()
+            if not current.isValid():
+                logger.debug("Paste Values: No valid selection or current index")
+                return
+            selection = [current]
+
+        # Find the bounding box of the selection
+        sel_min_row = min(idx.row() for idx in selection)
+        sel_max_row = max(idx.row() for idx in selection)
+        sel_min_col = min(idx.column() for idx in selection)
+        sel_max_col = max(idx.column() for idx in selection)
+        sel_rows = sel_max_row - sel_min_row + 1
+        sel_cols = sel_max_col - sel_min_col + 1
+
+        single_cell_destination = (sel_rows == 1 and sel_cols == 1)
+
+        changes = []
+
+        # Try internal clipboard first
+        if self._clipboard_data and 'cells' in self._clipboard_data:
+            cells = self._clipboard_data['cells']
+            source_row = self._clipboard_data.get('source_row', 0)
+            source_col = self._clipboard_data.get('source_col', 0)
+            clip_rows = self._clipboard_data.get('rows', 1)
+            clip_cols = self._clipboard_data.get('cols', 1)
+
+            if single_cell_destination and (clip_rows > 1 or clip_cols > 1):
+                paste_rows = clip_rows
+                paste_cols = clip_cols
+            else:
+                paste_rows = sel_rows
+                paste_cols = sel_cols
+
+            source_values = []
+            for r in range(clip_rows):
+                for c in range(clip_cols):
+                    value = cells.get((r, c), "")
+                    source_values.append({
+                        'value': value,
+                        'rel_row': r,
+                        'rel_col': c
+                    })
+
+            source_idx = 0
+            for rel_row in range(paste_rows):
+                for rel_col in range(paste_cols):
+                    target_row = sel_min_row + rel_row
+                    target_col = sel_min_col + rel_col
+
+                    if not single_cell_destination or (clip_rows == 1 and clip_cols == 1):
+                        if not any(idx.row() == target_row and idx.column() == target_col for idx in selection):
+                            continue
+
+                    if target_row >= model.rowCount() or target_col >= model.columnCount():
+                        continue
+
+                    src = source_values[source_idx % len(source_values)]
+                    value = src['value']
+
+                    row_offset = target_row - source_row - src['rel_row']
+                    col_offset = target_col - source_col - src['rel_col']
+
+                    new_formula = None
+                    new_value = None
+                    if isinstance(value, str) and value.startswith('='):
+                        new_formula = self._adjust_formula_for_paste(value, row_offset, col_offset)
+                    else:
+                        new_value = value
+
+                    old_value = model._data.get((target_row, target_col), None)
+                    old_formula = model._formulas.get((target_row, target_col), None)
+
+                    # Only paste values, preserve existing formats and meta
+                    changes.append({
+                        'row': target_row,
+                        'col': target_col,
+                        'old_value': old_value,
+                        'new_value': new_value,
+                        'old_formula': old_formula,
+                        'new_formula': new_formula,
+                        # Keep existing format and meta (no change)
+                        'old_format': model._formats.get((target_row, target_col)),
+                        'new_format': model._formats.get((target_row, target_col)),
+                        'old_meta': model._cell_meta.get((target_row, target_col)),
+                        'new_meta': model._cell_meta.get((target_row, target_col))
+                    })
+
+                    source_idx += 1
+
+        if changes:
+            command = SpreadsheetPasteCommand(changes, model)
+            model._in_undo_redo = True
+            try:
+                command.redo()
+            finally:
+                model._in_undo_redo = False
+
+            model.undo_stack.append(command)
+            model.redo_stack.clear()
+            model._clear_dependent_cache()
+
+            logger.info(f"Pasted values only for {len(changes)} cells")
+
+    def _paste_format_only(self):
+        """Paste only cell format (decorations) from clipboard, without values.
+
+        Pastes cell meta (bg color, text color, font options like bold, italic)
+        and data formats (Currency, Percentage, etc.) to selected cells.
+        """
+        model = self.model()
+        if not model:
+            logger.debug("Paste Format: No model")
+            return
+
+        # Check if we have format data in clipboard
+        if not self._clipboard_data or ('formats' not in self._clipboard_data and 'metas' not in self._clipboard_data):
+            logger.debug("Paste Format: No format data in clipboard")
+            return
+
+        # Get selected cells - use top-left as pivot
+        selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
+        if not selection:
+            current = self.currentIndex()
+            if not current.isValid():
+                logger.debug("Paste Format: No valid selection or current index")
+                return
+            selection = [current]
+
+        # Find the bounding box of the selection
+        sel_min_row = min(idx.row() for idx in selection)
+        sel_max_row = max(idx.row() for idx in selection)
+        sel_min_col = min(idx.column() for idx in selection)
+        sel_max_col = max(idx.column() for idx in selection)
+        sel_rows = sel_max_row - sel_min_row + 1
+        sel_cols = sel_max_col - sel_min_col + 1
+
+        single_cell_destination = (sel_rows == 1 and sel_cols == 1)
+
+        formats = self._clipboard_data.get('formats', {})
+        metas = self._clipboard_data.get('metas', {})
+        clip_rows = self._clipboard_data.get('rows', 1)
+        clip_cols = self._clipboard_data.get('cols', 1)
+
+        if single_cell_destination and (clip_rows > 1 or clip_cols > 1):
+            paste_rows = clip_rows
+            paste_cols = clip_cols
+        else:
+            paste_rows = sel_rows
+            paste_cols = sel_cols
+
+        # Build source format/meta list for cycling
+        source_formats = []
+        for r in range(clip_rows):
+            for c in range(clip_cols):
+                cell_format = formats.get((r, c))
+                cell_meta = metas.get((r, c))
+                source_formats.append({
+                    'format': cell_format,
+                    'meta': cell_meta
+                })
+
+        changes = []
+        source_idx = 0
+        for rel_row in range(paste_rows):
+            for rel_col in range(paste_cols):
+                target_row = sel_min_row + rel_row
+                target_col = sel_min_col + rel_col
+
+                if not single_cell_destination or (clip_rows == 1 and clip_cols == 1):
+                    if not any(idx.row() == target_row and idx.column() == target_col for idx in selection):
+                        continue
+
+                if target_row >= model.rowCount() or target_col >= model.columnCount():
+                    continue
+
+                src = source_formats[source_idx % len(source_formats)]
+
+                # Keep existing values/formulas, only change format and meta
+                old_format = model._formats.get((target_row, target_col))
+                old_meta = model._cell_meta.get((target_row, target_col))
+                if old_meta:
+                    old_meta = old_meta.copy()
+
+                changes.append({
+                    'row': target_row,
+                    'col': target_col,
+                    # Keep values unchanged
+                    'old_value': model._data.get((target_row, target_col)),
+                    'new_value': model._data.get((target_row, target_col)),
+                    'old_formula': model._formulas.get((target_row, target_col)),
+                    'new_formula': model._formulas.get((target_row, target_col)),
+                    # Update format and meta
+                    'old_format': old_format,
+                    'new_format': src.get('format'),
+                    'old_meta': old_meta,
+                    'new_meta': src.get('meta')
+                })
+
+                source_idx += 1
+
+        if changes:
+            command = SpreadsheetPasteCommand(changes, model)
+            model._in_undo_redo = True
+            try:
+                command.redo()
+            finally:
+                model._in_undo_redo = False
+
+            model.undo_stack.append(command)
+            model.redo_stack.clear()
+            model._clear_dependent_cache()
+
+            logger.info(f"Pasted format only for {len(changes)} cells")
+
     def _delete_selection(self):
         """Delete the content of selected cells."""
         selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
@@ -4126,6 +4353,10 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         copy_action = menu.addAction("Copy (Ctrl+C)")
         cut_action = menu.addAction("Cut (Ctrl+X)")
         paste_action = menu.addAction("Paste (Ctrl+V)")
+        paste_values_action = menu.addAction("Paste Values")
+        paste_format_action = menu.addAction("Paste Cell Format")
+        menu.addSeparator()
+        clear_format_action = menu.addAction("Clear Cell Format")
         menu.addSeparator()
 
         # Format submenu
@@ -4194,6 +4425,12 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             self.table_view._cut_selection()
         elif action == paste_action:
             self.table_view._paste_selection()
+        elif action == paste_values_action:
+            self.table_view._paste_values_only()
+        elif action == paste_format_action:
+            self.table_view._paste_format_only()
+        elif action == clear_format_action:
+            self._clear_cell_format()
         # Format actions
         elif action == format_general:
             self._set_cell_format(index, SpreadsheetModel.FORMAT_GENERAL)
@@ -4246,6 +4483,57 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.model.redo_stack.clear()
 
         logger.info(f"Set format '{cell_format}' for {len(cells)} cells")
+
+    def _clear_cell_format(self):
+        """Clear all cell formatting (data format and cell meta) from selected cells.
+
+        Removes data format (Currency, Percentage, etc.) and cell meta
+        (bg color, text color, font options like bold, italic).
+        """
+        selection = self.table_view.selectionModel().selectedIndexes()
+        if not selection:
+            return
+
+        cells = [(idx.row(), idx.column()) for idx in selection]
+
+        # Collect changes for undo
+        changes = []
+        for (row, col) in cells:
+            old_format = self.model._formats.get((row, col))
+            old_meta = self.model._cell_meta.get((row, col))
+            if old_meta:
+                old_meta = old_meta.copy()
+
+            # Only add to changes if there's something to clear
+            if old_format or old_meta:
+                changes.append({
+                    'row': row,
+                    'col': col,
+                    # Keep values unchanged
+                    'old_value': self.model._data.get((row, col)),
+                    'new_value': self.model._data.get((row, col)),
+                    'old_formula': self.model._formulas.get((row, col)),
+                    'new_formula': self.model._formulas.get((row, col)),
+                    # Clear format and meta
+                    'old_format': old_format,
+                    'new_format': None,
+                    'old_meta': old_meta,
+                    'new_meta': None
+                })
+
+        if changes:
+            command = SpreadsheetPasteCommand(changes, self.model)
+            self.model._in_undo_redo = True
+            try:
+                command.redo()
+            finally:
+                self.model._in_undo_redo = False
+
+            self.model.undo_stack.append(command)
+            self.model.redo_stack.clear()
+            self.model._clear_dependent_cache()
+
+            logger.info(f"Cleared format for {len(changes)} cells")
 
     def _insert_row_above(self, row):
         """Insert a new row above the specified row."""
