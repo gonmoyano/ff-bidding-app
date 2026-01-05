@@ -1140,71 +1140,13 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         return re.sub(pattern, replace_ref, formula)
 
     def keyPressEvent(self, event):
-        """Handle keyboard events for copy/cut/paste/undo/redo and formatting operations."""
+        """Handle special keyboard events that QShortcut doesn't handle well.
+
+        Note: Copy/paste/cut/undo/redo/formatting shortcuts are handled by
+        QShortcut in SpreadsheetWidget._setup_shortcuts() instead.
+        """
         key = event.key()
         modifiers = event.modifiers()
-
-        # Check for Ctrl+Z (Undo)
-        if key == Qt.Key_Z and (modifiers & Qt.ControlModifier):
-            logger.info("Ctrl+Z detected - undoing")
-            self._undo()
-            event.accept()
-            return
-
-        # Check for Ctrl+Y (Redo) or Ctrl+Shift+Z
-        if (key == Qt.Key_Y and (modifiers & Qt.ControlModifier)) or \
-           (key == Qt.Key_Z and (modifiers & Qt.ControlModifier) and (modifiers & Qt.ShiftModifier)):
-            logger.info("Ctrl+Y/Ctrl+Shift+Z detected - redoing")
-            self._redo()
-            event.accept()
-            return
-
-        # Check for Ctrl+C (Copy)
-        if key == Qt.Key_C and (modifiers & Qt.ControlModifier):
-            logger.info("Ctrl+C detected - copying")
-            self._copy_selection()
-            event.accept()
-            return
-
-        # Check for Ctrl+X (Cut)
-        if key == Qt.Key_X and (modifiers & Qt.ControlModifier):
-            logger.info("Ctrl+X detected - cutting")
-            self._cut_selection()
-            event.accept()
-            return
-
-        # Check for Ctrl+V (Paste)
-        if key == Qt.Key_V and (modifiers & Qt.ControlModifier):
-            logger.info("Ctrl+V detected - pasting")
-            self._paste_selection()
-            event.accept()
-            return
-
-        # Check for Delete key
-        if key == Qt.Key_Delete:
-            logger.info("Delete key detected")
-            self._delete_selection()
-            event.accept()
-            return
-
-        # Formatting shortcuts
-        # Ctrl+B (Bold)
-        if key == Qt.Key_B and (modifiers & Qt.ControlModifier):
-            self._toggle_formatting('bold')
-            event.accept()
-            return
-
-        # Ctrl+I (Italic)
-        if key == Qt.Key_I and (modifiers & Qt.ControlModifier):
-            self._toggle_formatting('italic')
-            event.accept()
-            return
-
-        # Ctrl+U (Underline)
-        if key == Qt.Key_U and (modifiers & Qt.ControlModifier):
-            self._toggle_formatting('underline')
-            event.accept()
-            return
 
         # Ctrl+H or Ctrl+F (Find & Replace)
         if key in (Qt.Key_H, Qt.Key_F) and (modifiers & Qt.ControlModifier):
@@ -3394,48 +3336,6 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         if next_row < self.model.rowCount():
             next_index = self.model.index(next_row, current.column())
             self.table_view.setCurrentIndex(next_index)
-
-    def keyPressEvent(self, event):
-        """Handle keyboard shortcuts for the spreadsheet widget.
-
-        Forward copy/paste/cut/delete shortcuts to the table view.
-        """
-        key = event.key()
-        modifiers = event.modifiers()
-
-        # Forward clipboard and edit shortcuts to the table view
-        if modifiers & Qt.ControlModifier:
-            if key == Qt.Key_C:
-                self.table_view._copy_selection()
-                event.accept()
-                return
-            elif key == Qt.Key_X:
-                self.table_view._cut_selection()
-                event.accept()
-                return
-            elif key == Qt.Key_V:
-                self.table_view._paste_selection()
-                event.accept()
-                return
-            elif key == Qt.Key_Z:
-                if modifiers & Qt.ShiftModifier:
-                    self.table_view._redo()
-                else:
-                    self.table_view._undo()
-                event.accept()
-                return
-            elif key == Qt.Key_Y:
-                self.table_view._redo()
-                event.accept()
-                return
-
-        # Forward Delete key to table view
-        if key == Qt.Key_Delete:
-            self.table_view._delete_selection()
-            event.accept()
-            return
-
-        super().keyPressEvent(event)
 
     def _on_search_changed(self, text):
         """Handle search text change."""
