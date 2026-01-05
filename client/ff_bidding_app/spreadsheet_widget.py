@@ -505,6 +505,7 @@ class FormattingToolbar(QtWidgets.QWidget):
     bgColorChanged = QtCore.Signal(str)
     alignmentChanged = QtCore.Signal(str)
     wrapToggled = QtCore.Signal(bool)
+    formatChanged = QtCore.Signal(str)  # Emits Excel-compatible format string
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -579,6 +580,12 @@ class FormattingToolbar(QtWidgets.QWidget):
         self.wrap_btn.toggled.connect(self.wrapToggled.emit)
         layout.addWidget(self.wrap_btn)
 
+        layout.addWidget(self._create_separator())
+
+        # Format dropdown button
+        self.format_btn = self._create_format_dropdown_button()
+        layout.addWidget(self.format_btn)
+
         layout.addStretch()
 
     def _create_tool_button(self, text, tooltip):
@@ -641,6 +648,98 @@ class FormattingToolbar(QtWidgets.QWidget):
         self.align_center_btn.setChecked(alignment == "center")
         self.align_right_btn.setChecked(alignment == "right")
         self.alignmentChanged.emit(alignment)
+
+    def _create_format_dropdown_button(self):
+        """Create a dropdown button for cell number format selection."""
+        btn = QtWidgets.QToolButton()
+        btn.setText("123")
+        btn.setToolTip("Number Format")
+        btn.setFixedSize(40, 28)
+        btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        btn.setStyleSheet("""
+            QToolButton {
+                border: 1px solid #555;
+                border-radius: 3px;
+                font-size: 11px;
+                padding-left: 2px;
+            }
+            QToolButton:hover {
+                background-color: #444;
+                border: 1px solid #888;
+            }
+            QToolButton::menu-indicator {
+                image: none;
+                subcontrol-position: right center;
+                subcontrol-origin: padding;
+                width: 8px;
+            }
+        """)
+
+        # Create the format menu
+        menu = QtWidgets.QMenu(btn)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #2b2b2b;
+                border: 1px solid #555;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 5px 25px 5px 10px;
+                color: #ffffff;
+            }
+            QMenu::item:selected {
+                background-color: #4472C4;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #555;
+                margin: 5px 0;
+            }
+        """)
+
+        # General format
+        format_general = menu.addAction("General")
+        format_general.triggered.connect(lambda: self.formatChanged.emit("General"))
+        menu.addSeparator()
+
+        # Number formats submenu
+        number_menu = menu.addMenu("Number")
+        format_number = number_menu.addAction("1,234.56  (#,##0.00)")
+        format_number.triggered.connect(lambda: self.formatChanged.emit("#,##0.00"))
+        format_number_no_dec = number_menu.addAction("1,235  (#,##0)")
+        format_number_no_dec.triggered.connect(lambda: self.formatChanged.emit("#,##0"))
+
+        # Currency formats submenu
+        currency_menu = menu.addMenu("Currency")
+        format_currency_usd = currency_menu.addAction("$1,234.56  ($#,##0.00)")
+        format_currency_usd.triggered.connect(lambda: self.formatChanged.emit("$#,##0.00"))
+        format_currency_eur = currency_menu.addAction("€1,234.56  ([$€]#,##0.00)")
+        format_currency_eur.triggered.connect(lambda: self.formatChanged.emit("[$€]#,##0.00"))
+        format_currency_gbp = currency_menu.addAction("£1,234.56  ([$£]#,##0.00)")
+        format_currency_gbp.triggered.connect(lambda: self.formatChanged.emit("[$£]#,##0.00"))
+
+        # Accounting format
+        format_accounting = menu.addAction("Accounting")
+        format_accounting.triggered.connect(
+            lambda: self.formatChanged.emit('_($* #,##0.00_);_($* (#,##0.00);_($* "-"??_);_(@_)')
+        )
+        menu.addSeparator()
+
+        # Percentage formats submenu
+        percentage_menu = menu.addMenu("Percentage")
+        format_percentage = percentage_menu.addAction("12.34%  (0.00%)")
+        format_percentage.triggered.connect(lambda: self.formatChanged.emit("0.00%"))
+        format_percentage_no_dec = percentage_menu.addAction("12%  (0%)")
+        format_percentage_no_dec.triggered.connect(lambda: self.formatChanged.emit("0%"))
+        menu.addSeparator()
+
+        # Text format
+        format_text = menu.addAction("Text  (@)")
+        format_text.triggered.connect(lambda: self.formatChanged.emit("@"))
+
+        btn.setMenu(menu)
+        self._format_menu = menu  # Keep reference
+        return btn
 
     def update_from_cell_meta(self, cell_meta):
         """Update toolbar state based on cell metadata."""
@@ -3270,6 +3369,9 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         # Wrap
         tb.wrapToggled.connect(lambda v: self._apply_formatting('wrap', v))
 
+        # Number format
+        tb.formatChanged.connect(self._apply_cell_format)
+
     def _apply_formatting(self, prop, value):
         """Apply formatting property to selected cells."""
         selection = self.table_view.selectionModel().selectedIndexes()
@@ -3287,6 +3389,29 @@ class SpreadsheetWidget(QtWidgets.QWidget):
 
         cells = [(idx.row(), idx.column()) for idx in selection]
         self.model.apply_borders_to_selection(cells, border_config)
+
+    def _apply_cell_format(self, cell_format):
+        """Apply number format to selected cells.
+
+        Args:
+            cell_format: Excel-compatible format string (e.g., '#,##0.00', '$#,##0.00', '0%')
+        """
+        selection = self.table_view.selectionModel().selectedIndexes()
+        if not selection:
+            return
+
+        # Apply format to all selected cells
+        for idx in selection:
+            self.model.set_cell_format(idx.row(), idx.column(), cell_format)
+
+        # Emit dataChanged to trigger save and refresh display
+        if selection:
+            self.model.dataChanged.emit(
+                self.model.index(min(idx.row() for idx in selection), min(idx.column() for idx in selection)),
+                self.model.index(max(idx.row() for idx in selection), max(idx.column() for idx in selection)),
+                [QtCore.Qt.DisplayRole]
+            )
+            logger.info(f"Applied format '{cell_format}' to {len(selection)} cells")
 
     def _toggle_merge(self):
         """Toggle merge for selected cells."""
@@ -3632,14 +3757,29 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             self._set_cell_format(index, SpreadsheetModel.FORMAT_TEXT)
 
     def _set_cell_format(self, index, cell_format):
-        """Set the format for a cell.
+        """Set the format for selected cells.
 
         Args:
-            index: QModelIndex of the cell
+            index: QModelIndex of the clicked cell (used as fallback if no selection)
             cell_format: Excel-compatible format string
         """
-        self.model.set_cell_format(index.row(), index.column(), cell_format)
-        logger.info(f"Set cell ({index.row()},{index.column()}) format to: {cell_format}")
+        # Apply to all selected cells
+        selection = self.table_view.selectionModel().selectedIndexes()
+        if selection:
+            for idx in selection:
+                self.model.set_cell_format(idx.row(), idx.column(), cell_format)
+
+            # Emit dataChanged to trigger save and refresh display
+            self.model.dataChanged.emit(
+                self.model.index(min(idx.row() for idx in selection), min(idx.column() for idx in selection)),
+                self.model.index(max(idx.row() for idx in selection), max(idx.column() for idx in selection)),
+                [QtCore.Qt.DisplayRole]
+            )
+            logger.info(f"Set format '{cell_format}' for {len(selection)} cells")
+        else:
+            # Fallback to the clicked cell
+            self.model.set_cell_format(index.row(), index.column(), cell_format)
+            logger.info(f"Set cell ({index.row()},{index.column()}) format to: {cell_format}")
 
     def _insert_row_above(self, row):
         """Insert a new row above the specified row."""
