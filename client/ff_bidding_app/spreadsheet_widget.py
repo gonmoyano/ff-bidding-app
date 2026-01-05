@@ -3450,6 +3450,12 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         delete_column = menu.addAction("Delete Column")
         menu.addSeparator()
 
+        # Clipboard operations
+        copy_action = menu.addAction("Copy (Ctrl+C)")
+        cut_action = menu.addAction("Cut (Ctrl+X)")
+        paste_action = menu.addAction("Paste (Ctrl+V)")
+        menu.addSeparator()
+
         # Format submenu
         format_menu = menu.addMenu("Format")
 
@@ -3514,6 +3520,13 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             self._insert_column_right(index.column())
         elif action == delete_column:
             self._delete_column(index.column())
+        # Clipboard actions
+        elif action == copy_action:
+            self.table_view._copy_selection()
+        elif action == cut_action:
+            self.table_view._cut_selection()
+        elif action == paste_action:
+            self.table_view._paste_selection()
         # Format actions
         elif action == format_general:
             self._set_cell_format(index, SpreadsheetModel.FORMAT_GENERAL)
