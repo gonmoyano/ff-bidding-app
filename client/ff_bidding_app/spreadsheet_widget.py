@@ -55,8 +55,11 @@ class ColorPaletteWidget(QtWidgets.QWidget):
         cols = 10
         for i, color in enumerate(COLOR_PALETTE):
             btn = QtWidgets.QPushButton()
-            btn.setFixedSize(18, 18)
-            btn.setStyleSheet(f"background-color: {color}; border: 1px solid #555; border-radius: 2px;")
+            btn.setFixedSize(20, 20)
+            btn.setMinimumSize(20, 20)
+            btn.setMaximumSize(20, 20)
+            btn.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+            btn.setStyleSheet(f"background-color: {color}; border: 1px solid #555; min-width: 18px; min-height: 18px; max-width: 18px; max-height: 18px;")
             btn.setCursor(Qt.PointingHandCursor)
             btn.clicked.connect(lambda checked, c=color: self.colorSelected.emit(c))
             layout.addWidget(btn, i // cols, i % cols)
@@ -490,10 +493,7 @@ class FormattingToolbar(QtWidgets.QWidget):
     fontColorChanged = QtCore.Signal(str)
     bgColorChanged = QtCore.Signal(str)
     alignmentChanged = QtCore.Signal(str)
-    bordersChanged = QtCore.Signal(dict)
-    mergeToggled = QtCore.Signal()
     wrapToggled = QtCore.Signal(bool)
-    findReplaceRequested = QtCore.Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -547,20 +547,6 @@ class FormattingToolbar(QtWidgets.QWidget):
 
         layout.addWidget(self._create_separator())
 
-        # Borders dropdown
-        self.borders_btn = BordersDropdownButton()
-        self.borders_btn.bordersChanged.connect(self.bordersChanged.emit)
-        layout.addWidget(self.borders_btn)
-
-        layout.addWidget(self._create_separator())
-
-        # Merge cells button
-        self.merge_btn = self._create_tool_button("⊞", "Merge Cells")
-        self.merge_btn.clicked.connect(self.mergeToggled.emit)
-        layout.addWidget(self.merge_btn)
-
-        layout.addWidget(self._create_separator())
-
         # Alignment buttons (mutually exclusive)
         self.align_left_btn = self._create_toggle_button("≡", "Align Left")
         self.align_center_btn = self._create_toggle_button("≡", "Align Center")
@@ -581,13 +567,6 @@ class FormattingToolbar(QtWidgets.QWidget):
         self.wrap_btn = self._create_toggle_button("↵", "Wrap Text")
         self.wrap_btn.toggled.connect(self.wrapToggled.emit)
         layout.addWidget(self.wrap_btn)
-
-        layout.addWidget(self._create_separator())
-
-        # Find & Replace button
-        self.find_btn = self._create_tool_button("🔍", "Find & Replace (Ctrl+H)")
-        self.find_btn.clicked.connect(self.findReplaceRequested.emit)
-        layout.addWidget(self.find_btn)
 
         layout.addStretch()
 
@@ -3104,20 +3083,8 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         # Alignment
         tb.alignmentChanged.connect(lambda a: self._apply_formatting('align_h', a))
 
-        # Borders
-        tb.bordersChanged.connect(self._apply_borders)
-
-        # Merge
-        tb.mergeToggled.connect(self._toggle_merge)
-
         # Wrap
         tb.wrapToggled.connect(lambda v: self._apply_formatting('wrap', v))
-
-        # Find & Replace
-        tb.findReplaceRequested.connect(self.show_find_replace)
-
-        # Update toolbar when selection changes
-        self.table_view.selectionModel().currentChanged.connect(self._update_toolbar_from_selection)
 
     def _apply_formatting(self, prop, value):
         """Apply formatting property to selected cells."""
@@ -3182,15 +3149,6 @@ class SpreadsheetWidget(QtWidgets.QWidget):
                 merge['start_row'], merge['start_col'],
                 row_span, col_span
             )
-
-    def _update_toolbar_from_selection(self, current, previous):
-        """Update toolbar state when selection changes."""
-        if not current.isValid():
-            return
-
-        row, col = current.row(), current.column()
-        cell_meta = self.model.get_cell_meta(row, col)
-        self.formatting_toolbar.update_from_cell_meta(cell_meta)
 
     def show_find_replace(self):
         """Show the Find & Replace dialog."""
@@ -3271,14 +3229,20 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.table_view.selectionModel().currentChanged.connect(self._on_selection_changed)
 
     def _on_selection_changed(self, current, previous):
-        """Update formula bar when selection changes."""
+        """Update formula bar and formatting toolbar when selection changes."""
         if not current.isValid():
             self.formula_bar.clear()
             return
 
-        # Get the cell's content (formula or value)
+        row, col = current.row(), current.column()
+
+        # Update formula bar with cell content
         value = self.model.data(current, Qt.EditRole)
         self.formula_bar.setText(str(value) if value else "")
+
+        # Update formatting toolbar state
+        cell_meta = self.model.get_cell_meta(row, col)
+        self.formatting_toolbar.update_from_cell_meta(cell_meta)
 
     def _on_formula_bar_enter(self):
         """Handle Enter key in formula bar."""
