@@ -1119,29 +1119,44 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         When selecting cells for a formula reference, we want to keep the editor
         open until the user explicitly commits (Enter) or cancels (Escape).
         """
-        # Check if this editor is being used for formula reference selection
-        if self._formula_editor_ref is not None and editor == self._formula_editor_ref:
-            # Keep the editor open - we're selecting cells for the formula
-            # Only close if hint indicates explicit commit/cancel
-            from qtpy.QtWidgets import QAbstractItemDelegate
-            if hint in (QAbstractItemDelegate.RevertModelCache, QAbstractItemDelegate.EditNextItem,
-                        QAbstractItemDelegate.EditPreviousItem):
-                # These hints mean the user wants to close
+        from qtpy.QtWidgets import QAbstractItemDelegate
+
+        # Check if we should block closing (formula edit mode active)
+        should_block = False
+
+        # If we have a stored formula editor reference, check if this is that editor
+        if self._formula_editor_ref is not None:
+            if editor == self._formula_editor_ref:
+                should_block = True
+
+        # Also check if editor contains a formula
+        if hasattr(editor, 'text'):
+            text = editor.text()
+            if text.startswith('='):
+                should_block = True
+                # Store reference for future use
+                self._formula_editor_ref = editor
+
+        # If we should block, only allow explicit submit (Enter) or cancel (Escape)
+        if should_block:
+            # SubmitModelCache = Enter key pressed
+            # RevertModelCache = Escape key pressed
+            if hint in (QAbstractItemDelegate.SubmitModelCache, QAbstractItemDelegate.RevertModelCache):
+                # User explicitly committed or cancelled - allow close
                 self._formula_editor_ref = None
                 self._formula_reference_start = None
+                self._is_dragging_formula_ref = False
                 super().closeEditor(editor, hint)
-            # For other hints (like NoHint from focus loss), keep editor open
+            else:
+                # Block close - keep editor open for formula reference selection
+                # Re-focus the editor to keep it active
+                editor.setFocus()
             return
-
-        # Check if we're in formula edit mode and should prevent closing
-        if hasattr(editor, 'text') and editor.text().startswith('='):
-            if self._is_dragging_formula_ref:
-                # We're in the middle of selecting a range - don't close
-                return
 
         # Normal close behavior
         self._formula_editor_ref = None
         self._formula_reference_start = None
+        self._is_dragging_formula_ref = False
         super().closeEditor(editor, hint)
 
     def eventFilter(self, obj, event):
@@ -1151,14 +1166,34 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         focus changes that would close the editor.
         """
         from qtpy.QtCore import QEvent
+        from qtpy.QtWidgets import QLineEdit, QApplication
 
         if obj == self.viewport():
             # Handle mouse press - start formula reference selection
             if event.type() == QEvent.MouseButtonPress:
-                # Check if we're in formula edit mode
-                editor = self._find_cell_editor()
+                # Try multiple ways to find the editor
+                editor = None
+
+                # Method 1: Use stored reference
+                if self._formula_editor_ref is not None:
+                    editor = self._formula_editor_ref
+
+                # Method 2: Check if we're in editing state and find QLineEdit child
+                if editor is None and self.state() == QtWidgets.QAbstractItemView.EditingState:
+                    for child in self.viewport().children():
+                        if isinstance(child, QLineEdit):
+                            editor = child
+                            break
+
+                # Method 3: Check focused widget
+                if editor is None:
+                    focused = QApplication.focusWidget()
+                    if isinstance(focused, QLineEdit):
+                        editor = focused
+
+                # Check if editor has formula
                 if editor and hasattr(editor, 'text') and editor.text().startswith('='):
-                    # Store editor reference before focus changes
+                    # Store editor reference
                     self._formula_editor_ref = editor
 
                     # Get the clicked position
