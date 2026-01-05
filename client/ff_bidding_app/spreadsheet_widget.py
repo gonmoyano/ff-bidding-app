@@ -1195,6 +1195,14 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             event.accept()
             return
 
+        # Delete/Backspace (Clear cell contents)
+        if key in (Qt.Key_Delete, Qt.Key_Backspace):
+            # Only delete if not currently editing a cell
+            if self.state() != QtWidgets.QAbstractItemView.EditingState:
+                self._delete_selection()
+                event.accept()
+                return
+
         super().keyPressEvent(event)
 
     def _toggle_formatting(self, prop):
