@@ -1,12 +1,14 @@
 """
 Spreadsheet Widget
 A full-featured spreadsheet widget inspired by Google Sheets with Excel formula support.
+Includes cell formatting, merging, borders, and other Excel-like features.
 """
 
 from PySide6 import QtWidgets, QtCore, QtGui
 from PySide6.QtCore import Qt
 import string
 import re
+import json
 
 try:
     from .logger import logger
@@ -15,6 +17,901 @@ except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
     from formula_evaluator import FormulaEvaluator
+
+
+# =============================================================================
+# Color Palette Constants
+# =============================================================================
+
+# Standard color palette (similar to Google Sheets)
+COLOR_PALETTE = [
+    "#000000", "#434343", "#666666", "#999999", "#B7B7B7", "#CCCCCC", "#D9D9D9", "#EFEFEF", "#F3F3F3", "#FFFFFF",
+    "#980000", "#FF0000", "#FF9900", "#FFFF00", "#00FF00", "#00FFFF", "#4A86E8", "#0000FF", "#9900FF", "#FF00FF",
+    "#E6B8AF", "#F4CCCC", "#FCE5CD", "#FFF2CC", "#D9EAD3", "#D0E0E3", "#C9DAF8", "#CFE2F3", "#D9D2E9", "#EAD1DC",
+    "#DD7E6B", "#EA9999", "#F9CB9C", "#FFE599", "#B6D7A8", "#A2C4C9", "#A4C2F4", "#9FC5E8", "#B4A7D6", "#D5A6BD",
+    "#CC4125", "#E06666", "#F6B26B", "#FFD966", "#93C47D", "#76A5AF", "#6D9EEB", "#6FA8DC", "#8E7CC3", "#C27BA0",
+]
+
+
+# =============================================================================
+# Color Picker Widgets
+# =============================================================================
+
+class ColorPaletteWidget(QtWidgets.QWidget):
+    """Grid of color swatches for quick color selection."""
+
+    colorSelected = QtCore.Signal(str)  # Hex color string
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._build_palette()
+
+    def _build_palette(self):
+        """Build color swatch grid."""
+        layout = QtWidgets.QGridLayout(self)
+        layout.setSpacing(2)
+        layout.setContentsMargins(4, 4, 4, 4)
+
+        cols = 10
+        for i, color in enumerate(COLOR_PALETTE):
+            btn = QtWidgets.QPushButton()
+            btn.setFixedSize(20, 20)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {color};
+                    border: 1px solid #555;
+                    min-width: 20px;
+                    max-width: 20px;
+                    min-height: 20px;
+                    max-height: 20px;
+                    padding: 0px;
+                    margin: 0px;
+                }}
+                QPushButton:hover {{
+                    border: 2px solid #FFF;
+                }}
+            """)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(lambda checked, c=color: self.colorSelected.emit(c))
+            layout.addWidget(btn, i // cols, i % cols)
+
+
+class ColorPickerButton(QtWidgets.QToolButton):
+    """Button with color indicator and dropdown color picker."""
+
+    colorChanged = QtCore.Signal(str)  # Emits hex color string
+
+    def __init__(self, icon_text, tooltip, default_color="#000000", is_background=False, parent=None):
+        super().__init__(parent)
+        self._current_color = default_color
+        self._icon_text = icon_text
+        self._is_background = is_background
+        self.setToolTip(tooltip)
+        self.setPopupMode(QtWidgets.QToolButton.MenuButtonPopup)
+        self._setup_ui()
+        self._setup_menu()
+
+        # Connect main button click to apply current color
+        self.clicked.connect(lambda: self.colorChanged.emit(self._current_color))
+
+    def _setup_ui(self):
+        """Setup button appearance."""
+        self.setFixedSize(32, 28)
+        self._update_icon()
+
+    def _update_icon(self):
+        """Update button icon with color indicator."""
+        if self._is_background:
+            # Background color - paint bucket style
+            self.setStyleSheet(f"""
+                QToolButton {{
+                    background-color: {self._current_color};
+                    border: 1px solid #555;
+                    border-radius: 3px;
+                    font-weight: bold;
+                    color: {'#000000' if self._is_light_color(self._current_color) else '#FFFFFF'};
+                }}
+                QToolButton:hover {{
+                    border: 1px solid #888;
+                }}
+                QToolButton::menu-indicator {{
+                    width: 8px;
+                    subcontrol-position: right center;
+                }}
+            """)
+            self.setText("▐")
+        else:
+            # Font color - A with colored underline
+            self.setStyleSheet(f"""
+                QToolButton {{
+                    border: 1px solid #555;
+                    border-radius: 3px;
+                    font-weight: bold;
+                    color: #FFFFFF;
+                    border-bottom: 3px solid {self._current_color};
+                }}
+                QToolButton:hover {{
+                    border: 1px solid #888;
+                    border-bottom: 3px solid {self._current_color};
+                }}
+                QToolButton::menu-indicator {{
+                    width: 8px;
+                    subcontrol-position: right center;
+                }}
+            """)
+            self.setText("A")
+
+    def _is_light_color(self, hex_color):
+        """Check if color is light (for text contrast)."""
+        try:
+            color = QtGui.QColor(hex_color)
+            luminance = (0.299 * color.red() + 0.587 * color.green() + 0.114 * color.blue()) / 255
+            return luminance > 0.5
+        except Exception:
+            return False
+
+    def _setup_menu(self):
+        """Create color palette menu."""
+        menu = QtWidgets.QMenu(self)
+
+        # Color palette widget
+        palette_widget = ColorPaletteWidget()
+        palette_widget.colorSelected.connect(self._on_color_selected)
+
+        palette_action = QtWidgets.QWidgetAction(menu)
+        palette_action.setDefaultWidget(palette_widget)
+        menu.addAction(palette_action)
+
+        menu.addSeparator()
+
+        # No color option (for background)
+        if self._is_background:
+            no_color_action = menu.addAction("No Fill")
+            no_color_action.triggered.connect(lambda: self._on_color_selected(""))
+
+        # Custom color option
+        custom_action = menu.addAction("Custom Color...")
+        custom_action.triggered.connect(self._show_color_dialog)
+
+        self.setMenu(menu)
+
+    def _on_color_selected(self, color):
+        """Handle color selection."""
+        self._current_color = color
+        self._update_icon()
+        self.colorChanged.emit(color)
+        # Close the menu
+        if self.menu():
+            self.menu().hide()
+
+    def _show_color_dialog(self):
+        """Show Qt color dialog for custom color."""
+        initial = QtGui.QColor(self._current_color) if self._current_color else QtGui.QColor("#FFFFFF")
+        color = QtWidgets.QColorDialog.getColor(initial, self, "Select Color")
+        if color.isValid():
+            self._on_color_selected(color.name())
+
+    def get_current_color(self):
+        """Get the currently selected color."""
+        return self._current_color
+
+    def set_current_color(self, color):
+        """Set the current color without emitting signal."""
+        self._current_color = color
+        self._update_icon()
+
+
+# =============================================================================
+# Borders Dropdown Button
+# =============================================================================
+
+class BordersDropdownButton(QtWidgets.QToolButton):
+    """Dropdown button for border options."""
+
+    bordersChanged = QtCore.Signal(dict)
+
+    BORDER_OPTIONS = [
+        ("No Border", "none", {}),
+        ("All Borders", "all", {"top": True, "bottom": True, "left": True, "right": True}),
+        ("Outside Borders", "outside", {"outside": True}),
+        ("─  Top Border", "top", {"top": True}),
+        ("─  Bottom Border", "bottom", {"bottom": True}),
+        ("│  Left Border", "left", {"left": True}),
+        ("│  Right Border", "right", {"right": True}),
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setText("⊞")
+        self.setToolTip("Borders")
+        self.setFixedSize(28, 28)
+        self.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        self.setStyleSheet("""
+            QToolButton {
+                border: 1px solid #555;
+                border-radius: 3px;
+                font-size: 14px;
+            }
+            QToolButton:hover {
+                border: 1px solid #888;
+            }
+        """)
+        self._setup_menu()
+
+    def _setup_menu(self):
+        """Setup border options menu."""
+        menu = QtWidgets.QMenu(self)
+
+        for label, border_type, config in self.BORDER_OPTIONS:
+            action = menu.addAction(label)
+            action.triggered.connect(lambda checked, c=config, t=border_type: self._on_border_selected(c, t))
+
+        self.setMenu(menu)
+
+    def _on_border_selected(self, config, border_type):
+        """Handle border selection."""
+        self.bordersChanged.emit({"type": border_type, "config": config})
+
+
+# =============================================================================
+# Find and Replace Dialog
+# =============================================================================
+
+class FindReplaceDialog(QtWidgets.QDialog):
+    """Find and Replace dialog for spreadsheet."""
+
+    def __init__(self, spreadsheet_widget, parent=None):
+        super().__init__(parent)
+        self.spreadsheet_widget = spreadsheet_widget
+        self.setWindowTitle("Find and Replace")
+        self.setModal(False)
+        self.setMinimumWidth(400)
+        self._current_match_index = -1
+        self._matches = []
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build dialog UI."""
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Find section
+        find_layout = QtWidgets.QHBoxLayout()
+        find_layout.addWidget(QtWidgets.QLabel("Find:"))
+        self.find_input = QtWidgets.QLineEdit()
+        self.find_input.setPlaceholderText("Search text...")
+        self.find_input.textChanged.connect(self._on_find_text_changed)
+        self.find_input.returnPressed.connect(self._find_next)
+        find_layout.addWidget(self.find_input)
+        layout.addLayout(find_layout)
+
+        # Replace section
+        replace_layout = QtWidgets.QHBoxLayout()
+        replace_layout.addWidget(QtWidgets.QLabel("Replace:"))
+        self.replace_input = QtWidgets.QLineEdit()
+        self.replace_input.setPlaceholderText("Replace with...")
+        replace_layout.addWidget(self.replace_input)
+        layout.addLayout(replace_layout)
+
+        # Options
+        options_layout = QtWidgets.QHBoxLayout()
+        self.case_sensitive_cb = QtWidgets.QCheckBox("Case sensitive")
+        self.whole_cell_cb = QtWidgets.QCheckBox("Match entire cell")
+        options_layout.addWidget(self.case_sensitive_cb)
+        options_layout.addWidget(self.whole_cell_cb)
+        options_layout.addStretch()
+        layout.addLayout(options_layout)
+
+        # Match info
+        self.match_label = QtWidgets.QLabel("0 of 0 matches")
+        self.match_label.setStyleSheet("color: #808080; padding: 5px;")
+        layout.addWidget(self.match_label)
+
+        # Buttons
+        btn_layout = QtWidgets.QHBoxLayout()
+        self.find_prev_btn = QtWidgets.QPushButton("◀ Previous")
+        self.find_next_btn = QtWidgets.QPushButton("Next ▶")
+        self.replace_btn = QtWidgets.QPushButton("Replace")
+        self.replace_all_btn = QtWidgets.QPushButton("Replace All")
+
+        btn_layout.addWidget(self.find_prev_btn)
+        btn_layout.addWidget(self.find_next_btn)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.replace_btn)
+        btn_layout.addWidget(self.replace_all_btn)
+        layout.addLayout(btn_layout)
+
+        # Connect signals
+        self.find_next_btn.clicked.connect(self._find_next)
+        self.find_prev_btn.clicked.connect(self._find_previous)
+        self.replace_btn.clicked.connect(self._replace_current)
+        self.replace_all_btn.clicked.connect(self._replace_all)
+        self.case_sensitive_cb.stateChanged.connect(self._on_find_text_changed)
+        self.whole_cell_cb.stateChanged.connect(self._on_find_text_changed)
+
+        # Close button
+        close_btn = QtWidgets.QPushButton("Close")
+        close_btn.clicked.connect(self.close)
+        layout.addWidget(close_btn)
+
+    def _on_find_text_changed(self):
+        """Rebuild matches when search text or options change."""
+        self._find_matches()
+        self._update_match_label()
+
+    def _find_matches(self):
+        """Find all cells matching the search text."""
+        self._matches = []
+        self._current_match_index = -1
+
+        search_text = self.find_input.text()
+        if not search_text:
+            return
+
+        model = self.spreadsheet_widget.model
+        case_sensitive = self.case_sensitive_cb.isChecked()
+        whole_cell = self.whole_cell_cb.isChecked()
+
+        if not case_sensitive:
+            search_text = search_text.lower()
+
+        for row in range(model.rowCount()):
+            for col in range(model.columnCount()):
+                # Get both raw value and displayed value
+                raw_value = model._data.get((row, col), "")
+                formula = model._formulas.get((row, col), "")
+
+                cell_text = str(raw_value) if raw_value else ""
+                if formula:
+                    # Also search in formula text
+                    cell_text = formula
+
+                if not case_sensitive:
+                    cell_text = cell_text.lower()
+
+                if whole_cell:
+                    if cell_text == search_text:
+                        self._matches.append((row, col))
+                else:
+                    if search_text in cell_text:
+                        self._matches.append((row, col))
+
+    def _update_match_label(self):
+        """Update the match count label."""
+        total = len(self._matches)
+        if total == 0:
+            self.match_label.setText("0 matches found")
+        else:
+            current = self._current_match_index + 1 if self._current_match_index >= 0 else 0
+            self.match_label.setText(f"{current} of {total} matches")
+
+    def _find_next(self):
+        """Navigate to next match."""
+        if not self._matches:
+            self._find_matches()
+            if not self._matches:
+                return
+
+        self._current_match_index = (self._current_match_index + 1) % len(self._matches)
+        self._navigate_to_match()
+
+    def _find_previous(self):
+        """Navigate to previous match."""
+        if not self._matches:
+            self._find_matches()
+            if not self._matches:
+                return
+
+        self._current_match_index = (self._current_match_index - 1) % len(self._matches)
+        self._navigate_to_match()
+
+    def _navigate_to_match(self):
+        """Navigate to the current match."""
+        if 0 <= self._current_match_index < len(self._matches):
+            row, col = self._matches[self._current_match_index]
+            index = self.spreadsheet_widget.model.index(row, col)
+            self.spreadsheet_widget.table_view.setCurrentIndex(index)
+            self.spreadsheet_widget.table_view.scrollTo(index)
+            self._update_match_label()
+
+    def _replace_current(self):
+        """Replace the current match."""
+        if not self._matches or self._current_match_index < 0:
+            return
+
+        row, col = self._matches[self._current_match_index]
+        self._replace_cell(row, col)
+
+        # Re-find matches and stay at current position
+        self._find_matches()
+        if self._current_match_index >= len(self._matches):
+            self._current_match_index = len(self._matches) - 1
+        self._update_match_label()
+
+    def _replace_cell(self, row, col):
+        """Replace text in a single cell."""
+        model = self.spreadsheet_widget.model
+        search_text = self.find_input.text()
+        replace_text = self.replace_input.text()
+        case_sensitive = self.case_sensitive_cb.isChecked()
+        whole_cell = self.whole_cell_cb.isChecked()
+
+        # Get current value
+        raw_value = model._data.get((row, col), "")
+        formula = model._formulas.get((row, col), "")
+
+        if formula:
+            # Replace in formula
+            if whole_cell:
+                new_value = replace_text
+            else:
+                if case_sensitive:
+                    new_value = formula.replace(search_text, replace_text)
+                else:
+                    new_value = re.sub(re.escape(search_text), replace_text, formula, flags=re.IGNORECASE)
+        else:
+            # Replace in value
+            cell_text = str(raw_value) if raw_value else ""
+            if whole_cell:
+                new_value = replace_text
+            else:
+                if case_sensitive:
+                    new_value = cell_text.replace(search_text, replace_text)
+                else:
+                    new_value = re.sub(re.escape(search_text), replace_text, cell_text, flags=re.IGNORECASE)
+
+        # Set new value
+        index = model.index(row, col)
+        model.setData(index, new_value, Qt.EditRole)
+
+    def _replace_all(self):
+        """Replace all matches."""
+        if not self._matches:
+            self._find_matches()
+
+        if not self._matches:
+            return
+
+        # Replace in reverse order to maintain positions
+        for row, col in reversed(self._matches):
+            self._replace_cell(row, col)
+
+        # Clear matches
+        replaced_count = len(self._matches)
+        self._matches = []
+        self._current_match_index = -1
+        self._update_match_label()
+
+        QtWidgets.QMessageBox.information(
+            self, "Replace All",
+            f"Replaced {replaced_count} occurrence(s)."
+        )
+
+
+# =============================================================================
+# Formatting Toolbar
+# =============================================================================
+
+class FormattingToolbar(QtWidgets.QWidget):
+    """Formatting toolbar similar to Google Sheets/Excel."""
+
+    # Signals
+    undoRequested = QtCore.Signal()
+    redoRequested = QtCore.Signal()
+    boldToggled = QtCore.Signal(bool)
+    italicToggled = QtCore.Signal(bool)
+    underlineToggled = QtCore.Signal(bool)
+    strikethroughToggled = QtCore.Signal(bool)
+    fontColorChanged = QtCore.Signal(str)
+    bgColorChanged = QtCore.Signal(str)
+    alignmentChanged = QtCore.Signal(str)
+    wrapToggled = QtCore.Signal(bool)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._build_ui()
+
+    def _build_ui(self):
+        """Build toolbar with formatting buttons."""
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(5, 3, 5, 3)
+        layout.setSpacing(3)
+
+        # Undo/Redo buttons
+        self.undo_btn = self._create_tool_button("↶", "Undo (Ctrl+Z)")
+        self.redo_btn = self._create_tool_button("↷", "Redo (Ctrl+Y)")
+        self.undo_btn.clicked.connect(self.undoRequested.emit)
+        self.redo_btn.clicked.connect(self.redoRequested.emit)
+        layout.addWidget(self.undo_btn)
+        layout.addWidget(self.redo_btn)
+
+        layout.addWidget(self._create_separator())
+
+        # Font style buttons (toggleable)
+        self.bold_btn = self._create_toggle_button("B", "Bold (Ctrl+B)")
+        self.bold_btn.setStyleSheet(self.bold_btn.styleSheet() + "font-weight: bold;")
+        self.italic_btn = self._create_toggle_button("I", "Italic (Ctrl+I)")
+        self.italic_btn.setStyleSheet(self.italic_btn.styleSheet() + "font-style: italic;")
+        self.underline_btn = self._create_toggle_button("U", "Underline (Ctrl+U)")
+        self.underline_btn.setStyleSheet(self.underline_btn.styleSheet() + "text-decoration: underline;")
+        self.strikethrough_btn = self._create_toggle_button("S", "Strikethrough")
+        self.strikethrough_btn.setStyleSheet(self.strikethrough_btn.styleSheet() + "text-decoration: line-through;")
+
+        self.bold_btn.toggled.connect(self.boldToggled.emit)
+        self.italic_btn.toggled.connect(self.italicToggled.emit)
+        self.underline_btn.toggled.connect(self.underlineToggled.emit)
+        self.strikethrough_btn.toggled.connect(self.strikethroughToggled.emit)
+
+        layout.addWidget(self.bold_btn)
+        layout.addWidget(self.italic_btn)
+        layout.addWidget(self.underline_btn)
+        layout.addWidget(self.strikethrough_btn)
+
+        layout.addWidget(self._create_separator())
+
+        # Color pickers
+        self.font_color_btn = ColorPickerButton("A", "Font Color", default_color="#FFFFFF", is_background=False)
+        self.bg_color_btn = ColorPickerButton("▐", "Fill Color", default_color="#4472C4", is_background=True)
+        self.font_color_btn.colorChanged.connect(self.fontColorChanged.emit)
+        self.bg_color_btn.colorChanged.connect(self.bgColorChanged.emit)
+        layout.addWidget(self.font_color_btn)
+        layout.addWidget(self.bg_color_btn)
+
+        layout.addWidget(self._create_separator())
+
+        # Alignment buttons (mutually exclusive)
+        self.align_left_btn = self._create_toggle_button("≡", "Align Left")
+        self.align_center_btn = self._create_toggle_button("≡", "Align Center")
+        self.align_right_btn = self._create_toggle_button("≡", "Align Right")
+
+        # Make alignment buttons work as a group
+        self.align_left_btn.clicked.connect(lambda: self._set_alignment("left"))
+        self.align_center_btn.clicked.connect(lambda: self._set_alignment("center"))
+        self.align_right_btn.clicked.connect(lambda: self._set_alignment("right"))
+
+        layout.addWidget(self.align_left_btn)
+        layout.addWidget(self.align_center_btn)
+        layout.addWidget(self.align_right_btn)
+
+        layout.addWidget(self._create_separator())
+
+        # Text wrap toggle
+        self.wrap_btn = self._create_toggle_button("↵", "Wrap Text")
+        self.wrap_btn.toggled.connect(self.wrapToggled.emit)
+        layout.addWidget(self.wrap_btn)
+
+        layout.addStretch()
+
+    def _create_tool_button(self, text, tooltip):
+        """Create a standard tool button."""
+        btn = QtWidgets.QToolButton()
+        btn.setText(text)
+        btn.setToolTip(tooltip)
+        btn.setFixedSize(28, 28)
+        btn.setStyleSheet("""
+            QToolButton {
+                border: 1px solid #555;
+                border-radius: 3px;
+                font-size: 14px;
+            }
+            QToolButton:hover {
+                background-color: #444;
+                border: 1px solid #888;
+            }
+            QToolButton:pressed {
+                background-color: #555;
+            }
+        """)
+        return btn
+
+    def _create_toggle_button(self, text, tooltip):
+        """Create a toggleable tool button."""
+        btn = QtWidgets.QToolButton()
+        btn.setText(text)
+        btn.setToolTip(tooltip)
+        btn.setCheckable(True)
+        btn.setFixedSize(28, 28)
+        btn.setStyleSheet("""
+            QToolButton {
+                border: 1px solid #555;
+                border-radius: 3px;
+                font-size: 12px;
+            }
+            QToolButton:hover {
+                background-color: #444;
+                border: 1px solid #888;
+            }
+            QToolButton:checked {
+                background-color: #4472C4;
+                border: 1px solid #5588DD;
+            }
+        """)
+        return btn
+
+    def _create_separator(self):
+        """Create a vertical separator."""
+        sep = QtWidgets.QFrame()
+        sep.setFrameShape(QtWidgets.QFrame.VLine)
+        sep.setFrameShadow(QtWidgets.QFrame.Sunken)
+        sep.setFixedWidth(10)
+        return sep
+
+    def _set_alignment(self, alignment):
+        """Set alignment and update button states."""
+        self.align_left_btn.setChecked(alignment == "left")
+        self.align_center_btn.setChecked(alignment == "center")
+        self.align_right_btn.setChecked(alignment == "right")
+        self.alignmentChanged.emit(alignment)
+
+    def update_from_cell_meta(self, cell_meta):
+        """Update toolbar state based on cell metadata."""
+        # Block signals to prevent feedback loops
+        self.bold_btn.blockSignals(True)
+        self.italic_btn.blockSignals(True)
+        self.underline_btn.blockSignals(True)
+        self.strikethrough_btn.blockSignals(True)
+        self.wrap_btn.blockSignals(True)
+        self.align_left_btn.blockSignals(True)
+        self.align_center_btn.blockSignals(True)
+        self.align_right_btn.blockSignals(True)
+
+        # Update button states
+        self.bold_btn.setChecked(cell_meta.get("bold", False))
+        self.italic_btn.setChecked(cell_meta.get("italic", False))
+        self.underline_btn.setChecked(cell_meta.get("underline", False))
+        self.strikethrough_btn.setChecked(cell_meta.get("strikethrough", False))
+        self.wrap_btn.setChecked(cell_meta.get("wrap", False))
+
+        # Update alignment
+        align_h = cell_meta.get("align_h", "left")
+        self.align_left_btn.setChecked(align_h == "left")
+        self.align_center_btn.setChecked(align_h == "center")
+        self.align_right_btn.setChecked(align_h == "right")
+
+        # Update colors (always update, reset to default if not set)
+        font_color = cell_meta.get("font_color") or "#FFFFFF"
+        bg_color = cell_meta.get("bg_color") or ""
+        self.font_color_btn.set_current_color(font_color)
+        self.bg_color_btn.set_current_color(bg_color if bg_color else "#4472C4")
+
+        # Unblock signals
+        self.bold_btn.blockSignals(False)
+        self.italic_btn.blockSignals(False)
+        self.underline_btn.blockSignals(False)
+        self.strikethrough_btn.blockSignals(False)
+        self.wrap_btn.blockSignals(False)
+        self.align_left_btn.blockSignals(False)
+        self.align_center_btn.blockSignals(False)
+        self.align_right_btn.blockSignals(False)
+
+
+# =============================================================================
+# Formatted Cell Delegate
+# =============================================================================
+
+class FormattedCellDelegate(QtWidgets.QStyledItemDelegate):
+    """Delegate for rendering cells with formatting (bold, italic, colors, borders, etc.)."""
+
+    def __init__(self, model, parent=None):
+        super().__init__(parent)
+        self._model = model
+
+    def paint(self, painter, option, index):
+        """Paint cell with formatting from cell_meta."""
+        row, col = index.row(), index.column()
+
+        # Check if this cell is part of a merged region (and not the anchor)
+        merged_info = self._model.get_merged_cell_info(row, col)
+        if merged_info and not merged_info.get('is_anchor'):
+            # This cell is merged into another cell, don't paint content
+            return
+
+        painter.save()
+
+        # Get cell metadata
+        cell_meta = self._model.get_cell_meta(row, col)
+
+        # 1. Paint background color
+        bg_color = cell_meta.get('bg_color')
+        if bg_color:
+            painter.fillRect(option.rect, QtGui.QColor(bg_color))
+        elif option.state & QtWidgets.QStyle.State_Selected:
+            # Use transparent for selection (we draw border instead)
+            pass
+        else:
+            # Default background
+            pass
+
+        # 2. Paint borders
+        self._paint_borders(painter, option.rect, cell_meta.get('borders', {}))
+
+        # 3. Set up font with formatting
+        font = QtGui.QFont(option.font)
+        if cell_meta.get('bold'):
+            font.setBold(True)
+        if cell_meta.get('italic'):
+            font.setItalic(True)
+        if cell_meta.get('underline'):
+            font.setUnderline(True)
+        if cell_meta.get('strikethrough'):
+            font.setStrikeOut(True)
+        painter.setFont(font)
+
+        # 4. Set text color
+        font_color = cell_meta.get('font_color')
+        if font_color:
+            painter.setPen(QtGui.QColor(font_color))
+        elif option.state & QtWidgets.QStyle.State_Selected:
+            painter.setPen(option.palette.highlightedText().color())
+        else:
+            painter.setPen(QtGui.QColor("#FFFFFF"))  # Default white text
+
+        # 5. Calculate alignment
+        align_h = cell_meta.get('align_h', '')
+        alignment = Qt.AlignVCenter
+
+        if align_h == 'left':
+            alignment |= Qt.AlignLeft
+        elif align_h == 'center':
+            alignment |= Qt.AlignHCenter
+        elif align_h == 'right':
+            alignment |= Qt.AlignRight
+        else:
+            # Auto-detect: numbers right, text left
+            value = index.data(Qt.DisplayRole)
+            try:
+                if value:
+                    float(str(value).replace(',', '').replace('$', '').replace('%', ''))
+                alignment |= Qt.AlignRight
+            except (ValueError, TypeError):
+                alignment |= Qt.AlignLeft
+
+        # 6. Get display text
+        value = index.data(Qt.DisplayRole)
+        text = str(value) if value else ""
+
+        # 7. Draw text with wrapping option
+        text_rect = option.rect.adjusted(4, 2, -4, -2)
+        if cell_meta.get('wrap'):
+            painter.drawText(text_rect, alignment | Qt.TextWordWrap, text)
+        else:
+            # Elide text if too long
+            metrics = QtGui.QFontMetrics(font)
+            elided_text = metrics.elidedText(text, Qt.ElideRight, text_rect.width())
+            painter.drawText(text_rect, alignment, elided_text)
+
+        painter.restore()
+
+    def _paint_borders(self, painter, rect, borders):
+        """Paint cell borders."""
+        if not borders:
+            return
+
+        for side in ['top', 'bottom', 'left', 'right']:
+            border = borders.get(side)
+            if border:
+                pen = self._get_border_pen(border)
+                painter.setPen(pen)
+                if side == 'top':
+                    painter.drawLine(rect.topLeft(), rect.topRight())
+                elif side == 'bottom':
+                    painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+                elif side == 'left':
+                    painter.drawLine(rect.topLeft(), rect.bottomLeft())
+                elif side == 'right':
+                    painter.drawLine(rect.topRight(), rect.bottomRight())
+
+    def _get_border_pen(self, border):
+        """Get QPen for border style."""
+        style = border.get('style', 'thin')
+        color = QtGui.QColor(border.get('color', '#000000'))
+
+        pen = QtGui.QPen(color)
+        if style == 'thin':
+            pen.setWidth(1)
+        elif style == 'medium':
+            pen.setWidth(2)
+        elif style == 'thick':
+            pen.setWidth(3)
+        elif style == 'dashed':
+            pen.setStyle(Qt.DashLine)
+            pen.setWidth(1)
+        elif style == 'double':
+            pen.setWidth(3)
+        return pen
+
+    def sizeHint(self, option, index):
+        """Return size hint, accounting for text wrapping."""
+        row, col = index.row(), index.column()
+        cell_meta = self._model.get_cell_meta(row, col)
+
+        if cell_meta.get('wrap'):
+            # Calculate height needed for wrapped text
+            value = index.data(Qt.DisplayRole)
+            text = str(value) if value else ""
+            font = option.font
+            if cell_meta.get('bold'):
+                font.setBold(True)
+            metrics = QtGui.QFontMetrics(font)
+            text_rect = metrics.boundingRect(
+                QtCore.QRect(0, 0, option.rect.width() - 8, 10000),
+                Qt.TextWordWrap | Qt.AlignLeft,
+                text
+            )
+            return QtCore.QSize(option.rect.width(), max(25, text_rect.height() + 8))
+
+        return super().sizeHint(option, index)
+
+
+# =============================================================================
+# Formatting Commands (for Undo/Redo)
+# =============================================================================
+
+class CellFormattingCommand:
+    """Command pattern for undo/redo of cell formatting changes."""
+
+    def __init__(self, model, cells, property_name, old_values, new_value):
+        """
+        Args:
+            model: SpreadsheetModel instance
+            cells: List of (row, col) tuples
+            property_name: Formatting property being changed (e.g., 'bold', 'font_color')
+            old_values: Dict mapping (row, col) to old value
+            new_value: New value to apply to all cells
+        """
+        self.model = model
+        self.cells = cells
+        self.property_name = property_name
+        self.old_values = old_values
+        self.new_value = new_value
+
+    def undo(self):
+        """Restore old formatting values."""
+        for (row, col), old_value in self.old_values.items():
+            self.model.set_cell_meta_property(row, col, self.property_name, old_value)
+        self._emit_changes()
+
+    def redo(self):
+        """Apply new formatting value."""
+        for (row, col) in self.cells:
+            self.model.set_cell_meta_property(row, col, self.property_name, self.new_value)
+        self._emit_changes()
+
+    def _emit_changes(self):
+        """Emit dataChanged for affected cells."""
+        for (row, col) in self.cells:
+            index = self.model.index(row, col)
+            self.model.dataChanged.emit(index, index, [Qt.DisplayRole])
+
+
+class MergeCellsCommand:
+    """Command pattern for merge/unmerge cells."""
+
+    def __init__(self, model, merge_range, is_merge=True, previous_merged=None):
+        """
+        Args:
+            model: SpreadsheetModel
+            merge_range: Dict with start_row, start_col, end_row, end_col
+            is_merge: True for merge, False for unmerge
+            previous_merged: Previous merged cells list (for undo of unmerge)
+        """
+        self.model = model
+        self.merge_range = merge_range
+        self.is_merge = is_merge
+        self.previous_merged = previous_merged or []
+
+    def undo(self):
+        if self.is_merge:
+            self.model._unmerge_cells_internal(self.merge_range)
+        else:
+            self.model._merged_cells = self.previous_merged.copy()
+        self.model.layoutChanged.emit()
+
+    def redo(self):
+        if self.is_merge:
+            self.model._merge_cells_internal(self.merge_range)
+        else:
+            self.model._unmerge_cells_internal(self.merge_range)
+        self.model.layoutChanged.emit()
 
 
 class SpreadsheetTableView(QtWidgets.QTableView):
@@ -243,53 +1140,69 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         return re.sub(pattern, replace_ref, formula)
 
     def keyPressEvent(self, event):
-        """Handle keyboard events for copy/cut/paste/undo/redo operations."""
+        """Handle special keyboard events that QShortcut doesn't handle well.
+
+        Note: Copy/paste/cut/undo/redo/formatting shortcuts are handled by
+        QShortcut in SpreadsheetWidget._setup_shortcuts() instead.
+        """
         key = event.key()
         modifiers = event.modifiers()
 
-        # Check for Ctrl+Z (Undo)
-        if key == Qt.Key_Z and (modifiers & Qt.ControlModifier):
-            logger.info("Ctrl+Z detected - undoing")
-            self._undo()
+        # Ctrl+H or Ctrl+F (Find & Replace)
+        if key in (Qt.Key_H, Qt.Key_F) and (modifiers & Qt.ControlModifier):
+            self._show_find_replace()
             event.accept()
             return
 
-        # Check for Ctrl+Y (Redo)
-        if key == Qt.Key_Y and (modifiers & Qt.ControlModifier):
-            logger.info("Ctrl+Y detected - redoing")
-            self._redo()
+        # F2 (Edit cell)
+        if key == Qt.Key_F2:
+            current = self.currentIndex()
+            if current.isValid():
+                self.edit(current)
             event.accept()
             return
 
-        # Check for Ctrl+C (Copy)
-        if key == Qt.Key_C and (modifiers & Qt.ControlModifier):
-            logger.info("Ctrl+C detected - copying")
-            self._copy_selection()
-            event.accept()
-            return
-
-        # Check for Ctrl+X (Cut)
-        if key == Qt.Key_X and (modifiers & Qt.ControlModifier):
-            logger.info("Ctrl+X detected - cutting")
-            self._cut_selection()
-            event.accept()
-            return
-
-        # Check for Ctrl+V (Paste)
-        if key == Qt.Key_V and (modifiers & Qt.ControlModifier):
-            logger.info("Ctrl+V detected - pasting")
-            self._paste_selection()
-            event.accept()
-            return
-
-        # Check for Delete key
-        if key == Qt.Key_Delete:
-            logger.info("Delete key detected")
-            self._delete_selection()
+        # Escape (Cancel editing)
+        if key == Qt.Key_Escape:
+            if self.state() == QtWidgets.QAbstractItemView.EditingState:
+                self.closeEditor(self.indexWidget(self.currentIndex()), QtWidgets.QAbstractItemDelegate.RevertModelCache)
             event.accept()
             return
 
         super().keyPressEvent(event)
+
+    def _toggle_formatting(self, prop):
+        """Toggle a formatting property on selected cells."""
+        model = self.model()
+        if not model or not hasattr(model, 'apply_formatting_to_selection'):
+            return
+
+        selection = self.selectionModel().selectedIndexes()
+        if not selection:
+            return
+
+        # Get current value from first selected cell
+        first_idx = selection[0]
+        cell_meta = model.get_cell_meta(first_idx.row(), first_idx.column())
+        current_value = cell_meta.get(prop, False)
+
+        # Toggle the value
+        new_value = not current_value
+
+        # Apply to all selected cells
+        cells = [(idx.row(), idx.column()) for idx in selection]
+        model.apply_formatting_to_selection(cells, prop, new_value)
+
+        logger.info(f"Toggled {prop} to {new_value} on {len(cells)} cells")
+
+    def _show_find_replace(self):
+        """Show Find & Replace dialog via parent widget."""
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'show_find_replace'):
+                parent.show_find_replace()
+                return
+            parent = parent.parent()
 
     def _undo(self):
         """Undo the last change."""
@@ -307,10 +1220,12 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         """Copy selected cells to clipboard."""
         selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
         if not selection:
+            logger.debug("No selection to copy")
             return
 
         model = self.model()
         if not model:
+            logger.debug("No model for copy")
             return
 
         # Sort by row then column
@@ -322,6 +1237,9 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         min_col = min(idx.column() for idx in selection)
         max_col = max(idx.column() for idx in selection)
 
+        # Build a set of selected (row, col) for efficient lookup
+        selected_cells = {(idx.row(), idx.column()) for idx in selection}
+
         # Build clipboard data structure: dict of relative (row, col) -> value
         clipboard_cells = {}
         clipboard_text_rows = []
@@ -329,9 +1247,9 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         for row in range(min_row, max_row + 1):
             row_values = []
             for col in range(min_col, max_col + 1):
-                index = model.index(row, col)
                 # Check if this cell is in selection
-                if index in selection:
+                if (row, col) in selected_cells:
+                    index = model.index(row, col)
                     value = model.data(index, Qt.EditRole)
                     if value is None:
                         value = ""
@@ -376,14 +1294,36 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         logger.info(f"Cut {len(selection)} cells")
 
     def _paste_selection(self):
-        """Paste clipboard data to current cell or selection."""
-        current = self.currentIndex()
-        if not current.isValid():
-            return
+        """Paste clipboard data to current cell or selection.
 
+        Behavior:
+        - Uses the top-left cell of selection as the pivot for pasting
+        - If selection is larger than source, repeats the pattern (like Google Sheets)
+        - Formulas are adjusted based on each target cell's position
+        """
         model = self.model()
         if not model:
+            logger.debug("Paste: No model")
             return
+
+        # Get selected cells - use top-left as pivot
+        selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
+        if not selection:
+            current = self.currentIndex()
+            if not current.isValid():
+                logger.debug("Paste: No valid selection or current index")
+                return
+            selection = [current]
+
+        # Find the bounding box of the selection
+        sel_min_row = min(idx.row() for idx in selection)
+        sel_max_row = max(idx.row() for idx in selection)
+        sel_min_col = min(idx.column() for idx in selection)
+        sel_max_col = max(idx.column() for idx in selection)
+        sel_rows = sel_max_row - sel_min_row + 1
+        sel_cols = sel_max_col - sel_min_col + 1
+
+        logger.debug(f"Paste: selection bounds=({sel_min_row},{sel_min_col}) to ({sel_max_row},{sel_max_col})")
 
         # Collect all changes for a single undo command
         changes = []
@@ -393,43 +1333,64 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             cells = self._clipboard_data['cells']
             source_row = self._clipboard_data.get('source_row', 0)
             source_col = self._clipboard_data.get('source_col', 0)
+            clip_rows = self._clipboard_data.get('rows', 1)
+            clip_cols = self._clipboard_data.get('cols', 1)
 
-            target_row = current.row()
-            target_col = current.column()
+            logger.debug(f"Paste: clipboard has {len(cells)} cells, size {clip_rows}x{clip_cols}")
 
-            # Calculate offset from source to target
-            row_offset = target_row - source_row
-            col_offset = target_col - source_col
+            # Build a list of source values in order for repeating
+            source_values = []
+            for r in range(clip_rows):
+                for c in range(clip_cols):
+                    value = cells.get((r, c), "")
+                    source_values.append({
+                        'value': value,
+                        'rel_row': r,
+                        'rel_col': c
+                    })
 
-            # Collect paste changes
-            for (rel_row, rel_col), value in cells.items():
-                paste_row = target_row + rel_row
-                paste_col = target_col + rel_col
+            # Paste to each selected cell with repeating pattern
+            source_idx = 0
+            for target_row in range(sel_min_row, sel_max_row + 1):
+                for target_col in range(sel_min_col, sel_max_col + 1):
+                    # Check if this cell is in the selection
+                    if not any(idx.row() == target_row and idx.column() == target_col for idx in selection):
+                        continue
 
-                # Check bounds
-                if paste_row >= model.rowCount() or paste_col >= model.columnCount():
-                    continue
+                    # Check bounds
+                    if target_row >= model.rowCount() or target_col >= model.columnCount():
+                        continue
 
-                # If it's a formula, adjust references
-                new_formula = None
-                new_value = None
-                if isinstance(value, str) and value.startswith('='):
-                    new_formula = self._adjust_formula_for_paste(value, row_offset + rel_row, col_offset + rel_col)
-                else:
-                    new_value = value
+                    # Get the source value (cycling through the pattern)
+                    src = source_values[source_idx % len(source_values)]
+                    value = src['value']
 
-                # Get old values
-                old_value = model._data.get((paste_row, paste_col), None)
-                old_formula = model._formulas.get((paste_row, paste_col), None)
+                    # Calculate offset for formula adjustment
+                    row_offset = target_row - source_row - src['rel_row']
+                    col_offset = target_col - source_col - src['rel_col']
 
-                changes.append({
-                    'row': paste_row,
-                    'col': paste_col,
-                    'old_value': old_value,
-                    'new_value': new_value,
-                    'old_formula': old_formula,
-                    'new_formula': new_formula
-                })
+                    # If it's a formula, adjust references
+                    new_formula = None
+                    new_value = None
+                    if isinstance(value, str) and value.startswith('='):
+                        new_formula = self._adjust_formula_for_paste(value, row_offset, col_offset)
+                    else:
+                        new_value = value
+
+                    # Get old values
+                    old_value = model._data.get((target_row, target_col), None)
+                    old_formula = model._formulas.get((target_row, target_col), None)
+
+                    changes.append({
+                        'row': target_row,
+                        'col': target_col,
+                        'old_value': old_value,
+                        'new_value': new_value,
+                        'old_formula': old_formula,
+                        'new_formula': new_formula
+                    })
+
+                    source_idx += 1
 
             # If it was a cut operation, also add deletions for source cells
             if self._clipboard_is_cut and hasattr(self, '_cut_selection_indexes'):
@@ -459,22 +1420,34 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                 if rows and rows[-1] == '':
                     rows = rows[:-1]
 
-                target_row = current.row()
-                target_col = current.column()
-
-                for row_offset, row_text in enumerate(rows):
+                # Build source values list
+                source_values = []
+                for row_text in rows:
                     cols = row_text.split('\t')
-                    for col_offset, cell_value in enumerate(cols):
-                        paste_row = target_row + row_offset
-                        paste_col = target_col + col_offset
+                    for cell_value in cols:
+                        source_values.append(cell_value)
 
-                        # Check bounds
-                        if paste_row >= model.rowCount() or paste_col >= model.columnCount():
+                if not source_values:
+                    return
+
+                # Paste to each selected cell with repeating pattern
+                source_idx = 0
+                for target_row in range(sel_min_row, sel_max_row + 1):
+                    for target_col in range(sel_min_col, sel_max_col + 1):
+                        # Check if this cell is in the selection
+                        if not any(idx.row() == target_row and idx.column() == target_col for idx in selection):
                             continue
 
+                        # Check bounds
+                        if target_row >= model.rowCount() or target_col >= model.columnCount():
+                            continue
+
+                        # Get the source value (cycling through the pattern)
+                        cell_value = source_values[source_idx % len(source_values)]
+
                         # Get old values
-                        old_value = model._data.get((paste_row, paste_col), None)
-                        old_formula = model._formulas.get((paste_row, paste_col), None)
+                        old_value = model._data.get((target_row, target_col), None)
+                        old_formula = model._formulas.get((target_row, target_col), None)
 
                         # Determine if new value is formula or value
                         new_formula = None
@@ -485,13 +1458,15 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                             new_value = cell_value
 
                         changes.append({
-                            'row': paste_row,
-                            'col': paste_col,
+                            'row': target_row,
+                            'col': target_col,
                             'old_value': old_value,
                             'new_value': new_value,
                             'old_formula': old_formula,
                             'new_formula': new_formula
                         })
+
+                        source_idx += 1
 
         # Execute paste via command
         if changes:
@@ -766,13 +1741,16 @@ class SpreadsheetDeleteCommand:
 
 
 class SpreadsheetModel(QtCore.QAbstractTableModel):
-    """Model for spreadsheet data with formula support and undo/redo."""
+    """Model for spreadsheet data with formula support, undo/redo, and cell formatting."""
 
     # Signal emitted when status messages should be shown
     statusMessageChanged = QtCore.Signal(str, bool)  # message, is_error
 
     # Signal emitted when row count changes (for filtering)
     rowCountChanged = QtCore.Signal(int, int)  # visible_rows, total_rows
+
+    # Signal emitted when cell metadata changes (for toolbar updates)
+    cellMetaChanged = QtCore.Signal(dict)  # cell_meta dict
 
     # Special marker for text values that should be detected in numeric columns
     TEXT_VALUE_MARKER = "__TEXT_VALUE__"
@@ -810,6 +1788,16 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         self._formats = {}  # Dict of (row, col) -> Excel-compatible format string
         self._evaluated_cache = {}  # Dict of (row, col) -> evaluated result
         self.formula_evaluator = None
+
+        # NEW: Cell metadata for formatting (bold, italic, colors, borders, etc.)
+        self._cell_meta = {}  # Dict of (row, col) -> cell_meta dict
+
+        # NEW: Sheet-level metadata
+        self._column_widths = {}  # Dict of col -> width in pixels
+        self._row_heights = {}  # Dict of row -> height in pixels
+        self._merged_cells = []  # List of {"start_row", "start_col", "end_row", "end_col"}
+        self._frozen_rows = 0  # Number of frozen rows from top
+        self._frozen_cols = 0  # Number of frozen columns from left
 
         # Column type configuration
         self._numeric_only_columns = set()  # Columns that only allow numeric values
@@ -1449,6 +2437,373 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         self.undo_stack.clear()
         self.redo_stack.clear()
 
+    # =========================================================================
+    # Cell Metadata Methods (for formatting)
+    # =========================================================================
+
+    def get_cell_meta(self, row, col):
+        """Get metadata for a cell, returning empty dict if none.
+
+        Args:
+            row: Row index
+            col: Column index
+
+        Returns:
+            dict: Cell metadata with formatting properties
+        """
+        return self._cell_meta.get((row, col), {})
+
+    def set_cell_meta(self, row, col, meta):
+        """Set complete metadata for a cell.
+
+        Args:
+            row: Row index
+            col: Column index
+            meta: Dict with formatting properties, or None to clear
+        """
+        if meta:
+            self._cell_meta[(row, col)] = meta
+        else:
+            self._cell_meta.pop((row, col), None)
+
+    def set_cell_meta_property(self, row, col, prop, value):
+        """Set a single property in cell metadata.
+
+        Args:
+            row: Row index
+            col: Column index
+            prop: Property name (e.g., 'bold', 'font_color')
+            value: Property value, or None to remove
+        """
+        if (row, col) not in self._cell_meta:
+            self._cell_meta[(row, col)] = {}
+        if value is None:
+            self._cell_meta[(row, col)].pop(prop, None)
+            # Clean up empty metadata
+            if not self._cell_meta[(row, col)]:
+                del self._cell_meta[(row, col)]
+        else:
+            self._cell_meta[(row, col)][prop] = value
+
+    def apply_formatting_to_selection(self, cells, prop, value):
+        """Apply a formatting property to multiple cells with undo support.
+
+        Args:
+            cells: List of (row, col) tuples
+            prop: Property name (e.g., 'bold', 'font_color')
+            value: Value to set
+        """
+        old_values = {}
+        for (row, col) in cells:
+            old_values[(row, col)] = self.get_cell_meta(row, col).get(prop)
+
+        command = CellFormattingCommand(self, cells, prop, old_values, value)
+        self._in_undo_redo = True
+        try:
+            command.redo()
+        finally:
+            self._in_undo_redo = False
+
+        self.undo_stack.append(command)
+        self.redo_stack.clear()
+
+    def apply_borders_to_selection(self, cells, border_config):
+        """Apply border configuration to selected cells.
+
+        Args:
+            cells: List of (row, col) tuples
+            border_config: Dict with 'type' and 'config' keys
+        """
+        border_type = border_config.get('type', 'none')
+        config = border_config.get('config', {})
+
+        # Default border style
+        border_style = {"style": "thin", "color": "#000000"}
+
+        if border_type == 'none':
+            # Remove all borders from selected cells
+            for (row, col) in cells:
+                meta = self.get_cell_meta(row, col).copy()
+                meta.pop('borders', None)
+                self.set_cell_meta(row, col, meta if meta else None)
+        elif border_type == 'all':
+            # All borders on every cell
+            for (row, col) in cells:
+                meta = self.get_cell_meta(row, col).copy()
+                meta['borders'] = {
+                    'top': border_style.copy(),
+                    'bottom': border_style.copy(),
+                    'left': border_style.copy(),
+                    'right': border_style.copy()
+                }
+                self.set_cell_meta(row, col, meta)
+        elif border_type == 'outside':
+            # Only outside borders of selection
+            if not cells:
+                return
+            rows = [c[0] for c in cells]
+            cols = [c[1] for c in cells]
+            min_row, max_row = min(rows), max(rows)
+            min_col, max_col = min(cols), max(cols)
+
+            for (row, col) in cells:
+                meta = self.get_cell_meta(row, col).copy()
+                borders = meta.get('borders', {})
+                if row == min_row:
+                    borders['top'] = border_style.copy()
+                if row == max_row:
+                    borders['bottom'] = border_style.copy()
+                if col == min_col:
+                    borders['left'] = border_style.copy()
+                if col == max_col:
+                    borders['right'] = border_style.copy()
+                if borders:
+                    meta['borders'] = borders
+                    self.set_cell_meta(row, col, meta)
+        else:
+            # Single side borders (top, bottom, left, right)
+            for (row, col) in cells:
+                meta = self.get_cell_meta(row, col).copy()
+                borders = meta.get('borders', {})
+                if border_type in config or border_type in ['top', 'bottom', 'left', 'right']:
+                    borders[border_type] = border_style.copy()
+                meta['borders'] = borders
+                self.set_cell_meta(row, col, meta)
+
+        # Emit changes
+        for (row, col) in cells:
+            index = self.index(row, col)
+            self.dataChanged.emit(index, index, [Qt.DisplayRole])
+
+    # =========================================================================
+    # Merged Cells Methods
+    # =========================================================================
+
+    def get_merged_cell_info(self, row, col):
+        """Check if cell is part of a merged region.
+
+        Args:
+            row: Row index
+            col: Column index
+
+        Returns:
+            dict with merge info if cell is merged, None otherwise
+            Keys: 'is_anchor', 'anchor', 'span', 'range'
+        """
+        for merge in self._merged_cells:
+            if (merge['start_row'] <= row <= merge['end_row'] and
+                    merge['start_col'] <= col <= merge['end_col']):
+                return {
+                    'is_anchor': row == merge['start_row'] and col == merge['start_col'],
+                    'anchor': (merge['start_row'], merge['start_col']),
+                    'span': (merge['end_row'] - merge['start_row'] + 1,
+                             merge['end_col'] - merge['start_col'] + 1),
+                    'range': merge
+                }
+        return None
+
+    def merge_cells(self, merge_range):
+        """Merge cells in the given range with undo support.
+
+        Args:
+            merge_range: Dict with start_row, start_col, end_row, end_col
+
+        Returns:
+            bool: True if merge was successful
+        """
+        # Validate no overlapping merges
+        for existing in self._merged_cells:
+            if self._ranges_overlap(merge_range, existing):
+                return False
+
+        command = MergeCellsCommand(self, merge_range, is_merge=True)
+        self._in_undo_redo = True
+        try:
+            command.redo()
+        finally:
+            self._in_undo_redo = False
+
+        self.undo_stack.append(command)
+        self.redo_stack.clear()
+        return True
+
+    def unmerge_cells(self, merge_range):
+        """Unmerge cells in the given range with undo support.
+
+        Args:
+            merge_range: Dict with start_row, start_col, end_row, end_col
+        """
+        previous_merged = self._merged_cells.copy()
+        command = MergeCellsCommand(self, merge_range, is_merge=False, previous_merged=previous_merged)
+        self._in_undo_redo = True
+        try:
+            command.redo()
+        finally:
+            self._in_undo_redo = False
+
+        self.undo_stack.append(command)
+        self.redo_stack.clear()
+
+    def _merge_cells_internal(self, merge_range):
+        """Internal merge without undo support."""
+        self._merged_cells.append(merge_range)
+
+        # Clear data from non-anchor cells (keep only top-left)
+        start_row, start_col = merge_range['start_row'], merge_range['start_col']
+        for row in range(merge_range['start_row'], merge_range['end_row'] + 1):
+            for col in range(merge_range['start_col'], merge_range['end_col'] + 1):
+                if row != start_row or col != start_col:
+                    self._data.pop((row, col), None)
+                    self._formulas.pop((row, col), None)
+
+    def _unmerge_cells_internal(self, merge_range):
+        """Internal unmerge without undo support."""
+        self._merged_cells = [m for m in self._merged_cells
+                              if not self._ranges_equal(m, merge_range)]
+
+    def _ranges_overlap(self, range1, range2):
+        """Check if two ranges overlap."""
+        return not (range1['end_row'] < range2['start_row'] or
+                    range1['start_row'] > range2['end_row'] or
+                    range1['end_col'] < range2['start_col'] or
+                    range1['start_col'] > range2['end_col'])
+
+    def _ranges_equal(self, range1, range2):
+        """Check if two ranges are equal."""
+        return (range1['start_row'] == range2['start_row'] and
+                range1['start_col'] == range2['start_col'] and
+                range1['end_row'] == range2['end_row'] and
+                range1['end_col'] == range2['end_col'])
+
+    # =========================================================================
+    # Column/Row Size Methods
+    # =========================================================================
+
+    def set_column_width(self, col, width):
+        """Set width for a column.
+
+        Args:
+            col: Column index
+            width: Width in pixels
+        """
+        self._column_widths[col] = width
+
+    def get_column_width(self, col, default=100):
+        """Get width for a column.
+
+        Args:
+            col: Column index
+            default: Default width if not set
+
+        Returns:
+            int: Column width in pixels
+        """
+        return self._column_widths.get(col, default)
+
+    def set_row_height(self, row, height):
+        """Set height for a row.
+
+        Args:
+            row: Row index
+            height: Height in pixels
+        """
+        self._row_heights[row] = height
+
+    def get_row_height(self, row, default=25):
+        """Get height for a row.
+
+        Args:
+            row: Row index
+            default: Default height if not set
+
+        Returns:
+            int: Row height in pixels
+        """
+        return self._row_heights.get(row, default)
+
+    # =========================================================================
+    # Freeze Panes Methods
+    # =========================================================================
+
+    def set_frozen_panes(self, rows, cols):
+        """Set frozen rows and columns.
+
+        Args:
+            rows: Number of rows to freeze from top
+            cols: Number of columns to freeze from left
+        """
+        self._frozen_rows = rows
+        self._frozen_cols = cols
+
+    def get_frozen_panes(self):
+        """Get frozen rows and columns.
+
+        Returns:
+            tuple: (frozen_rows, frozen_cols)
+        """
+        return self._frozen_rows, self._frozen_cols
+
+    # =========================================================================
+    # Metadata Export/Import for Persistence
+    # =========================================================================
+
+    def get_all_cell_meta(self):
+        """Get all cell metadata for persistence.
+
+        Returns:
+            dict: Cell metadata keyed by "row,col" strings
+        """
+        return {f"{row},{col}": meta for (row, col), meta in self._cell_meta.items()}
+
+    def get_sheet_meta(self):
+        """Get sheet-level metadata for persistence.
+
+        Returns:
+            dict: Sheet metadata with column_widths, row_heights, merged_cells, freeze settings
+        """
+        return {
+            'column_widths': {str(k): v for k, v in self._column_widths.items()},
+            'row_heights': {str(k): v for k, v in self._row_heights.items()},
+            'merged_cells': self._merged_cells,
+            'frozen_rows': self._frozen_rows,
+            'frozen_cols': self._frozen_cols
+        }
+
+    def load_cell_meta(self, cell_meta_dict):
+        """Load cell metadata from persistence.
+
+        Args:
+            cell_meta_dict: Dict with "row,col" keys and meta dicts as values
+        """
+        self._cell_meta = {}
+        for key, meta in cell_meta_dict.items():
+            try:
+                row, col = map(int, key.split(','))
+                self._cell_meta[(row, col)] = meta
+            except (ValueError, AttributeError):
+                continue
+
+    def load_sheet_meta(self, sheet_meta):
+        """Load sheet-level metadata from persistence.
+
+        Args:
+            sheet_meta: Dict with column_widths, row_heights, merged_cells, freeze settings
+        """
+        # Column widths
+        col_widths = sheet_meta.get('column_widths', {})
+        self._column_widths = {int(k): v for k, v in col_widths.items()}
+
+        # Row heights
+        row_heights = sheet_meta.get('row_heights', {})
+        self._row_heights = {int(k): v for k, v in row_heights.items()}
+
+        # Merged cells
+        self._merged_cells = sheet_meta.get('merged_cells', [])
+
+        # Freeze panes
+        self._frozen_rows = sheet_meta.get('frozen_rows', 0)
+        self._frozen_cols = sheet_meta.get('frozen_cols', 0)
+
 
 class SpreadsheetSortDialog(QtWidgets.QDialog):
     """Dialog for setting up compound (multi-column) sorting in spreadsheets."""
@@ -1606,7 +2961,7 @@ class SpreadsheetSortDialog(QtWidgets.QDialog):
 
 
 class SpreadsheetWidget(QtWidgets.QWidget):
-    """Full-featured spreadsheet widget with Excel formula support."""
+    """Full-featured spreadsheet widget with Excel formula support and cell formatting."""
 
     def __init__(self, rows=10, cols=26, app_settings=None, parent=None):
         """Initialize the spreadsheet widget.
@@ -1619,11 +2974,12 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         """
         super().__init__(parent)
         self.app_settings = app_settings
+        self._find_replace_dialog = None
 
         # Create layout
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(5)
+        layout.setSpacing(2)
 
         # Create custom table view FIRST (before toolbar)
         self.table_view = SpreadsheetTableView()
@@ -1659,9 +3015,17 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table_view.customContextMenuRequested.connect(self._show_context_menu)
 
+        # Install event filter on table_view and its viewport to intercept keyboard shortcuts
+        self.table_view.installEventFilter(self)
+        self.table_view.viewport().installEventFilter(self)
+
         # Create model
         self.model = SpreadsheetModel(rows, cols)
         self.table_view.setModel(self.model)
+
+        # Set up formatted cell delegate for styled rendering
+        self.formatted_delegate = FormattedCellDelegate(self.model)
+        self.table_view.setItemDelegate(self.formatted_delegate)
 
         # Configure table view
         self.table_view.horizontalHeader().setDefaultSectionSize(100)
@@ -1672,7 +3036,14 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.table_view.setShowGrid(True)
         self.table_view.setGridStyle(Qt.SolidLine)
 
-        # Create toolbar (after table_view exists)
+        # Set up resizable headers
+        self._setup_resizable_headers()
+
+        # Create formatting toolbar (ABOVE search toolbar)
+        self.formatting_toolbar = FormattingToolbar()
+        layout.addWidget(self.formatting_toolbar)
+
+        # Create search/formula toolbar (after table_view exists)
         self._create_toolbar()
         layout.addWidget(self.toolbar)
 
@@ -1682,10 +3053,218 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         # Create formula evaluator
         self.formula_evaluator = None
 
+        # Connect formatting toolbar signals
+        self._connect_formatting_signals()
+
         # Update initial row count label
         self._update_row_count_label(rows, rows)
 
+        # Setup keyboard shortcuts
+        self._setup_shortcuts()
+
         logger.info(f"SpreadsheetWidget initialized with {rows} rows and {cols} columns")
+
+    def _setup_shortcuts(self):
+        """Setup keyboard shortcuts for undo/redo, copy/paste, and formatting.
+
+        Shortcuts are stored as instance variables to prevent garbage collection.
+        """
+        # Store all shortcuts as instance variables to prevent garbage collection
+        self._shortcuts = []
+
+        # Undo shortcut (Ctrl+Z)
+        undo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Z"), self)
+        undo_shortcut.activated.connect(self.table_view._undo)
+        self._shortcuts.append(undo_shortcut)
+
+        # Redo shortcut (Ctrl+Y)
+        redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
+        redo_shortcut.activated.connect(self.table_view._redo)
+        self._shortcuts.append(redo_shortcut)
+
+        # Copy shortcut (Ctrl+C)
+        copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+C"), self)
+        copy_shortcut.activated.connect(self.table_view._copy_selection)
+        self._shortcuts.append(copy_shortcut)
+
+        # Cut shortcut (Ctrl+X)
+        cut_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+X"), self)
+        cut_shortcut.activated.connect(self.table_view._cut_selection)
+        self._shortcuts.append(cut_shortcut)
+
+        # Paste shortcut (Ctrl+V)
+        paste_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+V"), self)
+        paste_shortcut.activated.connect(self.table_view._paste_selection)
+        self._shortcuts.append(paste_shortcut)
+
+        # Bold shortcut (Ctrl+B)
+        bold_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+B"), self)
+        bold_shortcut.activated.connect(lambda: self.table_view._toggle_formatting('bold'))
+        self._shortcuts.append(bold_shortcut)
+
+        # Italic shortcut (Ctrl+I)
+        italic_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+I"), self)
+        italic_shortcut.activated.connect(lambda: self.table_view._toggle_formatting('italic'))
+        self._shortcuts.append(italic_shortcut)
+
+        # Underline shortcut (Ctrl+U)
+        underline_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+U"), self)
+        underline_shortcut.activated.connect(lambda: self.table_view._toggle_formatting('underline'))
+        self._shortcuts.append(underline_shortcut)
+
+        logger.info("SpreadsheetWidget shortcuts set up: Ctrl+Z, Ctrl+Y, Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+B, Ctrl+I, Ctrl+U")
+
+    def eventFilter(self, obj, event):
+        """Event filter to handle Enter and Delete key presses.
+
+        Copy/paste/cut/undo/redo are handled via QShortcut in _setup_shortcuts().
+        """
+        # Check for key events from table_view or its viewport
+        is_table_event = (obj == self.table_view or obj == self.table_view.viewport())
+        if is_table_event and event.type() == QtCore.QEvent.KeyPress:
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                # Enter pressed - move to next row
+                current = self.table_view.currentIndex()
+                if current.isValid():
+                    next_row = current.row() + 1
+                    if next_row < self.model.rowCount():
+                        next_index = self.model.index(next_row, current.column())
+                        self.table_view.setCurrentIndex(next_index)
+                return True
+            elif event.key() == Qt.Key_Delete:
+                self.table_view._delete_selection()
+                return True
+
+        return super().eventFilter(obj, event)
+
+    def _setup_resizable_headers(self):
+        """Set up resizable column and row headers with persistence."""
+        # Column header (horizontal) - enable interactive resizing
+        h_header = self.table_view.horizontalHeader()
+        h_header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        h_header.sectionResized.connect(self._on_column_resized)
+
+        # Row header (vertical) - enable interactive resizing
+        v_header = self.table_view.verticalHeader()
+        v_header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+        v_header.sectionResized.connect(self._on_row_resized)
+
+    def _on_column_resized(self, col, old_size, new_size):
+        """Handle column resize for persistence."""
+        self.model.set_column_width(col, new_size)
+
+    def _on_row_resized(self, row, old_size, new_size):
+        """Handle row resize for persistence."""
+        self.model.set_row_height(row, new_size)
+
+    def _connect_formatting_signals(self):
+        """Connect formatting toolbar signals to model operations."""
+        tb = self.formatting_toolbar
+
+        # Undo/Redo
+        tb.undoRequested.connect(self.model.undo)
+        tb.redoRequested.connect(self.model.redo)
+
+        # Font styles
+        tb.boldToggled.connect(lambda v: self._apply_formatting('bold', v))
+        tb.italicToggled.connect(lambda v: self._apply_formatting('italic', v))
+        tb.underlineToggled.connect(lambda v: self._apply_formatting('underline', v))
+        tb.strikethroughToggled.connect(lambda v: self._apply_formatting('strikethrough', v))
+
+        # Colors
+        tb.fontColorChanged.connect(lambda c: self._apply_formatting('font_color', c if c else None))
+        tb.bgColorChanged.connect(lambda c: self._apply_formatting('bg_color', c if c else None))
+
+        # Alignment
+        tb.alignmentChanged.connect(lambda a: self._apply_formatting('align_h', a))
+
+        # Wrap
+        tb.wrapToggled.connect(lambda v: self._apply_formatting('wrap', v))
+
+    def _apply_formatting(self, prop, value):
+        """Apply formatting property to selected cells."""
+        selection = self.table_view.selectionModel().selectedIndexes()
+        if not selection:
+            return
+
+        cells = [(idx.row(), idx.column()) for idx in selection]
+        self.model.apply_formatting_to_selection(cells, prop, value)
+
+    def _apply_borders(self, border_config):
+        """Apply border configuration to selected cells."""
+        selection = self.table_view.selectionModel().selectedIndexes()
+        if not selection:
+            return
+
+        cells = [(idx.row(), idx.column()) for idx in selection]
+        self.model.apply_borders_to_selection(cells, border_config)
+
+    def _toggle_merge(self):
+        """Toggle merge for selected cells."""
+        selection = self.table_view.selectionModel().selectedIndexes()
+        if not selection:
+            return
+
+        # Get bounding rectangle of selection
+        rows = [idx.row() for idx in selection]
+        cols = [idx.column() for idx in selection]
+        merge_range = {
+            'start_row': min(rows),
+            'start_col': min(cols),
+            'end_row': max(rows),
+            'end_col': max(cols)
+        }
+
+        # Check if selection is a single cell - can't merge
+        if merge_range['start_row'] == merge_range['end_row'] and merge_range['start_col'] == merge_range['end_col']:
+            return
+
+        # Check if already merged at anchor
+        anchor = self.model.get_merged_cell_info(merge_range['start_row'], merge_range['start_col'])
+        if anchor and anchor.get('is_anchor'):
+            # Unmerge
+            self.model.unmerge_cells(anchor['range'])
+        else:
+            # Merge
+            self.model.merge_cells(merge_range)
+
+        # Update cell spans in view
+        self._update_merged_cell_spans()
+
+    def _update_merged_cell_spans(self):
+        """Update table view to reflect merged cells."""
+        # Clear existing spans
+        self.table_view.clearSpans()
+
+        # Apply spans for merged cells
+        for merge in self.model._merged_cells:
+            row_span = merge['end_row'] - merge['start_row'] + 1
+            col_span = merge['end_col'] - merge['start_col'] + 1
+            self.table_view.setSpan(
+                merge['start_row'], merge['start_col'],
+                row_span, col_span
+            )
+
+    def show_find_replace(self):
+        """Show the Find & Replace dialog."""
+        if not self._find_replace_dialog:
+            self._find_replace_dialog = FindReplaceDialog(self, parent=self)
+        self._find_replace_dialog.show()
+        self._find_replace_dialog.raise_()
+        self._find_replace_dialog.find_input.setFocus()
+
+    def apply_saved_sizes(self):
+        """Apply saved column widths and row heights from model."""
+        # Apply column widths
+        for col, width in self.model._column_widths.items():
+            self.table_view.horizontalHeader().resizeSection(col, width)
+
+        # Apply row heights
+        for row, height in self.model._row_heights.items():
+            self.table_view.verticalHeader().resizeSection(row, height)
+
+        # Apply merged cells
+        self._update_merged_cell_spans()
 
     def _create_toolbar(self):
         """Create the toolbar with spreadsheet controls."""
@@ -1745,14 +3324,20 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.table_view.selectionModel().currentChanged.connect(self._on_selection_changed)
 
     def _on_selection_changed(self, current, previous):
-        """Update formula bar when selection changes."""
+        """Update formula bar and formatting toolbar when selection changes."""
         if not current.isValid():
             self.formula_bar.clear()
             return
 
-        # Get the cell's content (formula or value)
+        row, col = current.row(), current.column()
+
+        # Update formula bar with cell content
         value = self.model.data(current, Qt.EditRole)
         self.formula_bar.setText(str(value) if value else "")
+
+        # Update formatting toolbar state
+        cell_meta = self.model.get_cell_meta(row, col)
+        self.formatting_toolbar.update_from_cell_meta(cell_meta)
 
     def _on_formula_bar_enter(self):
         """Handle Enter key in formula bar."""
@@ -1858,6 +3443,12 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         delete_column = menu.addAction("Delete Column")
         menu.addSeparator()
 
+        # Clipboard operations
+        copy_action = menu.addAction("Copy (Ctrl+C)")
+        cut_action = menu.addAction("Cut (Ctrl+X)")
+        paste_action = menu.addAction("Paste (Ctrl+V)")
+        menu.addSeparator()
+
         # Format submenu
         format_menu = menu.addMenu("Format")
 
@@ -1922,6 +3513,13 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             self._insert_column_right(index.column())
         elif action == delete_column:
             self._delete_column(index.column())
+        # Clipboard actions
+        elif action == copy_action:
+            self.table_view._copy_selection()
+        elif action == cut_action:
+            self.table_view._cut_selection()
+        elif action == paste_action:
+            self.table_view._paste_selection()
         # Format actions
         elif action == format_general:
             self._set_cell_format(index, SpreadsheetModel.FORMAT_GENERAL)

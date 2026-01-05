@@ -2600,7 +2600,7 @@ class ShotgridClient:
         result = self.sg.find_one(
             "CustomEntity15",
             filters,
-            ["id", "code", "sg_type", "sg_parent_bid"]
+            ["id", "code", "sg_type", "sg_parent_bid", "sg_sheet_meta"]
         )
         return result
 
@@ -2748,13 +2748,15 @@ class ShotgridClient:
         result = self.sg.delete("CustomEntity16", int(item_id))
         return result
 
-    def save_spreadsheet_data(self, project_id, bid_id, spreadsheet_type, data_dict):
+    def save_spreadsheet_data(self, project_id, bid_id, spreadsheet_type, data_dict,
+                              cell_meta_dict=None, sheet_meta=None):
         """
-        Save spreadsheet data to ShotGrid.
+        Save spreadsheet data to ShotGrid including formatting metadata.
 
         This method handles the full save workflow with optimized updates:
         1. Gets or creates the Spreadsheet entity
         2. Updates existing items, creates new ones, deletes removed ones
+        3. Saves cell-level and sheet-level metadata
 
         Args:
             project_id: Project ID
@@ -2762,15 +2764,29 @@ class ShotgridClient:
             spreadsheet_type: Type of spreadsheet ('misc' or 'total_cost')
             data_dict: Dictionary from SpreadsheetWidget.get_data_as_dict()
                        Format: {(row, col): {'value': ..., 'formula': ..., 'format': ...}, ...}
+            cell_meta_dict: Optional cell metadata {'row,col': {...formatting...}, ...}
+            sheet_meta: Optional sheet-level metadata dict
 
         Returns:
             Spreadsheet entity dictionary
         """
+        import json
+
         # Get or create Spreadsheet
         spreadsheet = self.get_spreadsheet_for_bid(bid_id, spreadsheet_type)
         if not spreadsheet:
             spreadsheet = self.create_spreadsheet(project_id, bid_id, spreadsheet_type)
         spreadsheet_id = spreadsheet["id"]
+
+        # Save sheet-level metadata (column widths, row heights, merged cells, frozen panes)
+        if sheet_meta:
+            try:
+                self.sg.update("CustomEntity15", spreadsheet_id, {
+                    "sg_sheet_meta": json.dumps(sheet_meta)
+                })
+                logger.debug(f"Saved sheet metadata for spreadsheet {spreadsheet_id}")
+            except Exception as e:
+                logger.warning(f"Failed to save sheet metadata: {e}")
 
         # Get existing items and build a map by cell reference
         existing_items = self.get_spreadsheet_items(spreadsheet_id)
@@ -2793,11 +2809,15 @@ class ShotgridClient:
             value = cell_data.get('value')
             cell_format = cell_data.get('format')
 
+            # Get cell metadata for this cell
+            meta_key = f"{row},{col}"
+            cell_meta = cell_meta_dict.get(meta_key) if cell_meta_dict else None
+
             # Determine what to store in sg_formula
             sg_formula_value = formula if formula else (str(value) if value is not None else "")
 
             if cell_ref in existing_by_cell:
-                # Update existing item if value or format changed
+                # Update existing item if value, format, or metadata changed
                 existing_item = existing_by_cell[cell_ref]
                 update_data = {}
 
@@ -2807,19 +2827,33 @@ class ShotgridClient:
                 if cell_format and existing_item.get("sg_format") != cell_format:
                     update_data["sg_format"] = cell_format
 
+                # Update cell metadata
+                if cell_meta:
+                    new_meta_json = json.dumps(cell_meta)
+                    if existing_item.get("sg_cell_meta") != new_meta_json:
+                        update_data["sg_cell_meta"] = new_meta_json
+                elif existing_item.get("sg_cell_meta"):
+                    # Clear cell metadata if no longer present
+                    update_data["sg_cell_meta"] = ""
+
                 if update_data:
                     self.sg.update("CustomEntity16", int(existing_item["id"]), update_data)
                     updated_count += 1
             else:
-                # Create new item
-                self.create_spreadsheet_item(
-                    project_id=project_id,
-                    spreadsheet_id=spreadsheet_id,
-                    cell=cell_ref,
-                    formula=formula,
-                    value=value,
-                    cell_format=cell_format
-                )
+                # Create new item with metadata
+                create_data = {
+                    "code": cell_ref,
+                    "project": {"type": "Project", "id": int(project_id)},
+                    "sg_parent": {"type": "CustomEntity15", "id": int(spreadsheet_id)},
+                    "sg_cell": cell_ref,
+                    "sg_formula": sg_formula_value
+                }
+                if cell_format:
+                    create_data["sg_format"] = cell_format
+                if cell_meta:
+                    create_data["sg_cell_meta"] = json.dumps(cell_meta)
+
+                self.sg.create("CustomEntity16", create_data)
                 created_count += 1
 
         # Delete items for cells that no longer exist in data_dict
@@ -2833,24 +2867,44 @@ class ShotgridClient:
 
     def load_spreadsheet_data(self, bid_id, spreadsheet_type):
         """
-        Load spreadsheet data from ShotGrid.
+        Load spreadsheet data from ShotGrid including formatting metadata.
 
         Args:
             bid_id: Bid ID
             spreadsheet_type: Type of spreadsheet ('misc' or 'total_cost')
 
         Returns:
-            Dictionary in format for SpreadsheetWidget.load_data_from_dict()
-            Format: {(row, col): {'value': ..., 'formula': ..., 'format': ...}, ...}
-            Returns empty dict if no spreadsheet found.
+            Tuple of (data_dict, cell_meta_dict, sheet_meta) where:
+            - data_dict: {(row, col): {'value': ..., 'formula': ..., 'format': ...}, ...}
+            - cell_meta_dict: {'row,col': {...formatting...}, ...}
+            - sheet_meta: dict with column_widths, row_heights, merged_cells, etc.
+            Returns ({}, {}, {}) if no spreadsheet found.
         """
+        import json
+
         spreadsheet = self.get_spreadsheet_for_bid(bid_id, spreadsheet_type)
         if not spreadsheet:
-            return {}
+            return {}, {}, {}
 
-        items = self.get_spreadsheet_items(spreadsheet["id"])
+        # Load sheet-level metadata
+        sheet_meta = {}
+        sg_sheet_meta = spreadsheet.get("sg_sheet_meta", "")
+        if sg_sheet_meta:
+            try:
+                sheet_meta = json.loads(sg_sheet_meta)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(f"Failed to parse sheet metadata for spreadsheet {spreadsheet['id']}")
+
+        # Load items with cell metadata
+        items = self.sg.find(
+            "CustomEntity16",
+            [["sg_parent", "is", {"type": "CustomEntity15", "id": spreadsheet["id"]}]],
+            ["id", "sg_cell", "sg_formula", "sg_format", "sg_cell_meta"]
+        )
 
         data_dict = {}
+        cell_meta_dict = {}
+
         for item in items:
             cell_ref = item.get("sg_cell", "")
             if not cell_ref:
@@ -2873,6 +2927,8 @@ class ShotgridClient:
             sg_formula = item.get("sg_formula", "")
             # sg_format stores Excel-compatible format string
             sg_format = item.get("sg_format", "")
+            # sg_cell_meta stores JSON-encoded formatting metadata
+            sg_cell_meta = item.get("sg_cell_meta", "")
 
             # Determine if it's a formula or a plain value
             if sg_formula and sg_formula.startswith("="):
@@ -2893,8 +2949,15 @@ class ShotgridClient:
 
             data_dict[(row, col)] = cell_data
 
-        logger.info(f"Loaded {len(data_dict)} cells from Spreadsheet for bid {bid_id}, type={spreadsheet_type}")
-        return data_dict
+            # Parse cell metadata
+            if sg_cell_meta:
+                try:
+                    cell_meta_dict[f"{row},{col}"] = json.loads(sg_cell_meta)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        logger.info(f"Loaded {len(data_dict)} cells and {len(cell_meta_dict)} formatted cells from Spreadsheet for bid {bid_id}, type={spreadsheet_type}")
+        return data_dict, cell_meta_dict, sheet_meta
 
     def close_connection(self, thread_id=None):
         """Close the ShotGrid connection for a specific thread or current thread.
