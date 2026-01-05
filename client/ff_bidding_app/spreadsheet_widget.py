@@ -3073,8 +3073,9 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table_view.customContextMenuRequested.connect(self._show_context_menu)
 
-        # Install event filter on table_view to intercept keyboard shortcuts
+        # Install event filter on table_view and its viewport to intercept keyboard shortcuts
         self.table_view.installEventFilter(self)
+        self.table_view.viewport().installEventFilter(self)
 
         # Create model
         self.model = SpreadsheetModel(rows, cols)
@@ -3149,7 +3150,9 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         This intercepts copy/paste/cut/delete/undo/redo before QTableView's
         built-in handlers consume them.
         """
-        if obj == self.table_view and event.type() == QtCore.QEvent.KeyPress:
+        # Check for key events from table_view or its viewport
+        is_table_event = (obj == self.table_view or obj == self.table_view.viewport())
+        if is_table_event and event.type() == QtCore.QEvent.KeyPress:
             key = event.key()
             modifiers = event.modifiers()
 
