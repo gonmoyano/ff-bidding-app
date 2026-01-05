@@ -1038,6 +1038,9 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         # Ensure the table view can receive keyboard events
         self.setFocusPolicy(Qt.StrongFocus)
 
+        # Install event filter on viewport to intercept mouse events during formula editing
+        self.viewport().installEventFilter(self)
+
     def _get_cell_reference(self, row, col):
         """Get Excel-style cell reference (e.g., 'A1', 'B2') from row and column indices."""
         # Convert column index to letter(s)
@@ -1109,6 +1112,116 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             editor.setFocus()
             return True
         return False
+
+    def closeEditor(self, editor, hint):
+        """Override to prevent editor from closing during formula reference selection.
+
+        When selecting cells for a formula reference, we want to keep the editor
+        open until the user explicitly commits (Enter) or cancels (Escape).
+        """
+        # Check if this editor is being used for formula reference selection
+        if self._formula_editor_ref is not None and editor == self._formula_editor_ref:
+            # Keep the editor open - we're selecting cells for the formula
+            # Only close if hint indicates explicit commit/cancel
+            from qtpy.QtWidgets import QAbstractItemDelegate
+            if hint in (QAbstractItemDelegate.RevertModelCache, QAbstractItemDelegate.EditNextItem,
+                        QAbstractItemDelegate.EditPreviousItem):
+                # These hints mean the user wants to close
+                self._formula_editor_ref = None
+                self._formula_reference_start = None
+                super().closeEditor(editor, hint)
+            # For other hints (like NoHint from focus loss), keep editor open
+            return
+
+        # Check if we're in formula edit mode and should prevent closing
+        if hasattr(editor, 'text') and editor.text().startswith('='):
+            if self._is_dragging_formula_ref:
+                # We're in the middle of selecting a range - don't close
+                return
+
+        # Normal close behavior
+        self._formula_editor_ref = None
+        self._formula_reference_start = None
+        super().closeEditor(editor, hint)
+
+    def eventFilter(self, obj, event):
+        """Event filter to intercept mouse events during formula editing.
+
+        This catches mouse events on the viewport BEFORE they cause
+        focus changes that would close the editor.
+        """
+        from qtpy.QtCore import QEvent
+
+        if obj == self.viewport():
+            # Handle mouse press - start formula reference selection
+            if event.type() == QEvent.MouseButtonPress:
+                # Check if we're in formula edit mode
+                editor = self._find_cell_editor()
+                if editor and hasattr(editor, 'text') and editor.text().startswith('='):
+                    # Store editor reference before focus changes
+                    self._formula_editor_ref = editor
+
+                    # Get the clicked position
+                    pos = event.pos()
+                    clicked_index = self.indexAt(pos)
+
+                    if clicked_index.isValid():
+                        current_idx = self.currentIndex()
+                        # Don't insert reference if clicking on the cell being edited
+                        if clicked_index.row() != current_idx.row() or clicked_index.column() != current_idx.column():
+                            clicked_row = clicked_index.row()
+                            clicked_col = clicked_index.column()
+
+                            # Check for Shift+click for range selection
+                            if event.modifiers() & Qt.ShiftModifier and self._formula_reference_start:
+                                start_row, start_col = self._formula_reference_start
+                                min_row, max_row = min(start_row, clicked_row), max(start_row, clicked_row)
+                                min_col, max_col = min(start_col, clicked_col), max(start_col, clicked_col)
+                                ref = self._get_range_reference(min_row, min_col, max_row, max_col)
+                                self._insert_cell_reference(ref)
+                            else:
+                                # Start drag for range selection
+                                self._formula_reference_start = (clicked_row, clicked_col)
+                                self._is_dragging_formula_ref = True
+                                self._formula_ref_drag_end = (clicked_row, clicked_col)
+
+                            # Consume the event - don't let it propagate
+                            return True
+
+            # Handle mouse move - update drag selection
+            elif event.type() == QEvent.MouseMove:
+                if self._is_dragging_formula_ref and self._formula_reference_start:
+                    pos = event.pos()
+                    index = self.indexAt(pos)
+                    if index.isValid():
+                        self._formula_ref_drag_end = (index.row(), index.column())
+                        self.viewport().update()
+                    return True
+
+            # Handle mouse release - complete formula reference selection
+            elif event.type() == QEvent.MouseButtonRelease:
+                if self._is_dragging_formula_ref and self._formula_reference_start:
+                    start_row, start_col = self._formula_reference_start
+                    if self._formula_ref_drag_end:
+                        end_row, end_col = self._formula_ref_drag_end
+                    else:
+                        end_row, end_col = start_row, start_col
+
+                    # Normalize the range
+                    min_row, max_row = min(start_row, end_row), max(start_row, end_row)
+                    min_col, max_col = min(start_col, end_col), max(start_col, end_col)
+
+                    # Generate and insert the reference
+                    ref = self._get_range_reference(min_row, min_col, max_row, max_col)
+                    self._insert_cell_reference(ref)
+
+                    # Reset drag state
+                    self._is_dragging_formula_ref = False
+                    self._formula_ref_drag_end = None
+                    self.viewport().update()
+                    return True
+
+        return super().eventFilter(obj, event)
 
     def paintEvent(self, event):
         """Paint the table and add blue border with fill handle."""
