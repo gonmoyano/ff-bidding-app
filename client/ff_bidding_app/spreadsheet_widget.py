@@ -1033,6 +1033,7 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         self._formula_reference_start = None  # Start cell for range selection during formula edit
         self._is_dragging_formula_ref = False  # True when drag-selecting cells for formula reference
         self._formula_ref_drag_end = None  # Current end cell during drag
+        self._formula_editor_ref = None  # Reference to the editor during formula reference selection
 
         # Ensure the table view can receive keyboard events
         self.setFocusPolicy(Qt.StrongFocus)
@@ -1057,34 +1058,51 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             return start_ref
         return f"{start_ref}:{end_ref}"
 
+    def _find_cell_editor(self):
+        """Find the active cell editor widget.
+
+        During editing, Qt creates a QLineEdit as a child of the viewport.
+        We search for it to get the current editor.
+        """
+        # First check if we're in editing state
+        if self.state() != QtWidgets.QAbstractItemView.EditingState:
+            return None
+
+        # Look for QLineEdit child widgets in the viewport
+        from qtpy.QtWidgets import QLineEdit
+        for child in self.viewport().children():
+            if isinstance(child, QLineEdit):
+                return child
+
+        # Fallback: try QApplication.focusWidget()
+        from qtpy.QtWidgets import QApplication
+        editor = QApplication.focusWidget()
+        if editor and hasattr(editor, 'text') and hasattr(editor, 'insert'):
+            return editor
+
+        return None
+
     def _is_in_formula_edit_mode(self):
         """Check if we're currently editing a cell with a formula (starts with '=')."""
-        # Get the current editor widget
-        current_idx = self.currentIndex()
-        if not current_idx.isValid():
-            return False
-
-        editor = self.indexWidget(current_idx)
-        if editor is None:
-            return False
-
-        # Check if editor has text method (QLineEdit)
-        if hasattr(editor, 'text'):
+        editor = self._find_cell_editor()
+        if editor and hasattr(editor, 'text'):
             text = editor.text()
-            return text.startswith('=')
+            if text.startswith('='):
+                return True
 
+        # Not in formula edit mode - clear stored reference
+        self._formula_editor_ref = None
+        self._formula_reference_start = None
         return False
 
     def _get_current_editor(self):
         """Get the current editor widget if in edit mode."""
-        current_idx = self.currentIndex()
-        if current_idx.isValid():
-            return self.indexWidget(current_idx)
-        return None
+        return self._find_cell_editor()
 
     def _insert_cell_reference(self, ref_text):
         """Insert a cell reference into the current formula editor."""
-        editor = self._get_current_editor()
+        # Use stored editor reference if available, otherwise find it
+        editor = self._formula_editor_ref if self._formula_editor_ref else self._get_current_editor()
         if editor and hasattr(editor, 'insert'):
             # QLineEdit has insert() method that inserts at cursor position
             editor.insert(ref_text)
@@ -1208,7 +1226,11 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                 return
 
             # Check if we're in formula edit mode
-            if self._is_in_formula_edit_mode():
+            editor = self._find_cell_editor()
+            if editor and hasattr(editor, 'text') and editor.text().startswith('='):
+                # Store editor reference for later use
+                self._formula_editor_ref = editor
+
                 # Get the clicked cell
                 clicked_index = self.indexAt(event.pos())
                 if clicked_index.isValid():
@@ -1294,9 +1316,10 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             ref = self._get_range_reference(min_row, min_col, max_row, max_col)
             self._insert_cell_reference(ref)
 
-            # Reset drag state
+            # Reset drag state but keep editor reference for potential next selection
             self._is_dragging_formula_ref = False
             self._formula_ref_drag_end = None
+            # Note: Don't clear _formula_editor_ref here - user might want to add more references
             self.viewport().update()
             event.accept()
             return
