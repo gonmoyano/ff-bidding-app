@@ -3065,54 +3065,67 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         logger.info(f"SpreadsheetWidget initialized with {rows} rows and {cols} columns")
 
     def _setup_shortcuts(self):
-        """Setup keyboard shortcuts for clipboard and formatting operations.
+        """Setup keyboard shortcuts for formatting operations.
 
-        Uses QShortcut objects with default WindowShortcut context like
-        VFX Breakdown widget does - this works reliably across child widgets.
+        Note: Most shortcuts are handled via eventFilter for reliability.
+        QShortcut is only used for formatting shortcuts that work reliably.
         """
-        # Copy shortcut (Ctrl+C)
-        copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Copy, self)
-        copy_shortcut.activated.connect(self.table_view._copy_selection)
-
-        # Cut shortcut (Ctrl+X)
-        cut_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Cut, self)
-        cut_shortcut.activated.connect(self.table_view._cut_selection)
-
-        # Paste shortcut (Ctrl+V)
-        paste_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Paste, self)
-        paste_shortcut.activated.connect(self.table_view._paste_selection)
-
-        # Undo shortcut (Ctrl+Z)
-        undo_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Undo, self)
-        undo_shortcut.activated.connect(self.table_view._undo)
-
-        # Redo shortcut (Ctrl+Y)
-        redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Redo, self)
-        redo_shortcut.activated.connect(self.table_view._redo)
-
+        # Store shortcuts as instance variables to prevent garbage collection
         # Bold shortcut (Ctrl+B)
-        bold_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Bold, self)
-        bold_shortcut.activated.connect(lambda: self.table_view._toggle_formatting('bold'))
+        self._bold_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Bold, self)
+        self._bold_shortcut.activated.connect(lambda: self.table_view._toggle_formatting('bold'))
 
         # Italic shortcut (Ctrl+I)
-        italic_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Italic, self)
-        italic_shortcut.activated.connect(lambda: self.table_view._toggle_formatting('italic'))
+        self._italic_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Italic, self)
+        self._italic_shortcut.activated.connect(lambda: self.table_view._toggle_formatting('italic'))
 
         # Underline shortcut (Ctrl+U)
-        underline_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Underline, self)
-        underline_shortcut.activated.connect(lambda: self.table_view._toggle_formatting('underline'))
+        self._underline_shortcut = QtGui.QShortcut(QtGui.QKeySequence.Underline, self)
+        self._underline_shortcut.activated.connect(lambda: self.table_view._toggle_formatting('underline'))
 
     def eventFilter(self, obj, event):
-        """Event filter to handle Delete key on table_view.
+        """Event filter to handle keyboard shortcuts on table_view.
 
-        Delete key is handled via event filter since QShortcut doesn't
-        work well for single key shortcuts.
+        Handles copy/paste/cut/delete/undo/redo directly in event filter
+        for maximum reliability across platforms.
         """
         # Check for key events from table_view or its viewport
         is_table_event = (obj == self.table_view or obj == self.table_view.viewport())
         if is_table_event and event.type() == QtCore.QEvent.KeyPress:
+            key = event.key()
+            modifiers = event.modifiers()
+
+            # Check for Ctrl modifier (Cmd on Mac)
+            has_ctrl = bool(modifiers & Qt.ControlModifier)
+
+            # Ctrl+C (Copy)
+            if has_ctrl and key == Qt.Key_C:
+                self.table_view._copy_selection()
+                return True
+
+            # Ctrl+X (Cut)
+            if has_ctrl and key == Qt.Key_X:
+                self.table_view._cut_selection()
+                return True
+
+            # Ctrl+V (Paste)
+            if has_ctrl and key == Qt.Key_V:
+                self.table_view._paste_selection()
+                return True
+
+            # Ctrl+Z (Undo)
+            if has_ctrl and key == Qt.Key_Z and not (modifiers & Qt.ShiftModifier):
+                self.table_view._undo()
+                return True
+
+            # Ctrl+Y or Ctrl+Shift+Z (Redo)
+            if (has_ctrl and key == Qt.Key_Y) or \
+               (has_ctrl and key == Qt.Key_Z and (modifiers & Qt.ShiftModifier)):
+                self.table_view._redo()
+                return True
+
             # Delete key
-            if event.key() == Qt.Key_Delete:
+            if key == Qt.Key_Delete:
                 self.table_view._delete_selection()
                 return True
 
