@@ -19,6 +19,7 @@ try:
     from .settings_dialog import SettingsDialog
     from .logger import logger
     from .gdrive_service import get_gdrive_service, GOOGLE_API_AVAILABLE
+    from .spreadsheet_cache import get_spreadsheet_cache
 except ImportError:
     # Standalone mode - add to path and import
     import os
@@ -36,6 +37,7 @@ except ImportError:
     from settings import AppSettings
     from settings_dialog import SettingsDialog
     from gdrive_service import get_gdrive_service, GOOGLE_API_AVAILABLE
+    from spreadsheet_cache import get_spreadsheet_cache
 
     # Setup basic logger for standalone mode
     try:
@@ -767,6 +769,9 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
             # Initialize app settings
             self.app_settings = AppSettings()
+
+            # Check for and recover any cached spreadsheet changes from a previous session (e.g., after crash)
+            self._recover_cached_spreadsheets()
 
             # Track the current DPI scale to detect changes
             # This is also used by delegates during preview to get the live scale
@@ -2058,6 +2063,22 @@ class PackageManagerApp(QtWidgets.QMainWindow):
             logger.error(f"Error loading projects: {e}", exc_info=True)
             self.status_label.setText(f"Error loading projects: {str(e)}")
 
+    def _recover_cached_spreadsheets(self):
+        """Check for and recover any cached spreadsheet changes from a previous session.
+
+        This handles crash recovery by checking if there are unsaved spreadsheet changes
+        from a previous session and prompting the user to save them to ShotGrid.
+        """
+        try:
+            cache = get_spreadsheet_cache()
+            cache.set_sg_session(self.sg_session)
+
+            if cache.has_dirty_spreadsheets():
+                logger.info(f"Found {cache.get_dirty_count()} cached spreadsheet(s) from previous session")
+                cache.recover_on_startup(parent_widget=self)
+        except Exception as e:
+            logger.error(f"Error during spreadsheet cache recovery: {e}", exc_info=True)
+
     def _auto_load_latest_project(self):
         """Automatically load the most recently created project on startup."""
         try:
@@ -2389,4 +2410,13 @@ class PackageManagerApp(QtWidgets.QMainWindow):
 
     def closeEvent(self, event):
         """Called when window is closed."""
+        # Commit any cached spreadsheet changes to ShotGrid before closing
+        try:
+            cache = get_spreadsheet_cache()
+            if cache.has_dirty_spreadsheets():
+                logger.info("Committing cached spreadsheet changes before app close...")
+                cache.commit_all(parent_widget=self)
+        except Exception as e:
+            logger.error(f"Error committing cached spreadsheets on close: {e}", exc_info=True)
+
         super().closeEvent(event)

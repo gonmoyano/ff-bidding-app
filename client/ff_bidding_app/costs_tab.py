@@ -14,6 +14,7 @@ try:
     from .table_with_totals_bar import TableWithTotalsBar
     from .spreadsheet_widget import SpreadsheetWidget
     from .bid_selector_widget import parse_sg_currency
+    from .spreadsheet_cache import get_spreadsheet_cache
 except ImportError:
     import logging
     logger = logging.getLogger("FFPackageManager")
@@ -24,6 +25,7 @@ except ImportError:
     from table_with_totals_bar import TableWithTotalsBar
     from spreadsheet_widget import SpreadsheetWidget
     from bid_selector_widget import parse_sg_currency
+    from spreadsheet_cache import get_spreadsheet_cache
 
 
 class CostDock(QtWidgets.QDockWidget):
@@ -85,16 +87,9 @@ class CostsTab(QtWidgets.QMainWindow):
         self.shots_cost_formula_delegate = None
         self.asset_cost_formula_delegate = None
 
-        # Debounce timer for saving spreadsheet data to ShotGrid
-        self._misc_save_timer = QtCore.QTimer()
-        self._misc_save_timer.setSingleShot(True)
-        self._misc_save_timer.setInterval(1000)  # 1 second debounce
-        self._misc_save_timer.timeout.connect(self._save_misc_spreadsheet_to_shotgrid)
-
-        self._total_cost_save_timer = QtCore.QTimer()
-        self._total_cost_save_timer.setSingleShot(True)
-        self._total_cost_save_timer.setInterval(1000)  # 1 second debounce
-        self._total_cost_save_timer.timeout.connect(self._save_total_cost_spreadsheet_to_shotgrid)
+        # Spreadsheet cache for deferred ShotGrid saves
+        self._spreadsheet_cache = get_spreadsheet_cache()
+        self._spreadsheet_cache.set_sg_session(sg_session)
 
         # No central widget - docks can take full space
         self.setCentralWidget(None)
@@ -587,19 +582,73 @@ class CostsTab(QtWidgets.QMainWindow):
             logger.info("_clear_cross_tab_caches: Done")
 
     def _on_misc_data_changed(self):
-        """Handle data changes in the Misc Cost spreadsheet - update summary and save."""
+        """Handle data changes in the Misc Cost spreadsheet - update summary and cache."""
         # Update Total Cost summary
         self._update_total_cost_summary()
 
-        # Schedule debounced save to ShotGrid
+        # Mark spreadsheet as dirty in cache (will be saved on bid change or app close)
         if self.current_bid_id and self.current_project_id:
-            self._misc_save_timer.start()  # Restart timer on each change
+            self._cache_misc_spreadsheet()
 
     def _on_total_cost_data_changed(self):
-        """Handle data changes in the Total Cost spreadsheet - save to ShotGrid."""
-        # Schedule debounced save to ShotGrid
+        """Handle data changes in the Total Cost spreadsheet - cache for later save."""
+        # Mark spreadsheet as dirty in cache (will be saved on bid change or app close)
         if self.current_bid_id and self.current_project_id:
-            self._total_cost_save_timer.start()  # Restart timer on each change
+            self._cache_total_cost_spreadsheet()
+
+    def _cache_misc_spreadsheet(self):
+        """Cache Misc Cost spreadsheet data for deferred ShotGrid save."""
+        if not self.current_bid_id or not self.current_project_id:
+            return
+
+        if not hasattr(self, 'misc_cost_spreadsheet'):
+            return
+
+        try:
+            data_dict = self.misc_cost_spreadsheet.get_data_as_dict()
+            if not data_dict:
+                return
+
+            cell_meta_dict = self.misc_cost_spreadsheet.model.get_all_cell_meta()
+            sheet_meta = self.misc_cost_spreadsheet.model.get_sheet_meta()
+
+            self._spreadsheet_cache.mark_dirty(
+                project_id=self.current_project_id,
+                bid_id=self.current_bid_id,
+                spreadsheet_type="misc",
+                data_dict=data_dict,
+                cell_meta_dict=cell_meta_dict,
+                sheet_meta=sheet_meta
+            )
+        except Exception as e:
+            logger.error(f"Failed to cache Misc spreadsheet: {e}", exc_info=True)
+
+    def _cache_total_cost_spreadsheet(self):
+        """Cache Total Cost spreadsheet data for deferred ShotGrid save."""
+        if not self.current_bid_id or not self.current_project_id:
+            return
+
+        if not hasattr(self, 'total_cost_spreadsheet'):
+            return
+
+        try:
+            data_dict = self.total_cost_spreadsheet.get_data_as_dict()
+            if not data_dict:
+                return
+
+            cell_meta_dict = self.total_cost_spreadsheet.model.get_all_cell_meta()
+            sheet_meta = self.total_cost_spreadsheet.model.get_sheet_meta()
+
+            self._spreadsheet_cache.mark_dirty(
+                project_id=self.current_project_id,
+                bid_id=self.current_bid_id,
+                spreadsheet_type="total_cost",
+                data_dict=data_dict,
+                cell_meta_dict=cell_meta_dict,
+                sheet_meta=sheet_meta
+            )
+        except Exception as e:
+            logger.error(f"Failed to cache Total Cost spreadsheet: {e}", exc_info=True)
 
     def _setup_cross_tab_formulas(self):
         """Set up cross-tab formula references between cost sheets."""
@@ -667,6 +716,11 @@ class CostsTab(QtWidgets.QMainWindow):
             logger.info(f"  sg_vfx_breakdown in bid_data: {bid_data.get('sg_vfx_breakdown')}")
             logger.info(f"  sg_bid_assets in bid_data: {bid_data.get('sg_bid_assets')}")
         logger.info("="*80)
+
+        # Commit cached spreadsheet changes for the previous bid before switching
+        if self.current_bid_id and self._spreadsheet_cache.has_dirty_spreadsheets():
+            logger.info(f"Committing cached spreadsheet changes for bid {self.current_bid_id} before switching...")
+            self._spreadsheet_cache.commit_for_bid(self.current_bid_id, parent_widget=self)
 
         self.current_bid_data = bid_data
         self.current_bid_id = bid_data.get('id') if bid_data else None
@@ -1885,15 +1939,11 @@ class CostsTab(QtWidgets.QMainWindow):
         return []
 
     def closeEvent(self, event: QtGui.QCloseEvent):
-        """Handle close event - save layout and pending spreadsheet data."""
-        # Stop the debounce timers and save any pending data immediately
-        if hasattr(self, '_misc_save_timer') and self._misc_save_timer.isActive():
-            self._misc_save_timer.stop()
-            self._save_misc_spreadsheet_to_shotgrid()
-
-        if hasattr(self, '_total_cost_save_timer') and self._total_cost_save_timer.isActive():
-            self._total_cost_save_timer.stop()
-            self._save_total_cost_spreadsheet_to_shotgrid()
+        """Handle close event - save layout and commit any cached spreadsheet data."""
+        # Commit any cached spreadsheet changes to ShotGrid
+        if self._spreadsheet_cache.has_dirty_spreadsheets():
+            logger.info("Committing cached spreadsheet changes before closing...")
+            self._spreadsheet_cache.commit_all(parent_widget=self)
 
         self.save_layout()
         super().closeEvent(event)
