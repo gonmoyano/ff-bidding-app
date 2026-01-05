@@ -1006,6 +1006,60 @@ class MergeCellsCommand:
         self.model.layoutChanged.emit()
 
 
+class CellDataFormatCommand:
+    """Command pattern for undo/redo of cell data format changes (Currency, Percentage, etc.)."""
+
+    def __init__(self, model, cells, old_formats, new_format):
+        """Initialize data format command.
+
+        Args:
+            model: SpreadsheetModel instance
+            cells: List of (row, col) tuples
+            old_formats: Dict mapping (row, col) to old format string (or None)
+            new_format: New format string to apply to all cells
+        """
+        self.model = model
+        self.cells = cells
+        self.old_formats = old_formats
+        self.new_format = new_format
+
+    def undo(self):
+        """Restore old format values."""
+        for (row, col) in self.cells:
+            old_format = self.old_formats.get((row, col))
+            if old_format:
+                self.model._formats[(row, col)] = old_format
+            else:
+                self.model._formats.pop((row, col), None)
+            # Clear cache for this cell
+            self.model._evaluated_cache.pop((row, col), None)
+        self._emit_changes()
+
+    def redo(self):
+        """Apply new format value."""
+        for (row, col) in self.cells:
+            if self.new_format:
+                self.model._formats[(row, col)] = self.new_format
+            else:
+                self.model._formats.pop((row, col), None)
+            # Clear cache for this cell
+            self.model._evaluated_cache.pop((row, col), None)
+        self._emit_changes()
+
+    def _emit_changes(self):
+        """Emit dataChanged for affected cells."""
+        if self.cells:
+            min_row = min(r for r, c in self.cells)
+            max_row = max(r for r, c in self.cells)
+            min_col = min(c for r, c in self.cells)
+            max_col = max(c for r, c in self.cells)
+            self.model.dataChanged.emit(
+                self.model.index(min_row, min_col),
+                self.model.index(max_row, max_col),
+                [Qt.DisplayRole]
+            )
+
+
 class SpreadsheetTableView(QtWidgets.QTableView):
     """Custom table view with Excel-like selection and fill handle."""
 
@@ -1688,8 +1742,11 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         # Build a set of selected (row, col) for efficient lookup
         selected_cells = {(idx.row(), idx.column()) for idx in selection}
 
-        # Build clipboard data structure: dict of relative (row, col) -> value
+        # Build clipboard data structure: dict of relative (row, col) -> cell data
+        # Each cell entry contains: value, format, meta (decoration)
         clipboard_cells = {}
+        clipboard_formats = {}
+        clipboard_metas = {}
         clipboard_text_rows = []
 
         for row in range(min_row, max_row + 1):
@@ -1701,7 +1758,19 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                     value = model.data(index, Qt.EditRole)
                     if value is None:
                         value = ""
-                    clipboard_cells[(row - min_row, col - min_col)] = value
+                    rel_pos = (row - min_row, col - min_col)
+                    clipboard_cells[rel_pos] = value
+
+                    # Copy data format (Currency, Percentage, etc.)
+                    cell_format = model._formats.get((row, col))
+                    if cell_format:
+                        clipboard_formats[rel_pos] = cell_format
+
+                    # Copy cell meta (bold, italic, colors, etc.)
+                    cell_meta = model.get_cell_meta(row, col)
+                    if cell_meta:
+                        clipboard_metas[rel_pos] = cell_meta.copy()
+
                     display_value = model.data(index, Qt.DisplayRole)
                     row_values.append(str(display_value) if display_value else "")
                 else:
@@ -1711,6 +1780,8 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         # Store in internal clipboard
         self._clipboard_data = {
             'cells': clipboard_cells,
+            'formats': clipboard_formats,
+            'metas': clipboard_metas,
             'rows': max_row - min_row + 1,
             'cols': max_col - min_col + 1,
             'source_row': min_row,
@@ -1786,6 +1857,8 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         # Try internal clipboard first (multi-cell)
         if self._clipboard_data and 'cells' in self._clipboard_data:
             cells = self._clipboard_data['cells']
+            formats = self._clipboard_data.get('formats', {})
+            metas = self._clipboard_data.get('metas', {})
             source_row = self._clipboard_data.get('source_row', 0)
             source_col = self._clipboard_data.get('source_col', 0)
             clip_rows = self._clipboard_data.get('rows', 1)
@@ -1810,8 +1883,12 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             for r in range(clip_rows):
                 for c in range(clip_cols):
                     value = cells.get((r, c), "")
+                    cell_format = formats.get((r, c))
+                    cell_meta = metas.get((r, c))
                     source_values.append({
                         'value': value,
+                        'format': cell_format,
+                        'meta': cell_meta,
                         'rel_row': r,
                         'rel_col': c
                     })
@@ -1851,6 +1928,10 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                     # Get old values
                     old_value = model._data.get((target_row, target_col), None)
                     old_formula = model._formulas.get((target_row, target_col), None)
+                    old_format = model._formats.get((target_row, target_col), None)
+                    old_meta = model._cell_meta.get((target_row, target_col), None)
+                    if old_meta:
+                        old_meta = old_meta.copy()
 
                     changes.append({
                         'row': target_row,
@@ -1858,7 +1939,11 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                         'old_value': old_value,
                         'new_value': new_value,
                         'old_formula': old_formula,
-                        'new_formula': new_formula
+                        'new_formula': new_formula,
+                        'old_format': old_format,
+                        'new_format': src.get('format'),
+                        'old_meta': old_meta,
+                        'new_meta': src.get('meta')
                     })
 
                     source_idx += 1
@@ -1869,13 +1954,21 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                     src_row, src_col = source_index.row(), source_index.column()
                     old_value = model._data.get((src_row, src_col), None)
                     old_formula = model._formulas.get((src_row, src_col), None)
+                    old_format = model._formats.get((src_row, src_col), None)
+                    old_meta = model._cell_meta.get((src_row, src_col), None)
+                    if old_meta:
+                        old_meta = old_meta.copy()
                     changes.append({
                         'row': src_row,
                         'col': src_col,
                         'old_value': old_value,
                         'new_value': None,
                         'old_formula': old_formula,
-                        'new_formula': None
+                        'new_formula': None,
+                        'old_format': old_format,
+                        'new_format': None,
+                        'old_meta': old_meta,
+                        'new_meta': None
                     })
                 self._clipboard_is_cut = False
                 self._cut_selection_indexes = []
@@ -2142,7 +2235,8 @@ class SpreadsheetPasteCommand:
 
         Args:
             changes: List of dicts with keys: row, col, old_value, new_value,
-                    old_formula, new_formula
+                    old_formula, new_formula, old_format, new_format,
+                    old_meta, new_meta
             model: SpreadsheetModel instance
         """
         self.changes = changes
@@ -2153,7 +2247,8 @@ class SpreadsheetPasteCommand:
         for change in self.changes:
             self._apply_cell_data(
                 change['row'], change['col'],
-                change['old_value'], change['old_formula']
+                change['old_value'], change['old_formula'],
+                change.get('old_format'), change.get('old_meta')
             )
 
     def redo(self):
@@ -2161,11 +2256,12 @@ class SpreadsheetPasteCommand:
         for change in self.changes:
             self._apply_cell_data(
                 change['row'], change['col'],
-                change['new_value'], change['new_formula']
+                change['new_value'], change['new_formula'],
+                change.get('new_format'), change.get('new_meta')
             )
 
-    def _apply_cell_data(self, row, col, value, formula):
-        """Apply value or formula to a cell."""
+    def _apply_cell_data(self, row, col, value, formula, cell_format=None, cell_meta=None):
+        """Apply value, formula, format, and meta to a cell."""
         # Clear cache
         self.model._evaluated_cache.pop((row, col), None)
 
@@ -2180,6 +2276,18 @@ class SpreadsheetPasteCommand:
             else:
                 self.model._data.pop((row, col), None)
             self.model._formulas.pop((row, col), None)
+
+        # Apply data format (Currency, Percentage, etc.)
+        if cell_format:
+            self.model._formats[(row, col)] = cell_format
+        else:
+            self.model._formats.pop((row, col), None)
+
+        # Apply cell meta (bold, italic, colors, etc.)
+        if cell_meta:
+            self.model._cell_meta[(row, col)] = cell_meta.copy()
+        else:
+            self.model._cell_meta.pop((row, col), None)
 
         # Emit change for this cell
         index = self.model.index(row, col)
@@ -4105,29 +4213,39 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             self._set_cell_format(index, SpreadsheetModel.FORMAT_TEXT)
 
     def _set_cell_format(self, index, cell_format):
-        """Set the format for selected cells.
+        """Set the format for selected cells with undo support.
 
         Args:
             index: QModelIndex of the clicked cell (used as fallback if no selection)
             cell_format: Excel-compatible format string
         """
-        # Apply to all selected cells
+        # Determine which cells to apply format to
         selection = self.table_view.selectionModel().selectedIndexes()
         if selection:
-            for idx in selection:
-                self.model.set_cell_format(idx.row(), idx.column(), cell_format)
-
-            # Emit dataChanged to trigger save and refresh display
-            self.model.dataChanged.emit(
-                self.model.index(min(idx.row() for idx in selection), min(idx.column() for idx in selection)),
-                self.model.index(max(idx.row() for idx in selection), max(idx.column() for idx in selection)),
-                [QtCore.Qt.DisplayRole]
-            )
-            logger.info(f"Set format '{cell_format}' for {len(selection)} cells")
+            cells = [(idx.row(), idx.column()) for idx in selection]
         else:
             # Fallback to the clicked cell
-            self.model.set_cell_format(index.row(), index.column(), cell_format)
-            logger.info(f"Set cell ({index.row()},{index.column()}) format to: {cell_format}")
+            cells = [(index.row(), index.column())]
+
+        # Collect old formats for undo
+        old_formats = {}
+        for (row, col) in cells:
+            old_formats[(row, col)] = self.model._formats.get((row, col))
+
+        # Create undo command
+        command = CellDataFormatCommand(self.model, cells, old_formats, cell_format)
+
+        # Execute command and add to undo stack
+        self.model._in_undo_redo = True
+        try:
+            command.redo()
+        finally:
+            self.model._in_undo_redo = False
+
+        self.model.undo_stack.append(command)
+        self.model.redo_stack.clear()
+
+        logger.info(f"Set format '{cell_format}' for {len(cells)} cells")
 
     def _insert_row_above(self, row):
         """Insert a new row above the specified row."""
