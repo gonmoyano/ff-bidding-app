@@ -3113,7 +3113,66 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         # Update initial row count label
         self._update_row_count_label(rows, rows)
 
+        # Setup keyboard shortcuts
+        self._setup_shortcuts()
+
         logger.info(f"SpreadsheetWidget initialized with {rows} rows and {cols} columns")
+
+    def _setup_shortcuts(self):
+        """Setup keyboard shortcuts for copy/paste/cut/delete/undo/redo.
+
+        Uses QShortcut objects which work at the widget level regardless of
+        which child widget has focus.
+        """
+        # Copy shortcut (Ctrl+C)
+        copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+C"), self)
+        copy_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        copy_shortcut.activated.connect(self.table_view._copy_selection)
+
+        # Cut shortcut (Ctrl+X)
+        cut_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+X"), self)
+        cut_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        cut_shortcut.activated.connect(self.table_view._cut_selection)
+
+        # Paste shortcut (Ctrl+V)
+        paste_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+V"), self)
+        paste_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        paste_shortcut.activated.connect(self.table_view._paste_selection)
+
+        # Delete shortcut
+        delete_shortcut = QtGui.QShortcut(QtGui.QKeySequence(Qt.Key_Delete), self)
+        delete_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        delete_shortcut.activated.connect(self.table_view._delete_selection)
+
+        # Undo shortcut (Ctrl+Z)
+        undo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Z"), self)
+        undo_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        undo_shortcut.activated.connect(self.table_view._undo)
+
+        # Redo shortcut (Ctrl+Y)
+        redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
+        redo_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        redo_shortcut.activated.connect(self.table_view._redo)
+
+        # Redo shortcut (Ctrl+Shift+Z)
+        redo_shortcut2 = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Z"), self)
+        redo_shortcut2.setContext(Qt.WidgetWithChildrenShortcut)
+        redo_shortcut2.activated.connect(self.table_view._redo)
+
+        # Bold shortcut (Ctrl+B)
+        bold_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+B"), self)
+        bold_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        bold_shortcut.activated.connect(lambda: self.table_view._toggle_formatting('bold'))
+
+        # Italic shortcut (Ctrl+I)
+        italic_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+I"), self)
+        italic_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        italic_shortcut.activated.connect(lambda: self.table_view._toggle_formatting('italic'))
+
+        # Underline shortcut (Ctrl+U)
+        underline_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+U"), self)
+        underline_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+        underline_shortcut.activated.connect(lambda: self.table_view._toggle_formatting('underline'))
 
     def _setup_resizable_headers(self):
         """Set up resizable column and row headers with persistence."""
