@@ -1195,6 +1195,14 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             event.accept()
             return
 
+        # Delete/Backspace (Clear cell contents)
+        if key in (Qt.Key_Delete, Qt.Key_Backspace):
+            # Only delete if not currently editing a cell
+            if self.state() != QtWidgets.QAbstractItemView.EditingState:
+                self._delete_selection()
+                event.accept()
+                return
+
         super().keyPressEvent(event)
 
     def _toggle_formatting(self, prop):
@@ -1325,6 +1333,9 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         Behavior:
         - Uses the top-left cell of selection as the pivot for pasting
         - If selection is larger than source, repeats the pattern (like Google Sheets)
+        - If a single cell is selected and clipboard has multiple cells, expands
+          the paste area to include all clipboard cells (pasting down/right from
+          the selected cell)
         - Formulas are adjusted based on each target cell's position
         """
         model = self.model()
@@ -1349,6 +1360,10 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         sel_rows = sel_max_row - sel_min_row + 1
         sel_cols = sel_max_col - sel_min_col + 1
 
+        # Check if we need to expand paste area for single-cell destination
+        # When pasting multi-cell data to a single cell, expand to fit all clipboard data
+        single_cell_destination = (sel_rows == 1 and sel_cols == 1)
+
         logger.debug(f"Paste: selection bounds=({sel_min_row},{sel_min_col}) to ({sel_max_row},{sel_max_col})")
 
         # Collect all changes for a single undo command
@@ -1364,6 +1379,18 @@ class SpreadsheetTableView(QtWidgets.QTableView):
 
             logger.debug(f"Paste: clipboard has {len(cells)} cells, size {clip_rows}x{clip_cols}")
 
+            # When pasting multi-cell data to a single cell, expand paste area
+            # to include all clipboard cells starting from the destination
+            if single_cell_destination and (clip_rows > 1 or clip_cols > 1):
+                # Expand the paste area to match clipboard dimensions
+                paste_rows = clip_rows
+                paste_cols = clip_cols
+                logger.debug(f"Paste: expanding single-cell destination to {paste_rows}x{paste_cols}")
+            else:
+                # Use selected area dimensions
+                paste_rows = sel_rows
+                paste_cols = sel_cols
+
             # Build a list of source values in order for repeating
             source_values = []
             for r in range(clip_rows):
@@ -1375,13 +1402,17 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                         'rel_col': c
                     })
 
-            # Paste to each selected cell with repeating pattern
+            # Paste to target cells
             source_idx = 0
-            for target_row in range(sel_min_row, sel_max_row + 1):
-                for target_col in range(sel_min_col, sel_max_col + 1):
-                    # Check if this cell is in the selection
-                    if not any(idx.row() == target_row and idx.column() == target_col for idx in selection):
-                        continue
+            for rel_row in range(paste_rows):
+                for rel_col in range(paste_cols):
+                    target_row = sel_min_row + rel_row
+                    target_col = sel_min_col + rel_col
+
+                    # For non-expanded paste, check if cell is in original selection
+                    if not single_cell_destination or (clip_rows == 1 and clip_cols == 1):
+                        if not any(idx.row() == target_row and idx.column() == target_col for idx in selection):
+                            continue
 
                     # Check bounds
                     if target_row >= model.rowCount() or target_col >= model.columnCount():
@@ -1446,30 +1477,52 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                 if rows and rows[-1] == '':
                     rows = rows[:-1]
 
-                # Build source values list
+                # Calculate clipboard dimensions
+                clip_rows = len(rows)
+                clip_cols = max(len(row.split('\t')) for row in rows) if rows else 1
+
+                # Build source values list with position info
                 source_values = []
-                for row_text in rows:
+                for rel_row, row_text in enumerate(rows):
                     cols = row_text.split('\t')
-                    for cell_value in cols:
-                        source_values.append(cell_value)
+                    for rel_col, cell_value in enumerate(cols):
+                        source_values.append({
+                            'value': cell_value,
+                            'rel_row': rel_row,
+                            'rel_col': rel_col
+                        })
 
                 if not source_values:
                     return
 
-                # Paste to each selected cell with repeating pattern
+                # When pasting multi-cell data to a single cell, expand paste area
+                if single_cell_destination and (clip_rows > 1 or clip_cols > 1):
+                    paste_rows = clip_rows
+                    paste_cols = clip_cols
+                    logger.debug(f"Paste (system): expanding single-cell destination to {paste_rows}x{paste_cols}")
+                else:
+                    paste_rows = sel_rows
+                    paste_cols = sel_cols
+
+                # Paste to target cells
                 source_idx = 0
-                for target_row in range(sel_min_row, sel_max_row + 1):
-                    for target_col in range(sel_min_col, sel_max_col + 1):
-                        # Check if this cell is in the selection
-                        if not any(idx.row() == target_row and idx.column() == target_col for idx in selection):
-                            continue
+                for rel_row in range(paste_rows):
+                    for rel_col in range(paste_cols):
+                        target_row = sel_min_row + rel_row
+                        target_col = sel_min_col + rel_col
+
+                        # For non-expanded paste, check if cell is in original selection
+                        if not single_cell_destination or (clip_rows == 1 and clip_cols == 1):
+                            if not any(idx.row() == target_row and idx.column() == target_col for idx in selection):
+                                continue
 
                         # Check bounds
                         if target_row >= model.rowCount() or target_col >= model.columnCount():
                             continue
 
                         # Get the source value (cycling through the pattern)
-                        cell_value = source_values[source_idx % len(source_values)]
+                        src = source_values[source_idx % len(source_values)]
+                        cell_value = src['value']
 
                         # Get old values
                         old_value = model._data.get((target_row, target_col), None)
