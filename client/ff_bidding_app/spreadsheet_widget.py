@@ -3073,6 +3073,9 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         self.table_view.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table_view.customContextMenuRequested.connect(self._show_context_menu)
 
+        # Install event filter on table_view to intercept keyboard shortcuts
+        self.table_view.installEventFilter(self)
+
         # Create model
         self.model = SpreadsheetModel(rows, cols)
         self.table_view.setModel(self.model)
@@ -3119,46 +3122,12 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         logger.info(f"SpreadsheetWidget initialized with {rows} rows and {cols} columns")
 
     def _setup_shortcuts(self):
-        """Setup keyboard shortcuts for copy/paste/cut/delete/undo/redo.
+        """Setup keyboard shortcuts for formatting operations.
 
         Uses QShortcut objects which work at the widget level regardless of
-        which child widget has focus.
+        which child widget has focus. Copy/paste/cut/delete are handled
+        via eventFilter to intercept before QTableView's built-in handlers.
         """
-        # Copy shortcut (Ctrl+C)
-        copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+C"), self)
-        copy_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-        copy_shortcut.activated.connect(self.table_view._copy_selection)
-
-        # Cut shortcut (Ctrl+X)
-        cut_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+X"), self)
-        cut_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-        cut_shortcut.activated.connect(self.table_view._cut_selection)
-
-        # Paste shortcut (Ctrl+V)
-        paste_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+V"), self)
-        paste_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-        paste_shortcut.activated.connect(self.table_view._paste_selection)
-
-        # Delete shortcut
-        delete_shortcut = QtGui.QShortcut(QtGui.QKeySequence(Qt.Key_Delete), self)
-        delete_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-        delete_shortcut.activated.connect(self.table_view._delete_selection)
-
-        # Undo shortcut (Ctrl+Z)
-        undo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Z"), self)
-        undo_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-        undo_shortcut.activated.connect(self.table_view._undo)
-
-        # Redo shortcut (Ctrl+Y)
-        redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
-        redo_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
-        redo_shortcut.activated.connect(self.table_view._redo)
-
-        # Redo shortcut (Ctrl+Shift+Z)
-        redo_shortcut2 = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+Z"), self)
-        redo_shortcut2.setContext(Qt.WidgetWithChildrenShortcut)
-        redo_shortcut2.activated.connect(self.table_view._redo)
-
         # Bold shortcut (Ctrl+B)
         bold_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+B"), self)
         bold_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
@@ -3173,6 +3142,49 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         underline_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+U"), self)
         underline_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         underline_shortcut.activated.connect(lambda: self.table_view._toggle_formatting('underline'))
+
+    def eventFilter(self, obj, event):
+        """Event filter to intercept keyboard shortcuts on table_view.
+
+        This intercepts copy/paste/cut/delete/undo/redo before QTableView's
+        built-in handlers consume them.
+        """
+        if obj == self.table_view and event.type() == QtCore.QEvent.KeyPress:
+            key = event.key()
+            modifiers = event.modifiers()
+
+            # Ctrl+C (Copy)
+            if key == Qt.Key_C and (modifiers & Qt.ControlModifier):
+                self.table_view._copy_selection()
+                return True
+
+            # Ctrl+X (Cut)
+            if key == Qt.Key_X and (modifiers & Qt.ControlModifier):
+                self.table_view._cut_selection()
+                return True
+
+            # Ctrl+V (Paste)
+            if key == Qt.Key_V and (modifiers & Qt.ControlModifier):
+                self.table_view._paste_selection()
+                return True
+
+            # Delete key
+            if key == Qt.Key_Delete:
+                self.table_view._delete_selection()
+                return True
+
+            # Ctrl+Z (Undo)
+            if key == Qt.Key_Z and (modifiers & Qt.ControlModifier) and not (modifiers & Qt.ShiftModifier):
+                self.table_view._undo()
+                return True
+
+            # Ctrl+Y or Ctrl+Shift+Z (Redo)
+            if (key == Qt.Key_Y and (modifiers & Qt.ControlModifier)) or \
+               (key == Qt.Key_Z and (modifiers & Qt.ControlModifier) and (modifiers & Qt.ShiftModifier)):
+                self.table_view._redo()
+                return True
+
+        return super().eventFilter(obj, event)
 
     def _setup_resizable_headers(self):
         """Set up resizable column and row headers with persistence."""
