@@ -1355,23 +1355,33 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         """Paste clipboard data to current cell or selection.
 
         Behavior:
-        - If single cell copied and multiple cells selected: fill all selected cells
-        - If multiple cells copied: paste starting at current cell position
+        - Uses the top-left cell of selection as the pivot for pasting
+        - If selection is larger than source, repeats the pattern (like Google Sheets)
+        - Formulas are adjusted based on each target cell's position
         """
-        current = self.currentIndex()
-        if not current.isValid():
-            logger.debug("Paste: No valid current index")
-            return
-
         model = self.model()
         if not model:
             logger.debug("Paste: No model")
             return
 
-        # Get selected cells for potential fill operation
+        # Get selected cells - use top-left as pivot
         selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
-        logger.debug(f"Paste: current=({current.row()},{current.column()}), selection count={len(selection)}")
-        logger.debug(f"Paste: clipboard_data={self._clipboard_data is not None}, has cells={self._clipboard_data and 'cells' in self._clipboard_data}")
+        if not selection:
+            current = self.currentIndex()
+            if not current.isValid():
+                logger.debug("Paste: No valid selection or current index")
+                return
+            selection = [current]
+
+        # Find the bounding box of the selection
+        sel_min_row = min(idx.row() for idx in selection)
+        sel_max_row = max(idx.row() for idx in selection)
+        sel_min_col = min(idx.column() for idx in selection)
+        sel_max_col = max(idx.column() for idx in selection)
+        sel_rows = sel_max_row - sel_min_row + 1
+        sel_cols = sel_max_col - sel_min_col + 1
+
+        logger.debug(f"Paste: selection bounds=({sel_min_row},{sel_min_col}) to ({sel_max_row},{sel_max_col})")
 
         # Collect all changes for a single undo command
         changes = []
@@ -1381,83 +1391,64 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             cells = self._clipboard_data['cells']
             source_row = self._clipboard_data.get('source_row', 0)
             source_col = self._clipboard_data.get('source_col', 0)
-            logger.debug(f"Paste: Using internal clipboard with {len(cells)} cells")
+            clip_rows = self._clipboard_data.get('rows', 1)
+            clip_cols = self._clipboard_data.get('cols', 1)
 
-            # Check if single cell copied to multiple selected cells (fill operation)
-            is_single_cell = len(cells) == 1
-            has_multiple_targets = len(selection) > 1
-            logger.debug(f"Paste: is_single_cell={is_single_cell}, has_multiple_targets={has_multiple_targets}")
+            logger.debug(f"Paste: clipboard has {len(cells)} cells, size {clip_rows}x{clip_cols}")
 
-            if is_single_cell and has_multiple_targets:
-                # Fill all selected cells with the single copied value
-                single_value = list(cells.values())[0]
-
-                for index in selection:
-                    paste_row = index.row()
-                    paste_col = index.column()
-
-                    # Calculate offset for formula adjustment
-                    row_offset = paste_row - source_row
-                    col_offset = paste_col - source_col
-
-                    # If it's a formula, adjust references
-                    new_formula = None
-                    new_value = None
-                    if isinstance(single_value, str) and single_value.startswith('='):
-                        new_formula = self._adjust_formula_for_paste(single_value, row_offset, col_offset)
-                    else:
-                        new_value = single_value
-
-                    # Get old values
-                    old_value = model._data.get((paste_row, paste_col), None)
-                    old_formula = model._formulas.get((paste_row, paste_col), None)
-
-                    changes.append({
-                        'row': paste_row,
-                        'col': paste_col,
-                        'old_value': old_value,
-                        'new_value': new_value,
-                        'old_formula': old_formula,
-                        'new_formula': new_formula
+            # Build a list of source values in order for repeating
+            source_values = []
+            for r in range(clip_rows):
+                for c in range(clip_cols):
+                    value = cells.get((r, c), "")
+                    source_values.append({
+                        'value': value,
+                        'rel_row': r,
+                        'rel_col': c
                     })
-            else:
-                # Standard multi-cell paste: paste at current position
-                target_row = current.row()
-                target_col = current.column()
 
-                # Calculate offset from source to target
-                row_offset = target_row - source_row
-                col_offset = target_col - source_col
-
-                # Collect paste changes
-                for (rel_row, rel_col), value in cells.items():
-                    paste_row = target_row + rel_row
-                    paste_col = target_col + rel_col
+            # Paste to each selected cell with repeating pattern
+            source_idx = 0
+            for target_row in range(sel_min_row, sel_max_row + 1):
+                for target_col in range(sel_min_col, sel_max_col + 1):
+                    # Check if this cell is in the selection
+                    if not any(idx.row() == target_row and idx.column() == target_col for idx in selection):
+                        continue
 
                     # Check bounds
-                    if paste_row >= model.rowCount() or paste_col >= model.columnCount():
+                    if target_row >= model.rowCount() or target_col >= model.columnCount():
                         continue
+
+                    # Get the source value (cycling through the pattern)
+                    src = source_values[source_idx % len(source_values)]
+                    value = src['value']
+
+                    # Calculate offset for formula adjustment
+                    row_offset = target_row - source_row - src['rel_row']
+                    col_offset = target_col - source_col - src['rel_col']
 
                     # If it's a formula, adjust references
                     new_formula = None
                     new_value = None
                     if isinstance(value, str) and value.startswith('='):
-                        new_formula = self._adjust_formula_for_paste(value, row_offset + rel_row, col_offset + rel_col)
+                        new_formula = self._adjust_formula_for_paste(value, row_offset, col_offset)
                     else:
                         new_value = value
 
                     # Get old values
-                    old_value = model._data.get((paste_row, paste_col), None)
-                    old_formula = model._formulas.get((paste_row, paste_col), None)
+                    old_value = model._data.get((target_row, target_col), None)
+                    old_formula = model._formulas.get((target_row, target_col), None)
 
                     changes.append({
-                        'row': paste_row,
-                        'col': paste_col,
+                        'row': target_row,
+                        'col': target_col,
                         'old_value': old_value,
                         'new_value': new_value,
                         'old_formula': old_formula,
                         'new_formula': new_formula
                     })
+
+                    source_idx += 1
 
             # If it was a cut operation, also add deletions for source cells
             if self._clipboard_is_cut and hasattr(self, '_cut_selection_indexes'):
@@ -1487,73 +1478,53 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                 if rows and rows[-1] == '':
                     rows = rows[:-1]
 
-                # Check if single cell copied to multiple selected cells
-                is_single_cell = len(rows) == 1 and '\t' not in rows[0]
-                has_multiple_targets = len(selection) > 1
+                # Build source values list
+                source_values = []
+                for row_text in rows:
+                    cols = row_text.split('\t')
+                    for cell_value in cols:
+                        source_values.append(cell_value)
 
-                if is_single_cell and has_multiple_targets:
-                    # Fill all selected cells with the single value
-                    single_value = rows[0]
+                if not source_values:
+                    return
 
-                    for index in selection:
-                        paste_row = index.row()
-                        paste_col = index.column()
+                # Paste to each selected cell with repeating pattern
+                source_idx = 0
+                for target_row in range(sel_min_row, sel_max_row + 1):
+                    for target_col in range(sel_min_col, sel_max_col + 1):
+                        # Check if this cell is in the selection
+                        if not any(idx.row() == target_row and idx.column() == target_col for idx in selection):
+                            continue
+
+                        # Check bounds
+                        if target_row >= model.rowCount() or target_col >= model.columnCount():
+                            continue
+
+                        # Get the source value (cycling through the pattern)
+                        cell_value = source_values[source_idx % len(source_values)]
 
                         # Get old values
-                        old_value = model._data.get((paste_row, paste_col), None)
-                        old_formula = model._formulas.get((paste_row, paste_col), None)
+                        old_value = model._data.get((target_row, target_col), None)
+                        old_formula = model._formulas.get((target_row, target_col), None)
 
                         # Determine if new value is formula or value
                         new_formula = None
                         new_value = None
-                        if single_value.startswith('='):
-                            new_formula = single_value
+                        if cell_value.startswith('='):
+                            new_formula = cell_value
                         else:
-                            new_value = single_value
+                            new_value = cell_value
 
                         changes.append({
-                            'row': paste_row,
-                            'col': paste_col,
+                            'row': target_row,
+                            'col': target_col,
                             'old_value': old_value,
                             'new_value': new_value,
                             'old_formula': old_formula,
                             'new_formula': new_formula
                         })
-                else:
-                    # Standard paste at current position
-                    target_row = current.row()
-                    target_col = current.column()
 
-                    for row_offset, row_text in enumerate(rows):
-                        cols = row_text.split('\t')
-                        for col_offset, cell_value in enumerate(cols):
-                            paste_row = target_row + row_offset
-                            paste_col = target_col + col_offset
-
-                            # Check bounds
-                            if paste_row >= model.rowCount() or paste_col >= model.columnCount():
-                                continue
-
-                            # Get old values
-                            old_value = model._data.get((paste_row, paste_col), None)
-                            old_formula = model._formulas.get((paste_row, paste_col), None)
-
-                            # Determine if new value is formula or value
-                            new_formula = None
-                            new_value = None
-                            if cell_value.startswith('='):
-                                new_formula = cell_value
-                            else:
-                                new_value = cell_value
-
-                            changes.append({
-                                'row': paste_row,
-                                'col': paste_col,
-                                'old_value': old_value,
-                                'new_value': new_value,
-                                'old_formula': old_formula,
-                                'new_formula': new_formula
-                            })
+                        source_idx += 1
 
         # Execute paste via command
         if changes:
@@ -3362,6 +3333,48 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         if next_row < self.model.rowCount():
             next_index = self.model.index(next_row, current.column())
             self.table_view.setCurrentIndex(next_index)
+
+    def keyPressEvent(self, event):
+        """Handle keyboard shortcuts for the spreadsheet widget.
+
+        Forward copy/paste/cut/delete shortcuts to the table view.
+        """
+        key = event.key()
+        modifiers = event.modifiers()
+
+        # Forward clipboard and edit shortcuts to the table view
+        if modifiers & Qt.ControlModifier:
+            if key == Qt.Key_C:
+                self.table_view._copy_selection()
+                event.accept()
+                return
+            elif key == Qt.Key_X:
+                self.table_view._cut_selection()
+                event.accept()
+                return
+            elif key == Qt.Key_V:
+                self.table_view._paste_selection()
+                event.accept()
+                return
+            elif key == Qt.Key_Z:
+                if modifiers & Qt.ShiftModifier:
+                    self.table_view._redo()
+                else:
+                    self.table_view._undo()
+                event.accept()
+                return
+            elif key == Qt.Key_Y:
+                self.table_view._redo()
+                event.accept()
+                return
+
+        # Forward Delete key to table view
+        if key == Qt.Key_Delete:
+            self.table_view._delete_selection()
+            event.accept()
+            return
+
+        super().keyPressEvent(event)
 
     def _on_search_changed(self, text):
         """Handle search text change."""
