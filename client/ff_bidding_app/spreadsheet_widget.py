@@ -1156,9 +1156,21 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         if editor and hasattr(editor, 'insert'):
             # QLineEdit has insert() method that inserts at cursor position
             editor.insert(ref_text)
-            editor.setFocus()
+            # Restore focus and ensure cursor is visible
+            self._restore_editor_cursor(editor)
             return True
         return False
+
+    def _restore_editor_cursor(self, editor):
+        """Restore focus and cursor visibility to an editor widget."""
+        if editor and hasattr(editor, 'setFocus'):
+            editor.setFocus(Qt.OtherFocusReason)
+            # Ensure cursor is visible by deselecting (keeps cursor at current position)
+            if hasattr(editor, 'deselect'):
+                editor.deselect()
+            # Also activate the window to ensure cursor blinks
+            if hasattr(editor, 'activateWindow'):
+                editor.activateWindow()
 
     def closeEditor(self, editor, hint):
         """Override to prevent editor from closing during formula reference selection.
@@ -1196,8 +1208,8 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                 super().closeEditor(editor, hint)
             else:
                 # Block close - keep editor open for formula reference selection
-                # Re-focus the editor to keep it active
-                editor.setFocus()
+                # Re-focus the editor and ensure cursor is visible
+                self._restore_editor_cursor(editor)
             return
 
         # Normal close behavior
@@ -1301,6 +1313,13 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                     self._is_dragging_formula_ref = False
                     self._formula_ref_drag_end = None
                     self.viewport().update()
+
+                    # Schedule delayed focus restoration to ensure cursor is visible
+                    # after Qt has processed all pending events
+                    if self._formula_editor_ref:
+                        editor = self._formula_editor_ref
+                        QtCore.QTimer.singleShot(0, lambda: self._restore_editor_cursor(editor))
+
                     return True
 
         return super().eventFilter(obj, event)
