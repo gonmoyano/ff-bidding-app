@@ -1028,8 +1028,69 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         self._clipboard_data = None
         self._clipboard_is_cut = False
 
+        # Formula edit mode tracking
+        self._formula_edit_cell = None  # The cell being edited (row, col)
+        self._formula_reference_start = None  # Start cell for range selection during formula edit
+        self._is_dragging_formula_ref = False  # True when drag-selecting cells for formula reference
+        self._formula_ref_drag_end = None  # Current end cell during drag
+
         # Ensure the table view can receive keyboard events
         self.setFocusPolicy(Qt.StrongFocus)
+
+    def _get_cell_reference(self, row, col):
+        """Get Excel-style cell reference (e.g., 'A1', 'B2') from row and column indices."""
+        # Convert column index to letter(s)
+        col_name = ""
+        col_idx = col + 1  # Make it 1-based
+        while col_idx > 0:
+            col_idx -= 1
+            col_name = chr(65 + (col_idx % 26)) + col_name
+            col_idx //= 26
+        # Row is 1-based in Excel notation
+        return f"{col_name}{row + 1}"
+
+    def _get_range_reference(self, start_row, start_col, end_row, end_col):
+        """Get Excel-style range reference (e.g., 'A1:C5') from start and end indices."""
+        start_ref = self._get_cell_reference(start_row, start_col)
+        end_ref = self._get_cell_reference(end_row, end_col)
+        if start_ref == end_ref:
+            return start_ref
+        return f"{start_ref}:{end_ref}"
+
+    def _is_in_formula_edit_mode(self):
+        """Check if we're currently editing a cell with a formula (starts with '=')."""
+        # Get the current editor widget
+        current_idx = self.currentIndex()
+        if not current_idx.isValid():
+            return False
+
+        editor = self.indexWidget(current_idx)
+        if editor is None:
+            return False
+
+        # Check if editor has text method (QLineEdit)
+        if hasattr(editor, 'text'):
+            text = editor.text()
+            return text.startswith('=')
+
+        return False
+
+    def _get_current_editor(self):
+        """Get the current editor widget if in edit mode."""
+        current_idx = self.currentIndex()
+        if current_idx.isValid():
+            return self.indexWidget(current_idx)
+        return None
+
+    def _insert_cell_reference(self, ref_text):
+        """Insert a cell reference into the current formula editor."""
+        editor = self._get_current_editor()
+        if editor and hasattr(editor, 'insert'):
+            # QLineEdit has insert() method that inserts at cursor position
+            editor.insert(ref_text)
+            editor.setFocus()
+            return True
+        return False
 
     def paintEvent(self, event):
         """Paint the table and add blue border with fill handle."""
@@ -1060,6 +1121,29 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                     cell_rect = self.visualRect(self.model().index(row, start_col))
                     if not cell_rect.isEmpty():
                         painter.drawRect(cell_rect)
+
+        # If dragging for formula reference selection, draw preview of selected range
+        if self._is_dragging_formula_ref and self._formula_reference_start and self._formula_ref_drag_end:
+            start_row, start_col = self._formula_reference_start
+            end_row, end_col = self._formula_ref_drag_end
+
+            # Normalize the range
+            min_row = min(start_row, end_row)
+            max_row = max(start_row, end_row)
+            min_col = min(start_col, end_col)
+            max_col = max(start_col, end_col)
+
+            # Get visual rect of bounding selection
+            top_left_rect = self.visualRect(self.model().index(min_row, min_col))
+            bottom_right_rect = self.visualRect(self.model().index(max_row, max_col))
+
+            if not top_left_rect.isEmpty() and not bottom_right_rect.isEmpty():
+                ref_rect = top_left_rect.united(bottom_right_rect)
+
+                # Draw a distinct colored border (green) around formula reference range
+                painter.setPen(QtGui.QPen(QtGui.QColor("#4CAF50"), 2, Qt.DashLine))
+                painter.setBrush(QtGui.QColor(76, 175, 80, 40))  # Light green with alpha
+                painter.drawRect(ref_rect.adjusted(1, 1, -1, -1))
 
         # Draw border around all selected cells
         if selection:
@@ -1112,7 +1196,7 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         painter.end()
 
     def mousePressEvent(self, event):
-        """Handle mouse press for fill handle dragging."""
+        """Handle mouse press for fill handle dragging and formula cell reference selection."""
         if event.button() == Qt.LeftButton:
             # Check if clicked on fill handle
             if self._fill_handle_rect.contains(event.pos()):
@@ -1123,10 +1207,42 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                 event.accept()
                 return
 
+            # Check if we're in formula edit mode
+            if self._is_in_formula_edit_mode():
+                # Get the clicked cell
+                clicked_index = self.indexAt(event.pos())
+                if clicked_index.isValid():
+                    current_idx = self.currentIndex()
+                    # Don't insert reference if clicking on the cell being edited
+                    if clicked_index.row() != current_idx.row() or clicked_index.column() != current_idx.column():
+                        clicked_row = clicked_index.row()
+                        clicked_col = clicked_index.column()
+
+                        # Check for Shift+click for range selection
+                        if event.modifiers() & Qt.ShiftModifier and self._formula_reference_start:
+                            # Create range reference
+                            start_row, start_col = self._formula_reference_start
+                            # Normalize the range (ensure start <= end)
+                            min_row = min(start_row, clicked_row)
+                            max_row = max(start_row, clicked_row)
+                            min_col = min(start_col, clicked_col)
+                            max_col = max(start_col, clicked_col)
+                            ref = self._get_range_reference(min_row, min_col, max_row, max_col)
+                            self._insert_cell_reference(ref)
+                        else:
+                            # Start potential drag for range selection
+                            self._formula_reference_start = (clicked_row, clicked_col)
+                            self._is_dragging_formula_ref = True
+                            self._formula_ref_drag_end = (clicked_row, clicked_col)
+                            # Don't insert yet - wait for release to see if it's a drag or click
+
+                        event.accept()
+                        return
+
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        """Handle mouse move for fill handle dragging."""
+        """Handle mouse move for fill handle dragging and formula reference selection."""
         if self._is_dragging_fill_handle and self._drag_start_index:
             # During drag, update cursor and track position
             self.setCursor(Qt.CrossCursor)
@@ -1141,6 +1257,15 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             event.accept()
             return
 
+        # Handle formula reference drag selection
+        if self._is_dragging_formula_ref and self._formula_reference_start:
+            index = self.indexAt(event.pos())
+            if index.isValid():
+                self._formula_ref_drag_end = (index.row(), index.column())
+                self.viewport().update()  # Trigger repaint to show selection preview
+            event.accept()
+            return
+
         # Update cursor when hovering over fill handle (not dragging)
         if self._fill_handle_rect.contains(event.pos()):
             self.setCursor(Qt.CrossCursor)
@@ -1150,7 +1275,33 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        """Handle mouse release to complete fill operation."""
+        """Handle mouse release to complete fill operation or formula reference selection."""
+        # Handle formula reference drag completion
+        if self._is_dragging_formula_ref and self._formula_reference_start:
+            start_row, start_col = self._formula_reference_start
+            if self._formula_ref_drag_end:
+                end_row, end_col = self._formula_ref_drag_end
+            else:
+                end_row, end_col = start_row, start_col
+
+            # Normalize the range
+            min_row = min(start_row, end_row)
+            max_row = max(start_row, end_row)
+            min_col = min(start_col, end_col)
+            max_col = max(start_col, end_col)
+
+            # Generate the reference (single cell or range)
+            ref = self._get_range_reference(min_row, min_col, max_row, max_col)
+            self._insert_cell_reference(ref)
+
+            # Reset drag state
+            self._is_dragging_formula_ref = False
+            self._formula_ref_drag_end = None
+            self.viewport().update()
+            event.accept()
+            return
+
+        # Handle fill handle drag completion
         if self._is_dragging_fill_handle and self._drag_start_index and self._drag_current_index:
             if self._drag_current_index != self._drag_start_index:
                 self._perform_fill_operation()
