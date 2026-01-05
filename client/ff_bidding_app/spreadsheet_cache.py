@@ -309,15 +309,85 @@ class SpreadsheetCache:
 
         return result
 
+    def _serialize_dict_keys(self, data: Dict) -> Dict:
+        """Convert tuple keys to strings for JSON serialization.
+
+        Args:
+            data: Dictionary that may contain tuple keys
+
+        Returns:
+            Dictionary with all keys converted to strings
+        """
+        if not isinstance(data, dict):
+            return data
+
+        result = {}
+        for key, value in data.items():
+            # Convert tuple keys to string format "(row, col)"
+            if isinstance(key, tuple):
+                str_key = f"({key[0]},{key[1]})"
+            else:
+                str_key = str(key)
+
+            # Recursively process nested dicts
+            if isinstance(value, dict):
+                result[str_key] = self._serialize_dict_keys(value)
+            else:
+                result[str_key] = value
+
+        return result
+
+    def _deserialize_dict_keys(self, data: Dict, convert_to_tuple: bool = False) -> Dict:
+        """Convert string keys back to tuples where applicable.
+
+        Args:
+            data: Dictionary with string keys
+            convert_to_tuple: Whether to convert "(row,col)" format back to tuples
+
+        Returns:
+            Dictionary with tuple keys restored where applicable
+        """
+        if not isinstance(data, dict):
+            return data
+
+        result = {}
+        for key, value in data.items():
+            # Check if key looks like a tuple "(row, col)" or "(row,col)"
+            new_key = key
+            if convert_to_tuple and isinstance(key, str) and key.startswith('(') and key.endswith(')'):
+                try:
+                    # Parse "(row,col)" or "(row, col)" format
+                    inner = key[1:-1]
+                    parts = [p.strip() for p in inner.split(',')]
+                    if len(parts) == 2:
+                        new_key = (int(parts[0]), int(parts[1]))
+                except (ValueError, IndexError):
+                    new_key = key
+
+            # Recursively process nested dicts
+            if isinstance(value, dict):
+                # Only convert tuple keys in data_dict and cell_meta_dict
+                should_convert = convert_to_tuple or key in ('data_dict', 'cell_meta_dict')
+                result[new_key] = self._deserialize_dict_keys(value, convert_to_tuple=should_convert)
+            else:
+                result[new_key] = value
+
+        return result
+
     def _save_to_disk(self):
         """Persist cache to disk for crash recovery."""
         try:
             # Only save dirty entries
-            cache_data = {
-                key: self._cache[key]
-                for key in self._dirty_keys
-                if key in self._cache
-            }
+            cache_data = {}
+            for key in self._dirty_keys:
+                if key in self._cache:
+                    entry = self._cache[key].copy()
+                    # Serialize tuple keys in data_dict and cell_meta_dict
+                    if 'data_dict' in entry:
+                        entry['data_dict'] = self._serialize_dict_keys(entry['data_dict'])
+                    if 'cell_meta_dict' in entry:
+                        entry['cell_meta_dict'] = self._serialize_dict_keys(entry['cell_meta_dict'])
+                    cache_data[key] = entry
 
             with open(self.cache_file, 'w', encoding='utf-8') as f:
                 json.dump(cache_data, f, indent=2, default=str)
@@ -335,6 +405,13 @@ class SpreadsheetCache:
         try:
             with open(self.cache_file, 'r', encoding='utf-8') as f:
                 cache_data = json.load(f)
+
+            # Deserialize tuple keys in data_dict and cell_meta_dict
+            for key, entry in cache_data.items():
+                if 'data_dict' in entry:
+                    entry['data_dict'] = self._deserialize_dict_keys(entry['data_dict'], convert_to_tuple=True)
+                if 'cell_meta_dict' in entry:
+                    entry['cell_meta_dict'] = self._deserialize_dict_keys(entry['cell_meta_dict'], convert_to_tuple=True)
 
             self._cache = cache_data
             self._dirty_keys = set(cache_data.keys())
