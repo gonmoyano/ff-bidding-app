@@ -1140,19 +1140,45 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         return re.sub(pattern, replace_ref, formula)
 
     def keyPressEvent(self, event):
-        """Handle special keyboard events that QShortcut doesn't handle well.
+        """Handle special keyboard events.
 
-        Note: Copy/paste/cut/undo/redo/formatting shortcuts are handled by
-        QShortcut in SpreadsheetWidget._setup_shortcuts() instead.
+        Clipboard shortcuts (Ctrl+C/V/X) must be handled here because QTableView's
+        base class has built-in clipboard handling that intercepts these keys
+        before QShortcut can process them.
         """
         key = event.key()
         modifiers = event.modifiers()
 
-        # Ctrl+H or Ctrl+F (Find & Replace)
-        if key in (Qt.Key_H, Qt.Key_F) and (modifiers & Qt.ControlModifier):
-            self._show_find_replace()
-            event.accept()
-            return
+        # Check for Ctrl/Cmd modifier (ControlModifier works for both Ctrl and Cmd)
+        has_ctrl = modifiers & Qt.ControlModifier
+
+        # Clipboard shortcuts - handle directly to prevent QTableView base class interception
+        if has_ctrl:
+            if key == Qt.Key_C:
+                self._copy_selection()
+                event.accept()
+                return
+            elif key == Qt.Key_V:
+                self._paste_selection()
+                event.accept()
+                return
+            elif key == Qt.Key_X:
+                self._cut_selection()
+                event.accept()
+                return
+            elif key == Qt.Key_Z:
+                self._undo()
+                event.accept()
+                return
+            elif key == Qt.Key_Y:
+                self._redo()
+                event.accept()
+                return
+            elif key in (Qt.Key_H, Qt.Key_F):
+                # Ctrl+H or Ctrl+F (Find & Replace)
+                self._show_find_replace()
+                event.accept()
+                return
 
         # F2 (Edit cell)
         if key == Qt.Key_F2:
@@ -3068,51 +3094,61 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         """Setup keyboard shortcuts for undo/redo, copy/paste, and formatting.
 
         Shortcuts are stored as instance variables to prevent garbage collection.
+        Uses WidgetWithChildrenShortcut context to ensure shortcuts only activate
+        when this widget or its children have focus (fixes issues with embedded QMainWindow).
         """
         # Store all shortcuts as instance variables to prevent garbage collection
         self._shortcuts = []
 
         # Undo shortcut (Ctrl+Z)
         undo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Z"), self)
+        undo_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         undo_shortcut.activated.connect(self.table_view._undo)
         self._shortcuts.append(undo_shortcut)
 
         # Redo shortcut (Ctrl+Y)
         redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
+        redo_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         redo_shortcut.activated.connect(self.table_view._redo)
         self._shortcuts.append(redo_shortcut)
 
         # Copy shortcut (Ctrl+C)
         copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+C"), self)
+        copy_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         copy_shortcut.activated.connect(self.table_view._copy_selection)
         self._shortcuts.append(copy_shortcut)
 
         # Cut shortcut (Ctrl+X)
         cut_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+X"), self)
+        cut_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         cut_shortcut.activated.connect(self.table_view._cut_selection)
         self._shortcuts.append(cut_shortcut)
 
         # Paste shortcut (Ctrl+V)
         paste_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+V"), self)
+        paste_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         paste_shortcut.activated.connect(self.table_view._paste_selection)
         self._shortcuts.append(paste_shortcut)
 
         # Bold shortcut (Ctrl+B)
         bold_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+B"), self)
+        bold_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         bold_shortcut.activated.connect(lambda: self.table_view._toggle_formatting('bold'))
         self._shortcuts.append(bold_shortcut)
 
         # Italic shortcut (Ctrl+I)
         italic_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+I"), self)
+        italic_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         italic_shortcut.activated.connect(lambda: self.table_view._toggle_formatting('italic'))
         self._shortcuts.append(italic_shortcut)
 
         # Underline shortcut (Ctrl+U)
         underline_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+U"), self)
+        underline_shortcut.setContext(Qt.WidgetWithChildrenShortcut)
         underline_shortcut.activated.connect(lambda: self.table_view._toggle_formatting('underline'))
         self._shortcuts.append(underline_shortcut)
 
-        logger.info("SpreadsheetWidget shortcuts set up: Ctrl+Z, Ctrl+Y, Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+B, Ctrl+I, Ctrl+U")
+        logger.info("SpreadsheetWidget shortcuts set up with WidgetWithChildrenShortcut context: Ctrl+Z, Ctrl+Y, Ctrl+C, Ctrl+X, Ctrl+V, Ctrl+B, Ctrl+I, Ctrl+U")
 
     def eventFilter(self, obj, event):
         """Event filter to handle Enter and Delete key presses.

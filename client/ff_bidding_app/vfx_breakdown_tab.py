@@ -1200,29 +1200,66 @@ class VFXBreakdownTab(QtWidgets.QWidget):
         self.vfxBreakdownDataChanged.emit()
 
     def _setup_shortcuts(self):
-        """Setup keyboard shortcuts for undo/redo and copy/paste."""
+        """Setup keyboard shortcuts for undo/redo and copy/paste.
+
+        Shortcuts are stored as instance variables to prevent garbage collection.
+        Uses WidgetWithChildrenShortcut context to work correctly in embedded windows.
+        """
+        self._shortcuts = []
+
         # Undo shortcut (Ctrl+Z)
         undo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Z"), self)
+        undo_shortcut.setContext(QtCore.Qt.WidgetWithChildrenShortcut)
         undo_shortcut.activated.connect(self._undo)
+        self._shortcuts.append(undo_shortcut)
 
         # Redo shortcut (Ctrl+Y)
         redo_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Y"), self)
+        redo_shortcut.setContext(QtCore.Qt.WidgetWithChildrenShortcut)
         redo_shortcut.activated.connect(self._redo)
+        self._shortcuts.append(redo_shortcut)
 
         # Copy shortcut (Ctrl+C)
         copy_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+C"), self)
+        copy_shortcut.setContext(QtCore.Qt.WidgetWithChildrenShortcut)
         copy_shortcut.activated.connect(self._copy_selection)
+        self._shortcuts.append(copy_shortcut)
 
         # Paste shortcut (Ctrl+V)
         paste_shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+V"), self)
+        paste_shortcut.setContext(QtCore.Qt.WidgetWithChildrenShortcut)
         paste_shortcut.activated.connect(self._paste_selection)
+        self._shortcuts.append(paste_shortcut)
 
         logger.info("Keyboard shortcuts set up: Ctrl+Z (undo), Ctrl+Y (redo), Ctrl+C (copy), Ctrl+V (paste)")
 
     def eventFilter(self, obj, event):
-        """Event filter to handle Enter and Delete key presses."""
+        """Event filter to handle keyboard shortcuts and key presses.
+
+        Clipboard shortcuts (Ctrl+C/V) must be handled here because QTableWidget's
+        base class has built-in clipboard handling that intercepts these keys.
+        """
         if obj == self.vfx_breakdown_table and event.type() == QtCore.QEvent.KeyPress:
-            if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+            key = event.key()
+            modifiers = event.modifiers()
+            has_ctrl = modifiers & QtCore.Qt.ControlModifier
+
+            # Clipboard shortcuts - handle directly to prevent QTableWidget interception
+            if has_ctrl:
+                if key == QtCore.Qt.Key_C:
+                    self._copy_selection()
+                    return True
+                elif key == QtCore.Qt.Key_V:
+                    self._paste_selection()
+                    return True
+                elif key == QtCore.Qt.Key_Z:
+                    self._undo()
+                    return True
+                elif key == QtCore.Qt.Key_Y:
+                    self._redo()
+                    return True
+
+            if key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
                 # Enter pressed - move to next row
                 current_item = self.vfx_breakdown_table.currentItem()
                 if current_item:
@@ -1234,7 +1271,7 @@ class VFXBreakdownTab(QtWidgets.QWidget):
                     if next_row < self.vfx_breakdown_table.rowCount():
                         self.vfx_breakdown_table.setCurrentCell(next_row, col)
                 return True
-            elif event.key() == QtCore.Qt.Key_Delete:
+            elif key == QtCore.Qt.Key_Delete:
                 # Delete key pressed - use context menu delete functionality
                 # Get the currently selected rows
                 selected_rows = set()
