@@ -3095,11 +3095,15 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             key = event.key()
             modifiers = event.modifiers()
 
+            # Debug logging
+            logger.info(f"SpreadsheetWidget eventFilter: key={key}, modifiers={modifiers}, obj={obj.__class__.__name__}")
+
             # Check for Ctrl modifier (Cmd on Mac)
             has_ctrl = bool(modifiers & Qt.ControlModifier)
 
             # Ctrl+C (Copy)
             if has_ctrl and key == Qt.Key_C:
+                logger.info("SpreadsheetWidget: Ctrl+C detected, calling _copy_selection")
                 self.table_view._copy_selection()
                 return True
 
