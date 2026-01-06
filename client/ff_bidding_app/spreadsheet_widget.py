@@ -1256,7 +1256,9 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             if text.startswith('='):
                 should_block = True
                 # Store reference for future use
-                self._formula_editor_ref = editor
+                if editor != self._formula_editor_ref:
+                    self._formula_editor_ref = editor
+                    editor.installEventFilter(self)
 
         # If we should block, only allow explicit submit (Enter) or cancel (Escape)
         if should_block:
@@ -1264,9 +1266,16 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             # RevertModelCache = Escape key pressed
             if hint in (QAbstractItemDelegate.SubmitModelCache, QAbstractItemDelegate.RevertModelCache):
                 # User explicitly committed or cancelled - allow close
+                # Remove event filter from editor
+                if self._formula_editor_ref is not None:
+                    self._formula_editor_ref.removeEventFilter(self)
                 self._formula_editor_ref = None
                 self._formula_reference_start = None
+                self._formula_ref_drag_end = None
+                self._formula_ref_insert_pos = 0
+                self._formula_ref_insert_len = 0
                 self._is_dragging_formula_ref = False
+                self.viewport().update()  # Clear green outline
                 super().closeEditor(editor, hint)
             else:
                 # Block close - keep editor open for formula reference selection
@@ -1274,10 +1283,16 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                 self._restore_editor_cursor(editor)
             return
 
-        # Normal close behavior
+        # Normal close behavior - remove event filter if needed
+        if self._formula_editor_ref is not None:
+            self._formula_editor_ref.removeEventFilter(self)
         self._formula_editor_ref = None
         self._formula_reference_start = None
+        self._formula_ref_drag_end = None
+        self._formula_ref_insert_pos = 0
+        self._formula_ref_insert_len = 0
         self._is_dragging_formula_ref = False
+        self.viewport().update()  # Clear green outline
         super().closeEditor(editor, hint)
 
     def eventFilter(self, obj, event):
@@ -1285,9 +1300,16 @@ class SpreadsheetTableView(QtWidgets.QTableView):
 
         This catches mouse events on the viewport BEFORE they cause
         focus changes that would close the editor.
+        Also blocks FocusOut events on the editor during formula mode.
         """
         from qtpy.QtCore import QEvent
         from qtpy.QtWidgets import QLineEdit, QApplication
+
+        # Block FocusOut events on the editor during formula reference selection
+        if obj == self._formula_editor_ref and event.type() == QEvent.FocusOut:
+            if hasattr(obj, 'text') and obj.text().startswith('='):
+                # Block the focus out event - keep editor focused
+                return True
 
         if obj == self.viewport():
             # Handle mouse press - formula reference selection
@@ -1314,8 +1336,12 @@ class SpreadsheetTableView(QtWidgets.QTableView):
 
                 # Check if editor has formula
                 if editor and hasattr(editor, 'text') and editor.text().startswith('='):
-                    # Store editor reference
-                    self._formula_editor_ref = editor
+                    # Store editor reference and install event filter on it
+                    if editor != self._formula_editor_ref:
+                        if self._formula_editor_ref is not None:
+                            self._formula_editor_ref.removeEventFilter(self)
+                        self._formula_editor_ref = editor
+                        editor.installEventFilter(self)
 
                     # Get the clicked position
                     pos = event.pos()
