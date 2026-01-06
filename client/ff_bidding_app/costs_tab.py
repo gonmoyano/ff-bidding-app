@@ -424,16 +424,25 @@ class CostsTab(QtWidgets.QMainWindow):
         Args:
             dock: The CostDock containing the spreadsheet
         """
+        # Skip saving during load to prevent overwriting data with empty values
+        if getattr(dock, '_loading_from_sg', False):
+            logger.debug(f"Skipping save for '{getattr(dock, 'sheet_name', 'unknown')}' - loading in progress")
+            return
+
         if not self.current_bid_id or not self.current_project_id:
+            logger.debug(f"Skipping save - no bid_id ({self.current_bid_id}) or project_id ({self.current_project_id})")
             return
 
         if not hasattr(dock, 'spreadsheet') or not hasattr(dock, 'sheet_name'):
+            logger.debug("Skipping save - dock missing spreadsheet or sheet_name attribute")
             return
 
         try:
             data_dict = dock.spreadsheet.get_data_as_dict()
             cell_meta_dict = dock.spreadsheet.model.get_all_cell_meta()
             sheet_meta = dock.spreadsheet.model.get_sheet_meta()
+
+            logger.info(f"Saving custom spreadsheet '{dock.sheet_name}' to ShotGrid ({len(data_dict)} cells)")
 
             # Save directly to ShotGrid
             self.sg_session.save_spreadsheet_by_name(
@@ -444,7 +453,7 @@ class CostsTab(QtWidgets.QMainWindow):
                 cell_meta_dict=cell_meta_dict,
                 sheet_meta=sheet_meta
             )
-            logger.debug(f"Saved custom spreadsheet '{dock.sheet_name}' to ShotGrid ({len(data_dict)} cells)")
+            logger.info(f"Successfully saved custom spreadsheet '{dock.sheet_name}' to ShotGrid")
         except Exception as e:
             logger.error(f"Failed to save custom spreadsheet {dock.sheet_name}: {e}", exc_info=True)
 
@@ -456,6 +465,9 @@ class CostsTab(QtWidgets.QMainWindow):
         """
         if not self.current_bid_id or not hasattr(dock, 'sheet_name'):
             return
+
+        # Set flag to prevent save handler from triggering during load
+        dock._loading_from_sg = True
 
         try:
             # Get the spreadsheet entity to store its ID
@@ -481,6 +493,9 @@ class CostsTab(QtWidgets.QMainWindow):
                 logger.info(f"Loaded custom spreadsheet '{dock.sheet_name}' from ShotGrid ({len(data_dict)} cells)")
         except Exception as e:
             logger.error(f"Failed to load custom spreadsheet {dock.sheet_name}: {e}", exc_info=True)
+        finally:
+            # Clear loading flag to allow saves
+            dock._loading_from_sg = False
 
     def _load_custom_spreadsheets_for_bid(self):
         """Load all custom spreadsheets for the current bid from ShotGrid."""
