@@ -405,7 +405,11 @@ class CostsTab(QtWidgets.QMainWindow):
         else:
             dock.sg_spreadsheet_id = None
 
-        # Connect dataChanged signal to save immediately to ShotGrid
+        # Track row/column counts to detect structural changes
+        dock._last_row_count = spreadsheet.model.rowCount()
+        dock._last_col_count = spreadsheet.model.columnCount()
+
+        # Connect dataChanged signal - cache cell edits, save immediately for row/col changes
         # Use default argument to capture dock by value, not by reference
         # The signal passes (topLeft, bottomRight, roles) which we ignore
         def on_data_changed(top_left=None, bottom_right=None, roles=None, d=dock):
@@ -426,7 +430,10 @@ class CostsTab(QtWidgets.QMainWindow):
         logger.info(f"Added custom spreadsheet: {sheet_name}")
 
     def _on_custom_spreadsheet_data_changed(self, dock):
-        """Handle data changes in a custom spreadsheet - save immediately to ShotGrid.
+        """Handle data changes in a custom spreadsheet.
+
+        Cell edits are cached for deferred save.
+        Row/column additions are saved immediately to ShotGrid.
 
         Args:
             dock: The CostDock containing the spreadsheet
@@ -443,25 +450,47 @@ class CostsTab(QtWidgets.QMainWindow):
         if not hasattr(dock, 'spreadsheet') or not hasattr(dock, 'sheet_name'):
             return
 
+        # Check if row/column count changed (structural change)
+        current_rows = dock.spreadsheet.model.rowCount()
+        current_cols = dock.spreadsheet.model.columnCount()
+        last_rows = getattr(dock, '_last_row_count', current_rows)
+        last_cols = getattr(dock, '_last_col_count', current_cols)
+
+        structure_changed = (current_rows != last_rows) or (current_cols != last_cols)
+
+        # Update tracked counts
+        dock._last_row_count = current_rows
+        dock._last_col_count = current_cols
+
         try:
             data_dict = dock.spreadsheet.get_data_as_dict()
             cell_meta_dict = dock.spreadsheet.model.get_all_cell_meta()
             sheet_meta = dock.spreadsheet.model.get_sheet_meta()
 
-            logger.info(f"Saving '{sheet_name}' to ShotGrid ({len(data_dict)} cells)")
-
-            # Save immediately to ShotGrid
-            self.sg_session.save_spreadsheet_by_name(
-                project_id=self.current_project_id,
-                bid_id=self.current_bid_id,
-                spreadsheet_name=dock.sheet_name,
-                data_dict=data_dict,
-                cell_meta_dict=cell_meta_dict,
-                sheet_meta=sheet_meta
-            )
-            logger.info(f"Successfully saved '{sheet_name}' to ShotGrid")
+            if structure_changed:
+                # Row/column added - save immediately to ShotGrid
+                logger.info(f"Structure changed for '{sheet_name}' - saving immediately to ShotGrid ({len(data_dict)} cells)")
+                self.sg_session.save_spreadsheet_by_name(
+                    project_id=self.current_project_id,
+                    bid_id=self.current_bid_id,
+                    spreadsheet_name=dock.sheet_name,
+                    data_dict=data_dict,
+                    cell_meta_dict=cell_meta_dict,
+                    sheet_meta=sheet_meta
+                )
+                logger.info(f"Successfully saved '{sheet_name}' to ShotGrid")
+            else:
+                # Cell edit - use cache for deferred save
+                self._spreadsheet_cache.mark_dirty(
+                    project_id=self.current_project_id,
+                    bid_id=self.current_bid_id,
+                    spreadsheet_type=dock.sheet_name,
+                    data_dict=data_dict,
+                    cell_meta_dict=cell_meta_dict,
+                    sheet_meta=sheet_meta
+                )
         except Exception as e:
-            logger.error(f"Failed to save custom spreadsheet {sheet_name}: {e}", exc_info=True)
+            logger.error(f"Failed to handle change for {sheet_name}: {e}", exc_info=True)
 
     def _load_custom_spreadsheet_from_shotgrid(self, dock):
         """Load custom spreadsheet data from ShotGrid.
