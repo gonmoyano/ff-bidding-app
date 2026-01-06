@@ -1081,6 +1081,8 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         self._is_dragging_formula_ref = False  # True when drag-selecting cells for formula reference
         self._formula_ref_drag_end = None  # Current end cell during drag
         self._formula_editor_ref = None  # Reference to the editor during formula reference selection
+        self._formula_ref_insert_pos = 0  # Cursor position where reference was inserted
+        self._formula_ref_insert_len = 0  # Length of the last inserted reference
 
         # Ensure the table view can receive keyboard events
         self.setFocusPolicy(Qt.StrongFocus)
@@ -1149,13 +1151,44 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         """Get the current editor widget if in edit mode."""
         return self._find_cell_editor()
 
-    def _insert_cell_reference(self, ref_text):
-        """Insert a cell reference into the current formula editor."""
+    def _insert_cell_reference(self, ref_text, replace_last=False):
+        """Insert a cell reference into the current formula editor.
+
+        Args:
+            ref_text: The cell reference text to insert (e.g., "A1" or "A1:B5")
+            replace_last: If True, replace the last inserted reference instead of inserting
+        """
         # Use stored editor reference if available, otherwise find it
         editor = self._formula_editor_ref if self._formula_editor_ref else self._get_current_editor()
         if editor and hasattr(editor, 'insert'):
+            if replace_last and self._formula_ref_insert_len > 0:
+                # Remove the previously inserted reference before inserting the new one
+                # Select from insert position to insert position + length, then replace
+                current_pos = editor.cursorPosition() if hasattr(editor, 'cursorPosition') else 0
+                # The cursor should be right after the last inserted reference
+                start_pos = self._formula_ref_insert_pos
+                end_pos = start_pos + self._formula_ref_insert_len
+
+                # Select and delete the old reference
+                if hasattr(editor, 'setSelection'):
+                    editor.setSelection(start_pos, self._formula_ref_insert_len)
+                    editor.del_()  # Delete selected text
+                elif hasattr(editor, 'setText') and hasattr(editor, 'text'):
+                    # Fallback: manually edit the text
+                    text = editor.text()
+                    new_text = text[:start_pos] + text[end_pos:]
+                    editor.setText(new_text)
+                    editor.setCursorPosition(start_pos)
+
+            # Track where we're inserting
+            self._formula_ref_insert_pos = editor.cursorPosition() if hasattr(editor, 'cursorPosition') else 0
+
             # QLineEdit has insert() method that inserts at cursor position
             editor.insert(ref_text)
+
+            # Track the length of the inserted reference
+            self._formula_ref_insert_len = len(ref_text)
+
             # Restore focus and ensure cursor is visible
             self._restore_editor_cursor(editor)
             return True
@@ -1306,13 +1339,17 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                                 # Update the end point for green outline
                                 self._formula_ref_drag_end = (clicked_row, clicked_col)
 
-                                # Insert range reference
+                                # Replace the single cell reference with the range reference
                                 ref = self._get_range_reference(min_row, min_col, max_row, max_col)
-                                self._insert_cell_reference(ref)
+                                self._insert_cell_reference(ref, replace_last=True)
                             else:
                                 # Regular click: set as new start cell and insert single reference
                                 self._formula_reference_start = (clicked_row, clicked_col)
                                 self._formula_ref_drag_end = None  # Clear any previous range end
+
+                                # Reset insert tracking for new reference
+                                self._formula_ref_insert_pos = 0
+                                self._formula_ref_insert_len = 0
 
                                 # Insert single cell reference
                                 ref = self._get_cell_reference(clicked_row, clicked_col)
