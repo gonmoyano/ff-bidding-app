@@ -246,18 +246,23 @@ class CostsTab(QtWidgets.QMainWindow):
             dock: The CostDock containing the spreadsheet
         """
         if not self.current_bid_id or not self.current_project_id:
+            logger.debug(f"Custom spreadsheet data changed but no bid/project set (bid={self.current_bid_id}, project={self.current_project_id})")
             return
 
         if not hasattr(dock, 'spreadsheet') or not hasattr(dock, 'sheet_name'):
+            logger.debug("Custom spreadsheet data changed but dock missing spreadsheet or sheet_name")
             return
 
         try:
             data_dict = dock.spreadsheet.get_data_as_dict()
             if not data_dict:
+                logger.debug(f"Custom spreadsheet {dock.sheet_name} data changed but get_data_as_dict returned empty")
                 return
 
             cell_meta_dict = dock.spreadsheet.model.get_all_cell_meta()
             sheet_meta = dock.spreadsheet.model.get_sheet_meta()
+
+            logger.info(f"Caching custom spreadsheet '{dock.sheet_name}' with {len(data_dict)} cells for bid {self.current_bid_id}")
 
             # Use sheet name as the spreadsheet type for caching
             self._spreadsheet_cache.mark_dirty(
