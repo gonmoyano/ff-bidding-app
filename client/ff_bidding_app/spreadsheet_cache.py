@@ -403,6 +403,13 @@ class SpreadsheetCache:
                         entry['cell_meta_dict'] = self._serialize_dict_keys(entry['cell_meta_dict'])
                     cache_data[key] = entry
 
+            # If no dirty entries, delete the cache file instead of writing empty JSON
+            if not cache_data:
+                if self.cache_file.exists():
+                    self.cache_file.unlink()
+                    logger.debug("Deleted empty spreadsheet cache file")
+                return
+
             with open(self.cache_file, 'w', encoding='utf-8') as f:
                 json.dump(cache_data, f, indent=2, default=str)
 
