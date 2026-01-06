@@ -229,15 +229,19 @@ class CostsTab(QtWidgets.QMainWindow):
 
         # Connect dataChanged signal to cache the spreadsheet
         # Use default argument to capture dock by value, not by reference
-        spreadsheet.model.dataChanged.connect(
-            lambda d=dock: self._on_custom_spreadsheet_data_changed(d)
-        )
+        def on_data_changed(d=dock):
+            print(f"DEBUG: dataChanged signal fired for custom spreadsheet '{d.sheet_name}'")
+            self._on_custom_spreadsheet_data_changed(d)
+
+        spreadsheet.model.dataChanged.connect(on_data_changed)
+        print(f"DEBUG: Connected dataChanged signal for custom spreadsheet '{sheet_name}'")
 
         # Load existing data from ShotGrid if requested
         if load_from_sg and self.current_bid_id:
             self._load_custom_spreadsheet_from_shotgrid(dock)
 
         logger.info(f"Added custom spreadsheet: {sheet_name}")
+        print(f"DEBUG: Created custom spreadsheet dock '{sheet_name}'")
 
     def _on_custom_spreadsheet_data_changed(self, dock):
         """Handle data changes in a custom spreadsheet - cache for later save.
@@ -245,16 +249,23 @@ class CostsTab(QtWidgets.QMainWindow):
         Args:
             dock: The CostDock containing the spreadsheet
         """
+        print(f"DEBUG: _on_custom_spreadsheet_data_changed called for dock")
+
         if not self.current_bid_id or not self.current_project_id:
+            print(f"DEBUG: No bid/project set (bid={self.current_bid_id}, project={self.current_project_id})")
             logger.debug(f"Custom spreadsheet data changed but no bid/project set (bid={self.current_bid_id}, project={self.current_project_id})")
             return
 
         if not hasattr(dock, 'spreadsheet') or not hasattr(dock, 'sheet_name'):
+            print(f"DEBUG: dock missing spreadsheet or sheet_name")
             logger.debug("Custom spreadsheet data changed but dock missing spreadsheet or sheet_name")
             return
 
+        print(f"DEBUG: Processing change for '{dock.sheet_name}'")
+
         try:
             data_dict = dock.spreadsheet.get_data_as_dict()
+            print(f"DEBUG: get_data_as_dict returned {len(data_dict) if data_dict else 0} cells")
             if not data_dict:
                 logger.debug(f"Custom spreadsheet {dock.sheet_name} data changed but get_data_as_dict returned empty")
                 return
@@ -262,6 +273,7 @@ class CostsTab(QtWidgets.QMainWindow):
             cell_meta_dict = dock.spreadsheet.model.get_all_cell_meta()
             sheet_meta = dock.spreadsheet.model.get_sheet_meta()
 
+            print(f"DEBUG: Calling mark_dirty for '{dock.sheet_name}' with {len(data_dict)} cells, bid={self.current_bid_id}, project={self.current_project_id}")
             logger.info(f"Caching custom spreadsheet '{dock.sheet_name}' with {len(data_dict)} cells for bid {self.current_bid_id}")
 
             # Use sheet name as the spreadsheet type for caching
@@ -273,7 +285,9 @@ class CostsTab(QtWidgets.QMainWindow):
                 cell_meta_dict=cell_meta_dict,
                 sheet_meta=sheet_meta
             )
+            print(f"DEBUG: mark_dirty completed. Cache now has {self._spreadsheet_cache.get_dirty_count()} dirty entries")
         except Exception as e:
+            print(f"DEBUG: Exception in _on_custom_spreadsheet_data_changed: {e}")
             logger.error(f"Failed to cache custom spreadsheet {dock.sheet_name}: {e}", exc_info=True)
 
     def _load_custom_spreadsheet_from_shotgrid(self, dock):
