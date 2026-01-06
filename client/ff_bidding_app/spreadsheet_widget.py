@@ -1199,16 +1199,15 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         if not editor or not hasattr(editor, 'setFocus'):
             return
 
-        from qtpy.QtWidgets import QApplication
-
         # Store cursor position before any operations
         cursor_pos = editor.cursorPosition() if hasattr(editor, 'cursorPosition') else 0
 
-        # Process any pending events first
-        QApplication.processEvents()
+        # Ensure the editor is visible and raised
+        if hasattr(editor, 'raise_'):
+            editor.raise_()
 
-        # Set focus with OtherFocusReason (must use FocusReason, not FocusPolicy)
-        editor.setFocus(Qt.OtherFocusReason)
+        # Set focus immediately
+        editor.setFocus()
 
         # Restore cursor position explicitly
         if hasattr(editor, 'setCursorPosition'):
@@ -1218,22 +1217,22 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         if hasattr(editor, 'deselect'):
             editor.deselect()
 
-        # Force the widget to repaint
-        editor.update()
-
-        # Schedule another focus restoration after Qt event loop settles
+        # Schedule delayed focus restoration to ensure cursor blinks
         def delayed_restore():
-            if editor and hasattr(editor, 'setFocus'):
-                try:
-                    editor.setFocus(Qt.OtherFocusReason)
+            try:
+                if editor and hasattr(editor, 'setFocus'):
+                    editor.setFocus()
                     if hasattr(editor, 'setCursorPosition'):
                         editor.setCursorPosition(cursor_pos)
                     if hasattr(editor, 'deselect'):
                         editor.deselect()
-                except RuntimeError:
-                    pass  # Widget may have been deleted
+                    # Force repaint
+                    editor.update()
+            except RuntimeError:
+                pass  # Widget may have been deleted
 
-        QtCore.QTimer.singleShot(10, delayed_restore)
+        QtCore.QTimer.singleShot(0, delayed_restore)
+        QtCore.QTimer.singleShot(50, delayed_restore)
 
     def closeEditor(self, editor, hint):
         """Override to prevent editor from closing during formula reference selection.
