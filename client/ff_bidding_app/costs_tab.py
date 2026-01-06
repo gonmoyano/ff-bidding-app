@@ -91,6 +91,10 @@ class CostsTab(QtWidgets.QMainWindow):
         self._spreadsheet_cache = get_spreadsheet_cache()
         self._spreadsheet_cache.set_sg_session(sg_session)
 
+        # Track custom spreadsheets added by user
+        self._custom_spreadsheet_docks = []
+        self._custom_spreadsheet_counter = 0
+
         # No central widget - docks can take full space
         self.setCentralWidget(None)
 
@@ -110,6 +114,9 @@ class CostsTab(QtWidgets.QMainWindow):
         # Apply purple/violet theme to the Costs panel
         self._apply_costs_panel_style()
 
+        # Create toolbar with add spreadsheet button
+        self._create_toolbar()
+
         # Create cost docks
         self._create_cost_docks()
 
@@ -120,6 +127,92 @@ class CostsTab(QtWidgets.QMainWindow):
         QtCore.QTimer.singleShot(0, self.load_layout)
 
         logger.info("CostsTab initialized")
+
+    def _create_toolbar(self):
+        """Create the toolbar with add spreadsheet button."""
+        self.toolbar = QtWidgets.QToolBar("Costs Toolbar")
+        self.toolbar.setMovable(False)
+        self.toolbar.setFloatable(False)
+        self.toolbar.setIconSize(QtCore.QSize(16, 16))
+
+        # Style the toolbar
+        self.toolbar.setStyleSheet("""
+            QToolBar {
+                background-color: #2d2d30;
+                border: none;
+                spacing: 5px;
+                padding: 2px 5px;
+            }
+            QToolButton {
+                background-color: transparent;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                color: #e0e0e0;
+                padding: 4px 8px;
+                font-size: 12px;
+            }
+            QToolButton:hover {
+                background-color: #6b5b95;
+                border-color: #6b5b95;
+            }
+            QToolButton:pressed {
+                background-color: #5b4b85;
+            }
+        """)
+
+        # Add spacer to push button to the right
+        spacer = QtWidgets.QWidget()
+        spacer.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        self.toolbar.addWidget(spacer)
+
+        # Add spreadsheet button
+        self.add_spreadsheet_btn = QtWidgets.QToolButton()
+        self.add_spreadsheet_btn.setText("+ Add Spreadsheet")
+        self.add_spreadsheet_btn.setToolTip("Add a new spreadsheet tab")
+        self.add_spreadsheet_btn.clicked.connect(self._add_custom_spreadsheet)
+        self.toolbar.addWidget(self.add_spreadsheet_btn)
+
+        # Add toolbar to the top
+        self.addToolBar(QtCore.Qt.TopToolBarArea, self.toolbar)
+
+    def _add_custom_spreadsheet(self):
+        """Add a new custom spreadsheet dock after Asset Costs."""
+        self._custom_spreadsheet_counter += 1
+        sheet_name = f"Sheet {self._custom_spreadsheet_counter}"
+
+        # Create the spreadsheet widget
+        spreadsheet = SpreadsheetWidget(
+            cols=10,
+            app_settings=self.app_settings,
+            parent=self
+        )
+
+        # Apply currency settings if we have bid data
+        if self.current_bid_data:
+            default_symbol = self.app_settings.get_currency() if self.app_settings else "$"
+            sg_currency_value = self.current_bid_data.get("sg_currency")
+            currency_symbol, currency_position = parse_sg_currency(sg_currency_value, default_symbol or "$")
+            spreadsheet.set_currency_settings(currency_symbol, currency_position)
+
+        # Create the dock widget
+        dock = CostDock(sheet_name, spreadsheet, self)
+
+        # Store reference to the spreadsheet for later access
+        dock.spreadsheet = spreadsheet
+
+        # Add dock to the left area
+        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dock)
+
+        # Tabify with Asset Costs dock (so it appears after it)
+        self.tabifyDockWidget(self.asset_cost_dock, dock)
+
+        # Raise the new tab to show it
+        dock.raise_()
+
+        # Track this custom spreadsheet
+        self._custom_spreadsheet_docks.append(dock)
+
+        logger.info(f"Added custom spreadsheet: {sheet_name}")
 
     def _apply_costs_panel_style(self):
         """Apply a purple/violet theme to specific elements in the Costs panel."""
