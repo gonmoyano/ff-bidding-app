@@ -91,6 +91,10 @@ class CostsTab(QtWidgets.QMainWindow):
         self._spreadsheet_cache = get_spreadsheet_cache()
         self._spreadsheet_cache.set_sg_session(sg_session)
 
+        # Track custom spreadsheets added by user
+        self._custom_spreadsheet_docks = []
+        self._custom_spreadsheet_counter = 0
+
         # No central widget - docks can take full space
         self.setCentralWidget(None)
 
@@ -110,16 +114,408 @@ class CostsTab(QtWidgets.QMainWindow):
         # Apply purple/violet theme to the Costs panel
         self._apply_costs_panel_style()
 
+        # Create toolbar with add spreadsheet button
+        self._create_toolbar()
+
         # Create cost docks
         self._create_cost_docks()
 
         # Set up cross-tab formula evaluator after all widgets are created
         self._setup_cross_tab_formulas()
 
+        # Set up tab bar event handling for rename and position tracking
+        QtCore.QTimer.singleShot(100, self._setup_tab_bar_handling)
+
         # Load saved layout
         QtCore.QTimer.singleShot(0, self.load_layout)
 
         logger.info("CostsTab initialized")
+
+    def _setup_tab_bar_handling(self):
+        """Set up tab bar event handling for double-click rename and position tracking."""
+        # Find the tab bar widget for the dock area
+        tab_bars = self.findChildren(QtWidgets.QTabBar)
+        for tab_bar in tab_bars:
+            # Enable double-click to rename
+            tab_bar.setTabsClosable(False)
+            tab_bar.tabBarDoubleClicked.connect(self._on_tab_double_clicked)
+            # Track tab moves for position saving
+            tab_bar.tabMoved.connect(self._on_tab_moved)
+            logger.debug(f"Connected tab bar signals: {tab_bar}")
+
+    def _on_tab_double_clicked(self, index):
+        """Handle double-click on a tab to rename it."""
+        tab_bar = self.sender()
+        if not tab_bar:
+            return
+
+        tab_text = tab_bar.tabText(index)
+
+        # Only allow renaming custom spreadsheets (not built-in tabs)
+        dock = self._find_dock_by_title(tab_text)
+        if not dock or dock not in self._custom_spreadsheet_docks:
+            return
+
+        # Show rename dialog
+        new_name, ok = QtWidgets.QInputDialog.getText(
+            self,
+            "Rename Sheet",
+            "Enter new name:",
+            QtWidgets.QLineEdit.Normal,
+            tab_text
+        )
+
+        if ok and new_name and new_name != tab_text:
+            self._rename_custom_spreadsheet(dock, new_name)
+
+    def _rename_custom_spreadsheet(self, dock, new_name):
+        """Rename a custom spreadsheet.
+
+        Args:
+            dock: The CostDock to rename
+            new_name: New name for the spreadsheet
+        """
+        old_name = dock.sheet_name
+
+        # Update dock title
+        dock.setWindowTitle(new_name)
+        dock.setObjectName(new_name)
+        dock.sheet_name = new_name
+
+        # Update in ShotGrid
+        if hasattr(dock, 'sg_spreadsheet_id') and dock.sg_spreadsheet_id:
+            try:
+                self.sg_session.update_spreadsheet(
+                    dock.sg_spreadsheet_id,
+                    code=new_name
+                )
+                logger.info(f"Renamed spreadsheet from '{old_name}' to '{new_name}' in ShotGrid")
+            except Exception as e:
+                logger.error(f"Failed to rename spreadsheet in ShotGrid: {e}", exc_info=True)
+
+    def _on_tab_moved(self, from_index, to_index):
+        """Handle tab position changes - save new positions to ShotGrid."""
+        logger.debug(f"Tab moved from {from_index} to {to_index}")
+        # Delay position save to allow UI to settle
+        QtCore.QTimer.singleShot(100, self._save_custom_spreadsheet_positions)
+
+    def _save_custom_spreadsheet_positions(self):
+        """Save current tab positions of custom spreadsheets to ShotGrid."""
+        if not self._custom_spreadsheet_docks:
+            return
+
+        # Get the tab bar to determine current order
+        tab_bars = self.findChildren(QtWidgets.QTabBar)
+        if not tab_bars:
+            return
+
+        # Find positions of custom spreadsheets in the tab bar
+        for tab_bar in tab_bars:
+            for i in range(tab_bar.count()):
+                tab_text = tab_bar.tabText(i)
+                dock = self._find_dock_by_title(tab_text)
+                if dock and dock in self._custom_spreadsheet_docks:
+                    # Save position to ShotGrid
+                    if hasattr(dock, 'sg_spreadsheet_id') and dock.sg_spreadsheet_id:
+                        try:
+                            # Get existing metadata and update position
+                            sheet_meta = {}
+                            if hasattr(dock, 'spreadsheet') and hasattr(dock.spreadsheet, 'model'):
+                                sheet_meta = dock.spreadsheet.model.get_sheet_meta() or {}
+                            sheet_meta['tab_position'] = i
+
+                            self.sg_session.update_spreadsheet(
+                                dock.sg_spreadsheet_id,
+                                sheet_meta=sheet_meta
+                            )
+                            logger.debug(f"Saved position {i} for spreadsheet '{tab_text}'")
+                        except Exception as e:
+                            logger.error(f"Failed to save position for '{tab_text}': {e}")
+
+    def _find_dock_by_title(self, title):
+        """Find a dock widget by its title.
+
+        Args:
+            title: Window title to search for
+
+        Returns:
+            QDockWidget or None
+        """
+        # Check custom spreadsheets first
+        for dock in self._custom_spreadsheet_docks:
+            if dock.windowTitle() == title:
+                return dock
+
+        # Check built-in docks
+        if hasattr(self, 'shots_cost_dock') and self.shots_cost_dock.windowTitle() == title:
+            return self.shots_cost_dock
+        if hasattr(self, 'asset_cost_dock') and self.asset_cost_dock.windowTitle() == title:
+            return self.asset_cost_dock
+        if hasattr(self, 'misc_cost_dock') and self.misc_cost_dock.windowTitle() == title:
+            return self.misc_cost_dock
+        if hasattr(self, 'total_cost_dock') and self.total_cost_dock.windowTitle() == title:
+            return self.total_cost_dock
+
+        return None
+
+    def _create_toolbar(self):
+        """Create the toolbar with add spreadsheet button."""
+        self.toolbar = QtWidgets.QToolBar("Costs Toolbar")
+        self.toolbar.setMovable(False)
+        self.toolbar.setFloatable(False)
+        self.toolbar.setIconSize(QtCore.QSize(16, 16))
+
+        # Style the toolbar
+        self.toolbar.setStyleSheet("""
+            QToolBar {
+                background-color: #2d2d30;
+                border: none;
+                spacing: 5px;
+                padding: 2px 5px;
+            }
+            QToolButton {
+                background-color: transparent;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                color: #e0e0e0;
+                padding: 4px 8px;
+                font-size: 12px;
+            }
+            QToolButton:hover {
+                background-color: #6b5b95;
+                border-color: #6b5b95;
+            }
+            QToolButton:pressed {
+                background-color: #5b4b85;
+            }
+        """)
+
+        # Add spacer to push button to the right
+        spacer = QtWidgets.QWidget()
+        spacer.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        self.toolbar.addWidget(spacer)
+
+        # Add spreadsheet button
+        self.add_spreadsheet_btn = QtWidgets.QToolButton()
+        self.add_spreadsheet_btn.setText("+ Add Spreadsheet")
+        self.add_spreadsheet_btn.setToolTip("Add a new spreadsheet tab")
+        self.add_spreadsheet_btn.clicked.connect(lambda: self._add_custom_spreadsheet())
+        self.toolbar.addWidget(self.add_spreadsheet_btn)
+
+        # Add toolbar to the top
+        self.addToolBar(QtCore.Qt.TopToolBarArea, self.toolbar)
+
+    def _add_custom_spreadsheet(self, sheet_name=None, load_from_sg=False):
+        """Add a new custom spreadsheet dock after Asset Costs.
+
+        Args:
+            sheet_name: Optional name for the sheet. If None, auto-generates "Sheet1", "Sheet2", etc.
+            load_from_sg: If True, load existing data from ShotGrid for this sheet name
+        """
+        if sheet_name is None:
+            self._custom_spreadsheet_counter += 1
+            sheet_name = f"Sheet{self._custom_spreadsheet_counter}"
+
+        # Create the spreadsheet widget
+        spreadsheet = SpreadsheetWidget(
+            cols=10,
+            app_settings=self.app_settings,
+            parent=self
+        )
+
+        # Apply currency settings if we have bid data
+        if self.current_bid_data:
+            default_symbol = self.app_settings.get_currency() if self.app_settings else "$"
+            sg_currency_value = self.current_bid_data.get("sg_currency")
+            currency_symbol, currency_position = parse_sg_currency(sg_currency_value, default_symbol or "$")
+            spreadsheet.set_currency_settings(currency_symbol, currency_position)
+
+        # Set up formula evaluator for this spreadsheet (same as Misc)
+        formula_evaluator = FormulaEvaluator(
+            table_model=spreadsheet.model,
+            sheet_models={sheet_name: spreadsheet.model}
+        )
+        spreadsheet.set_formula_evaluator(formula_evaluator)
+
+        # Create the dock widget
+        dock = CostDock(sheet_name, spreadsheet, self)
+
+        # Store reference to the spreadsheet, name, and evaluator for later access
+        dock.spreadsheet = spreadsheet
+        dock.sheet_name = sheet_name
+        dock.formula_evaluator = formula_evaluator
+
+        # Add dock to the left area
+        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dock)
+
+        # Tabify with Asset Costs dock (so it appears after it)
+        self.tabifyDockWidget(self.asset_cost_dock, dock)
+
+        # Raise the new tab to show it
+        dock.raise_()
+
+        # Track this custom spreadsheet
+        self._custom_spreadsheet_docks.append(dock)
+
+        # Create the spreadsheet in ShotGrid immediately (if not loading existing)
+        if not load_from_sg and self.current_bid_id and self.current_project_id:
+            try:
+                # Check if spreadsheet already exists
+                existing = self.sg_session.get_spreadsheet_by_name(self.current_bid_id, sheet_name)
+                if not existing:
+                    # Create new spreadsheet in ShotGrid (no sg_type, just code)
+                    sg_spreadsheet = self.sg_session.create_spreadsheet(
+                        self.current_project_id,
+                        self.current_bid_id,
+                        code=sheet_name
+                    )
+                    dock.sg_spreadsheet_id = sg_spreadsheet.get("id")
+                    logger.info(f"Created CustomEntity15 '{sheet_name}' (ID: {dock.sg_spreadsheet_id}) in ShotGrid")
+                else:
+                    dock.sg_spreadsheet_id = existing.get("id")
+                    logger.info(f"Found existing CustomEntity15 '{sheet_name}' (ID: {dock.sg_spreadsheet_id})")
+            except Exception as e:
+                logger.error(f"Failed to create spreadsheet in ShotGrid: {e}", exc_info=True)
+                dock.sg_spreadsheet_id = None
+        else:
+            dock.sg_spreadsheet_id = None
+
+        # Connect dataChanged signal to save directly to ShotGrid
+        # Use default argument to capture dock by value, not by reference
+        def on_data_changed(d=dock):
+            self._on_custom_spreadsheet_data_changed(d)
+
+        spreadsheet.model.dataChanged.connect(on_data_changed)
+
+        # Load existing data from ShotGrid if requested
+        if load_from_sg and self.current_bid_id:
+            self._load_custom_spreadsheet_from_shotgrid(dock)
+
+        logger.info(f"Added custom spreadsheet: {sheet_name}")
+
+    def _on_custom_spreadsheet_data_changed(self, dock):
+        """Handle data changes in a custom spreadsheet - save directly to ShotGrid.
+
+        Args:
+            dock: The CostDock containing the spreadsheet
+        """
+        if not self.current_bid_id or not self.current_project_id:
+            return
+
+        if not hasattr(dock, 'spreadsheet') or not hasattr(dock, 'sheet_name'):
+            return
+
+        try:
+            data_dict = dock.spreadsheet.get_data_as_dict()
+            cell_meta_dict = dock.spreadsheet.model.get_all_cell_meta()
+            sheet_meta = dock.spreadsheet.model.get_sheet_meta()
+
+            # Save directly to ShotGrid
+            self.sg_session.save_spreadsheet_by_name(
+                project_id=self.current_project_id,
+                bid_id=self.current_bid_id,
+                spreadsheet_name=dock.sheet_name,
+                data_dict=data_dict,
+                cell_meta_dict=cell_meta_dict,
+                sheet_meta=sheet_meta
+            )
+            logger.debug(f"Saved custom spreadsheet '{dock.sheet_name}' to ShotGrid ({len(data_dict)} cells)")
+        except Exception as e:
+            logger.error(f"Failed to save custom spreadsheet {dock.sheet_name}: {e}", exc_info=True)
+
+    def _load_custom_spreadsheet_from_shotgrid(self, dock):
+        """Load custom spreadsheet data from ShotGrid.
+
+        Args:
+            dock: The CostDock containing the spreadsheet
+        """
+        if not self.current_bid_id or not hasattr(dock, 'sheet_name'):
+            return
+
+        try:
+            # Get the spreadsheet entity to store its ID
+            sg_spreadsheet = self.sg_session.get_spreadsheet_by_name(self.current_bid_id, dock.sheet_name)
+            if sg_spreadsheet:
+                dock.sg_spreadsheet_id = sg_spreadsheet.get("id")
+
+            data_dict, cell_meta_dict, sheet_meta = self.sg_session.load_spreadsheet_by_name(
+                self.current_bid_id,
+                dock.sheet_name
+            )
+
+            if data_dict:
+                dock.spreadsheet.load_data_from_dict(data_dict)
+
+                if cell_meta_dict:
+                    dock.spreadsheet.model.load_cell_meta(cell_meta_dict)
+
+                if sheet_meta:
+                    dock.spreadsheet.model.load_sheet_meta(sheet_meta)
+                    dock.spreadsheet.apply_saved_sizes()
+
+                logger.info(f"Loaded custom spreadsheet '{dock.sheet_name}' from ShotGrid ({len(data_dict)} cells)")
+        except Exception as e:
+            logger.error(f"Failed to load custom spreadsheet {dock.sheet_name}: {e}", exc_info=True)
+
+    def _load_custom_spreadsheets_for_bid(self):
+        """Load all custom spreadsheets for the current bid from ShotGrid."""
+        import json
+
+        if not self.current_bid_id:
+            return
+
+        try:
+            # Get all spreadsheets for this bid
+            all_spreadsheets = self.sg_session.get_all_spreadsheets_for_bid(self.current_bid_id)
+
+            # Filter to only custom spreadsheets (those without sg_type or not 'misc'/'total_cost')
+            custom_sheets = [
+                s for s in all_spreadsheets
+                if s.get("sg_type") not in ('misc', 'total_cost')
+            ]
+
+            # Parse sheet_meta to get tab positions for sorting
+            def get_tab_position(sheet_data):
+                """Extract tab position from sheet metadata, default to a high number."""
+                meta_str = sheet_data.get("sg_sheet_meta", "")
+                if meta_str:
+                    try:
+                        meta = json.loads(meta_str)
+                        return meta.get("tab_position", 9999)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                return 9999
+
+            # Sort by tab position (saved order), then by code as fallback
+            custom_sheets.sort(key=lambda s: (get_tab_position(s), s.get("code", "")))
+
+            # Create docks for each custom spreadsheet
+            for sheet_data in custom_sheets:
+                sheet_name = sheet_data.get("code", "")
+                if sheet_name:
+                    # Update counter if this is a numbered sheet
+                    if sheet_name.startswith("Sheet"):
+                        try:
+                            num = int(sheet_name.replace("Sheet", ""))
+                            if num > self._custom_spreadsheet_counter:
+                                self._custom_spreadsheet_counter = num
+                        except ValueError:
+                            pass
+
+                    self._add_custom_spreadsheet(sheet_name=sheet_name, load_from_sg=True)
+
+            logger.info(f"Loaded {len(custom_sheets)} custom spreadsheets for bid {self.current_bid_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to load custom spreadsheets: {e}", exc_info=True)
+
+    def _clear_custom_spreadsheets(self):
+        """Remove all custom spreadsheet docks."""
+        for dock in self._custom_spreadsheet_docks:
+            self.removeDockWidget(dock)
+            dock.deleteLater()
+        self._custom_spreadsheet_docks.clear()
+        self._custom_spreadsheet_counter = 0
 
     def _apply_costs_panel_style(self):
         """Apply a purple/violet theme to specific elements in the Costs panel."""
@@ -179,16 +575,16 @@ class CostsTab(QtWidgets.QMainWindow):
 
     def _create_cost_docks(self):
         """Create the individual cost dock widgets."""
-        # Shots Cost (uses VFXBreakdownWidget)
+        # Shot Costs (uses VFXBreakdownWidget)
         self.shots_cost_dock = CostDock(
-            "Shots Cost",
+            "Shot Costs",
             self._create_shots_cost_widget(),
             self
         )
 
-        # Assets Cost
+        # Asset Costs
         self.asset_cost_dock = CostDock(
-            "Assets Cost",
+            "Asset Costs",
             self._create_asset_cost_widget(),
             self
         )
@@ -222,15 +618,18 @@ class CostsTab(QtWidgets.QMainWindow):
         self.shots_cost_dock.raise_()
 
     def _create_shots_cost_widget(self):
-        """Create the Shots Cost widget using VFXBreakdownWidget."""
+        """Create the Shot Costs widget using VFXBreakdownWidget."""
         # Use VFXBreakdownWidget with toolbar for search and sort functionality
         self.shots_cost_widget = VFXBreakdownWidget(
             self.sg_session,
             show_toolbar=True,  # Show search and sort toolbar in collapsible group
             entity_name="Shot",
-            settings_key="shots_cost",  # Unique settings key for Shots Cost table
+            settings_key="shots_cost",  # Unique settings key for Shot Costs table
             parent=self
         )
+
+        # Enable read-only mode - edits should be made in the VFX Breakdown tab
+        self.shots_cost_widget.set_readonly_mode(True, entity_type="VFX Breakdown")
 
         # Apply purple pill colors for the Costs panel
         self.shots_cost_widget.set_pill_colors({
@@ -266,15 +665,18 @@ class CostsTab(QtWidgets.QMainWindow):
         return self.shots_cost_widget
 
     def _create_asset_cost_widget(self):
-        """Create the Asset Cost widget using VFXBreakdownWidget."""
+        """Create the Asset Costs widget using VFXBreakdownWidget."""
         # Use VFXBreakdownWidget with toolbar for search and sort functionality
         self.asset_cost_widget = VFXBreakdownWidget(
             self.sg_session,
             show_toolbar=True,  # Show search and sort toolbar in collapsible group
             entity_name="Asset",
-            settings_key="asset_cost",  # Unique settings key for Asset Cost table
+            settings_key="asset_cost",  # Unique settings key for Asset Costs table
             parent=self
         )
+
+        # Enable read-only mode - edits should be made in the Assets tab
+        self.asset_cost_widget.set_readonly_mode(True, entity_type="Bid Asset")
 
         # Apply purple pill colors for the Costs panel
         self.asset_cost_widget.set_pill_colors({
@@ -653,16 +1055,16 @@ class CostsTab(QtWidgets.QMainWindow):
     def _setup_cross_tab_formulas(self):
         """Set up cross-tab formula references between cost sheets."""
         # Create a dictionary of sheet models for cross-tab references
-        # Use names with spaces for user-friendly formula references like 'Shots Cost'!A1
+        # Use names with spaces for user-friendly formula references like 'Shot Costs'!A1
         sheet_models = {}
 
-        # Add Shot Costs model (accessible via 'Shots Cost'!ref)
+        # Add Shot Costs model (accessible via 'Shot Costs'!ref)
         if hasattr(self, 'shots_cost_widget') and hasattr(self.shots_cost_widget, 'model'):
-            sheet_models['Shots Cost'] = self.shots_cost_widget.model
+            sheet_models['Shot Costs'] = self.shots_cost_widget.model
 
-        # Add Asset Costs model (accessible via 'Assets Cost'!ref)
+        # Add Asset Costs model (accessible via 'Asset Costs'!ref)
         if hasattr(self, 'asset_cost_widget') and hasattr(self.asset_cost_widget, 'model'):
-            sheet_models['Assets Cost'] = self.asset_cost_widget.model
+            sheet_models['Asset Costs'] = self.asset_cost_widget.model
 
         # Add Misc Costs spreadsheet model
         if hasattr(self, 'misc_cost_spreadsheet') and hasattr(self.misc_cost_spreadsheet, 'model'):
@@ -722,6 +1124,9 @@ class CostsTab(QtWidgets.QMainWindow):
             logger.info(f"Committing cached spreadsheet changes for bid {self.current_bid_id} before switching...")
             self._spreadsheet_cache.commit_for_bid(self.current_bid_id, parent_widget=self)
 
+        # Clear custom spreadsheets from previous bid
+        self._clear_custom_spreadsheets()
+
         self.current_bid_data = bid_data
         self.current_bid_id = bid_data.get('id') if bid_data else None
         self.current_project_id = project_id
@@ -745,6 +1150,42 @@ class CostsTab(QtWidgets.QMainWindow):
             self.misc_cost_spreadsheet.set_currency_settings(currency_symbol, currency_position)
         if hasattr(self, 'total_cost_spreadsheet'):
             self.total_cost_spreadsheet.set_currency_settings(currency_symbol, currency_position)
+
+        # Update read-only linked entity references for cost widgets
+        # Need to fetch full entity data since link fields only contain type/id
+        if hasattr(self, 'shots_cost_widget'):
+            vfx_breakdown = bid_data.get("sg_vfx_breakdown") if bid_data else None
+            if vfx_breakdown and isinstance(vfx_breakdown, dict) and vfx_breakdown.get("id"):
+                # Fetch the VFX Breakdown entity to get its code/name
+                try:
+                    breakdown_data = self.sg_session.sg.find_one(
+                        vfx_breakdown.get("type", "CustomEntity01"),
+                        [["id", "is", vfx_breakdown["id"]]],
+                        ["code", "id"]
+                    )
+                    self.shots_cost_widget.set_readonly_linked_entity(breakdown_data)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch VFX Breakdown details: {e}")
+                    self.shots_cost_widget.set_readonly_linked_entity(vfx_breakdown)
+            else:
+                self.shots_cost_widget.set_readonly_linked_entity(None)
+
+        if hasattr(self, 'asset_cost_widget'):
+            bid_assets = bid_data.get("sg_bid_assets") if bid_data else None
+            if bid_assets and isinstance(bid_assets, dict) and bid_assets.get("id"):
+                # Fetch the Bid Assets entity to get its code/name
+                try:
+                    assets_data = self.sg_session.sg.find_one(
+                        bid_assets.get("type", "CustomEntity08"),
+                        [["id", "is", bid_assets["id"]]],
+                        ["code", "id"]
+                    )
+                    self.asset_cost_widget.set_readonly_linked_entity(assets_data)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch Bid Assets details: {e}")
+                    self.asset_cost_widget.set_readonly_linked_entity(bid_assets)
+            else:
+                self.asset_cost_widget.set_readonly_linked_entity(None)
 
         if bid_data and project_id:
             # Load Line Items first - needed for both VFX breakdown and asset cost pricing
@@ -771,14 +1212,20 @@ class CostsTab(QtWidgets.QMainWindow):
             logger.info("Loading Total Cost spreadsheet data...")
             self._load_total_cost_spreadsheet_from_shotgrid()
 
+            # Load custom spreadsheets for this bid
+            logger.info("Loading custom spreadsheets...")
+            self._load_custom_spreadsheets_for_bid()
+
             # Update Total Cost summary with initial totals
             QtCore.QTimer.singleShot(100, self._update_total_cost_summary)
         else:
             # Clear all cost views
             if hasattr(self, 'shots_cost_widget'):
                 self.shots_cost_widget.load_bidding_scenes([])
+                self.shots_cost_widget.set_readonly_linked_entity(None)
             if hasattr(self, 'asset_cost_widget'):
                 self.asset_cost_widget.load_bidding_scenes([])
+                self.asset_cost_widget.set_readonly_linked_entity(None)
             # Initialize Misc spreadsheet with defaults (empty)
             self._initialize_misc_spreadsheet_defaults()
             # Initialize Total Cost spreadsheet with defaults
