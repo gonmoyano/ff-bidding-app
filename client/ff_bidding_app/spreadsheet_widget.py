@@ -1163,14 +1163,44 @@ class SpreadsheetTableView(QtWidgets.QTableView):
 
     def _restore_editor_cursor(self, editor):
         """Restore focus and cursor visibility to an editor widget."""
-        if editor and hasattr(editor, 'setFocus'):
-            editor.setFocus(Qt.OtherFocusReason)
-            # Ensure cursor is visible by deselecting (keeps cursor at current position)
-            if hasattr(editor, 'deselect'):
-                editor.deselect()
-            # Also activate the window to ensure cursor blinks
-            if hasattr(editor, 'activateWindow'):
-                editor.activateWindow()
+        if not editor or not hasattr(editor, 'setFocus'):
+            return
+
+        from qtpy.QtWidgets import QApplication
+
+        # Store cursor position before any operations
+        cursor_pos = editor.cursorPosition() if hasattr(editor, 'cursorPosition') else 0
+
+        # Process any pending events first
+        QApplication.processEvents()
+
+        # Set focus with strong focus reason
+        editor.setFocus(Qt.StrongFocus)
+
+        # Restore cursor position explicitly
+        if hasattr(editor, 'setCursorPosition'):
+            editor.setCursorPosition(cursor_pos)
+
+        # Deselect to ensure no selection interferes with cursor
+        if hasattr(editor, 'deselect'):
+            editor.deselect()
+
+        # Force the widget to repaint
+        editor.update()
+
+        # Schedule another focus restoration after Qt event loop settles
+        def delayed_restore():
+            if editor and hasattr(editor, 'setFocus'):
+                try:
+                    editor.setFocus(Qt.StrongFocus)
+                    if hasattr(editor, 'setCursorPosition'):
+                        editor.setCursorPosition(cursor_pos)
+                    if hasattr(editor, 'deselect'):
+                        editor.deselect()
+                except RuntimeError:
+                    pass  # Widget may have been deleted
+
+        QtCore.QTimer.singleShot(10, delayed_restore)
 
     def closeEditor(self, editor, hint):
         """Override to prevent editor from closing during formula reference selection.
