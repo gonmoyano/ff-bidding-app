@@ -753,13 +753,40 @@ class CostsTab(QtWidgets.QMainWindow):
             self.total_cost_spreadsheet.set_currency_settings(currency_symbol, currency_position)
 
         # Update read-only linked entity references for cost widgets
+        # Need to fetch full entity data since link fields only contain type/id
         if hasattr(self, 'shots_cost_widget'):
             vfx_breakdown = bid_data.get("sg_vfx_breakdown") if bid_data else None
-            self.shots_cost_widget.set_readonly_linked_entity(vfx_breakdown)
+            if vfx_breakdown and isinstance(vfx_breakdown, dict) and vfx_breakdown.get("id"):
+                # Fetch the VFX Breakdown entity to get its code/name
+                try:
+                    breakdown_data = self.sg_session.sg.find_one(
+                        vfx_breakdown.get("type", "CustomEntity01"),
+                        [["id", "is", vfx_breakdown["id"]]],
+                        ["code", "id"]
+                    )
+                    self.shots_cost_widget.set_readonly_linked_entity(breakdown_data)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch VFX Breakdown details: {e}")
+                    self.shots_cost_widget.set_readonly_linked_entity(vfx_breakdown)
+            else:
+                self.shots_cost_widget.set_readonly_linked_entity(None)
 
         if hasattr(self, 'asset_cost_widget'):
             bid_assets = bid_data.get("sg_bid_assets") if bid_data else None
-            self.asset_cost_widget.set_readonly_linked_entity(bid_assets)
+            if bid_assets and isinstance(bid_assets, dict) and bid_assets.get("id"):
+                # Fetch the Bid Assets entity to get its code/name
+                try:
+                    assets_data = self.sg_session.sg.find_one(
+                        bid_assets.get("type", "CustomEntity08"),
+                        [["id", "is", bid_assets["id"]]],
+                        ["code", "id"]
+                    )
+                    self.asset_cost_widget.set_readonly_linked_entity(assets_data)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch Bid Assets details: {e}")
+                    self.asset_cost_widget.set_readonly_linked_entity(bid_assets)
+            else:
+                self.asset_cost_widget.set_readonly_linked_entity(None)
 
         if bid_data and project_id:
             # Load Line Items first - needed for both VFX breakdown and asset cost pricing
