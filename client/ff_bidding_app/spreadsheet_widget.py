@@ -505,6 +505,7 @@ class FormattingToolbar(QtWidgets.QWidget):
     bgColorChanged = QtCore.Signal(str)
     alignmentChanged = QtCore.Signal(str)
     wrapToggled = QtCore.Signal(bool)
+    formatChanged = QtCore.Signal(str)  # Emits Excel-compatible format string
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -579,6 +580,12 @@ class FormattingToolbar(QtWidgets.QWidget):
         self.wrap_btn.toggled.connect(self.wrapToggled.emit)
         layout.addWidget(self.wrap_btn)
 
+        layout.addWidget(self._create_separator())
+
+        # Format dropdown button
+        self.format_btn = self._create_format_dropdown_button()
+        layout.addWidget(self.format_btn)
+
         layout.addStretch()
 
     def _create_tool_button(self, text, tooltip):
@@ -641,6 +648,91 @@ class FormattingToolbar(QtWidgets.QWidget):
         self.align_center_btn.setChecked(alignment == "center")
         self.align_right_btn.setChecked(alignment == "right")
         self.alignmentChanged.emit(alignment)
+
+    def _create_format_dropdown_button(self):
+        """Create a dropdown button for cell number format selection."""
+        btn = QtWidgets.QToolButton()
+        btn.setText("123")
+        btn.setToolTip("Number Format")
+        btn.setFixedSize(40, 28)
+        btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        btn.setStyleSheet("""
+            QToolButton {
+                border: 1px solid #555;
+                border-radius: 3px;
+                font-size: 11px;
+                padding-left: 2px;
+            }
+            QToolButton:hover {
+                background-color: #444;
+                border: 1px solid #888;
+            }
+            QToolButton::menu-indicator {
+                image: none;
+                subcontrol-position: right center;
+                subcontrol-origin: padding;
+                width: 8px;
+            }
+        """)
+
+        # Create the format menu
+        menu = QtWidgets.QMenu(btn)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #2b2b2b;
+                border: 1px solid #555;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 5px 25px 5px 10px;
+                color: #ffffff;
+            }
+            QMenu::item:selected {
+                background-color: #4472C4;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #555;
+                margin: 5px 0;
+            }
+        """)
+
+        # General format
+        format_general = menu.addAction("General")
+        format_general.triggered.connect(lambda: self.formatChanged.emit("General"))
+        menu.addSeparator()
+
+        # Number formats submenu
+        number_menu = menu.addMenu("Number")
+        format_number = number_menu.addAction("1,234.56  (#,##0.00)")
+        format_number.triggered.connect(lambda: self.formatChanged.emit("#,##0.00"))
+        format_number_no_dec = number_menu.addAction("1,235  (#,##0)")
+        format_number_no_dec.triggered.connect(lambda: self.formatChanged.emit("#,##0"))
+
+        # Currency format (uses project settings)
+        format_currency = menu.addAction("Currency")
+        format_currency.triggered.connect(lambda: self.formatChanged.emit("CURRENCY"))
+
+        # Accounting format (uses project currency)
+        format_accounting = menu.addAction("Accounting")
+        format_accounting.triggered.connect(lambda: self.formatChanged.emit("ACCOUNTING"))
+        menu.addSeparator()
+
+        # Percentage formats submenu
+        percentage_menu = menu.addMenu("Percentage")
+        format_percentage = percentage_menu.addAction("12.34%  (0.00%)")
+        format_percentage.triggered.connect(lambda: self.formatChanged.emit("0.00%"))
+        format_percentage_no_dec = percentage_menu.addAction("12%  (0%)")
+        format_percentage_no_dec.triggered.connect(lambda: self.formatChanged.emit("0%"))
+        menu.addSeparator()
+
+        # Text format
+        format_text = menu.addAction("Text  (@)")
+        format_text.triggered.connect(lambda: self.formatChanged.emit("@"))
+
+        btn.setMenu(menu)
+        self._format_menu = menu  # Keep reference
+        return btn
 
     def update_from_cell_meta(self, cell_meta):
         """Update toolbar state based on cell metadata."""
@@ -914,6 +1006,60 @@ class MergeCellsCommand:
         self.model.layoutChanged.emit()
 
 
+class CellDataFormatCommand:
+    """Command pattern for undo/redo of cell data format changes (Currency, Percentage, etc.)."""
+
+    def __init__(self, model, cells, old_formats, new_format):
+        """Initialize data format command.
+
+        Args:
+            model: SpreadsheetModel instance
+            cells: List of (row, col) tuples
+            old_formats: Dict mapping (row, col) to old format string (or None)
+            new_format: New format string to apply to all cells
+        """
+        self.model = model
+        self.cells = cells
+        self.old_formats = old_formats
+        self.new_format = new_format
+
+    def undo(self):
+        """Restore old format values."""
+        for (row, col) in self.cells:
+            old_format = self.old_formats.get((row, col))
+            if old_format:
+                self.model._formats[(row, col)] = old_format
+            else:
+                self.model._formats.pop((row, col), None)
+            # Clear cache for this cell
+            self.model._evaluated_cache.pop((row, col), None)
+        self._emit_changes()
+
+    def redo(self):
+        """Apply new format value."""
+        for (row, col) in self.cells:
+            if self.new_format:
+                self.model._formats[(row, col)] = self.new_format
+            else:
+                self.model._formats.pop((row, col), None)
+            # Clear cache for this cell
+            self.model._evaluated_cache.pop((row, col), None)
+        self._emit_changes()
+
+    def _emit_changes(self):
+        """Emit dataChanged for affected cells."""
+        if self.cells:
+            min_row = min(r for r, c in self.cells)
+            max_row = max(r for r, c in self.cells)
+            min_col = min(c for r, c in self.cells)
+            max_col = max(c for r, c in self.cells)
+            self.model.dataChanged.emit(
+                self.model.index(min_row, min_col),
+                self.model.index(max_row, max_col),
+                [Qt.DisplayRole]
+            )
+
+
 class SpreadsheetTableView(QtWidgets.QTableView):
     """Custom table view with Excel-like selection and fill handle."""
 
@@ -929,8 +1075,318 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         self._clipboard_data = None
         self._clipboard_is_cut = False
 
+        # Formula edit mode tracking
+        self._formula_edit_cell = None  # The cell being edited (row, col)
+        self._formula_reference_start = None  # Start cell for range selection during formula edit
+        self._is_dragging_formula_ref = False  # True when drag-selecting cells for formula reference
+        self._formula_ref_drag_end = None  # Current end cell during drag
+        self._formula_editor_ref = None  # Reference to the editor during formula reference selection
+        self._formula_ref_insert_pos = 0  # Cursor position where reference was inserted
+        self._formula_ref_insert_len = 0  # Length of the last inserted reference
+
         # Ensure the table view can receive keyboard events
         self.setFocusPolicy(Qt.StrongFocus)
+
+        # Install event filter on viewport to intercept mouse events during formula editing
+        self.viewport().installEventFilter(self)
+
+    def _get_cell_reference(self, row, col):
+        """Get Excel-style cell reference (e.g., 'A1', 'B2') from row and column indices."""
+        # Convert column index to letter(s)
+        col_name = ""
+        col_idx = col + 1  # Make it 1-based
+        while col_idx > 0:
+            col_idx -= 1
+            col_name = chr(65 + (col_idx % 26)) + col_name
+            col_idx //= 26
+        # Row is 1-based in Excel notation
+        return f"{col_name}{row + 1}"
+
+    def _get_range_reference(self, start_row, start_col, end_row, end_col):
+        """Get Excel-style range reference (e.g., 'A1:C5') from start and end indices."""
+        start_ref = self._get_cell_reference(start_row, start_col)
+        end_ref = self._get_cell_reference(end_row, end_col)
+        if start_ref == end_ref:
+            return start_ref
+        return f"{start_ref}:{end_ref}"
+
+    def _find_cell_editor(self):
+        """Find the active cell editor widget.
+
+        During editing, Qt creates a QLineEdit as a child of the viewport.
+        We search for it to get the current editor.
+        """
+        # First check if we're in editing state
+        if self.state() != QtWidgets.QAbstractItemView.EditingState:
+            return None
+
+        # Look for QLineEdit child widgets in the viewport
+        from qtpy.QtWidgets import QLineEdit
+        for child in self.viewport().children():
+            if isinstance(child, QLineEdit):
+                return child
+
+        # Fallback: try QApplication.focusWidget()
+        from qtpy.QtWidgets import QApplication
+        editor = QApplication.focusWidget()
+        if editor and hasattr(editor, 'text') and hasattr(editor, 'insert'):
+            return editor
+
+        return None
+
+    def _is_in_formula_edit_mode(self):
+        """Check if we're currently editing a cell with a formula (starts with '=')."""
+        editor = self._find_cell_editor()
+        if editor and hasattr(editor, 'text'):
+            text = editor.text()
+            if text.startswith('='):
+                return True
+
+        # Not in formula edit mode - clear stored reference
+        self._formula_editor_ref = None
+        self._formula_reference_start = None
+        return False
+
+    def _get_current_editor(self):
+        """Get the current editor widget if in edit mode."""
+        return self._find_cell_editor()
+
+    def _insert_cell_reference(self, ref_text, replace_last=False):
+        """Insert a cell reference into the current formula editor.
+
+        Args:
+            ref_text: The cell reference text to insert (e.g., "A1" or "A1:B5")
+            replace_last: If True, replace the last inserted reference instead of inserting
+        """
+        # Use stored editor reference if available, otherwise find it
+        editor = self._formula_editor_ref if self._formula_editor_ref else self._get_current_editor()
+        if editor and hasattr(editor, 'insert'):
+            if replace_last and self._formula_ref_insert_len > 0:
+                # Remove the previously inserted reference before inserting the new one
+                # Select from insert position to insert position + length, then replace
+                current_pos = editor.cursorPosition() if hasattr(editor, 'cursorPosition') else 0
+                # The cursor should be right after the last inserted reference
+                start_pos = self._formula_ref_insert_pos
+                end_pos = start_pos + self._formula_ref_insert_len
+
+                # Select and delete the old reference
+                if hasattr(editor, 'setSelection'):
+                    editor.setSelection(start_pos, self._formula_ref_insert_len)
+                    editor.del_()  # Delete selected text
+                elif hasattr(editor, 'setText') and hasattr(editor, 'text'):
+                    # Fallback: manually edit the text
+                    text = editor.text()
+                    new_text = text[:start_pos] + text[end_pos:]
+                    editor.setText(new_text)
+                    editor.setCursorPosition(start_pos)
+
+            # Track where we're inserting
+            self._formula_ref_insert_pos = editor.cursorPosition() if hasattr(editor, 'cursorPosition') else 0
+
+            # QLineEdit has insert() method that inserts at cursor position
+            editor.insert(ref_text)
+
+            # Track the length of the inserted reference
+            self._formula_ref_insert_len = len(ref_text)
+
+            # Restore focus and ensure cursor is visible
+            self._restore_editor_cursor(editor)
+            return True
+        return False
+
+    def _restore_editor_cursor(self, editor):
+        """Restore focus and cursor visibility to an editor widget."""
+        if not editor or not hasattr(editor, 'setFocus'):
+            return
+
+        # Store cursor position before any operations
+        cursor_pos = editor.cursorPosition() if hasattr(editor, 'cursorPosition') else 0
+
+        # Ensure the editor is visible and raised
+        if hasattr(editor, 'raise_'):
+            editor.raise_()
+
+        # Set focus immediately
+        editor.setFocus()
+
+        # Restore cursor position explicitly
+        if hasattr(editor, 'setCursorPosition'):
+            editor.setCursorPosition(cursor_pos)
+
+        # Deselect to ensure no selection interferes with cursor
+        if hasattr(editor, 'deselect'):
+            editor.deselect()
+
+        # Schedule delayed focus restoration to ensure cursor blinks
+        def delayed_restore():
+            try:
+                if editor and hasattr(editor, 'setFocus'):
+                    editor.setFocus()
+                    if hasattr(editor, 'setCursorPosition'):
+                        editor.setCursorPosition(cursor_pos)
+                    if hasattr(editor, 'deselect'):
+                        editor.deselect()
+                    # Force repaint
+                    editor.update()
+            except RuntimeError:
+                pass  # Widget may have been deleted
+
+        QtCore.QTimer.singleShot(0, delayed_restore)
+        QtCore.QTimer.singleShot(50, delayed_restore)
+
+    def closeEditor(self, editor, hint):
+        """Override to prevent editor from closing during formula reference selection.
+
+        When selecting cells for a formula reference, we want to keep the editor
+        open until the user explicitly commits (Enter) or cancels (Escape).
+        """
+        from qtpy.QtWidgets import QAbstractItemDelegate
+
+        # Check if we should block closing (formula edit mode active)
+        should_block = False
+
+        # If we have a stored formula editor reference, check if this is that editor
+        if self._formula_editor_ref is not None:
+            if editor == self._formula_editor_ref:
+                should_block = True
+
+        # Also check if editor contains a formula
+        if hasattr(editor, 'text'):
+            text = editor.text()
+            if text.startswith('='):
+                should_block = True
+                # Store reference for future use
+                if editor != self._formula_editor_ref:
+                    self._formula_editor_ref = editor
+                    editor.installEventFilter(self)
+
+        # If we should block, only allow explicit submit (Enter) or cancel (Escape)
+        if should_block:
+            # SubmitModelCache = Enter key pressed
+            # RevertModelCache = Escape key pressed
+            if hint in (QAbstractItemDelegate.SubmitModelCache, QAbstractItemDelegate.RevertModelCache):
+                # User explicitly committed or cancelled - allow close
+                # Remove event filter from editor
+                if self._formula_editor_ref is not None:
+                    self._formula_editor_ref.removeEventFilter(self)
+                self._formula_editor_ref = None
+                self._formula_reference_start = None
+                self._formula_ref_drag_end = None
+                self._formula_ref_insert_pos = 0
+                self._formula_ref_insert_len = 0
+                self._is_dragging_formula_ref = False
+                self.viewport().update()  # Clear green outline
+                super().closeEditor(editor, hint)
+            else:
+                # Block close - keep editor open for formula reference selection
+                # Re-focus the editor and ensure cursor is visible
+                self._restore_editor_cursor(editor)
+            return
+
+        # Normal close behavior - remove event filter if needed
+        if self._formula_editor_ref is not None:
+            self._formula_editor_ref.removeEventFilter(self)
+        self._formula_editor_ref = None
+        self._formula_reference_start = None
+        self._formula_ref_drag_end = None
+        self._formula_ref_insert_pos = 0
+        self._formula_ref_insert_len = 0
+        self._is_dragging_formula_ref = False
+        self.viewport().update()  # Clear green outline
+        super().closeEditor(editor, hint)
+
+    def eventFilter(self, obj, event):
+        """Event filter to intercept mouse events during formula editing.
+
+        This catches mouse events on the viewport BEFORE they cause
+        focus changes that would close the editor.
+        Also blocks FocusOut events on the editor during formula mode.
+        """
+        from qtpy.QtCore import QEvent
+        from qtpy.QtWidgets import QLineEdit, QApplication
+
+        # Block FocusOut events on the editor during formula reference selection
+        if obj == self._formula_editor_ref and event.type() == QEvent.FocusOut:
+            if hasattr(obj, 'text') and obj.text().startswith('='):
+                # Block the focus out event - keep editor focused
+                return True
+
+        if obj == self.viewport():
+            # Handle mouse press - formula reference selection
+            if event.type() == QEvent.MouseButtonPress:
+                # Try multiple ways to find the editor
+                editor = None
+
+                # Method 1: Use stored reference
+                if self._formula_editor_ref is not None:
+                    editor = self._formula_editor_ref
+
+                # Method 2: Check if we're in editing state and find QLineEdit child
+                if editor is None and self.state() == QtWidgets.QAbstractItemView.EditingState:
+                    for child in self.viewport().children():
+                        if isinstance(child, QLineEdit):
+                            editor = child
+                            break
+
+                # Method 3: Check focused widget
+                if editor is None:
+                    focused = QApplication.focusWidget()
+                    if isinstance(focused, QLineEdit):
+                        editor = focused
+
+                # Check if editor has formula
+                if editor and hasattr(editor, 'text') and editor.text().startswith('='):
+                    # Store editor reference and install event filter on it
+                    if editor != self._formula_editor_ref:
+                        if self._formula_editor_ref is not None:
+                            self._formula_editor_ref.removeEventFilter(self)
+                        self._formula_editor_ref = editor
+                        editor.installEventFilter(self)
+
+                    # Get the clicked position
+                    pos = event.pos()
+                    clicked_index = self.indexAt(pos)
+
+                    if clicked_index.isValid():
+                        current_idx = self.currentIndex()
+                        # Don't insert reference if clicking on the cell being edited
+                        if clicked_index.row() != current_idx.row() or clicked_index.column() != current_idx.column():
+                            clicked_row = clicked_index.row()
+                            clicked_col = clicked_index.column()
+
+                            # Check for Shift+click for range selection
+                            if event.modifiers() & Qt.ShiftModifier and self._formula_reference_start:
+                                # Shift+click: expand to range from first cell to this cell
+                                start_row, start_col = self._formula_reference_start
+                                min_row, max_row = min(start_row, clicked_row), max(start_row, clicked_row)
+                                min_col, max_col = min(start_col, clicked_col), max(start_col, clicked_col)
+
+                                # Update the end point for green outline
+                                self._formula_ref_drag_end = (clicked_row, clicked_col)
+
+                                # Replace the single cell reference with the range reference
+                                ref = self._get_range_reference(min_row, min_col, max_row, max_col)
+                                self._insert_cell_reference(ref, replace_last=True)
+                            else:
+                                # Regular click: set as new start cell and insert single reference
+                                self._formula_reference_start = (clicked_row, clicked_col)
+                                self._formula_ref_drag_end = None  # Clear any previous range end
+
+                                # Reset insert tracking for new reference
+                                self._formula_ref_insert_pos = 0
+                                self._formula_ref_insert_len = 0
+
+                                # Insert single cell reference
+                                ref = self._get_cell_reference(clicked_row, clicked_col)
+                                self._insert_cell_reference(ref)
+
+                            # Update viewport to show green outline
+                            self.viewport().update()
+
+                            # Consume the event - don't let it propagate
+                            return True
+
+        return super().eventFilter(obj, event)
 
     def paintEvent(self, event):
         """Paint the table and add blue border with fill handle."""
@@ -961,6 +1417,34 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                     cell_rect = self.visualRect(self.model().index(row, start_col))
                     if not cell_rect.isEmpty():
                         painter.drawRect(cell_rect)
+
+        # If in formula edit mode with a reference start, draw green outline
+        if self._formula_reference_start and self._formula_editor_ref:
+            start_row, start_col = self._formula_reference_start
+
+            if self._formula_ref_drag_end:
+                # Range selection (Shift+click was used)
+                end_row, end_col = self._formula_ref_drag_end
+                min_row = min(start_row, end_row)
+                max_row = max(start_row, end_row)
+                min_col = min(start_col, end_col)
+                max_col = max(start_col, end_col)
+            else:
+                # Single cell selection
+                min_row = max_row = start_row
+                min_col = max_col = start_col
+
+            # Get visual rect of the selection
+            top_left_rect = self.visualRect(self.model().index(min_row, min_col))
+            bottom_right_rect = self.visualRect(self.model().index(max_row, max_col))
+
+            if not top_left_rect.isEmpty() and not bottom_right_rect.isEmpty():
+                ref_rect = top_left_rect.united(bottom_right_rect)
+
+                # Draw a distinct colored border (green) around formula reference
+                painter.setPen(QtGui.QPen(QtGui.QColor("#4CAF50"), 2))
+                painter.setBrush(QtGui.QColor(76, 175, 80, 40))  # Light green with alpha
+                painter.drawRect(ref_rect.adjusted(1, 1, -1, -1))
 
         # Draw border around all selected cells
         if selection:
@@ -1052,6 +1536,7 @@ class SpreadsheetTableView(QtWidgets.QTableView):
 
     def mouseReleaseEvent(self, event):
         """Handle mouse release to complete fill operation."""
+        # Handle fill handle drag completion
         if self._is_dragging_fill_handle and self._drag_start_index and self._drag_current_index:
             if self._drag_current_index != self._drag_start_index:
                 self._perform_fill_operation()
@@ -1274,8 +1759,11 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         # Build a set of selected (row, col) for efficient lookup
         selected_cells = {(idx.row(), idx.column()) for idx in selection}
 
-        # Build clipboard data structure: dict of relative (row, col) -> value
+        # Build clipboard data structure: dict of relative (row, col) -> cell data
+        # Each cell entry contains: value, format, meta (decoration)
         clipboard_cells = {}
+        clipboard_formats = {}
+        clipboard_metas = {}
         clipboard_text_rows = []
 
         for row in range(min_row, max_row + 1):
@@ -1287,7 +1775,19 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                     value = model.data(index, Qt.EditRole)
                     if value is None:
                         value = ""
-                    clipboard_cells[(row - min_row, col - min_col)] = value
+                    rel_pos = (row - min_row, col - min_col)
+                    clipboard_cells[rel_pos] = value
+
+                    # Copy data format (Currency, Percentage, etc.)
+                    cell_format = model._formats.get((row, col))
+                    if cell_format:
+                        clipboard_formats[rel_pos] = cell_format
+
+                    # Copy cell meta (bold, italic, colors, etc.)
+                    cell_meta = model.get_cell_meta(row, col)
+                    if cell_meta:
+                        clipboard_metas[rel_pos] = cell_meta.copy()
+
                     display_value = model.data(index, Qt.DisplayRole)
                     row_values.append(str(display_value) if display_value else "")
                 else:
@@ -1297,6 +1797,8 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         # Store in internal clipboard
         self._clipboard_data = {
             'cells': clipboard_cells,
+            'formats': clipboard_formats,
+            'metas': clipboard_metas,
             'rows': max_row - min_row + 1,
             'cols': max_col - min_col + 1,
             'source_row': min_row,
@@ -1372,6 +1874,8 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         # Try internal clipboard first (multi-cell)
         if self._clipboard_data and 'cells' in self._clipboard_data:
             cells = self._clipboard_data['cells']
+            formats = self._clipboard_data.get('formats', {})
+            metas = self._clipboard_data.get('metas', {})
             source_row = self._clipboard_data.get('source_row', 0)
             source_col = self._clipboard_data.get('source_col', 0)
             clip_rows = self._clipboard_data.get('rows', 1)
@@ -1396,8 +1900,12 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             for r in range(clip_rows):
                 for c in range(clip_cols):
                     value = cells.get((r, c), "")
+                    cell_format = formats.get((r, c))
+                    cell_meta = metas.get((r, c))
                     source_values.append({
                         'value': value,
+                        'format': cell_format,
+                        'meta': cell_meta,
                         'rel_row': r,
                         'rel_col': c
                     })
@@ -1437,6 +1945,10 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                     # Get old values
                     old_value = model._data.get((target_row, target_col), None)
                     old_formula = model._formulas.get((target_row, target_col), None)
+                    old_format = model._formats.get((target_row, target_col), None)
+                    old_meta = model._cell_meta.get((target_row, target_col), None)
+                    if old_meta:
+                        old_meta = old_meta.copy()
 
                     changes.append({
                         'row': target_row,
@@ -1444,7 +1956,11 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                         'old_value': old_value,
                         'new_value': new_value,
                         'old_formula': old_formula,
-                        'new_formula': new_formula
+                        'new_formula': new_formula,
+                        'old_format': old_format,
+                        'new_format': src.get('format'),
+                        'old_meta': old_meta,
+                        'new_meta': src.get('meta')
                     })
 
                     source_idx += 1
@@ -1455,13 +1971,21 @@ class SpreadsheetTableView(QtWidgets.QTableView):
                     src_row, src_col = source_index.row(), source_index.column()
                     old_value = model._data.get((src_row, src_col), None)
                     old_formula = model._formulas.get((src_row, src_col), None)
+                    old_format = model._formats.get((src_row, src_col), None)
+                    old_meta = model._cell_meta.get((src_row, src_col), None)
+                    if old_meta:
+                        old_meta = old_meta.copy()
                     changes.append({
                         'row': src_row,
                         'col': src_col,
                         'old_value': old_value,
                         'new_value': None,
                         'old_formula': old_formula,
-                        'new_formula': None
+                        'new_formula': None,
+                        'old_format': old_format,
+                        'new_format': None,
+                        'old_meta': old_meta,
+                        'new_meta': None
                     })
                 self._clipboard_is_cut = False
                 self._cut_selection_indexes = []
@@ -1564,6 +2088,233 @@ class SpreadsheetTableView(QtWidgets.QTableView):
             model._clear_dependent_cache()
 
             logger.info(f"Pasted {len(changes)} cells")
+
+    def _paste_values_only(self):
+        """Paste only values and formulas from clipboard, without formats or cell meta.
+
+        Similar to _paste_selection but ignores formats and cell meta (decorations).
+        """
+        model = self.model()
+        if not model:
+            logger.debug("Paste Values: No model")
+            return
+
+        # Get selected cells - use top-left as pivot
+        selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
+        if not selection:
+            current = self.currentIndex()
+            if not current.isValid():
+                logger.debug("Paste Values: No valid selection or current index")
+                return
+            selection = [current]
+
+        # Find the bounding box of the selection
+        sel_min_row = min(idx.row() for idx in selection)
+        sel_max_row = max(idx.row() for idx in selection)
+        sel_min_col = min(idx.column() for idx in selection)
+        sel_max_col = max(idx.column() for idx in selection)
+        sel_rows = sel_max_row - sel_min_row + 1
+        sel_cols = sel_max_col - sel_min_col + 1
+
+        single_cell_destination = (sel_rows == 1 and sel_cols == 1)
+
+        changes = []
+
+        # Try internal clipboard first
+        if self._clipboard_data and 'cells' in self._clipboard_data:
+            cells = self._clipboard_data['cells']
+            source_row = self._clipboard_data.get('source_row', 0)
+            source_col = self._clipboard_data.get('source_col', 0)
+            clip_rows = self._clipboard_data.get('rows', 1)
+            clip_cols = self._clipboard_data.get('cols', 1)
+
+            if single_cell_destination and (clip_rows > 1 or clip_cols > 1):
+                paste_rows = clip_rows
+                paste_cols = clip_cols
+            else:
+                paste_rows = sel_rows
+                paste_cols = sel_cols
+
+            source_values = []
+            for r in range(clip_rows):
+                for c in range(clip_cols):
+                    value = cells.get((r, c), "")
+                    source_values.append({
+                        'value': value,
+                        'rel_row': r,
+                        'rel_col': c
+                    })
+
+            source_idx = 0
+            for rel_row in range(paste_rows):
+                for rel_col in range(paste_cols):
+                    target_row = sel_min_row + rel_row
+                    target_col = sel_min_col + rel_col
+
+                    if not single_cell_destination or (clip_rows == 1 and clip_cols == 1):
+                        if not any(idx.row() == target_row and idx.column() == target_col for idx in selection):
+                            continue
+
+                    if target_row >= model.rowCount() or target_col >= model.columnCount():
+                        continue
+
+                    src = source_values[source_idx % len(source_values)]
+                    value = src['value']
+
+                    row_offset = target_row - source_row - src['rel_row']
+                    col_offset = target_col - source_col - src['rel_col']
+
+                    new_formula = None
+                    new_value = None
+                    if isinstance(value, str) and value.startswith('='):
+                        new_formula = self._adjust_formula_for_paste(value, row_offset, col_offset)
+                    else:
+                        new_value = value
+
+                    old_value = model._data.get((target_row, target_col), None)
+                    old_formula = model._formulas.get((target_row, target_col), None)
+
+                    # Only paste values, preserve existing formats and meta
+                    changes.append({
+                        'row': target_row,
+                        'col': target_col,
+                        'old_value': old_value,
+                        'new_value': new_value,
+                        'old_formula': old_formula,
+                        'new_formula': new_formula,
+                        # Keep existing format and meta (no change)
+                        'old_format': model._formats.get((target_row, target_col)),
+                        'new_format': model._formats.get((target_row, target_col)),
+                        'old_meta': model._cell_meta.get((target_row, target_col)),
+                        'new_meta': model._cell_meta.get((target_row, target_col))
+                    })
+
+                    source_idx += 1
+
+        if changes:
+            command = SpreadsheetPasteCommand(changes, model)
+            model._in_undo_redo = True
+            try:
+                command.redo()
+            finally:
+                model._in_undo_redo = False
+
+            model.undo_stack.append(command)
+            model.redo_stack.clear()
+            model._clear_dependent_cache()
+
+            logger.info(f"Pasted values only for {len(changes)} cells")
+
+    def _paste_format_only(self):
+        """Paste only cell format (decorations) from clipboard, without values.
+
+        Pastes cell meta (bg color, text color, font options like bold, italic)
+        and data formats (Currency, Percentage, etc.) to selected cells.
+        """
+        model = self.model()
+        if not model:
+            logger.debug("Paste Format: No model")
+            return
+
+        # Check if we have format data in clipboard
+        if not self._clipboard_data or ('formats' not in self._clipboard_data and 'metas' not in self._clipboard_data):
+            logger.debug("Paste Format: No format data in clipboard")
+            return
+
+        # Get selected cells - use top-left as pivot
+        selection = self.selectionModel().selectedIndexes() if self.selectionModel() else []
+        if not selection:
+            current = self.currentIndex()
+            if not current.isValid():
+                logger.debug("Paste Format: No valid selection or current index")
+                return
+            selection = [current]
+
+        # Find the bounding box of the selection
+        sel_min_row = min(idx.row() for idx in selection)
+        sel_max_row = max(idx.row() for idx in selection)
+        sel_min_col = min(idx.column() for idx in selection)
+        sel_max_col = max(idx.column() for idx in selection)
+        sel_rows = sel_max_row - sel_min_row + 1
+        sel_cols = sel_max_col - sel_min_col + 1
+
+        single_cell_destination = (sel_rows == 1 and sel_cols == 1)
+
+        formats = self._clipboard_data.get('formats', {})
+        metas = self._clipboard_data.get('metas', {})
+        clip_rows = self._clipboard_data.get('rows', 1)
+        clip_cols = self._clipboard_data.get('cols', 1)
+
+        if single_cell_destination and (clip_rows > 1 or clip_cols > 1):
+            paste_rows = clip_rows
+            paste_cols = clip_cols
+        else:
+            paste_rows = sel_rows
+            paste_cols = sel_cols
+
+        # Build source format/meta list for cycling
+        source_formats = []
+        for r in range(clip_rows):
+            for c in range(clip_cols):
+                cell_format = formats.get((r, c))
+                cell_meta = metas.get((r, c))
+                source_formats.append({
+                    'format': cell_format,
+                    'meta': cell_meta
+                })
+
+        changes = []
+        source_idx = 0
+        for rel_row in range(paste_rows):
+            for rel_col in range(paste_cols):
+                target_row = sel_min_row + rel_row
+                target_col = sel_min_col + rel_col
+
+                if not single_cell_destination or (clip_rows == 1 and clip_cols == 1):
+                    if not any(idx.row() == target_row and idx.column() == target_col for idx in selection):
+                        continue
+
+                if target_row >= model.rowCount() or target_col >= model.columnCount():
+                    continue
+
+                src = source_formats[source_idx % len(source_formats)]
+
+                # Keep existing values/formulas, only change format and meta
+                old_format = model._formats.get((target_row, target_col))
+                old_meta = model._cell_meta.get((target_row, target_col))
+                if old_meta:
+                    old_meta = old_meta.copy()
+
+                changes.append({
+                    'row': target_row,
+                    'col': target_col,
+                    # Keep values unchanged
+                    'old_value': model._data.get((target_row, target_col)),
+                    'new_value': model._data.get((target_row, target_col)),
+                    'old_formula': model._formulas.get((target_row, target_col)),
+                    'new_formula': model._formulas.get((target_row, target_col)),
+                    # Update format and meta
+                    'old_format': old_format,
+                    'new_format': src.get('format'),
+                    'old_meta': old_meta,
+                    'new_meta': src.get('meta')
+                })
+
+                source_idx += 1
+
+        if changes:
+            command = SpreadsheetPasteCommand(changes, model)
+            model._in_undo_redo = True
+            try:
+                command.redo()
+            finally:
+                model._in_undo_redo = False
+
+            model.undo_stack.append(command)
+            model.redo_stack.clear()
+            model._clear_dependent_cache()
+
+            logger.info(f"Pasted format only for {len(changes)} cells")
 
     def _delete_selection(self):
         """Delete the content of selected cells."""
@@ -1728,7 +2479,8 @@ class SpreadsheetPasteCommand:
 
         Args:
             changes: List of dicts with keys: row, col, old_value, new_value,
-                    old_formula, new_formula
+                    old_formula, new_formula, old_format, new_format,
+                    old_meta, new_meta
             model: SpreadsheetModel instance
         """
         self.changes = changes
@@ -1739,7 +2491,8 @@ class SpreadsheetPasteCommand:
         for change in self.changes:
             self._apply_cell_data(
                 change['row'], change['col'],
-                change['old_value'], change['old_formula']
+                change['old_value'], change['old_formula'],
+                change.get('old_format'), change.get('old_meta')
             )
 
     def redo(self):
@@ -1747,11 +2500,12 @@ class SpreadsheetPasteCommand:
         for change in self.changes:
             self._apply_cell_data(
                 change['row'], change['col'],
-                change['new_value'], change['new_formula']
+                change['new_value'], change['new_formula'],
+                change.get('new_format'), change.get('new_meta')
             )
 
-    def _apply_cell_data(self, row, col, value, formula):
-        """Apply value or formula to a cell."""
+    def _apply_cell_data(self, row, col, value, formula, cell_format=None, cell_meta=None):
+        """Apply value, formula, format, and meta to a cell."""
         # Clear cache
         self.model._evaluated_cache.pop((row, col), None)
 
@@ -1766,6 +2520,18 @@ class SpreadsheetPasteCommand:
             else:
                 self.model._data.pop((row, col), None)
             self.model._formulas.pop((row, col), None)
+
+        # Apply data format (Currency, Percentage, etc.)
+        if cell_format:
+            self.model._formats[(row, col)] = cell_format
+        else:
+            self.model._formats.pop((row, col), None)
+
+        # Apply cell meta (bold, italic, colors, etc.)
+        if cell_meta:
+            self.model._cell_meta[(row, col)] = cell_meta.copy()
+        else:
+            self.model._cell_meta.pop((row, col), None)
 
         # Emit change for this cell
         index = self.model.index(row, col)
@@ -1838,9 +2604,7 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
     FORMAT_GENERAL = "General"
     FORMAT_NUMBER = "#,##0.00"
     FORMAT_NUMBER_NO_DECIMAL = "#,##0"
-    FORMAT_CURRENCY_USD = "$#,##0.00"
-    FORMAT_CURRENCY_EUR = "[$€]#,##0.00"
-    FORMAT_CURRENCY_GBP = "[$£]#,##0.00"
+    FORMAT_CURRENCY = "CURRENCY"  # Dynamic currency using project settings
     FORMAT_PERCENTAGE = "0.00%"
     FORMAT_PERCENTAGE_NO_DECIMAL = "0%"
     FORMAT_DATE_MDY = "mm/dd/yyyy"
@@ -1849,7 +2613,7 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
     FORMAT_TIME = "hh:mm:ss"
     FORMAT_DATETIME = "yyyy-mm-dd hh:mm:ss"
     FORMAT_TEXT = "@"
-    FORMAT_ACCOUNTING = '_($* #,##0.00_);_($* (#,##0.00);_($* "-"??_);_(@_)'
+    FORMAT_ACCOUNTING = "ACCOUNTING"  # Dynamic accounting using project currency
 
     def __init__(self, rows=100, cols=26, parent=None):
         """Initialize the spreadsheet model.
@@ -1897,6 +2661,32 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         self.sort_direction = None  # 'asc' or 'desc'
         self.compound_sort_columns = []  # List of (column_index, direction) tuples
 
+        # Currency settings (from bid/project configuration)
+        self._currency_symbol = "$"  # Default currency symbol
+        self._currency_position = "prepend"  # "prepend" (before value) or "append" (after value)
+
+    def set_currency_settings(self, symbol, position):
+        """Set the currency symbol and position for formatting.
+
+        Args:
+            symbol: Currency symbol (e.g., "$", "€", "£")
+            position: "prepend" (before value) or "append" (after value)
+        """
+        self._currency_symbol = symbol or "$"
+        self._currency_position = position or "prepend"
+        # Clear cache to force re-formatting
+        self._evaluated_cache.clear()
+        # Emit dataChanged to refresh display
+        self.layoutChanged.emit()
+
+    def get_currency_settings(self):
+        """Get the current currency settings.
+
+        Returns:
+            tuple: (symbol, position)
+        """
+        return self._currency_symbol, self._currency_position
+
     def rowCount(self, parent=QtCore.QModelIndex()):
         """Return the number of rows."""
         return self._rows
@@ -1924,7 +2714,17 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
                     return self._get_evaluated_value(row, col, formula)
             else:
                 # Regular value
-                return self._data.get((row, col), "")
+                value = self._data.get((row, col), "")
+                if role == Qt.EditRole:
+                    # When editing, show raw value
+                    return value
+                else:
+                    # When displaying, apply format if set
+                    if value != "" and value is not None:
+                        cell_format = self._formats.get((row, col))
+                        if cell_format and cell_format != self.FORMAT_GENERAL:
+                            return self._apply_format(value, cell_format)
+                    return value
 
         elif role == Qt.TextAlignmentRole:
             # Check if the cell contains a number
@@ -2054,21 +2854,29 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
                 return f"{value:,.2f}"
             elif cell_format == self.FORMAT_NUMBER_NO_DECIMAL:
                 return f"{value:,.0f}"
-            elif cell_format == self.FORMAT_CURRENCY_USD:
-                return f"${value:,.2f}"
-            elif cell_format == self.FORMAT_CURRENCY_EUR:
-                return f"€{value:,.2f}"
-            elif cell_format == self.FORMAT_CURRENCY_GBP:
-                return f"£{value:,.2f}"
+            elif cell_format == self.FORMAT_CURRENCY:
+                # Use dynamic currency settings from project/bid configuration
+                formatted_value = f"{value:,.2f}"
+                if self._currency_position == "append":
+                    return f"{formatted_value} {self._currency_symbol}"
+                else:
+                    return f"{self._currency_symbol}{formatted_value}"
             elif cell_format == self.FORMAT_PERCENTAGE:
                 return f"{value * 100:.2f}%"
             elif cell_format == self.FORMAT_PERCENTAGE_NO_DECIMAL:
                 return f"{value * 100:.0f}%"
             elif cell_format == self.FORMAT_ACCOUNTING:
+                # Use dynamic currency for accounting format
                 if value >= 0:
-                    return f"$ {value:,.2f} "
+                    if self._currency_position == "append":
+                        return f"{value:,.2f} {self._currency_symbol} "
+                    else:
+                        return f"{self._currency_symbol} {value:,.2f} "
                 else:
-                    return f"$ ({abs(value):,.2f})"
+                    if self._currency_position == "append":
+                        return f"({abs(value):,.2f}) {self._currency_symbol}"
+                    else:
+                        return f"{self._currency_symbol} ({abs(value):,.2f})"
             elif cell_format.startswith("#") or cell_format.startswith("0"):
                 # Generic number format - use default
                 return f"{value:,.2f}"
@@ -3270,6 +4078,9 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         # Wrap
         tb.wrapToggled.connect(lambda v: self._apply_formatting('wrap', v))
 
+        # Number format
+        tb.formatChanged.connect(self._apply_cell_format)
+
     def _apply_formatting(self, prop, value):
         """Apply formatting property to selected cells."""
         selection = self.table_view.selectionModel().selectedIndexes()
@@ -3287,6 +4098,29 @@ class SpreadsheetWidget(QtWidgets.QWidget):
 
         cells = [(idx.row(), idx.column()) for idx in selection]
         self.model.apply_borders_to_selection(cells, border_config)
+
+    def _apply_cell_format(self, cell_format):
+        """Apply number format to selected cells.
+
+        Args:
+            cell_format: Excel-compatible format string (e.g., '#,##0.00', '$#,##0.00', '0%')
+        """
+        selection = self.table_view.selectionModel().selectedIndexes()
+        if not selection:
+            return
+
+        # Apply format to all selected cells
+        for idx in selection:
+            self.model.set_cell_format(idx.row(), idx.column(), cell_format)
+
+        # Emit dataChanged to trigger save and refresh display
+        if selection:
+            self.model.dataChanged.emit(
+                self.model.index(min(idx.row() for idx in selection), min(idx.column() for idx in selection)),
+                self.model.index(max(idx.row() for idx in selection), max(idx.column() for idx in selection)),
+                [QtCore.Qt.DisplayRole]
+            )
+            logger.info(f"Applied format '{cell_format}' to {len(selection)} cells")
 
     def _toggle_merge(self):
         """Toggle merge for selected cells."""
@@ -3536,6 +4370,10 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         copy_action = menu.addAction("Copy (Ctrl+C)")
         cut_action = menu.addAction("Cut (Ctrl+X)")
         paste_action = menu.addAction("Paste (Ctrl+V)")
+        paste_values_action = menu.addAction("Paste Values")
+        paste_format_action = menu.addAction("Paste Cell Format")
+        menu.addSeparator()
+        clear_format_action = menu.addAction("Clear Cell Format")
         menu.addSeparator()
 
         # Format submenu
@@ -3550,13 +4388,10 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         format_number = number_menu.addAction("1,234.56  (#,##0.00)")
         format_number_no_dec = number_menu.addAction("1,235  (#,##0)")
 
-        # Currency formats
-        currency_menu = format_menu.addMenu("Currency")
-        format_currency_usd = currency_menu.addAction("$1,234.56  ($#,##0.00)")
-        format_currency_eur = currency_menu.addAction("€1,234.56  ([$€]#,##0.00)")
-        format_currency_gbp = currency_menu.addAction("£1,234.56  ([$£]#,##0.00)")
+        # Currency format (uses project settings)
+        format_currency = format_menu.addAction("Currency")
 
-        # Accounting format
+        # Accounting format (uses project currency)
         format_accounting = format_menu.addAction("Accounting")
         format_menu.addSeparator()
 
@@ -3575,9 +4410,7 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             SpreadsheetModel.FORMAT_GENERAL: format_general,
             SpreadsheetModel.FORMAT_NUMBER: format_number,
             SpreadsheetModel.FORMAT_NUMBER_NO_DECIMAL: format_number_no_dec,
-            SpreadsheetModel.FORMAT_CURRENCY_USD: format_currency_usd,
-            SpreadsheetModel.FORMAT_CURRENCY_EUR: format_currency_eur,
-            SpreadsheetModel.FORMAT_CURRENCY_GBP: format_currency_gbp,
+            SpreadsheetModel.FORMAT_CURRENCY: format_currency,
             SpreadsheetModel.FORMAT_ACCOUNTING: format_accounting,
             SpreadsheetModel.FORMAT_PERCENTAGE: format_percentage,
             SpreadsheetModel.FORMAT_PERCENTAGE_NO_DECIMAL: format_percentage_no_dec,
@@ -3609,6 +4442,12 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             self.table_view._cut_selection()
         elif action == paste_action:
             self.table_view._paste_selection()
+        elif action == paste_values_action:
+            self.table_view._paste_values_only()
+        elif action == paste_format_action:
+            self.table_view._paste_format_only()
+        elif action == clear_format_action:
+            self._clear_cell_format()
         # Format actions
         elif action == format_general:
             self._set_cell_format(index, SpreadsheetModel.FORMAT_GENERAL)
@@ -3616,12 +4455,8 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             self._set_cell_format(index, SpreadsheetModel.FORMAT_NUMBER)
         elif action == format_number_no_dec:
             self._set_cell_format(index, SpreadsheetModel.FORMAT_NUMBER_NO_DECIMAL)
-        elif action == format_currency_usd:
-            self._set_cell_format(index, SpreadsheetModel.FORMAT_CURRENCY_USD)
-        elif action == format_currency_eur:
-            self._set_cell_format(index, SpreadsheetModel.FORMAT_CURRENCY_EUR)
-        elif action == format_currency_gbp:
-            self._set_cell_format(index, SpreadsheetModel.FORMAT_CURRENCY_GBP)
+        elif action == format_currency:
+            self._set_cell_format(index, SpreadsheetModel.FORMAT_CURRENCY)
         elif action == format_accounting:
             self._set_cell_format(index, SpreadsheetModel.FORMAT_ACCOUNTING)
         elif action == format_percentage:
@@ -3632,14 +4467,90 @@ class SpreadsheetWidget(QtWidgets.QWidget):
             self._set_cell_format(index, SpreadsheetModel.FORMAT_TEXT)
 
     def _set_cell_format(self, index, cell_format):
-        """Set the format for a cell.
+        """Set the format for selected cells with undo support.
 
         Args:
-            index: QModelIndex of the cell
+            index: QModelIndex of the clicked cell (used as fallback if no selection)
             cell_format: Excel-compatible format string
         """
-        self.model.set_cell_format(index.row(), index.column(), cell_format)
-        logger.info(f"Set cell ({index.row()},{index.column()}) format to: {cell_format}")
+        # Determine which cells to apply format to
+        selection = self.table_view.selectionModel().selectedIndexes()
+        if selection:
+            cells = [(idx.row(), idx.column()) for idx in selection]
+        else:
+            # Fallback to the clicked cell
+            cells = [(index.row(), index.column())]
+
+        # Collect old formats for undo
+        old_formats = {}
+        for (row, col) in cells:
+            old_formats[(row, col)] = self.model._formats.get((row, col))
+
+        # Create undo command
+        command = CellDataFormatCommand(self.model, cells, old_formats, cell_format)
+
+        # Execute command and add to undo stack
+        self.model._in_undo_redo = True
+        try:
+            command.redo()
+        finally:
+            self.model._in_undo_redo = False
+
+        self.model.undo_stack.append(command)
+        self.model.redo_stack.clear()
+
+        logger.info(f"Set format '{cell_format}' for {len(cells)} cells")
+
+    def _clear_cell_format(self):
+        """Clear all cell formatting (data format and cell meta) from selected cells.
+
+        Removes data format (Currency, Percentage, etc.) and cell meta
+        (bg color, text color, font options like bold, italic).
+        """
+        selection = self.table_view.selectionModel().selectedIndexes()
+        if not selection:
+            return
+
+        cells = [(idx.row(), idx.column()) for idx in selection]
+
+        # Collect changes for undo
+        changes = []
+        for (row, col) in cells:
+            old_format = self.model._formats.get((row, col))
+            old_meta = self.model._cell_meta.get((row, col))
+            if old_meta:
+                old_meta = old_meta.copy()
+
+            # Only add to changes if there's something to clear
+            if old_format or old_meta:
+                changes.append({
+                    'row': row,
+                    'col': col,
+                    # Keep values unchanged
+                    'old_value': self.model._data.get((row, col)),
+                    'new_value': self.model._data.get((row, col)),
+                    'old_formula': self.model._formulas.get((row, col)),
+                    'new_formula': self.model._formulas.get((row, col)),
+                    # Clear format and meta
+                    'old_format': old_format,
+                    'new_format': None,
+                    'old_meta': old_meta,
+                    'new_meta': None
+                })
+
+        if changes:
+            command = SpreadsheetPasteCommand(changes, self.model)
+            self.model._in_undo_redo = True
+            try:
+                command.redo()
+            finally:
+                self.model._in_undo_redo = False
+
+            self.model.undo_stack.append(command)
+            self.model.redo_stack.clear()
+            self.model._clear_dependent_cache()
+
+            logger.info(f"Cleared format for {len(changes)} cells")
 
     def _insert_row_above(self, row):
         """Insert a new row above the specified row."""
@@ -4002,6 +4913,15 @@ class SpreadsheetWidget(QtWidgets.QWidget):
         """Set the value of a cell."""
         index = self.model.index(row, col)
         self.model.setData(index, value, Qt.EditRole)
+
+    def set_currency_settings(self, symbol, position):
+        """Set the currency symbol and position for formatting.
+
+        Args:
+            symbol: Currency symbol (e.g., "$", "€", "£")
+            position: "prepend" (before value) or "append" (after value)
+        """
+        self.model.set_currency_settings(symbol, position)
 
     def get_data_as_dict(self):
         """Export all data as a dictionary including formats."""
