@@ -419,22 +419,19 @@ class CostsTab(QtWidgets.QMainWindow):
         logger.info(f"Added custom spreadsheet: {sheet_name}")
 
     def _on_custom_spreadsheet_data_changed(self, dock):
-        """Handle data changes in a custom spreadsheet - save directly to ShotGrid.
+        """Handle data changes in a custom spreadsheet - cache for deferred save.
 
         Args:
             dock: The CostDock containing the spreadsheet
         """
-        # Skip saving during load to prevent overwriting data with empty values
+        # Skip caching during load to prevent overwriting data with empty values
         if getattr(dock, '_loading_from_sg', False):
-            logger.debug(f"Skipping save for '{getattr(dock, 'sheet_name', 'unknown')}' - loading in progress")
             return
 
         if not self.current_bid_id or not self.current_project_id:
-            logger.debug(f"Skipping save - no bid_id ({self.current_bid_id}) or project_id ({self.current_project_id})")
             return
 
         if not hasattr(dock, 'spreadsheet') or not hasattr(dock, 'sheet_name'):
-            logger.debug("Skipping save - dock missing spreadsheet or sheet_name attribute")
             return
 
         try:
@@ -442,20 +439,18 @@ class CostsTab(QtWidgets.QMainWindow):
             cell_meta_dict = dock.spreadsheet.model.get_all_cell_meta()
             sheet_meta = dock.spreadsheet.model.get_sheet_meta()
 
-            logger.info(f"Saving custom spreadsheet '{dock.sheet_name}' to ShotGrid ({len(data_dict)} cells)")
-
-            # Save directly to ShotGrid
-            self.sg_session.save_spreadsheet_by_name(
+            # Use the cache system for deferred saves (commits on bid change or app close)
+            self._spreadsheet_cache.mark_dirty(
                 project_id=self.current_project_id,
                 bid_id=self.current_bid_id,
-                spreadsheet_name=dock.sheet_name,
+                spreadsheet_type=dock.sheet_name,
                 data_dict=data_dict,
                 cell_meta_dict=cell_meta_dict,
                 sheet_meta=sheet_meta
             )
-            logger.info(f"Successfully saved custom spreadsheet '{dock.sheet_name}' to ShotGrid")
+            logger.debug(f"Cached custom spreadsheet '{dock.sheet_name}' ({len(data_dict)} cells)")
         except Exception as e:
-            logger.error(f"Failed to save custom spreadsheet {dock.sheet_name}: {e}", exc_info=True)
+            logger.error(f"Failed to cache custom spreadsheet {dock.sheet_name}: {e}", exc_info=True)
 
     def _load_custom_spreadsheet_from_shotgrid(self, dock):
         """Load custom spreadsheet data from ShotGrid.
