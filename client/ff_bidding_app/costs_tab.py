@@ -200,12 +200,20 @@ class CostsTab(QtWidgets.QMainWindow):
             currency_symbol, currency_position = parse_sg_currency(sg_currency_value, default_symbol or "$")
             spreadsheet.set_currency_settings(currency_symbol, currency_position)
 
+        # Set up formula evaluator for this spreadsheet (same as Misc)
+        formula_evaluator = FormulaEvaluator(
+            table_model=spreadsheet.model,
+            sheet_models={sheet_name: spreadsheet.model}
+        )
+        spreadsheet.set_formula_evaluator(formula_evaluator)
+
         # Create the dock widget
         dock = CostDock(sheet_name, spreadsheet, self)
 
-        # Store reference to the spreadsheet and name for later access
+        # Store reference to the spreadsheet, name, and evaluator for later access
         dock.spreadsheet = spreadsheet
         dock.sheet_name = sheet_name
+        dock.formula_evaluator = formula_evaluator
 
         # Add dock to the left area
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dock)
