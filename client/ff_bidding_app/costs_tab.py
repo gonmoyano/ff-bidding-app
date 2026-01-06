@@ -123,10 +123,140 @@ class CostsTab(QtWidgets.QMainWindow):
         # Set up cross-tab formula evaluator after all widgets are created
         self._setup_cross_tab_formulas()
 
+        # Set up tab bar event handling for rename and position tracking
+        QtCore.QTimer.singleShot(100, self._setup_tab_bar_handling)
+
         # Load saved layout
         QtCore.QTimer.singleShot(0, self.load_layout)
 
         logger.info("CostsTab initialized")
+
+    def _setup_tab_bar_handling(self):
+        """Set up tab bar event handling for double-click rename and position tracking."""
+        # Find the tab bar widget for the dock area
+        tab_bars = self.findChildren(QtWidgets.QTabBar)
+        for tab_bar in tab_bars:
+            # Enable double-click to rename
+            tab_bar.setTabsClosable(False)
+            tab_bar.tabBarDoubleClicked.connect(self._on_tab_double_clicked)
+            # Track tab moves for position saving
+            tab_bar.tabMoved.connect(self._on_tab_moved)
+            logger.debug(f"Connected tab bar signals: {tab_bar}")
+
+    def _on_tab_double_clicked(self, index):
+        """Handle double-click on a tab to rename it."""
+        tab_bar = self.sender()
+        if not tab_bar:
+            return
+
+        tab_text = tab_bar.tabText(index)
+
+        # Only allow renaming custom spreadsheets (not built-in tabs)
+        dock = self._find_dock_by_title(tab_text)
+        if not dock or dock not in self._custom_spreadsheet_docks:
+            return
+
+        # Show rename dialog
+        new_name, ok = QtWidgets.QInputDialog.getText(
+            self,
+            "Rename Sheet",
+            "Enter new name:",
+            QtWidgets.QLineEdit.Normal,
+            tab_text
+        )
+
+        if ok and new_name and new_name != tab_text:
+            self._rename_custom_spreadsheet(dock, new_name)
+
+    def _rename_custom_spreadsheet(self, dock, new_name):
+        """Rename a custom spreadsheet.
+
+        Args:
+            dock: The CostDock to rename
+            new_name: New name for the spreadsheet
+        """
+        old_name = dock.sheet_name
+
+        # Update dock title
+        dock.setWindowTitle(new_name)
+        dock.setObjectName(new_name)
+        dock.sheet_name = new_name
+
+        # Update in ShotGrid
+        if hasattr(dock, 'sg_spreadsheet_id') and dock.sg_spreadsheet_id:
+            try:
+                self.sg_session.update_spreadsheet(
+                    dock.sg_spreadsheet_id,
+                    code=new_name
+                )
+                logger.info(f"Renamed spreadsheet from '{old_name}' to '{new_name}' in ShotGrid")
+            except Exception as e:
+                logger.error(f"Failed to rename spreadsheet in ShotGrid: {e}", exc_info=True)
+
+    def _on_tab_moved(self, from_index, to_index):
+        """Handle tab position changes - save new positions to ShotGrid."""
+        logger.debug(f"Tab moved from {from_index} to {to_index}")
+        # Delay position save to allow UI to settle
+        QtCore.QTimer.singleShot(100, self._save_custom_spreadsheet_positions)
+
+    def _save_custom_spreadsheet_positions(self):
+        """Save current tab positions of custom spreadsheets to ShotGrid."""
+        if not self._custom_spreadsheet_docks:
+            return
+
+        # Get the tab bar to determine current order
+        tab_bars = self.findChildren(QtWidgets.QTabBar)
+        if not tab_bars:
+            return
+
+        # Find positions of custom spreadsheets in the tab bar
+        for tab_bar in tab_bars:
+            for i in range(tab_bar.count()):
+                tab_text = tab_bar.tabText(i)
+                dock = self._find_dock_by_title(tab_text)
+                if dock and dock in self._custom_spreadsheet_docks:
+                    # Save position to ShotGrid
+                    if hasattr(dock, 'sg_spreadsheet_id') and dock.sg_spreadsheet_id:
+                        try:
+                            # Get existing metadata and update position
+                            sheet_meta = {}
+                            if hasattr(dock, 'spreadsheet') and hasattr(dock.spreadsheet, 'model'):
+                                sheet_meta = dock.spreadsheet.model.get_sheet_meta() or {}
+                            sheet_meta['tab_position'] = i
+
+                            self.sg_session.update_spreadsheet(
+                                dock.sg_spreadsheet_id,
+                                sheet_meta=sheet_meta
+                            )
+                            logger.debug(f"Saved position {i} for spreadsheet '{tab_text}'")
+                        except Exception as e:
+                            logger.error(f"Failed to save position for '{tab_text}': {e}")
+
+    def _find_dock_by_title(self, title):
+        """Find a dock widget by its title.
+
+        Args:
+            title: Window title to search for
+
+        Returns:
+            QDockWidget or None
+        """
+        # Check custom spreadsheets first
+        for dock in self._custom_spreadsheet_docks:
+            if dock.windowTitle() == title:
+                return dock
+
+        # Check built-in docks
+        if hasattr(self, 'shots_cost_dock') and self.shots_cost_dock.windowTitle() == title:
+            return self.shots_cost_dock
+        if hasattr(self, 'asset_cost_dock') and self.asset_cost_dock.windowTitle() == title:
+            return self.asset_cost_dock
+        if hasattr(self, 'misc_cost_dock') and self.misc_cost_dock.windowTitle() == title:
+            return self.misc_cost_dock
+        if hasattr(self, 'total_cost_dock') and self.total_cost_dock.windowTitle() == title:
+            return self.total_cost_dock
+
+        return None
 
     def _create_toolbar(self):
         """Create the toolbar with add spreadsheet button."""
@@ -329,6 +459,8 @@ class CostsTab(QtWidgets.QMainWindow):
 
     def _load_custom_spreadsheets_for_bid(self):
         """Load all custom spreadsheets for the current bid from ShotGrid."""
+        import json
+
         if not self.current_bid_id:
             return
 
@@ -336,26 +468,39 @@ class CostsTab(QtWidgets.QMainWindow):
             # Get all spreadsheets for this bid
             all_spreadsheets = self.sg_session.get_all_spreadsheets_for_bid(self.current_bid_id)
 
-            # Filter to only custom spreadsheets (those with "Sheet" prefix in code)
+            # Filter to only custom spreadsheets (those without sg_type or not 'misc'/'total_cost')
             custom_sheets = [
                 s for s in all_spreadsheets
-                if s.get("code", "").startswith("Sheet")
+                if s.get("sg_type") not in ('misc', 'total_cost')
             ]
 
-            # Sort by name to maintain order
-            custom_sheets.sort(key=lambda s: s.get("code", ""))
+            # Parse sheet_meta to get tab positions for sorting
+            def get_tab_position(sheet_data):
+                """Extract tab position from sheet metadata, default to a high number."""
+                meta_str = sheet_data.get("sg_sheet_meta", "")
+                if meta_str:
+                    try:
+                        meta = json.loads(meta_str)
+                        return meta.get("tab_position", 9999)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                return 9999
+
+            # Sort by tab position (saved order), then by code as fallback
+            custom_sheets.sort(key=lambda s: (get_tab_position(s), s.get("code", "")))
 
             # Create docks for each custom spreadsheet
             for sheet_data in custom_sheets:
                 sheet_name = sheet_data.get("code", "")
                 if sheet_name:
-                    # Extract the number from the sheet name to update counter
-                    try:
-                        num = int(sheet_name.replace("Sheet", ""))
-                        if num > self._custom_spreadsheet_counter:
-                            self._custom_spreadsheet_counter = num
-                    except ValueError:
-                        pass
+                    # Update counter if this is a numbered sheet
+                    if sheet_name.startswith("Sheet"):
+                        try:
+                            num = int(sheet_name.replace("Sheet", ""))
+                            if num > self._custom_spreadsheet_counter:
+                                self._custom_spreadsheet_counter = num
+                        except ValueError:
+                            pass
 
                     self._add_custom_spreadsheet(sheet_name=sheet_name, load_from_sg=True)
 

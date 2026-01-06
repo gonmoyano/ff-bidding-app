@@ -2682,6 +2682,33 @@ class ShotgridClient:
         logger.info(f"Created Spreadsheet {result.get('id')} for bid {bid_id}, code='{code}'")
         return result
 
+    def update_spreadsheet(self, spreadsheet_id, code=None, sheet_meta=None):
+        """
+        Update a Spreadsheet (CustomEntity15) entity.
+
+        Args:
+            spreadsheet_id: Spreadsheet ID
+            code: New name/code for the spreadsheet (optional)
+            sheet_meta: Sheet metadata dict to store as JSON (optional)
+
+        Returns:
+            Updated Spreadsheet entity dictionary
+        """
+        import json
+
+        update_data = {}
+        if code is not None:
+            update_data["code"] = code
+        if sheet_meta is not None:
+            update_data["sg_sheet_meta"] = json.dumps(sheet_meta)
+
+        if not update_data:
+            return None
+
+        result = self.sg.update("CustomEntity15", int(spreadsheet_id), update_data)
+        logger.info(f"Updated Spreadsheet {spreadsheet_id}: {list(update_data.keys())}")
+        return result
+
     def delete_spreadsheet(self, spreadsheet_id):
         """
         Delete a Spreadsheet (CustomEntity15) and all its items.
