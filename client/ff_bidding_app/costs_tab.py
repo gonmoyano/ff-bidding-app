@@ -330,13 +330,23 @@ class CostsTab(QtWidgets.QMainWindow):
         # Include built-in tabs (Shot Costs, Asset Costs) for cross-tab references
         sheet_models = {sheet_name: spreadsheet.model}
 
-        # Add Shot Costs model if available
-        if hasattr(self, 'shots_cost_widget') and hasattr(self.shots_cost_widget, 'model'):
+        # Add Shot Costs model if available and truthy
+        if (hasattr(self, 'shots_cost_widget') and self.shots_cost_widget and
+            hasattr(self.shots_cost_widget, 'model') and self.shots_cost_widget.model):
             sheet_models['Shot Costs'] = self.shots_cost_widget.model
+            logger.debug(f"Added 'Shot Costs' model to sheet_models for custom spreadsheet '{sheet_name}'")
+        else:
+            logger.warning(f"Could not add 'Shot Costs' model - widget or model not available")
 
-        # Add Asset Costs model if available
-        if hasattr(self, 'asset_cost_widget') and hasattr(self.asset_cost_widget, 'model'):
+        # Add Asset Costs model if available and truthy
+        if (hasattr(self, 'asset_cost_widget') and self.asset_cost_widget and
+            hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model):
             sheet_models['Asset Costs'] = self.asset_cost_widget.model
+            logger.debug(f"Added 'Asset Costs' model to sheet_models for custom spreadsheet '{sheet_name}'")
+        else:
+            logger.warning(f"Could not add 'Asset Costs' model - widget or model not available")
+
+        logger.info(f"Creating FormulaEvaluator for '{sheet_name}' with sheet_models: {list(sheet_models.keys())}")
 
         formula_evaluator = FormulaEvaluator(
             table_model=spreadsheet.model,
