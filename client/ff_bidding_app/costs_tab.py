@@ -752,6 +752,15 @@ class CostsTab(QtWidgets.QMainWindow):
         if hasattr(self, 'total_cost_spreadsheet'):
             self.total_cost_spreadsheet.set_currency_settings(currency_symbol, currency_position)
 
+        # Update read-only linked entity references for cost widgets
+        if hasattr(self, 'shots_cost_widget'):
+            vfx_breakdown = bid_data.get("sg_vfx_breakdown") if bid_data else None
+            self.shots_cost_widget.set_readonly_linked_entity(vfx_breakdown)
+
+        if hasattr(self, 'asset_cost_widget'):
+            bid_assets = bid_data.get("sg_bid_assets") if bid_data else None
+            self.asset_cost_widget.set_readonly_linked_entity(bid_assets)
+
         if bid_data and project_id:
             # Load Line Items first - needed for both VFX breakdown and asset cost pricing
             logger.info("Loading Line Items for pricing...")
@@ -783,8 +792,10 @@ class CostsTab(QtWidgets.QMainWindow):
             # Clear all cost views
             if hasattr(self, 'shots_cost_widget'):
                 self.shots_cost_widget.load_bidding_scenes([])
+                self.shots_cost_widget.set_readonly_linked_entity(None)
             if hasattr(self, 'asset_cost_widget'):
                 self.asset_cost_widget.load_bidding_scenes([])
+                self.asset_cost_widget.set_readonly_linked_entity(None)
             # Initialize Misc spreadsheet with defaults (empty)
             self._initialize_misc_spreadsheet_defaults()
             # Initialize Total Cost spreadsheet with defaults

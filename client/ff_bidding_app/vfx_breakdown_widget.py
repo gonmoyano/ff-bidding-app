@@ -531,6 +531,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self._readonly_mode = False
         self._readonly_entity_type = None  # e.g., "VFX Breakdown" or "Bid Asset"
         self._readonly_entity_field = "code"  # Field to display in popup
+        self._readonly_linked_entity = None  # Dict with 'code' and 'id' of linked entity from bid
 
         # Create the model
         self.model = VFXBreakdownModel(sg_session, parent=self)
@@ -1039,6 +1040,18 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 except (TypeError, RuntimeError):
                     pass  # Not connected
 
+    def set_readonly_linked_entity(self, entity_data):
+        """Set the linked entity reference to display in read-only popup.
+
+        This should be called when the bid changes to update the reference
+        to the linked VFX Breakdown or Bid Assets entity.
+
+        Args:
+            entity_data: Dict with entity info (should have 'code' and/or 'id' keys),
+                        or None to clear the reference
+        """
+        self._readonly_linked_entity = entity_data
+
     def _on_readonly_cell_clicked(self, index):
         """Handle cell click in read-only mode - show popup with entity reference.
 
@@ -1048,18 +1061,21 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         if not self._readonly_mode or not index.isValid():
             return
 
-        # Get the entity code/name from the clicked row
-        row = index.row()
-        if row < 0 or row >= self.model.rowCount():
-            return
+        # Use the linked entity from the bid if available
+        if self._readonly_linked_entity:
+            entity_code = self._readonly_linked_entity.get("code", "")
+            entity_id = self._readonly_linked_entity.get("id", "")
+        else:
+            # Fallback to row data if no linked entity set
+            row = index.row()
+            if row < 0 or row >= self.model.rowCount():
+                return
 
-        # Get the data row index (handles filtering)
-        data_row = self.model.filtered_row_indices[row]
-        row_data = self.model.all_bidding_scenes_data[data_row]
+            data_row = self.model.filtered_row_indices[row]
+            row_data = self.model.all_bidding_scenes_data[data_row]
 
-        # Get the entity reference (code field)
-        entity_code = row_data.get(self._readonly_entity_field, "")
-        entity_id = row_data.get("id", "")
+            entity_code = row_data.get(self._readonly_entity_field, "")
+            entity_id = row_data.get("id", "")
 
         # Build the reference string
         if entity_code:
