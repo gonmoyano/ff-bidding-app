@@ -3022,7 +3022,7 @@ class ShotgridClient:
         """
         import json
 
-        logger.info(f"save_spreadsheet_by_name called: project={project_id}, bid={bid_id}, name='{spreadsheet_name}', cells={len(data_dict)}")
+        logger.debug(f"save_spreadsheet_by_name called: project={project_id}, bid={bid_id}, name='{spreadsheet_name}', cells={len(data_dict)}")
 
         # Get or create Spreadsheet by name
         spreadsheet = self.get_spreadsheet_by_name(bid_id, spreadsheet_name)
@@ -3035,7 +3035,7 @@ class ShotgridClient:
                 code=spreadsheet_name
             )
         else:
-            logger.info(f"Found existing CustomEntity15 spreadsheet '{spreadsheet_name}' (ID: {spreadsheet.get('id')}) for bid {bid_id}")
+            logger.debug(f"Found existing CustomEntity15 spreadsheet '{spreadsheet_name}' (ID: {spreadsheet.get('id')}) for bid {bid_id}")
         spreadsheet_id = spreadsheet["id"]
 
         # Save sheet-level metadata

@@ -227,68 +227,72 @@ class CostsTab(QtWidgets.QMainWindow):
         # Track this custom spreadsheet
         self._custom_spreadsheet_docks.append(dock)
 
-        # Connect dataChanged signal to cache the spreadsheet
+        # Create the spreadsheet in ShotGrid immediately (if not loading existing)
+        if not load_from_sg and self.current_bid_id and self.current_project_id:
+            try:
+                # Check if spreadsheet already exists
+                existing = self.sg_session.get_spreadsheet_by_name(self.current_bid_id, sheet_name)
+                if not existing:
+                    # Create new spreadsheet in ShotGrid
+                    sg_spreadsheet = self.sg_session.create_spreadsheet(
+                        self.current_project_id,
+                        self.current_bid_id,
+                        spreadsheet_type="custom",
+                        code=sheet_name
+                    )
+                    dock.sg_spreadsheet_id = sg_spreadsheet.get("id")
+                    logger.info(f"Created CustomEntity15 '{sheet_name}' (ID: {dock.sg_spreadsheet_id}) in ShotGrid")
+                else:
+                    dock.sg_spreadsheet_id = existing.get("id")
+                    logger.info(f"Found existing CustomEntity15 '{sheet_name}' (ID: {dock.sg_spreadsheet_id})")
+            except Exception as e:
+                logger.error(f"Failed to create spreadsheet in ShotGrid: {e}", exc_info=True)
+                dock.sg_spreadsheet_id = None
+        else:
+            dock.sg_spreadsheet_id = None
+
+        # Connect dataChanged signal to save directly to ShotGrid
         # Use default argument to capture dock by value, not by reference
         def on_data_changed(d=dock):
-            print(f"DEBUG: dataChanged signal fired for custom spreadsheet '{d.sheet_name}'")
             self._on_custom_spreadsheet_data_changed(d)
 
         spreadsheet.model.dataChanged.connect(on_data_changed)
-        print(f"DEBUG: Connected dataChanged signal for custom spreadsheet '{sheet_name}'")
 
         # Load existing data from ShotGrid if requested
         if load_from_sg and self.current_bid_id:
             self._load_custom_spreadsheet_from_shotgrid(dock)
 
         logger.info(f"Added custom spreadsheet: {sheet_name}")
-        print(f"DEBUG: Created custom spreadsheet dock '{sheet_name}'")
 
     def _on_custom_spreadsheet_data_changed(self, dock):
-        """Handle data changes in a custom spreadsheet - cache for later save.
+        """Handle data changes in a custom spreadsheet - save directly to ShotGrid.
 
         Args:
             dock: The CostDock containing the spreadsheet
         """
-        print(f"DEBUG: _on_custom_spreadsheet_data_changed called for dock")
-
         if not self.current_bid_id or not self.current_project_id:
-            print(f"DEBUG: No bid/project set (bid={self.current_bid_id}, project={self.current_project_id})")
-            logger.debug(f"Custom spreadsheet data changed but no bid/project set (bid={self.current_bid_id}, project={self.current_project_id})")
             return
 
         if not hasattr(dock, 'spreadsheet') or not hasattr(dock, 'sheet_name'):
-            print(f"DEBUG: dock missing spreadsheet or sheet_name")
-            logger.debug("Custom spreadsheet data changed but dock missing spreadsheet or sheet_name")
             return
-
-        print(f"DEBUG: Processing change for '{dock.sheet_name}'")
 
         try:
             data_dict = dock.spreadsheet.get_data_as_dict()
-            print(f"DEBUG: get_data_as_dict returned {len(data_dict) if data_dict else 0} cells")
-            if not data_dict:
-                logger.debug(f"Custom spreadsheet {dock.sheet_name} data changed but get_data_as_dict returned empty")
-                return
-
             cell_meta_dict = dock.spreadsheet.model.get_all_cell_meta()
             sheet_meta = dock.spreadsheet.model.get_sheet_meta()
 
-            print(f"DEBUG: Calling mark_dirty for '{dock.sheet_name}' with {len(data_dict)} cells, bid={self.current_bid_id}, project={self.current_project_id}")
-            logger.info(f"Caching custom spreadsheet '{dock.sheet_name}' with {len(data_dict)} cells for bid {self.current_bid_id}")
-
-            # Use sheet name as the spreadsheet type for caching
-            self._spreadsheet_cache.mark_dirty(
+            # Save directly to ShotGrid
+            self.sg_session.save_spreadsheet_by_name(
                 project_id=self.current_project_id,
                 bid_id=self.current_bid_id,
-                spreadsheet_type=dock.sheet_name,
+                spreadsheet_name=dock.sheet_name,
                 data_dict=data_dict,
                 cell_meta_dict=cell_meta_dict,
                 sheet_meta=sheet_meta
             )
-            print(f"DEBUG: mark_dirty completed. Cache now has {self._spreadsheet_cache.get_dirty_count()} dirty entries")
+            logger.debug(f"Saved custom spreadsheet '{dock.sheet_name}' to ShotGrid ({len(data_dict)} cells)")
         except Exception as e:
-            print(f"DEBUG: Exception in _on_custom_spreadsheet_data_changed: {e}")
-            logger.error(f"Failed to cache custom spreadsheet {dock.sheet_name}: {e}", exc_info=True)
+            logger.error(f"Failed to save custom spreadsheet {dock.sheet_name}: {e}", exc_info=True)
 
     def _load_custom_spreadsheet_from_shotgrid(self, dock):
         """Load custom spreadsheet data from ShotGrid.
@@ -300,6 +304,11 @@ class CostsTab(QtWidgets.QMainWindow):
             return
 
         try:
+            # Get the spreadsheet entity to store its ID
+            sg_spreadsheet = self.sg_session.get_spreadsheet_by_name(self.current_bid_id, dock.sheet_name)
+            if sg_spreadsheet:
+                dock.sg_spreadsheet_id = sg_spreadsheet.get("id")
+
             data_dict, cell_meta_dict, sheet_meta = self.sg_session.load_spreadsheet_by_name(
                 self.current_bid_id,
                 dock.sheet_name

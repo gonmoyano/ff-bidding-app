@@ -185,22 +185,17 @@ class SpreadsheetCache:
         Returns:
             True if all commits succeeded, False otherwise
         """
-        print(f"DEBUG CACHE: commit_all called. dirty_keys={self._dirty_keys}")
-
         if not self._dirty_keys:
-            print("DEBUG CACHE: No dirty spreadsheets to commit")
             logger.info("No dirty spreadsheets to commit")
             if on_complete:
                 on_complete()
             return True
 
         if not self._sg_session:
-            print("DEBUG CACHE: No ShotGrid session set!")
             logger.error("Cannot commit: No ShotGrid session set")
             return False
 
         dirty_count = len(self._dirty_keys)
-        print(f"DEBUG CACHE: Committing {dirty_count} dirty spreadsheets")
         logger.info(f"Committing {dirty_count} dirty spreadsheets to ShotGrid")
 
         # Create progress dialog
@@ -243,12 +238,9 @@ class SpreadsheetCache:
 
             try:
                 spreadsheet_type = cache_entry['spreadsheet_type']
-                print(f"DEBUG CACHE: Processing cache_key={cache_key}, spreadsheet_type='{spreadsheet_type}'")
-                print(f"DEBUG CACHE: spreadsheet_type.startswith('Sheet') = {spreadsheet_type.startswith('Sheet')}")
 
                 # Use name-based save for custom spreadsheets (Sheet1, Sheet2, etc.)
                 if spreadsheet_type.startswith("Sheet"):
-                    print(f"DEBUG CACHE: Calling save_spreadsheet_by_name for '{spreadsheet_type}'")
                     self._sg_session.save_spreadsheet_by_name(
                         project_id=cache_entry['project_id'],
                         bid_id=cache_entry['bid_id'],
@@ -257,9 +249,7 @@ class SpreadsheetCache:
                         cell_meta_dict=cache_entry.get('cell_meta_dict', {}),
                         sheet_meta=cache_entry.get('sheet_meta', {})
                     )
-                    print(f"DEBUG CACHE: save_spreadsheet_by_name completed for '{spreadsheet_type}'")
                 else:
-                    print(f"DEBUG CACHE: Calling save_spreadsheet_data for '{spreadsheet_type}'")
                     # Use type-based save for built-in spreadsheets (misc, total_cost)
                     self._sg_session.save_spreadsheet_data(
                         project_id=cache_entry['project_id'],
@@ -276,10 +266,8 @@ class SpreadsheetCache:
                 success_count += 1
 
                 logger.info(f"Committed spreadsheet: {cache_key}")
-                print(f"DEBUG CACHE: Successfully committed: {cache_key}")
 
             except Exception as e:
-                print(f"DEBUG CACHE: Exception committing {cache_key}: {e}")
                 logger.error(f"Failed to commit spreadsheet {cache_key}: {e}", exc_info=True)
                 failed_keys.append(cache_key)
 
