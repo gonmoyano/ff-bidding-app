@@ -1174,8 +1174,8 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         # Process any pending events first
         QApplication.processEvents()
 
-        # Set focus with strong focus reason
-        editor.setFocus(Qt.StrongFocus)
+        # Set focus with OtherFocusReason (must use FocusReason, not FocusPolicy)
+        editor.setFocus(Qt.OtherFocusReason)
 
         # Restore cursor position explicitly
         if hasattr(editor, 'setCursorPosition'):
@@ -1192,7 +1192,7 @@ class SpreadsheetTableView(QtWidgets.QTableView):
         def delayed_restore():
             if editor and hasattr(editor, 'setFocus'):
                 try:
-                    editor.setFocus(Qt.StrongFocus)
+                    editor.setFocus(Qt.OtherFocusReason)
                     if hasattr(editor, 'setCursorPosition'):
                         editor.setCursorPosition(cursor_pos)
                     if hasattr(editor, 'deselect'):
