@@ -2604,6 +2604,51 @@ class ShotgridClient:
         )
         return result
 
+    def get_spreadsheet_by_name(self, bid_id, spreadsheet_name):
+        """
+        Get a Spreadsheet (CustomEntity15) for a bid by name (code field).
+
+        Args:
+            bid_id: Bid ID (CustomEntity06)
+            spreadsheet_name: Name of the spreadsheet (e.g., 'Sheet1', 'Sheet2')
+
+        Returns:
+            Spreadsheet entity dictionary or None if not found
+        """
+        filters = [
+            ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": int(bid_id)}],
+            ["code", "is", spreadsheet_name]
+        ]
+
+        result = self.sg.find_one(
+            "CustomEntity15",
+            filters,
+            ["id", "code", "sg_type", "sg_parent_bid", "sg_sheet_meta"]
+        )
+        return result
+
+    def get_all_spreadsheets_for_bid(self, bid_id):
+        """
+        Get all Spreadsheets (CustomEntity15) for a bid.
+
+        Args:
+            bid_id: Bid ID (CustomEntity06)
+
+        Returns:
+            List of Spreadsheet entity dictionaries
+        """
+        filters = [
+            ["sg_parent_bid", "is", {"type": "CustomEntity06", "id": int(bid_id)}]
+        ]
+
+        results = self.sg.find(
+            "CustomEntity15",
+            filters,
+            ["id", "code", "sg_type", "sg_parent_bid", "sg_sheet_meta"],
+            order=[{"field_name": "id", "direction": "asc"}]
+        )
+        return results
+
     def create_spreadsheet(self, project_id, bid_id, spreadsheet_type, code=None):
         """
         Create a new Spreadsheet (CustomEntity15) entity.
@@ -2957,6 +3002,192 @@ class ShotgridClient:
                     pass
 
         logger.info(f"Loaded {len(data_dict)} cells and {len(cell_meta_dict)} formatted cells from Spreadsheet for bid {bid_id}, type={spreadsheet_type}")
+        return data_dict, cell_meta_dict, sheet_meta
+
+    def save_spreadsheet_by_name(self, project_id, bid_id, spreadsheet_name, data_dict,
+                                  cell_meta_dict=None, sheet_meta=None):
+        """
+        Save spreadsheet data to ShotGrid using the spreadsheet name (code field).
+
+        Args:
+            project_id: Project ID
+            bid_id: Bid ID
+            spreadsheet_name: Name of the spreadsheet (e.g., 'Sheet1', 'Sheet2')
+            data_dict: Dictionary from SpreadsheetWidget.get_data_as_dict()
+            cell_meta_dict: Optional cell metadata
+            sheet_meta: Optional sheet-level metadata dict
+
+        Returns:
+            Spreadsheet entity dictionary
+        """
+        import json
+
+        # Get or create Spreadsheet by name
+        spreadsheet = self.get_spreadsheet_by_name(bid_id, spreadsheet_name)
+        if not spreadsheet:
+            # Create new spreadsheet with the given name
+            spreadsheet = self.create_spreadsheet(
+                project_id, bid_id,
+                spreadsheet_type="custom",  # Mark as custom type
+                code=spreadsheet_name
+            )
+        spreadsheet_id = spreadsheet["id"]
+
+        # Save sheet-level metadata
+        if sheet_meta:
+            try:
+                self.sg.update("CustomEntity15", spreadsheet_id, {
+                    "sg_sheet_meta": json.dumps(sheet_meta)
+                })
+            except Exception as e:
+                logger.warning(f"Failed to save sheet metadata: {e}")
+
+        # Get existing items and build a map by cell reference
+        existing_items = self.get_spreadsheet_items(spreadsheet_id)
+        existing_by_cell = {item.get("sg_cell", ""): item for item in existing_items}
+
+        processed_cells = set()
+        created_count = 0
+        updated_count = 0
+        deleted_count = 0
+
+        # Update or create items for each cell
+        for (row, col), cell_data in data_dict.items():
+            col_letter = chr(ord('A') + col) if col < 26 else f"A{chr(ord('A') + col - 26)}"
+            cell_ref = f"{col_letter}{row + 1}"
+            processed_cells.add(cell_ref)
+
+            formula = cell_data.get('formula')
+            value = cell_data.get('value')
+            cell_format = cell_data.get('format')
+
+            meta_key = f"{row},{col}"
+            cell_meta = cell_meta_dict.get(meta_key) if cell_meta_dict else None
+
+            sg_formula_value = formula if formula else (str(value) if value is not None else "")
+
+            if cell_ref in existing_by_cell:
+                existing_item = existing_by_cell[cell_ref]
+                update_data = {}
+
+                if existing_item.get("sg_formula") != sg_formula_value:
+                    update_data["sg_formula"] = sg_formula_value
+
+                if cell_format and existing_item.get("sg_format") != cell_format:
+                    update_data["sg_format"] = cell_format
+
+                if cell_meta:
+                    new_meta_json = json.dumps(cell_meta)
+                    if existing_item.get("sg_cell_meta") != new_meta_json:
+                        update_data["sg_cell_meta"] = new_meta_json
+                elif existing_item.get("sg_cell_meta"):
+                    update_data["sg_cell_meta"] = ""
+
+                if update_data:
+                    self.sg.update("CustomEntity16", int(existing_item["id"]), update_data)
+                    updated_count += 1
+            else:
+                create_data = {
+                    "code": cell_ref,
+                    "project": {"type": "Project", "id": int(project_id)},
+                    "sg_parent": {"type": "CustomEntity15", "id": int(spreadsheet_id)},
+                    "sg_cell": cell_ref,
+                    "sg_formula": sg_formula_value
+                }
+                if cell_format:
+                    create_data["sg_format"] = cell_format
+                if cell_meta:
+                    create_data["sg_cell_meta"] = json.dumps(cell_meta)
+
+                self.sg.create("CustomEntity16", create_data)
+                created_count += 1
+
+        # Delete items for cells that no longer exist
+        for cell_ref, item in existing_by_cell.items():
+            if cell_ref not in processed_cells:
+                self.sg.delete("CustomEntity16", int(item["id"]))
+                deleted_count += 1
+
+        logger.info(f"Saved Spreadsheet '{spreadsheet_name}' (ID {spreadsheet_id}): {created_count} created, {updated_count} updated, {deleted_count} deleted")
+        return spreadsheet
+
+    def load_spreadsheet_by_name(self, bid_id, spreadsheet_name):
+        """
+        Load spreadsheet data from ShotGrid using the spreadsheet name (code field).
+
+        Args:
+            bid_id: Bid ID
+            spreadsheet_name: Name of the spreadsheet (e.g., 'Sheet1', 'Sheet2')
+
+        Returns:
+            Tuple of (data_dict, cell_meta_dict, sheet_meta)
+            Returns ({}, {}, {}) if no spreadsheet found.
+        """
+        import json
+
+        spreadsheet = self.get_spreadsheet_by_name(bid_id, spreadsheet_name)
+        if not spreadsheet:
+            return {}, {}, {}
+
+        # Load sheet-level metadata
+        sheet_meta = {}
+        sg_sheet_meta = spreadsheet.get("sg_sheet_meta", "")
+        if sg_sheet_meta:
+            try:
+                sheet_meta = json.loads(sg_sheet_meta)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Load items with cell metadata
+        items = self.sg.find(
+            "CustomEntity16",
+            [["sg_parent", "is", {"type": "CustomEntity15", "id": spreadsheet["id"]}]],
+            ["id", "sg_cell", "sg_formula", "sg_format", "sg_cell_meta"]
+        )
+
+        data_dict = {}
+        cell_meta_dict = {}
+
+        for item in items:
+            cell_ref = item.get("sg_cell", "")
+            if not cell_ref:
+                continue
+
+            match = re.match(r'^([A-Z]+)(\d+)$', cell_ref.upper())
+            if not match:
+                continue
+
+            col_str, row_str = match.groups()
+            col = 0
+            for char in col_str:
+                col = col * 26 + (ord(char) - ord('A') + 1)
+            col -= 1
+            row = int(row_str) - 1
+
+            sg_formula = item.get("sg_formula", "")
+            sg_format = item.get("sg_format", "")
+            sg_cell_meta = item.get("sg_cell_meta", "")
+
+            if sg_formula and sg_formula.startswith("="):
+                formula = sg_formula
+                value = None
+            else:
+                formula = None
+                value = sg_formula
+
+            cell_data = {'value': value, 'formula': formula}
+            if sg_format:
+                cell_data['format'] = sg_format
+
+            data_dict[(row, col)] = cell_data
+
+            if sg_cell_meta:
+                try:
+                    cell_meta_dict[f"{row},{col}"] = json.loads(sg_cell_meta)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        logger.info(f"Loaded {len(data_dict)} cells from Spreadsheet '{spreadsheet_name}' for bid {bid_id}")
         return data_dict, cell_meta_dict, sheet_meta
 
     def close_connection(self, thread_id=None):

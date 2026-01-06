@@ -175,10 +175,16 @@ class CostsTab(QtWidgets.QMainWindow):
         # Add toolbar to the top
         self.addToolBar(QtCore.Qt.TopToolBarArea, self.toolbar)
 
-    def _add_custom_spreadsheet(self):
-        """Add a new custom spreadsheet dock after Asset Costs."""
-        self._custom_spreadsheet_counter += 1
-        sheet_name = f"Sheet {self._custom_spreadsheet_counter}"
+    def _add_custom_spreadsheet(self, sheet_name=None, load_from_sg=False):
+        """Add a new custom spreadsheet dock after Asset Costs.
+
+        Args:
+            sheet_name: Optional name for the sheet. If None, auto-generates "Sheet1", "Sheet2", etc.
+            load_from_sg: If True, load existing data from ShotGrid for this sheet name
+        """
+        if sheet_name is None:
+            self._custom_spreadsheet_counter += 1
+            sheet_name = f"Sheet{self._custom_spreadsheet_counter}"
 
         # Create the spreadsheet widget
         spreadsheet = SpreadsheetWidget(
@@ -197,8 +203,9 @@ class CostsTab(QtWidgets.QMainWindow):
         # Create the dock widget
         dock = CostDock(sheet_name, spreadsheet, self)
 
-        # Store reference to the spreadsheet for later access
+        # Store reference to the spreadsheet and name for later access
         dock.spreadsheet = spreadsheet
+        dock.sheet_name = sheet_name
 
         # Add dock to the left area
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, dock)
@@ -212,7 +219,122 @@ class CostsTab(QtWidgets.QMainWindow):
         # Track this custom spreadsheet
         self._custom_spreadsheet_docks.append(dock)
 
+        # Connect dataChanged signal to cache the spreadsheet
+        spreadsheet.model.dataChanged.connect(
+            lambda: self._on_custom_spreadsheet_data_changed(dock)
+        )
+
+        # Load existing data from ShotGrid if requested
+        if load_from_sg and self.current_bid_id:
+            self._load_custom_spreadsheet_from_shotgrid(dock)
+
         logger.info(f"Added custom spreadsheet: {sheet_name}")
+
+    def _on_custom_spreadsheet_data_changed(self, dock):
+        """Handle data changes in a custom spreadsheet - cache for later save.
+
+        Args:
+            dock: The CostDock containing the spreadsheet
+        """
+        if not self.current_bid_id or not self.current_project_id:
+            return
+
+        if not hasattr(dock, 'spreadsheet') or not hasattr(dock, 'sheet_name'):
+            return
+
+        try:
+            data_dict = dock.spreadsheet.get_data_as_dict()
+            if not data_dict:
+                return
+
+            cell_meta_dict = dock.spreadsheet.model.get_all_cell_meta()
+            sheet_meta = dock.spreadsheet.model.get_sheet_meta()
+
+            # Use sheet name as the spreadsheet type for caching
+            self._spreadsheet_cache.mark_dirty(
+                project_id=self.current_project_id,
+                bid_id=self.current_bid_id,
+                spreadsheet_type=dock.sheet_name,
+                data_dict=data_dict,
+                cell_meta_dict=cell_meta_dict,
+                sheet_meta=sheet_meta
+            )
+        except Exception as e:
+            logger.error(f"Failed to cache custom spreadsheet {dock.sheet_name}: {e}", exc_info=True)
+
+    def _load_custom_spreadsheet_from_shotgrid(self, dock):
+        """Load custom spreadsheet data from ShotGrid.
+
+        Args:
+            dock: The CostDock containing the spreadsheet
+        """
+        if not self.current_bid_id or not hasattr(dock, 'sheet_name'):
+            return
+
+        try:
+            data_dict, cell_meta_dict, sheet_meta = self.sg_session.load_spreadsheet_by_name(
+                self.current_bid_id,
+                dock.sheet_name
+            )
+
+            if data_dict:
+                dock.spreadsheet.load_data_from_dict(data_dict)
+
+                if cell_meta_dict:
+                    dock.spreadsheet.model.load_cell_meta(cell_meta_dict)
+
+                if sheet_meta:
+                    dock.spreadsheet.model.load_sheet_meta(sheet_meta)
+                    dock.spreadsheet.apply_saved_sizes()
+
+                logger.info(f"Loaded custom spreadsheet '{dock.sheet_name}' from ShotGrid ({len(data_dict)} cells)")
+        except Exception as e:
+            logger.error(f"Failed to load custom spreadsheet {dock.sheet_name}: {e}", exc_info=True)
+
+    def _load_custom_spreadsheets_for_bid(self):
+        """Load all custom spreadsheets for the current bid from ShotGrid."""
+        if not self.current_bid_id:
+            return
+
+        try:
+            # Get all spreadsheets for this bid
+            all_spreadsheets = self.sg_session.get_all_spreadsheets_for_bid(self.current_bid_id)
+
+            # Filter to only custom spreadsheets (those with "Sheet" prefix in code)
+            custom_sheets = [
+                s for s in all_spreadsheets
+                if s.get("code", "").startswith("Sheet")
+            ]
+
+            # Sort by name to maintain order
+            custom_sheets.sort(key=lambda s: s.get("code", ""))
+
+            # Create docks for each custom spreadsheet
+            for sheet_data in custom_sheets:
+                sheet_name = sheet_data.get("code", "")
+                if sheet_name:
+                    # Extract the number from the sheet name to update counter
+                    try:
+                        num = int(sheet_name.replace("Sheet", ""))
+                        if num > self._custom_spreadsheet_counter:
+                            self._custom_spreadsheet_counter = num
+                    except ValueError:
+                        pass
+
+                    self._add_custom_spreadsheet(sheet_name=sheet_name, load_from_sg=True)
+
+            logger.info(f"Loaded {len(custom_sheets)} custom spreadsheets for bid {self.current_bid_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to load custom spreadsheets: {e}", exc_info=True)
+
+    def _clear_custom_spreadsheets(self):
+        """Remove all custom spreadsheet docks."""
+        for dock in self._custom_spreadsheet_docks:
+            self.removeDockWidget(dock)
+            dock.deleteLater()
+        self._custom_spreadsheet_docks.clear()
+        self._custom_spreadsheet_counter = 0
 
     def _apply_costs_panel_style(self):
         """Apply a purple/violet theme to specific elements in the Costs panel."""
@@ -821,6 +943,9 @@ class CostsTab(QtWidgets.QMainWindow):
             logger.info(f"Committing cached spreadsheet changes for bid {self.current_bid_id} before switching...")
             self._spreadsheet_cache.commit_for_bid(self.current_bid_id, parent_widget=self)
 
+        # Clear custom spreadsheets from previous bid
+        self._clear_custom_spreadsheets()
+
         self.current_bid_data = bid_data
         self.current_bid_id = bid_data.get('id') if bid_data else None
         self.current_project_id = project_id
@@ -905,6 +1030,10 @@ class CostsTab(QtWidgets.QMainWindow):
             # Load Total Cost spreadsheet data from ShotGrid
             logger.info("Loading Total Cost spreadsheet data...")
             self._load_total_cost_spreadsheet_from_shotgrid()
+
+            # Load custom spreadsheets for this bid
+            logger.info("Loading custom spreadsheets...")
+            self._load_custom_spreadsheets_for_bid()
 
             # Update Total Cost summary with initial totals
             QtCore.QTimer.singleShot(100, self._update_total_cost_summary)
