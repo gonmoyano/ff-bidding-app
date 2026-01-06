@@ -3646,9 +3646,11 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         """Get sheet-level metadata for persistence.
 
         Returns:
-            dict: Sheet metadata with column_widths, row_heights, merged_cells, freeze settings
+            dict: Sheet metadata with row/col counts, column_widths, row_heights, merged_cells, freeze settings
         """
         return {
+            'row_count': self._rows,
+            'col_count': self._cols,
             'column_widths': {str(k): v for k, v in self._column_widths.items()},
             'row_heights': {str(k): v for k, v in self._row_heights.items()},
             'merged_cells': self._merged_cells,
@@ -3674,8 +3676,18 @@ class SpreadsheetModel(QtCore.QAbstractTableModel):
         """Load sheet-level metadata from persistence.
 
         Args:
-            sheet_meta: Dict with column_widths, row_heights, merged_cells, freeze settings
+            sheet_meta: Dict with row/col counts, column_widths, row_heights, merged_cells, freeze settings
         """
+        # Row and column counts - resize the model if needed
+        saved_rows = sheet_meta.get('row_count')
+        saved_cols = sheet_meta.get('col_count')
+        if saved_rows is not None and saved_rows > self._rows:
+            self._rows = saved_rows
+            self._all_rows = list(range(saved_rows))
+            self._visible_rows = list(range(saved_rows))
+        if saved_cols is not None and saved_cols > self._cols:
+            self._cols = saved_cols
+
         # Column widths
         col_widths = sheet_meta.get('column_widths', {})
         self._column_widths = {int(k): v for k, v in col_widths.items()}

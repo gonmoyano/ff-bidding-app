@@ -533,9 +533,19 @@ class CostsTab(QtWidgets.QMainWindow):
                     dock.spreadsheet.model.load_sheet_meta(sheet_meta)
                     dock.spreadsheet.apply_saved_sizes()
 
-                logger.info(f"  Successfully loaded '{dock.sheet_name}' ({len(data_dict)} cells)")
+                # Update tracked row/column counts after loading
+                dock._last_row_count = dock.spreadsheet.model.rowCount()
+                dock._last_col_count = dock.spreadsheet.model.columnCount()
+
+                logger.info(f"  Successfully loaded '{dock.sheet_name}' ({len(data_dict)} cells, {dock._last_row_count} rows, {dock._last_col_count} cols)")
             else:
-                logger.info(f"  No data found for '{dock.sheet_name}'")
+                # Still load sheet_meta even if no cell data (for row/col counts)
+                if sheet_meta:
+                    dock.spreadsheet.model.load_sheet_meta(sheet_meta)
+                    dock.spreadsheet.apply_saved_sizes()
+                    dock._last_row_count = dock.spreadsheet.model.rowCount()
+                    dock._last_col_count = dock.spreadsheet.model.columnCount()
+                logger.info(f"  No cell data found for '{dock.sheet_name}'")
         except Exception as e:
             logger.error(f"Failed to load custom spreadsheet {sheet_name}: {e}", exc_info=True)
         finally:
