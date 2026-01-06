@@ -169,7 +169,7 @@ class CostsTab(QtWidgets.QMainWindow):
         self.add_spreadsheet_btn = QtWidgets.QToolButton()
         self.add_spreadsheet_btn.setText("+ Add Spreadsheet")
         self.add_spreadsheet_btn.setToolTip("Add a new spreadsheet tab")
-        self.add_spreadsheet_btn.clicked.connect(self._add_custom_spreadsheet)
+        self.add_spreadsheet_btn.clicked.connect(lambda: self._add_custom_spreadsheet())
         self.toolbar.addWidget(self.add_spreadsheet_btn)
 
         # Add toolbar to the top
