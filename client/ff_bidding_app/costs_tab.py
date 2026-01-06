@@ -326,10 +326,21 @@ class CostsTab(QtWidgets.QMainWindow):
             currency_symbol, currency_position = parse_sg_currency(sg_currency_value, default_symbol or "$")
             spreadsheet.set_currency_settings(currency_symbol, currency_position)
 
-        # Set up formula evaluator for this spreadsheet
+        # Set up formula evaluator for this spreadsheet with cross-tab support
+        # Include built-in tabs (Shot Costs, Asset Costs) for cross-tab references
+        sheet_models = {sheet_name: spreadsheet.model}
+
+        # Add Shot Costs model if available
+        if hasattr(self, 'shots_cost_widget') and hasattr(self.shots_cost_widget, 'model'):
+            sheet_models['Shot Costs'] = self.shots_cost_widget.model
+
+        # Add Asset Costs model if available
+        if hasattr(self, 'asset_cost_widget') and hasattr(self.asset_cost_widget, 'model'):
+            sheet_models['Asset Costs'] = self.asset_cost_widget.model
+
         formula_evaluator = FormulaEvaluator(
             table_model=spreadsheet.model,
-            sheet_models={sheet_name: spreadsheet.model}
+            sheet_models=sheet_models
         )
         spreadsheet.set_formula_evaluator(formula_evaluator)
 
