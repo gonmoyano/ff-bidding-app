@@ -74,7 +74,7 @@ class SpreadsheetCache:
         Args:
             project_id: ShotGrid project ID
             bid_id: ShotGrid bid ID
-            spreadsheet_type: Type of spreadsheet (e.g., 'misc', 'total_cost')
+            spreadsheet_type: Type of spreadsheet (e.g., 'Sheet1', 'Sheet2')
 
         Returns:
             Unique cache key string
@@ -239,26 +239,15 @@ class SpreadsheetCache:
             try:
                 spreadsheet_type = cache_entry['spreadsheet_type']
 
-                # Use name-based save for custom spreadsheets (Sheet1, Sheet2, etc.)
-                if spreadsheet_type.startswith("Sheet"):
-                    self._sg_session.save_spreadsheet_by_name(
-                        project_id=cache_entry['project_id'],
-                        bid_id=cache_entry['bid_id'],
-                        spreadsheet_name=spreadsheet_type,
-                        data_dict=cache_entry['data_dict'],
-                        cell_meta_dict=cache_entry.get('cell_meta_dict', {}),
-                        sheet_meta=cache_entry.get('sheet_meta', {})
-                    )
-                else:
-                    # Use type-based save for built-in spreadsheets (misc, total_cost)
-                    self._sg_session.save_spreadsheet_data(
-                        project_id=cache_entry['project_id'],
-                        bid_id=cache_entry['bid_id'],
-                        spreadsheet_type=spreadsheet_type,
-                        data_dict=cache_entry['data_dict'],
-                        cell_meta_dict=cache_entry.get('cell_meta_dict', {}),
-                        sheet_meta=cache_entry.get('sheet_meta', {})
-                    )
+                # Use name-based save for all spreadsheets
+                self._sg_session.save_spreadsheet_by_name(
+                    project_id=cache_entry['project_id'],
+                    bid_id=cache_entry['bid_id'],
+                    spreadsheet_name=spreadsheet_type,
+                    data_dict=cache_entry['data_dict'],
+                    cell_meta_dict=cache_entry.get('cell_meta_dict', {}),
+                    sheet_meta=cache_entry.get('sheet_meta', {})
+                )
 
                 # Mark as clean
                 self._dirty_keys.discard(cache_key)

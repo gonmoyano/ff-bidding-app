@@ -251,10 +251,6 @@ class CostsTab(QtWidgets.QMainWindow):
             return self.shots_cost_dock
         if hasattr(self, 'asset_cost_dock') and self.asset_cost_dock.windowTitle() == title:
             return self.asset_cost_dock
-        if hasattr(self, 'misc_cost_dock') and self.misc_cost_dock.windowTitle() == title:
-            return self.misc_cost_dock
-        if hasattr(self, 'total_cost_dock') and self.total_cost_dock.windowTitle() == title:
-            return self.total_cost_dock
 
         return None
 
@@ -330,7 +326,7 @@ class CostsTab(QtWidgets.QMainWindow):
             currency_symbol, currency_position = parse_sg_currency(sg_currency_value, default_symbol or "$")
             spreadsheet.set_currency_settings(currency_symbol, currency_position)
 
-        # Set up formula evaluator for this spreadsheet (same as Misc)
+        # Set up formula evaluator for this spreadsheet
         formula_evaluator = FormulaEvaluator(
             table_model=spreadsheet.model,
             sheet_models={sheet_name: spreadsheet.model}
@@ -468,11 +464,8 @@ class CostsTab(QtWidgets.QMainWindow):
             # Get all spreadsheets for this bid
             all_spreadsheets = self.sg_session.get_all_spreadsheets_for_bid(self.current_bid_id)
 
-            # Filter to only custom spreadsheets (those without sg_type or not 'misc'/'total_cost')
-            custom_sheets = [
-                s for s in all_spreadsheets
-                if s.get("sg_type") not in ('misc', 'total_cost')
-            ]
+            # All spreadsheets for this bid are now custom spreadsheets
+            custom_sheets = all_spreadsheets
 
             # Parse sheet_meta to get tab positions for sorting
             def get_tab_position(sheet_data):
@@ -589,30 +582,12 @@ class CostsTab(QtWidgets.QMainWindow):
             self
         )
 
-        # Miscellaneous Costs
-        self.misc_cost_dock = CostDock(
-            "Misc",
-            self._create_misc_cost_widget(),
-            self
-        )
-
-        # Total Cost
-        self.total_cost_dock = CostDock(
-            "Total Cost",
-            self._create_total_cost_widget(),
-            self
-        )
-
-        # Add docks as tabs - Order: Shots Cost -> Assets Cost -> Misc Cost -> Total Cost
+        # Add docks as tabs - Order: Shots Cost -> Assets Cost
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.shots_cost_dock)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.asset_cost_dock)
-        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.misc_cost_dock)
-        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.total_cost_dock)
 
         # Create tabs instead of vertical stacking
         self.tabifyDockWidget(self.shots_cost_dock, self.asset_cost_dock)
-        self.tabifyDockWidget(self.asset_cost_dock, self.misc_cost_dock)
-        self.tabifyDockWidget(self.misc_cost_dock, self.total_cost_dock)
 
         # Show the first tab by default
         self.shots_cost_dock.raise_()
@@ -722,151 +697,6 @@ class CostsTab(QtWidgets.QMainWindow):
 
         return self.asset_cost_widget
 
-    def _create_misc_cost_widget(self):
-        """Create the Misc widget with full Google Sheets-style spreadsheet."""
-        # Create the spreadsheet widget (defaults to 10 rows)
-        self.misc_cost_spreadsheet = SpreadsheetWidget(
-            cols=10,
-            app_settings=self.app_settings,
-            parent=self
-        )
-
-        logger.info("Created Misc spreadsheet")
-
-        return self.misc_cost_spreadsheet
-
-    def _create_total_cost_widget(self):
-        """Create the Total Cost widget with summary table."""
-        widget = QtWidgets.QWidget()
-        layout = QtWidgets.QVBoxLayout(widget)
-        layout.setContentsMargins(10, 10, 10, 10)
-
-        # Title
-        title = QtWidgets.QLabel("Total Cost Summary")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; padding: 5px;")
-        layout.addWidget(title)
-
-        # Create summary table using SpreadsheetWidget for formula support
-        self.total_cost_spreadsheet = SpreadsheetWidget(
-            rows=5,  # Header + 4 data rows
-            cols=2,
-            app_settings=self.app_settings,
-            parent=self
-        )
-
-        # Initialize column headers
-        self.total_cost_spreadsheet.set_cell_value(0, 0, "Category")
-        self.total_cost_spreadsheet.set_cell_value(0, 1, "Amount")
-
-        # Initialize row labels (Category column)
-        row_labels = ["Shot Costs", "Asset Costs", "Misc", "Total Cost"]
-        for row, label in enumerate(row_labels, start=1):
-            self.total_cost_spreadsheet.set_cell_value(row, 0, label)
-
-        # Initialize Amount column with default values
-        # Values are updated via _update_total_cost_summary()
-        self.total_cost_spreadsheet.set_cell_value(1, 1, 0)  # Shot Costs
-        self.total_cost_spreadsheet.set_cell_value(2, 1, 0)  # Asset Costs
-        self.total_cost_spreadsheet.set_cell_value(3, 1, 0)  # Misc
-        # Total Cost formula: sum of B2:B4
-        self.total_cost_spreadsheet.set_cell_value(4, 1, "=B2+B3+B4")
-
-        # Set column widths
-        self.total_cost_spreadsheet.table_view.setColumnWidth(0, 200)
-        self.total_cost_spreadsheet.table_view.setColumnWidth(1, 150)
-
-        # Adjust table height to fit content
-        self.total_cost_spreadsheet.setMaximumHeight(250)
-
-        layout.addWidget(self.total_cost_spreadsheet)
-        layout.addStretch()
-
-        logger.info("Created Total Cost Summary spreadsheet")
-
-        return widget
-
-    def _update_total_cost_summary(self):
-        """Update the Total Cost summary table with live totals from each dock.
-
-        Only updates cells that don't contain user-entered formulas.
-        This preserves cross-tab references like =Misc!A1 that the user may have set.
-        """
-        try:
-            # Get Shot Costs total
-            shot_total = 0.0
-            if hasattr(self, 'shots_cost_totals_wrapper') and hasattr(self, 'shots_cost_widget'):
-                if hasattr(self.shots_cost_widget, 'model') and self.shots_cost_widget.model:
-                    # Find the Price column index (_calc_price)
-                    try:
-                        price_col_idx = self.shots_cost_widget.model.column_fields.index("_calc_price")
-                        total_str = self.shots_cost_totals_wrapper.get_total(price_col_idx)
-                        # Parse the total string (format: "$1,234.56")
-                        shot_total = self._parse_currency_value(total_str)
-                    except (ValueError, AttributeError):
-                        pass
-
-            # Get Asset Costs total
-            asset_total = 0.0
-            if hasattr(self, 'asset_cost_totals_wrapper') and hasattr(self, 'asset_cost_widget'):
-                if hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model:
-                    # Find the Price column index (_calc_price)
-                    try:
-                        price_col_idx = self.asset_cost_widget.model.column_fields.index("_calc_price")
-                        total_str = self.asset_cost_totals_wrapper.get_total(price_col_idx)
-                        # Parse the total string (format: "$1,234.56")
-                        asset_total = self._parse_currency_value(total_str)
-                    except (ValueError, AttributeError):
-                        pass
-
-            # Get Misc total from spreadsheet
-            misc_total = 0.0
-            if hasattr(self, 'misc_cost_spreadsheet') and hasattr(self.misc_cost_spreadsheet, 'model'):
-                # Sum all values in column C (index 2) which contains formulas
-                # Starting from row 2 (index 1) to skip header
-                try:
-                    for row in range(1, self.misc_cost_spreadsheet.model.rowCount()):
-                        value = self.misc_cost_spreadsheet.get_cell_value(row, 2)  # Column C
-                        if value:
-                            parsed_value = self._parse_currency_value(str(value))
-                            misc_total += parsed_value
-                except (ValueError, AttributeError):
-                    pass
-
-            # Update the summary spreadsheet (rows 1-3, column 1)
-            # Only update cells that don't have user-entered formulas
-            # This preserves cross-tab references like =Misc!A1
-            model = self.total_cost_spreadsheet.model
-
-            # Shot Costs (B2 = row 1, col 1) - only update if no formula
-            if not model.get_cell_formula(1, 1):
-                self.total_cost_spreadsheet.set_cell_value(1, 1, shot_total)
-            else:
-                # Clear cache to force formula re-evaluation
-                model._evaluated_cache.pop((1, 1), None)
-
-            # Asset Costs (B3 = row 2, col 1) - only update if no formula
-            if not model.get_cell_formula(2, 1):
-                self.total_cost_spreadsheet.set_cell_value(2, 1, asset_total)
-            else:
-                # Clear cache to force formula re-evaluation
-                model._evaluated_cache.pop((2, 1), None)
-
-            # Misc (B4 = row 3, col 1) - only update if no formula
-            if not model.get_cell_formula(3, 1):
-                self.total_cost_spreadsheet.set_cell_value(3, 1, misc_total)
-            else:
-                # Clear cache to force formula re-evaluation
-                model._evaluated_cache.pop((3, 1), None)
-
-            # Total Cost (B5 = row 4, col 1) - always has formula, just clear cache
-            model._evaluated_cache.pop((4, 1), None)
-
-            # Refresh the view to show updated values
-            model.layoutChanged.emit()
-
-        except Exception as e:
-            logger.error(f"Error updating Total Cost summary: {e}", exc_info=True)
-
     def _parse_currency_value(self, value_str):
         """Parse a currency string and return the numeric value.
 
@@ -908,7 +738,7 @@ class CostsTab(QtWidgets.QMainWindow):
             return f"{currency_symbol}{value:,.2f}"
 
     def _on_shots_data_changed(self):
-        """Handle data changes in the Shots Cost model - recalculate totals and update summary."""
+        """Handle data changes in the Shots Cost model - recalculate totals."""
         # Clear cross-tab formula caches so references to ShotCosts update
         self._clear_cross_tab_caches()
 
@@ -919,13 +749,11 @@ class CostsTab(QtWidgets.QMainWindow):
                     price_col_idx = self.shots_cost_widget.model.column_fields.index("_calc_price")
                     # Recalculate totals
                     self.shots_cost_totals_wrapper.calculate_totals(columns=[price_col_idx], skip_first_col=True)
-                    # Update Total Cost summary
-                    self._update_total_cost_summary()
                 except (ValueError, AttributeError):
                     pass
 
     def _on_assets_data_changed(self):
-        """Handle data changes in the Assets Cost model - recalculate totals and update summary."""
+        """Handle data changes in the Assets Cost model - recalculate totals."""
         # Clear cross-tab formula caches so references to AssetCosts update
         self._clear_cross_tab_caches()
 
@@ -936,8 +764,6 @@ class CostsTab(QtWidgets.QMainWindow):
                     price_col_idx = self.asset_cost_widget.model.column_fields.index("_calc_price")
                     # Recalculate totals
                     self.asset_cost_totals_wrapper.calculate_totals(columns=[price_col_idx], skip_first_col=True)
-                    # Update Total Cost summary
-                    self._update_total_cost_summary()
                 except (ValueError, AttributeError):
                     pass
 
@@ -958,99 +784,20 @@ class CostsTab(QtWidgets.QMainWindow):
         logger.info(f"_clear_cross_tab_caches: Starting (source={type(source).__name__ if source else None})")
 
         try:
-            # Clear Misc spreadsheet cache (only if not the source)
-            if hasattr(self, 'misc_cost_spreadsheet') and hasattr(self.misc_cost_spreadsheet, 'model'):
-                model = self.misc_cost_spreadsheet.model
-                if model != source and hasattr(model, '_evaluated_cache'):
-                    logger.info(f"_clear_cross_tab_caches: Clearing Misc cache (had {len(model._evaluated_cache)} entries)")
-                    model._evaluated_cache.clear()
-                    # Emit dataChanged for all cells to force repaint
-                    top_left = model.index(0, 0)
-                    bottom_right = model.index(model.rowCount() - 1, model.columnCount() - 1)
-                    model.dataChanged.emit(top_left, bottom_right, [Qt.DisplayRole])
-
-            # Clear TotalCost spreadsheet cache (only if not the source)
-            if hasattr(self, 'total_cost_spreadsheet') and hasattr(self.total_cost_spreadsheet, 'model'):
-                model = self.total_cost_spreadsheet.model
-                if model != source and hasattr(model, '_evaluated_cache'):
-                    logger.info(f"_clear_cross_tab_caches: Clearing TotalCost cache (had {len(model._evaluated_cache)} entries)")
-                    model._evaluated_cache.clear()
-                    # Emit dataChanged for all cells to force repaint
-                    top_left = model.index(0, 0)
-                    bottom_right = model.index(model.rowCount() - 1, model.columnCount() - 1)
-                    model.dataChanged.emit(top_left, bottom_right, [Qt.DisplayRole])
+            # Clear custom spreadsheet caches (only if not the source)
+            for dock in self._custom_spreadsheet_docks:
+                if hasattr(dock, 'spreadsheet') and hasattr(dock.spreadsheet, 'model'):
+                    model = dock.spreadsheet.model
+                    if model != source and hasattr(model, '_evaluated_cache'):
+                        logger.info(f"_clear_cross_tab_caches: Clearing {dock.sheet_name} cache (had {len(model._evaluated_cache)} entries)")
+                        model._evaluated_cache.clear()
+                        # Emit dataChanged for all cells to force repaint
+                        top_left = model.index(0, 0)
+                        bottom_right = model.index(model.rowCount() - 1, model.columnCount() - 1)
+                        model.dataChanged.emit(top_left, bottom_right, [Qt.DisplayRole])
         finally:
             self._clearing_caches = False
             logger.info("_clear_cross_tab_caches: Done")
-
-    def _on_misc_data_changed(self):
-        """Handle data changes in the Misc Cost spreadsheet - update summary and cache."""
-        # Update Total Cost summary
-        self._update_total_cost_summary()
-
-        # Mark spreadsheet as dirty in cache (will be saved on bid change or app close)
-        if self.current_bid_id and self.current_project_id:
-            self._cache_misc_spreadsheet()
-
-    def _on_total_cost_data_changed(self):
-        """Handle data changes in the Total Cost spreadsheet - cache for later save."""
-        # Mark spreadsheet as dirty in cache (will be saved on bid change or app close)
-        if self.current_bid_id and self.current_project_id:
-            self._cache_total_cost_spreadsheet()
-
-    def _cache_misc_spreadsheet(self):
-        """Cache Misc Cost spreadsheet data for deferred ShotGrid save."""
-        if not self.current_bid_id or not self.current_project_id:
-            return
-
-        if not hasattr(self, 'misc_cost_spreadsheet'):
-            return
-
-        try:
-            data_dict = self.misc_cost_spreadsheet.get_data_as_dict()
-            if not data_dict:
-                return
-
-            cell_meta_dict = self.misc_cost_spreadsheet.model.get_all_cell_meta()
-            sheet_meta = self.misc_cost_spreadsheet.model.get_sheet_meta()
-
-            self._spreadsheet_cache.mark_dirty(
-                project_id=self.current_project_id,
-                bid_id=self.current_bid_id,
-                spreadsheet_type="misc",
-                data_dict=data_dict,
-                cell_meta_dict=cell_meta_dict,
-                sheet_meta=sheet_meta
-            )
-        except Exception as e:
-            logger.error(f"Failed to cache Misc spreadsheet: {e}", exc_info=True)
-
-    def _cache_total_cost_spreadsheet(self):
-        """Cache Total Cost spreadsheet data for deferred ShotGrid save."""
-        if not self.current_bid_id or not self.current_project_id:
-            return
-
-        if not hasattr(self, 'total_cost_spreadsheet'):
-            return
-
-        try:
-            data_dict = self.total_cost_spreadsheet.get_data_as_dict()
-            if not data_dict:
-                return
-
-            cell_meta_dict = self.total_cost_spreadsheet.model.get_all_cell_meta()
-            sheet_meta = self.total_cost_spreadsheet.model.get_sheet_meta()
-
-            self._spreadsheet_cache.mark_dirty(
-                project_id=self.current_project_id,
-                bid_id=self.current_bid_id,
-                spreadsheet_type="total_cost",
-                data_dict=data_dict,
-                cell_meta_dict=cell_meta_dict,
-                sheet_meta=sheet_meta
-            )
-        except Exception as e:
-            logger.error(f"Failed to cache Total Cost spreadsheet: {e}", exc_info=True)
 
     def _setup_cross_tab_formulas(self):
         """Set up cross-tab formula references between cost sheets."""
@@ -1066,42 +813,7 @@ class CostsTab(QtWidgets.QMainWindow):
         if hasattr(self, 'asset_cost_widget') and hasattr(self.asset_cost_widget, 'model'):
             sheet_models['Asset Costs'] = self.asset_cost_widget.model
 
-        # Add Misc Costs spreadsheet model
-        if hasattr(self, 'misc_cost_spreadsheet') and hasattr(self.misc_cost_spreadsheet, 'model'):
-            sheet_models['Misc'] = self.misc_cost_spreadsheet.model
-
-        # Create formula evaluator with cross-tab support
-        self.misc_cost_formula_evaluator = FormulaEvaluator(
-            table_model=self.misc_cost_spreadsheet.model,
-            sheet_models=sheet_models
-        )
-
-        # Set the formula evaluator on the spreadsheet
-        self.misc_cost_spreadsheet.set_formula_evaluator(self.misc_cost_formula_evaluator)
-
-        # Connect dataChanged signal
-        self.misc_cost_spreadsheet.model.dataChanged.connect(self._on_misc_data_changed)
-
-        # Set up formula evaluator for Total Cost Summary spreadsheet
-        if hasattr(self, 'total_cost_spreadsheet') and hasattr(self.total_cost_spreadsheet, 'model'):
-            # Add Total Cost Summary model to sheet_models
-            sheet_models['TotalCost'] = self.total_cost_spreadsheet.model
-
-            # Create formula evaluator with cross-tab support for Total Cost Summary
-            self.total_cost_formula_evaluator = FormulaEvaluator(
-                table_model=self.total_cost_spreadsheet.model,
-                sheet_models=sheet_models
-            )
-
-            # Set the formula evaluator on the spreadsheet
-            self.total_cost_spreadsheet.set_formula_evaluator(self.total_cost_formula_evaluator)
-
-            # Connect dataChanged signal for Total Cost persistence
-            self.total_cost_spreadsheet.model.dataChanged.connect(self._on_total_cost_data_changed)
-
-            logger.info("Set up cross-tab formula references for Total Cost Summary")
-
-        logger.info("Set up cross-tab formula references for all cost sheets")
+        logger.info("Set up cross-tab formula references for cost sheets")
 
     def set_bid(self, bid_data, project_id):
         """Set the current bid and update all cost views.
@@ -1145,11 +857,10 @@ class CostsTab(QtWidgets.QMainWindow):
             self.asset_cost_totals_wrapper.set_bid_id(self.current_bid_id)
             self.asset_cost_totals_wrapper.set_currency_symbol(currency_symbol)
 
-        # Update currency settings on spreadsheet widgets
-        if hasattr(self, 'misc_cost_spreadsheet'):
-            self.misc_cost_spreadsheet.set_currency_settings(currency_symbol, currency_position)
-        if hasattr(self, 'total_cost_spreadsheet'):
-            self.total_cost_spreadsheet.set_currency_settings(currency_symbol, currency_position)
+        # Update currency settings on custom spreadsheet widgets
+        for dock in self._custom_spreadsheet_docks:
+            if hasattr(dock, 'spreadsheet'):
+                dock.spreadsheet.set_currency_settings(currency_symbol, currency_position)
 
         # Update read-only linked entity references for cost widgets
         # Need to fetch full entity data since link fields only contain type/id
@@ -1202,22 +913,10 @@ class CostsTab(QtWidgets.QMainWindow):
             logger.info("About to refresh Asset Cost...")
             self._refresh_asset_cost()
             logger.info("Finished refreshing Asset Cost")
-            self._refresh_total_cost()
-
-            # Load Misc spreadsheet data from ShotGrid
-            logger.info("Loading Misc spreadsheet data...")
-            self._load_misc_spreadsheet_from_shotgrid()
-
-            # Load Total Cost spreadsheet data from ShotGrid
-            logger.info("Loading Total Cost spreadsheet data...")
-            self._load_total_cost_spreadsheet_from_shotgrid()
 
             # Load custom spreadsheets for this bid
             logger.info("Loading custom spreadsheets...")
             self._load_custom_spreadsheets_for_bid()
-
-            # Update Total Cost summary with initial totals
-            QtCore.QTimer.singleShot(100, self._update_total_cost_summary)
         else:
             # Clear all cost views
             if hasattr(self, 'shots_cost_widget'):
@@ -1226,10 +925,6 @@ class CostsTab(QtWidgets.QMainWindow):
             if hasattr(self, 'asset_cost_widget'):
                 self.asset_cost_widget.load_bidding_scenes([])
                 self.asset_cost_widget.set_readonly_linked_entity(None)
-            # Initialize Misc spreadsheet with defaults (empty)
-            self._initialize_misc_spreadsheet_defaults()
-            # Initialize Total Cost spreadsheet with defaults
-            self._initialize_total_cost_spreadsheet_defaults()
 
     def refresh_for_rate_card_change(self):
         """Refresh all cost tables when the rate card changes.
@@ -1291,10 +986,6 @@ class CostsTab(QtWidgets.QMainWindow):
                 except (ValueError, AttributeError):
                     pass
 
-        # Step 5: Update Total Cost summary
-        logger.info("Step 5: Updating Total Cost summary...")
-        self._update_total_cost_summary()
-
         logger.info("Rate Card refresh complete")
         logger.info("=" * 80)
 
@@ -1334,11 +1025,10 @@ class CostsTab(QtWidgets.QMainWindow):
         if hasattr(self, 'asset_cost_totals_wrapper'):
             self.asset_cost_totals_wrapper.set_currency_symbol(currency_symbol)
 
-        # Update currency settings on spreadsheet widgets
-        if hasattr(self, 'misc_cost_spreadsheet'):
-            self.misc_cost_spreadsheet.set_currency_settings(currency_symbol, currency_position)
-        if hasattr(self, 'total_cost_spreadsheet'):
-            self.total_cost_spreadsheet.set_currency_settings(currency_symbol, currency_position)
+        # Update currency settings on custom spreadsheet widgets
+        for dock in self._custom_spreadsheet_docks:
+            if hasattr(dock, 'spreadsheet'):
+                dock.spreadsheet.set_currency_settings(currency_symbol, currency_position)
 
         # Recalculate totals in Shots Cost wrapper (will use updated currency)
         if hasattr(self, 'shots_cost_totals_wrapper') and hasattr(self, 'shots_cost_widget'):
@@ -1361,9 +1051,6 @@ class CostsTab(QtWidgets.QMainWindow):
                     self.asset_cost_widget.table_view.viewport().update()
                 except (ValueError, AttributeError):
                     pass
-
-        # Update Total Cost summary with new currency formatting
-        self._update_total_cost_summary()
 
         logger.info("Currency formatting refreshed")
 
@@ -2131,12 +1818,6 @@ class CostsTab(QtWidgets.QMainWindow):
         else:
             self.asset_cost_widget.load_bidding_scenes([])
 
-    def _refresh_total_cost(self):
-        """Refresh the total cost view."""
-        logger.info("Refreshing total cost view")
-        # TODO: Implement actual total cost calculation
-        pass
-
     def save_layout(self):
         """Save the current dock layout to settings."""
         settings = QtCore.QSettings()
@@ -2159,234 +1840,21 @@ class CostsTab(QtWidgets.QMainWindow):
         settings = QtCore.QSettings()
         settings.remove(self.SETTINGS_KEY)
 
-        # Remove all docks
-        for dock in (self.shots_cost_dock, self.asset_cost_dock, self.misc_cost_dock, self.total_cost_dock):
+        # Remove built-in docks
+        for dock in (self.shots_cost_dock, self.asset_cost_dock):
             self.removeDockWidget(dock)
 
         # Re-add in default positions (as tabs)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.shots_cost_dock)
         self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.asset_cost_dock)
-        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.misc_cost_dock)
-        self.addDockWidget(QtCore.Qt.LeftDockWidgetArea, self.total_cost_dock)
 
         # Create tabs
         self.tabifyDockWidget(self.shots_cost_dock, self.asset_cost_dock)
-        self.tabifyDockWidget(self.asset_cost_dock, self.misc_cost_dock)
-        self.tabifyDockWidget(self.misc_cost_dock, self.total_cost_dock)
 
         # Show the first tab by default
         self.shots_cost_dock.raise_()
 
         logger.info("Reset costs dock layout to default")
-
-    # ------------------------------------------------------------------
-    # Spreadsheet ShotGrid Persistence
-    # ------------------------------------------------------------------
-
-    def _save_misc_spreadsheet_to_shotgrid(self):
-        """Save Misc Cost spreadsheet data to ShotGrid including formatting."""
-        if not self.current_bid_id or not self.current_project_id:
-            logger.warning("Cannot save Misc spreadsheet - no bid selected")
-            return
-
-        if not hasattr(self, 'misc_cost_spreadsheet'):
-            return
-
-        try:
-            # Get the spreadsheet data
-            data_dict = self.misc_cost_spreadsheet.get_data_as_dict()
-
-            if not data_dict:
-                logger.debug("No data to save for Misc spreadsheet")
-                return
-
-            # Get cell metadata and sheet metadata for formatting persistence
-            cell_meta_dict = self.misc_cost_spreadsheet.model.get_all_cell_meta()
-            sheet_meta = self.misc_cost_spreadsheet.model.get_sheet_meta()
-
-            # Save to ShotGrid with metadata
-            self.sg_session.save_spreadsheet_data(
-                project_id=self.current_project_id,
-                bid_id=self.current_bid_id,
-                spreadsheet_type="misc",
-                data_dict=data_dict,
-                cell_meta_dict=cell_meta_dict,
-                sheet_meta=sheet_meta
-            )
-            logger.info(f"Saved Misc spreadsheet data to ShotGrid ({len(data_dict)} cells, {len(cell_meta_dict)} formatted)")
-
-        except Exception as e:
-            logger.error(f"Failed to save Misc spreadsheet to ShotGrid: {e}", exc_info=True)
-
-    def _load_misc_spreadsheet_from_shotgrid(self):
-        """Load Misc Cost spreadsheet data from ShotGrid including formatting, or initialize with defaults."""
-        if not hasattr(self, 'misc_cost_spreadsheet'):
-            return
-
-        # Always clear and initialize first
-        self._initialize_misc_spreadsheet_defaults()
-
-        if not self.current_bid_id:
-            return
-
-        try:
-            # Load from ShotGrid (now returns tuple with metadata)
-            result = self.sg_session.load_spreadsheet_data(
-                bid_id=self.current_bid_id,
-                spreadsheet_type="misc"
-            )
-
-            # Handle both old (dict only) and new (tuple) return formats
-            if isinstance(result, tuple):
-                data_dict, cell_meta_dict, sheet_meta = result
-            else:
-                data_dict = result
-                cell_meta_dict = {}
-                sheet_meta = {}
-
-            if data_dict:
-                self.misc_cost_spreadsheet.load_data_from_dict(data_dict)
-
-                # Load cell metadata if present
-                if cell_meta_dict:
-                    self.misc_cost_spreadsheet.model.load_cell_meta(cell_meta_dict)
-
-                # Load sheet metadata if present (column widths, row heights, merged cells)
-                if sheet_meta:
-                    self.misc_cost_spreadsheet.model.load_sheet_meta(sheet_meta)
-                    # Apply saved column/row sizes to view
-                    self.misc_cost_spreadsheet.apply_saved_sizes()
-
-                logger.info(f"Loaded Misc spreadsheet data from ShotGrid ({len(data_dict)} cells, {len(cell_meta_dict)} formatted)")
-            else:
-                logger.info("No Misc spreadsheet data found in ShotGrid - using defaults")
-
-        except Exception as e:
-            logger.error(f"Failed to load Misc spreadsheet from ShotGrid: {e}", exc_info=True)
-
-    def _initialize_misc_spreadsheet_defaults(self):
-        """Initialize Misc spreadsheet with empty defaults."""
-        if not hasattr(self, 'misc_cost_spreadsheet'):
-            return
-
-        # Clear all data
-        self.misc_cost_spreadsheet.load_data_from_dict({})
-        logger.debug("Initialized Misc spreadsheet with empty defaults")
-
-    def _save_total_cost_spreadsheet_to_shotgrid(self):
-        """Save Total Cost spreadsheet data to ShotGrid including formatting."""
-        if not self.current_bid_id or not self.current_project_id:
-            logger.warning("Cannot save Total Cost spreadsheet - no bid selected")
-            return
-
-        if not hasattr(self, 'total_cost_spreadsheet'):
-            return
-
-        try:
-            # Get the spreadsheet data
-            data_dict = self.total_cost_spreadsheet.get_data_as_dict()
-
-            if not data_dict:
-                logger.debug("No data to save for Total Cost spreadsheet")
-                return
-
-            # Get cell metadata and sheet metadata for formatting persistence
-            cell_meta_dict = self.total_cost_spreadsheet.model.get_all_cell_meta()
-            sheet_meta = self.total_cost_spreadsheet.model.get_sheet_meta()
-
-            # Save to ShotGrid with metadata
-            self.sg_session.save_spreadsheet_data(
-                project_id=self.current_project_id,
-                bid_id=self.current_bid_id,
-                spreadsheet_type="total_cost",
-                data_dict=data_dict,
-                cell_meta_dict=cell_meta_dict,
-                sheet_meta=sheet_meta
-            )
-            logger.info(f"Saved Total Cost spreadsheet data to ShotGrid ({len(data_dict)} cells, {len(cell_meta_dict)} formatted)")
-
-        except Exception as e:
-            logger.error(f"Failed to save Total Cost spreadsheet to ShotGrid: {e}", exc_info=True)
-
-    def _load_total_cost_spreadsheet_from_shotgrid(self):
-        """Load Total Cost spreadsheet data from ShotGrid including formatting, or initialize with defaults."""
-        if not hasattr(self, 'total_cost_spreadsheet'):
-            return
-
-        # Always clear and initialize with defaults first
-        self._initialize_total_cost_spreadsheet_defaults()
-
-        if not self.current_bid_id:
-            return
-
-        try:
-            # Load from ShotGrid (now returns tuple with metadata)
-            result = self.sg_session.load_spreadsheet_data(
-                bid_id=self.current_bid_id,
-                spreadsheet_type="total_cost"
-            )
-
-            # Handle both old (dict only) and new (tuple) return formats
-            if isinstance(result, tuple):
-                data_dict, cell_meta_dict, sheet_meta = result
-            else:
-                data_dict = result
-                cell_meta_dict = {}
-                sheet_meta = {}
-
-            if data_dict:
-                self.total_cost_spreadsheet.load_data_from_dict(data_dict)
-
-                # Load cell metadata if present
-                if cell_meta_dict:
-                    self.total_cost_spreadsheet.model.load_cell_meta(cell_meta_dict)
-
-                # Load sheet metadata if present (column widths, row heights, merged cells)
-                if sheet_meta:
-                    self.total_cost_spreadsheet.model.load_sheet_meta(sheet_meta)
-                    # Apply saved column/row sizes to view
-                    self.total_cost_spreadsheet.apply_saved_sizes()
-
-                logger.info(f"Loaded Total Cost spreadsheet data from ShotGrid ({len(data_dict)} cells, {len(cell_meta_dict)} formatted)")
-            else:
-                logger.info("No Total Cost spreadsheet data found in ShotGrid - using defaults")
-
-        except Exception as e:
-            logger.error(f"Failed to load Total Cost spreadsheet from ShotGrid: {e}", exc_info=True)
-
-    def _initialize_total_cost_spreadsheet_defaults(self):
-        """Initialize Total Cost spreadsheet with default structure."""
-        if not hasattr(self, 'total_cost_spreadsheet'):
-            return
-
-        # Clear all existing data
-        self.total_cost_spreadsheet.load_data_from_dict({})
-
-        # Set up the default structure:
-        # Row 0: Headers (Category, Amount)
-        # Row 1: Shot Costs
-        # Row 2: Asset Costs
-        # Row 3: Misc
-        # Row 4: Total Cost (formula)
-
-        # Column headers
-        self.total_cost_spreadsheet.set_cell_value(0, 0, "Category")
-        self.total_cost_spreadsheet.set_cell_value(0, 1, "Amount")
-
-        # Row labels
-        self.total_cost_spreadsheet.set_cell_value(1, 0, "Shot Costs")
-        self.total_cost_spreadsheet.set_cell_value(2, 0, "Asset Costs")
-        self.total_cost_spreadsheet.set_cell_value(3, 0, "Misc")
-        self.total_cost_spreadsheet.set_cell_value(4, 0, "Total Cost")
-
-        # Amount values (will be updated by _update_total_cost_summary)
-        self.total_cost_spreadsheet.set_cell_value(1, 1, 0)  # Shot Costs
-        self.total_cost_spreadsheet.set_cell_value(2, 1, 0)  # Asset Costs
-        self.total_cost_spreadsheet.set_cell_value(3, 1, 0)  # Misc
-        # Total Cost formula: sum of B2:B4
-        self.total_cost_spreadsheet.set_cell_value(4, 1, "=B2+B3+B4")
-
-        logger.debug("Initialized Total Cost spreadsheet with defaults")
 
     def get_view_menu_actions(self):
         """Get toggle view actions for all docks.
