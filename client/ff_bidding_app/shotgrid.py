@@ -2649,31 +2649,37 @@ class ShotgridClient:
         )
         return results
 
-    def create_spreadsheet(self, project_id, bid_id, spreadsheet_type, code=None):
+    def create_spreadsheet(self, project_id, bid_id, spreadsheet_type=None, code=None):
         """
         Create a new Spreadsheet (CustomEntity15) entity.
 
         Args:
             project_id: Project ID
             bid_id: Bid ID to link via sg_parent_bid
-            spreadsheet_type: Type of spreadsheet ('misc' or 'total_cost')
-            code: Optional name/code for the spreadsheet
+            spreadsheet_type: Type of spreadsheet ('misc' or 'total_cost'), or None for custom
+            code: Name/code for the spreadsheet (required for custom spreadsheets)
 
         Returns:
             Created Spreadsheet entity dictionary
         """
         if code is None:
-            code = f"{spreadsheet_type}_spreadsheet"
+            if spreadsheet_type:
+                code = f"{spreadsheet_type}_spreadsheet"
+            else:
+                raise ValueError("code is required when spreadsheet_type is not provided")
 
         data = {
             "code": code,
             "project": {"type": "Project", "id": int(project_id)},
             "sg_parent_bid": {"type": "CustomEntity06", "id": int(bid_id)},
-            "sg_type": spreadsheet_type
         }
 
+        # Only set sg_type for built-in types (misc, total_cost)
+        if spreadsheet_type in ('misc', 'total_cost'):
+            data["sg_type"] = spreadsheet_type
+
         result = self.sg.create("CustomEntity15", data)
-        logger.info(f"Created Spreadsheet {result.get('id')} for bid {bid_id}, type={spreadsheet_type}")
+        logger.info(f"Created Spreadsheet {result.get('id')} for bid {bid_id}, code='{code}'")
         return result
 
     def delete_spreadsheet(self, spreadsheet_id):
@@ -3027,11 +3033,10 @@ class ShotgridClient:
         # Get or create Spreadsheet by name
         spreadsheet = self.get_spreadsheet_by_name(bid_id, spreadsheet_name)
         if not spreadsheet:
-            # Create new spreadsheet with the given name
+            # Create new spreadsheet with the given name (no sg_type for custom sheets)
             logger.info(f"Creating new CustomEntity15 spreadsheet '{spreadsheet_name}' for bid {bid_id}")
             spreadsheet = self.create_spreadsheet(
                 project_id, bid_id,
-                spreadsheet_type="custom",  # Mark as custom type
                 code=spreadsheet_name
             )
         else:

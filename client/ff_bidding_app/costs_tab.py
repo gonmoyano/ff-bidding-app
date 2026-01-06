@@ -233,11 +233,10 @@ class CostsTab(QtWidgets.QMainWindow):
                 # Check if spreadsheet already exists
                 existing = self.sg_session.get_spreadsheet_by_name(self.current_bid_id, sheet_name)
                 if not existing:
-                    # Create new spreadsheet in ShotGrid
+                    # Create new spreadsheet in ShotGrid (no sg_type, just code)
                     sg_spreadsheet = self.sg_session.create_spreadsheet(
                         self.current_project_id,
                         self.current_bid_id,
-                        spreadsheet_type="custom",
                         code=sheet_name
                     )
                     dock.sg_spreadsheet_id = sg_spreadsheet.get("id")
