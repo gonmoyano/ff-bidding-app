@@ -198,12 +198,20 @@ class SpreadsheetCache:
         dirty_count = len(self._dirty_keys)
         logger.info(f"Committing {dirty_count} dirty spreadsheets to ShotGrid")
 
-        # Create progress dialog
+        # Calculate total cells across all spreadsheets for accurate progress
+        total_cells = 0
+        keys_to_process = list(self._dirty_keys)
+        for cache_key in keys_to_process:
+            cache_entry = self._cache.get(cache_key)
+            if cache_entry:
+                total_cells += len(cache_entry.get('data_dict', {}))
+
+        # Create progress dialog with cell-based progress
         progress = QtWidgets.QProgressDialog(
             "Saving spreadsheet changes to ShotGrid...",
             "Cancel",
             0,
-            dirty_count,
+            max(total_cells, 1),  # Avoid division by zero
             parent_widget
         )
         progress.setWindowTitle("Saving Changes")
@@ -211,14 +219,22 @@ class SpreadsheetCache:
         progress.setMinimumDuration(0)  # Show immediately
         progress.setValue(0)
 
+        # Track overall progress across all spreadsheets
+        cells_completed = 0
+
+        def progress_callback(current, total, message):
+            nonlocal cells_completed
+            # Calculate overall progress
+            overall_progress = cells_completed + current
+            progress.setValue(min(overall_progress, total_cells))
+            progress.setLabelText(message)
+            QtWidgets.QApplication.processEvents()
+
         # Process cached spreadsheets
         success_count = 0
         failed_keys = []
 
-        # Get list of keys to process (copy to avoid modification during iteration)
-        keys_to_process = list(self._dirty_keys)
-
-        for i, cache_key in enumerate(keys_to_process):
+        for cache_key in keys_to_process:
             if progress.wasCanceled():
                 logger.warning("Commit cancelled by user")
                 break
@@ -227,27 +243,26 @@ class SpreadsheetCache:
             if not cache_entry:
                 continue
 
-            # Update progress
             spreadsheet_type = cache_entry.get('spreadsheet_type', 'unknown')
-            bid_id = cache_entry.get('bid_id', 'unknown')
-            progress.setLabelText(f"Saving {spreadsheet_type} spreadsheet for bid {bid_id}...")
-            progress.setValue(i)
-
-            # Process events to update UI
+            progress.setLabelText(f"Saving {spreadsheet_type}...")
             QtWidgets.QApplication.processEvents()
 
             try:
                 spreadsheet_type = cache_entry['spreadsheet_type']
 
-                # Use name-based save for all spreadsheets
+                # Use name-based save for all spreadsheets with progress callback
                 self._sg_session.save_spreadsheet_by_name(
                     project_id=cache_entry['project_id'],
                     bid_id=cache_entry['bid_id'],
                     spreadsheet_name=spreadsheet_type,
                     data_dict=cache_entry['data_dict'],
                     cell_meta_dict=cache_entry.get('cell_meta_dict', {}),
-                    sheet_meta=cache_entry.get('sheet_meta', {})
+                    sheet_meta=cache_entry.get('sheet_meta', {}),
+                    progress_callback=progress_callback
                 )
+
+                # Update cells completed for next spreadsheet
+                cells_completed += len(cache_entry.get('data_dict', {}))
 
                 # Mark as clean
                 self._dirty_keys.discard(cache_key)
@@ -259,9 +274,11 @@ class SpreadsheetCache:
             except Exception as e:
                 logger.error(f"Failed to commit spreadsheet {cache_key}: {e}", exc_info=True)
                 failed_keys.append(cache_key)
+                # Still count the cells for progress
+                cells_completed += len(cache_entry.get('data_dict', {}))
 
         # Final progress update
-        progress.setValue(dirty_count)
+        progress.setValue(total_cells)
         progress.close()
 
         # Update disk cache

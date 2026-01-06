@@ -413,6 +413,12 @@ class CostsTab(QtWidgets.QMainWindow):
 
         spreadsheet.model.dataChanged.connect(on_data_changed)
 
+        # Also connect layoutChanged for row/column additions
+        def on_layout_changed(d=dock):
+            self._on_custom_spreadsheet_data_changed(d)
+
+        spreadsheet.model.layoutChanged.connect(on_layout_changed)
+
         # Load existing data from ShotGrid if requested
         if load_from_sg and self.current_bid_id:
             self._load_custom_spreadsheet_from_shotgrid(dock)
