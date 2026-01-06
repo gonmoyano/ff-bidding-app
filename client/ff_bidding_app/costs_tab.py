@@ -327,24 +327,25 @@ class CostsTab(QtWidgets.QMainWindow):
             spreadsheet.set_currency_settings(currency_symbol, currency_position)
 
         # Set up formula evaluator for this spreadsheet with cross-tab support
-        # Include built-in tabs (Shot Costs, Asset Costs) for cross-tab references
+        # Include built-in tabs (Shot Costs, Asset Costs) and other custom spreadsheets
         sheet_models = {sheet_name: spreadsheet.model}
 
         # Add Shot Costs model if available and truthy
         if (hasattr(self, 'shots_cost_widget') and self.shots_cost_widget and
             hasattr(self.shots_cost_widget, 'model') and self.shots_cost_widget.model):
             sheet_models['Shot Costs'] = self.shots_cost_widget.model
-            logger.debug(f"Added 'Shot Costs' model to sheet_models for custom spreadsheet '{sheet_name}'")
-        else:
-            logger.warning(f"Could not add 'Shot Costs' model - widget or model not available")
 
         # Add Asset Costs model if available and truthy
         if (hasattr(self, 'asset_cost_widget') and self.asset_cost_widget and
             hasattr(self.asset_cost_widget, 'model') and self.asset_cost_widget.model):
             sheet_models['Asset Costs'] = self.asset_cost_widget.model
-            logger.debug(f"Added 'Asset Costs' model to sheet_models for custom spreadsheet '{sheet_name}'")
-        else:
-            logger.warning(f"Could not add 'Asset Costs' model - widget or model not available")
+
+        # Add all existing custom spreadsheets' models for cross-tab references
+        for existing_dock in self._custom_spreadsheet_docks:
+            if (hasattr(existing_dock, 'spreadsheet') and existing_dock.spreadsheet and
+                hasattr(existing_dock.spreadsheet, 'model') and existing_dock.spreadsheet.model and
+                hasattr(existing_dock, 'sheet_name') and existing_dock.sheet_name):
+                sheet_models[existing_dock.sheet_name] = existing_dock.spreadsheet.model
 
         logger.info(f"Creating FormulaEvaluator for '{sheet_name}' with sheet_models: {list(sheet_models.keys())}")
 
@@ -373,6 +374,13 @@ class CostsTab(QtWidgets.QMainWindow):
 
         # Track this custom spreadsheet
         self._custom_spreadsheet_docks.append(dock)
+
+        # Update all existing custom spreadsheets' formula evaluators to include the new spreadsheet
+        # This enables bi-directional cross-tab references between custom spreadsheets
+        for existing_dock in self._custom_spreadsheet_docks:
+            if existing_dock is not dock and hasattr(existing_dock, 'formula_evaluator'):
+                existing_dock.formula_evaluator.sheet_models[sheet_name] = spreadsheet.model
+                logger.debug(f"Added '{sheet_name}' to '{existing_dock.sheet_name}' formula evaluator")
 
         # Create the spreadsheet in ShotGrid immediately (if not loading existing)
         if not load_from_sg and self.current_bid_id and self.current_project_id:
