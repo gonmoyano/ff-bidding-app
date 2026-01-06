@@ -179,16 +179,16 @@ class CostsTab(QtWidgets.QMainWindow):
 
     def _create_cost_docks(self):
         """Create the individual cost dock widgets."""
-        # Shots Cost (uses VFXBreakdownWidget)
+        # Shot Costs (uses VFXBreakdownWidget)
         self.shots_cost_dock = CostDock(
-            "Shots Cost",
+            "Shot Costs",
             self._create_shots_cost_widget(),
             self
         )
 
-        # Assets Cost
+        # Asset Costs
         self.asset_cost_dock = CostDock(
-            "Assets Cost",
+            "Asset Costs",
             self._create_asset_cost_widget(),
             self
         )
@@ -222,15 +222,18 @@ class CostsTab(QtWidgets.QMainWindow):
         self.shots_cost_dock.raise_()
 
     def _create_shots_cost_widget(self):
-        """Create the Shots Cost widget using VFXBreakdownWidget."""
+        """Create the Shot Costs widget using VFXBreakdownWidget."""
         # Use VFXBreakdownWidget with toolbar for search and sort functionality
         self.shots_cost_widget = VFXBreakdownWidget(
             self.sg_session,
             show_toolbar=True,  # Show search and sort toolbar in collapsible group
             entity_name="Shot",
-            settings_key="shots_cost",  # Unique settings key for Shots Cost table
+            settings_key="shots_cost",  # Unique settings key for Shot Costs table
             parent=self
         )
+
+        # Enable read-only mode - edits should be made in the VFX Breakdown tab
+        self.shots_cost_widget.set_readonly_mode(True, entity_type="VFX Breakdown")
 
         # Apply purple pill colors for the Costs panel
         self.shots_cost_widget.set_pill_colors({
@@ -266,15 +269,18 @@ class CostsTab(QtWidgets.QMainWindow):
         return self.shots_cost_widget
 
     def _create_asset_cost_widget(self):
-        """Create the Asset Cost widget using VFXBreakdownWidget."""
+        """Create the Asset Costs widget using VFXBreakdownWidget."""
         # Use VFXBreakdownWidget with toolbar for search and sort functionality
         self.asset_cost_widget = VFXBreakdownWidget(
             self.sg_session,
             show_toolbar=True,  # Show search and sort toolbar in collapsible group
             entity_name="Asset",
-            settings_key="asset_cost",  # Unique settings key for Asset Cost table
+            settings_key="asset_cost",  # Unique settings key for Asset Costs table
             parent=self
         )
+
+        # Enable read-only mode - edits should be made in the Assets tab
+        self.asset_cost_widget.set_readonly_mode(True, entity_type="Bid Asset")
 
         # Apply purple pill colors for the Costs panel
         self.asset_cost_widget.set_pill_colors({
@@ -653,16 +659,16 @@ class CostsTab(QtWidgets.QMainWindow):
     def _setup_cross_tab_formulas(self):
         """Set up cross-tab formula references between cost sheets."""
         # Create a dictionary of sheet models for cross-tab references
-        # Use names with spaces for user-friendly formula references like 'Shots Cost'!A1
+        # Use names with spaces for user-friendly formula references like 'Shot Costs'!A1
         sheet_models = {}
 
-        # Add Shot Costs model (accessible via 'Shots Cost'!ref)
+        # Add Shot Costs model (accessible via 'Shot Costs'!ref)
         if hasattr(self, 'shots_cost_widget') and hasattr(self.shots_cost_widget, 'model'):
-            sheet_models['Shots Cost'] = self.shots_cost_widget.model
+            sheet_models['Shot Costs'] = self.shots_cost_widget.model
 
-        # Add Asset Costs model (accessible via 'Assets Cost'!ref)
+        # Add Asset Costs model (accessible via 'Asset Costs'!ref)
         if hasattr(self, 'asset_cost_widget') and hasattr(self.asset_cost_widget, 'model'):
-            sheet_models['Assets Cost'] = self.asset_cost_widget.model
+            sheet_models['Asset Costs'] = self.asset_cost_widget.model
 
         # Add Misc Costs spreadsheet model
         if hasattr(self, 'misc_cost_spreadsheet') and hasattr(self.misc_cost_spreadsheet, 'model'):

@@ -527,6 +527,11 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
         self._checkbox_color = None
         self._checkbox_delegates = []  # Store checkbox delegates for color updates
 
+        # Read-only mode settings
+        self._readonly_mode = False
+        self._readonly_entity_type = None  # e.g., "VFX Breakdown" or "Bid Asset"
+        self._readonly_entity_field = "code"  # Field to display in popup
+
         # Create the model
         self.model = VFXBreakdownModel(sg_session, parent=self)
 
@@ -1001,6 +1006,80 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             # Force repaint to apply new colors
             if self.table_view and self.table_view.viewport():
                 self.table_view.viewport().update()
+
+    def set_readonly_mode(self, enabled, entity_type=None):
+        """Enable or disable read-only mode for this table.
+
+        When enabled, clicking on any cell shows a popup message indicating
+        the table is read-only and displays a reference to the original entity.
+
+        Args:
+            enabled (bool): True to enable read-only mode
+            entity_type (str): Entity type name to display in popup (e.g., "VFX Breakdown", "Bid Asset")
+        """
+        self._readonly_mode = enabled
+        self._readonly_entity_type = entity_type
+
+        if self.table_view:
+            if enabled:
+                # Disable all editing triggers
+                self.table_view.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+                # Connect clicked signal to show readonly popup
+                self.table_view.clicked.connect(self._on_readonly_cell_clicked)
+            else:
+                # Restore default editing triggers
+                self.table_view.setEditTriggers(
+                    QtWidgets.QAbstractItemView.DoubleClicked |
+                    QtWidgets.QAbstractItemView.EditKeyPressed |
+                    QtWidgets.QAbstractItemView.AnyKeyPressed
+                )
+                # Disconnect the readonly click handler
+                try:
+                    self.table_view.clicked.disconnect(self._on_readonly_cell_clicked)
+                except (TypeError, RuntimeError):
+                    pass  # Not connected
+
+    def _on_readonly_cell_clicked(self, index):
+        """Handle cell click in read-only mode - show popup with entity reference.
+
+        Args:
+            index: QModelIndex of the clicked cell
+        """
+        if not self._readonly_mode or not index.isValid():
+            return
+
+        # Get the entity code/name from the clicked row
+        row = index.row()
+        if row < 0 or row >= self.model.rowCount():
+            return
+
+        # Get the data row index (handles filtering)
+        data_row = self.model.filtered_row_indices[row]
+        row_data = self.model.all_bidding_scenes_data[data_row]
+
+        # Get the entity reference (code field)
+        entity_code = row_data.get(self._readonly_entity_field, "")
+        entity_id = row_data.get("id", "")
+
+        # Build the reference string
+        if entity_code:
+            reference = f"{entity_code}"
+            if entity_id:
+                reference += f" (ID: {entity_id})"
+        elif entity_id:
+            reference = f"ID: {entity_id}"
+        else:
+            reference = "Unknown"
+
+        # Show the popup message
+        entity_type_display = self._readonly_entity_type or "entity"
+        QtWidgets.QMessageBox.information(
+            self,
+            "Read-Only Table",
+            f"This table is read-only.\n\n"
+            f"To edit this data, go to the original {entity_type_display}:\n"
+            f"  {reference}"
+        )
 
     def _on_bid_assets_changed_from_widget(self, widget, entities):
         """Handle when bid assets are changed in a cell widget, looking up position dynamically.
