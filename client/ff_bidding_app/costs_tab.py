@@ -228,8 +228,9 @@ class CostsTab(QtWidgets.QMainWindow):
         self._custom_spreadsheet_docks.append(dock)
 
         # Connect dataChanged signal to cache the spreadsheet
+        # Use default argument to capture dock by value, not by reference
         spreadsheet.model.dataChanged.connect(
-            lambda: self._on_custom_spreadsheet_data_changed(dock)
+            lambda d=dock: self._on_custom_spreadsheet_data_changed(d)
         )
 
         # Load existing data from ShotGrid if requested
