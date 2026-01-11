@@ -9,6 +9,9 @@ Build commands:
 
   # Build universal binary (requires building on both architectures and merging):
   # See scripts/build_macos_universal.sh
+
+Note: The app launches in Terminal.app with log output visible.
+      Terminal stays open after app exit for reviewing logs.
 """
 
 import sys
@@ -18,6 +21,10 @@ from pathlib import Path
 # Determine target architecture for macOS
 # Set via environment variable or default to native
 target_arch = os.environ.get('TARGET_ARCH', None)
+
+# Option to launch with terminal (default: True)
+# Set LAUNCH_IN_TERMINAL=0 to disable
+launch_in_terminal = os.environ.get('LAUNCH_IN_TERMINAL', '1') == '1'
 
 block_cipher = None
 
@@ -121,17 +128,20 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# The actual executable name (launcher script will call this)
+exe_name = 'FFPackageManager-bin' if launch_in_terminal else 'FF Package Manager'
+
 exe = EXE(
     pyz,
     a.scripts,
     [],
     exclude_binaries=True,
-    name='FF Package Manager',
+    name=exe_name,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,  # No console window on macOS
+    console=False,  # No console window on macOS (Terminal handles this)
     disable_windowed_traceback=False,
     argv_emulation=True,  # Enable argv emulation for macOS
     target_arch=target_arch,  # None = native, 'x86_64', 'arm64', or 'universal2'
@@ -150,6 +160,9 @@ coll = COLLECT(
     name='FF Package Manager',
 )
 
+# Determine the bundle executable name
+bundle_executable = 'FF Package Manager' if launch_in_terminal else exe_name
+
 # macOS-specific: Create .app bundle
 app = BUNDLE(
     coll,
@@ -164,7 +177,7 @@ app = BUNDLE(
         'CFBundleShortVersionString': '0.0.1',
         'CFBundlePackageType': 'APPL',
         'CFBundleSignature': 'FFPM',
-        'CFBundleExecutable': 'FF Package Manager',
+        'CFBundleExecutable': bundle_executable,
         'CFBundleIconFile': 'app.icns',
         'CFBundleInfoDictionaryVersion': '6.0',
         'LSMinimumSystemVersion': '10.15',
@@ -172,8 +185,10 @@ app = BUNDLE(
         'NSSupportsAutomaticGraphicsSwitching': True,
         'LSApplicationCategoryType': 'public.app-category.productivity',
         'NSPrincipalClass': 'NSApplication',
+        # Required for Terminal.app integration
+        'LSUIElement': False,
         # Privacy permissions
-        'NSAppleEventsUsageDescription': 'FF Package Manager needs to control other apps to integrate with your workflow.',
+        'NSAppleEventsUsageDescription': 'FF Package Manager needs to control Terminal.app to display log output.',
         'NSDocumentsFolderUsageDescription': 'FF Package Manager needs access to Documents to save packages.',
         'NSDownloadsFolderUsageDescription': 'FF Package Manager needs access to Downloads to save packages.',
     },

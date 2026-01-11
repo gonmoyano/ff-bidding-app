@@ -6,6 +6,7 @@
 # Usage:
 #   ./scripts/build_macos.sh              # Build for current architecture
 #   ./scripts/build_macos.sh --clean      # Clean build (removes previous build artifacts)
+#   ./scripts/build_macos.sh --no-terminal # Build without Terminal launcher
 #
 # Requirements:
 #   - Python 3.9+
@@ -38,10 +39,15 @@ fi
 
 # Parse arguments
 CLEAN_BUILD=false
+LAUNCH_IN_TERMINAL=1
 for arg in "$@"; do
     case $arg in
         --clean)
             CLEAN_BUILD=true
+            shift
+            ;;
+        --no-terminal)
+            LAUNCH_IN_TERMINAL=0
             shift
             ;;
     esac
@@ -67,6 +73,7 @@ fi
 # Detect current architecture
 ARCH=$(uname -m)
 echo "Building for architecture: $ARCH"
+echo "Launch in Terminal: $([ $LAUNCH_IN_TERMINAL -eq 1 ] && echo 'Yes' || echo 'No')"
 echo ""
 
 # Build the application
@@ -75,6 +82,7 @@ cd "$PROJECT_ROOT"
 
 # Set architecture environment variable
 export TARGET_ARCH="$ARCH"
+export LAUNCH_IN_TERMINAL="$LAUNCH_IN_TERMINAL"
 
 # Run PyInstaller
 python3 -m PyInstaller \
@@ -84,6 +92,64 @@ python3 -m PyInstaller \
     --distpath "$DIST_DIR" \
     "$PROJECT_ROOT/ff_bidding_app.spec"
 
+# Add Terminal launcher script if enabled
+APP_BUNDLE="$DIST_DIR/FF Package Manager.app"
+if [ "$LAUNCH_IN_TERMINAL" -eq 1 ] && [ -d "$APP_BUNDLE" ]; then
+    echo ""
+    echo -e "${YELLOW}Adding Terminal launcher...${NC}"
+
+    MACOS_DIR="$APP_BUNDLE/Contents/MacOS"
+    LAUNCHER="$MACOS_DIR/FF Package Manager"
+
+    # Create the launcher script
+    cat > "$LAUNCHER" << 'LAUNCHER_EOF'
+#!/bin/bash
+#
+# FF Package Manager Launcher
+# Opens Terminal.app with log output visible
+# Terminal stays open after app exit
+#
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_EXECUTABLE="$SCRIPT_DIR/FFPackageManager-bin"
+APP_NAME="FF Package Manager"
+
+# Get the app bundle path for nice display
+BUNDLE_PATH="$(dirname "$(dirname "$SCRIPT_DIR")")"
+
+# Check if we're already in a terminal
+if [ -t 0 ] && [ -t 1 ]; then
+    # Already in a terminal, just run the app
+    echo "=========================================="
+    echo "$APP_NAME - Log Output"
+    echo "=========================================="
+    echo ""
+    "$APP_EXECUTABLE" "$@"
+    EXIT_CODE=$?
+    echo ""
+    echo "=========================================="
+    echo "Application exited with code: $EXIT_CODE"
+    echo "Press Enter to close this window..."
+    echo "=========================================="
+    read -r
+else
+    # Not in a terminal, open Terminal.app and run the app there
+    osascript <<EOF
+tell application "Terminal"
+    activate
+    set newWindow to do script "clear && echo '==========================================' && echo '$APP_NAME - Log Output' && echo '==========================================' && echo '' && '$APP_EXECUTABLE' && EXIT_CODE=\$? && echo '' && echo '==========================================' && echo \"Application exited with code: \$EXIT_CODE\" && echo 'Press Enter to close this window...' && echo '==========================================' && read"
+    set custom title of front window to "$APP_NAME"
+end tell
+EOF
+fi
+LAUNCHER_EOF
+
+    # Make launcher executable
+    chmod +x "$LAUNCHER"
+
+    echo -e "${GREEN}Terminal launcher added.${NC}"
+fi
+
 echo ""
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Build Complete!${NC}"
@@ -91,6 +157,9 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "Application bundle: $DIST_DIR/FF Package Manager.app"
 echo "Architecture: $ARCH"
+if [ "$LAUNCH_IN_TERMINAL" -eq 1 ]; then
+    echo "Terminal output: Enabled (logs visible, stays open after exit)"
+fi
 echo ""
 
 # Check if app was created
@@ -101,7 +170,8 @@ if [ -d "$DIST_DIR/FF Package Manager.app" ]; then
     echo "  open \"$DIST_DIR/FF Package Manager.app\""
     echo ""
     echo "To verify architecture:"
-    echo "  file \"$DIST_DIR/FF Package Manager.app/Contents/MacOS/FF Package Manager\""
+    EXEC_NAME=$([ $LAUNCH_IN_TERMINAL -eq 1 ] && echo "FFPackageManager-bin" || echo "FF Package Manager")
+    echo "  file \"$DIST_DIR/FF Package Manager.app/Contents/MacOS/$EXEC_NAME\""
 else
     echo -e "${RED}Build failed - app bundle not found${NC}"
     exit 1

@@ -192,16 +192,17 @@ create_universal_binary() {
     echo "Copying arm64 app as base..."
     cp -R "$arm64_app" "$universal_app"
 
-    # Find all Mach-O binaries and merge them
+    # Find all Mach-O binaries and merge them (look for FFPackageManager-bin)
     echo "Merging Mach-O binaries with lipo..."
 
-    find "$arm64_app/Contents/MacOS" -type f -perm +111 | while read arm64_binary; do
+    # Find all executable files in MacOS directory
+    find "$arm64_app/Contents/MacOS" -type f | while read arm64_binary; do
         relative_path="${arm64_binary#$arm64_app/}"
         x86_64_binary="$x86_64_app/$relative_path"
         universal_binary="$universal_app/$relative_path"
 
         if [ -f "$x86_64_binary" ]; then
-            # Check if it's a Mach-O binary
+            # Check if it's a Mach-O binary (not a shell script)
             if file "$arm64_binary" | grep -q "Mach-O"; then
                 echo "  Merging: $relative_path"
                 lipo -create "$arm64_binary" "$x86_64_binary" -output "$universal_binary"
@@ -287,22 +288,84 @@ elif [ "$NATIVE_ARCH" = "x86_64" ]; then
     cp -R "$DIST_DIR/x86_64/FF Package Manager.app" "$UNIVERSAL_DIR/"
 fi
 
+# Add Terminal launcher script to the app bundle
+add_terminal_launcher() {
+    local app_bundle="$1"
+
+    echo ""
+    echo -e "${YELLOW}Adding Terminal launcher...${NC}"
+
+    local macos_dir="$app_bundle/Contents/MacOS"
+    local launcher="$macos_dir/FF Package Manager"
+
+    # Create the launcher script
+    cat > "$launcher" << 'LAUNCHER_EOF'
+#!/bin/bash
+#
+# FF Package Manager Launcher
+# Opens Terminal.app with log output visible
+# Terminal stays open after app exit
+#
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_EXECUTABLE="$SCRIPT_DIR/FFPackageManager-bin"
+APP_NAME="FF Package Manager"
+
+# Check if we're already in a terminal
+if [ -t 0 ] && [ -t 1 ]; then
+    # Already in a terminal, just run the app
+    echo "=========================================="
+    echo "$APP_NAME - Log Output"
+    echo "=========================================="
+    echo ""
+    "$APP_EXECUTABLE" "$@"
+    EXIT_CODE=$?
+    echo ""
+    echo "=========================================="
+    echo "Application exited with code: $EXIT_CODE"
+    echo "Press Enter to close this window..."
+    echo "=========================================="
+    read -r
+else
+    # Not in a terminal, open Terminal.app and run the app there
+    osascript <<EOF
+tell application "Terminal"
+    activate
+    set newWindow to do script "clear && echo '==========================================' && echo '$APP_NAME - Log Output' && echo '==========================================' && echo '' && '$APP_EXECUTABLE' && EXIT_CODE=\$? && echo '' && echo '==========================================' && echo \"Application exited with code: \$EXIT_CODE\" && echo 'Press Enter to close this window...' && echo '==========================================' && read"
+    set custom title of front window to "$APP_NAME"
+end tell
+EOF
+fi
+LAUNCHER_EOF
+
+    # Make launcher executable
+    chmod +x "$launcher"
+
+    echo -e "${GREEN}Terminal launcher added.${NC}"
+}
+
+# Add the launcher to the final app bundle
+if [ -d "$UNIVERSAL_DIR/FF Package Manager.app" ]; then
+    add_terminal_launcher "$UNIVERSAL_DIR/FF Package Manager.app"
+fi
+
 echo ""
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Build Complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "Application: $UNIVERSAL_DIR/FF Package Manager.app"
+echo "Terminal output: Enabled (logs visible, stays open after exit)"
 echo ""
 
 # Verify the build
-if [ -f "$UNIVERSAL_DIR/FF Package Manager.app/Contents/MacOS/FF Package Manager" ]; then
+if [ -f "$UNIVERSAL_DIR/FF Package Manager.app/Contents/MacOS/FFPackageManager-bin" ]; then
     echo -e "${GREEN}Build verification:${NC}"
-    file "$UNIVERSAL_DIR/FF Package Manager.app/Contents/MacOS/FF Package Manager"
+    file "$UNIVERSAL_DIR/FF Package Manager.app/Contents/MacOS/FFPackageManager-bin"
     echo ""
 
     # Check if it's actually universal
-    if file "$UNIVERSAL_DIR/FF Package Manager.app/Contents/MacOS/FF Package Manager" | grep -q "universal binary"; then
+    if file "$UNIVERSAL_DIR/FF Package Manager.app/Contents/MacOS/FFPackageManager-bin" | grep -q "universal binary"; then
         echo -e "${GREEN}✓ Universal binary created successfully!${NC}"
     else
         echo -e "${YELLOW}Note: This is a single-architecture build.${NC}"
