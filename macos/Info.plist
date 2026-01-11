@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>FF Package Manager</string>
+    <key>CFBundleDisplayName</key>
+    <string>FF Package Manager</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.fireframe.ffpackagemanager</string>
+    <key>CFBundleVersion</key>
+    <string>0.0.1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.0.1</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleSignature</key>
+    <string>FFPM</string>
+    <key>CFBundleExecutable</key>
+    <string>FF Package Manager</string>
+    <key>CFBundleIconFile</key>
+    <string>app.icns</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.15</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>LSArchitecturePriority</key>
+    <array>
+        <string>arm64</string>
+        <string>x86_64</string>
+    </array>
+    <!-- Privacy permissions -->
+    <key>NSAppleEventsUsageDescription</key>
+    <string>FF Package Manager needs to control other apps to integrate with your workflow.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>FF Package Manager needs access to Documents to save packages.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>FF Package Manager needs access to Downloads to save packages.</string>
+</dict>
+</plist>
