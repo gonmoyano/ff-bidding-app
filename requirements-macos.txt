@@ -1,0 +1,23 @@
+# Requirements for macOS standalone build
+# Install with: pip install -r requirements-macos.txt
+
+# Qt Framework (PySide6 provides native macOS universal binaries)
+PySide6>=6.5.0
+
+# Qt abstraction layer
+qtpy>=2.3.0
+
+# Google Drive API (optional but included for full functionality)
+google-auth-oauthlib>=1.0.0
+google-auth-httplib2>=0.1.0
+google-api-python-client>=2.80.0
+
+# ShotGrid API
+shotgun_api3>=3.3.0
+
+# Formula evaluation
+numpy>=1.24.0
+formulas>=1.2.0
+
+# PyInstaller for building the app
+pyinstaller>=6.0.0
