@@ -2587,7 +2587,7 @@ class ShotgridClient:
 
         Args:
             bid_id: Bid ID (CustomEntity06)
-            spreadsheet_type: Type of spreadsheet ('misc' or 'total_cost')
+            spreadsheet_type: Type of spreadsheet (stored in sg_type field)
 
         Returns:
             Spreadsheet entity dictionary or None if not found
@@ -2656,8 +2656,8 @@ class ShotgridClient:
         Args:
             project_id: Project ID
             bid_id: Bid ID to link via sg_parent_bid
-            spreadsheet_type: Type of spreadsheet ('misc' or 'total_cost'), or None for custom
-            code: Name/code for the spreadsheet (required for custom spreadsheets)
+            spreadsheet_type: Optional type of spreadsheet (stored in sg_type field)
+            code: Name/code for the spreadsheet (required)
 
         Returns:
             Created Spreadsheet entity dictionary
@@ -2674,8 +2674,8 @@ class ShotgridClient:
             "sg_parent_bid": {"type": "CustomEntity06", "id": int(bid_id)},
         }
 
-        # Only set sg_type for built-in types (misc, total_cost)
-        if spreadsheet_type in ('misc', 'total_cost'):
+        # Set sg_type if provided
+        if spreadsheet_type:
             data["sg_type"] = spreadsheet_type
 
         result = self.sg.create("CustomEntity15", data)
@@ -2839,7 +2839,7 @@ class ShotgridClient:
         Args:
             project_id: Project ID
             bid_id: Bid ID
-            spreadsheet_type: Type of spreadsheet ('misc' or 'total_cost')
+            spreadsheet_type: Type of spreadsheet (stored in sg_type field)
             data_dict: Dictionary from SpreadsheetWidget.get_data_as_dict()
                        Format: {(row, col): {'value': ..., 'formula': ..., 'format': ...}, ...}
             cell_meta_dict: Optional cell metadata {'row,col': {...formatting...}, ...}
@@ -2949,7 +2949,7 @@ class ShotgridClient:
 
         Args:
             bid_id: Bid ID
-            spreadsheet_type: Type of spreadsheet ('misc' or 'total_cost')
+            spreadsheet_type: Type of spreadsheet (stored in sg_type field)
 
         Returns:
             Tuple of (data_dict, cell_meta_dict, sheet_meta) where:
@@ -3038,7 +3038,7 @@ class ShotgridClient:
         return data_dict, cell_meta_dict, sheet_meta
 
     def save_spreadsheet_by_name(self, project_id, bid_id, spreadsheet_name, data_dict,
-                                  cell_meta_dict=None, sheet_meta=None):
+                                  cell_meta_dict=None, sheet_meta=None, progress_callback=None):
         """
         Save spreadsheet data to ShotGrid using the spreadsheet name (code field).
 
@@ -3049,6 +3049,7 @@ class ShotgridClient:
             data_dict: Dictionary from SpreadsheetWidget.get_data_as_dict()
             cell_meta_dict: Optional cell metadata
             sheet_meta: Optional sheet-level metadata dict
+            progress_callback: Optional callback(current, total, message) for progress updates
 
         Returns:
             Spreadsheet entity dictionary
@@ -3088,8 +3089,16 @@ class ShotgridClient:
         updated_count = 0
         deleted_count = 0
 
+        # Calculate cells to delete for progress tracking
+        cells_to_process = list(data_dict.items())
+        cells_to_delete = [cell_ref for cell_ref in existing_by_cell.keys()
+                          if cell_ref not in {f"{chr(ord('A') + c) if c < 26 else 'A' + chr(ord('A') + c - 26)}{r + 1}"
+                                              for (r, c) in data_dict.keys()}]
+        total_operations = len(cells_to_process) + len(cells_to_delete)
+        current_operation = 0
+
         # Update or create items for each cell
-        for (row, col), cell_data in data_dict.items():
+        for (row, col), cell_data in cells_to_process:
             col_letter = chr(ord('A') + col) if col < 26 else f"A{chr(ord('A') + col - 26)}"
             cell_ref = f"{col_letter}{row + 1}"
             processed_cells.add(cell_ref)
@@ -3139,11 +3148,21 @@ class ShotgridClient:
                 self.sg.create("CustomEntity16", create_data)
                 created_count += 1
 
+            # Report progress
+            current_operation += 1
+            if progress_callback and total_operations > 0:
+                progress_callback(current_operation, total_operations, f"Saving {cell_ref}...")
+
         # Delete items for cells that no longer exist
         for cell_ref, item in existing_by_cell.items():
             if cell_ref not in processed_cells:
                 self.sg.delete("CustomEntity16", int(item["id"]))
                 deleted_count += 1
+
+                # Report progress
+                current_operation += 1
+                if progress_callback and total_operations > 0:
+                    progress_callback(current_operation, total_operations, f"Removing {cell_ref}...")
 
         logger.info(f"Saved Spreadsheet '{spreadsheet_name}' (ID {spreadsheet_id}): {created_count} created, {updated_count} updated, {deleted_count} deleted")
         return spreadsheet

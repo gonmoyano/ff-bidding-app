@@ -466,6 +466,7 @@ class FormulaEvaluator:
             if sheet_name in self.sheet_models:
                 target_model = self.sheet_models[sheet_name]
                 return self._get_raw_cell_value_from_model(cell_ref, target_model)
+            logger.warning(f"Sheet '{sheet_name}' not found in sheet_models. Available: {list(self.sheet_models.keys())}")
             return "#REF!"
 
         # Pattern 2: Unquoted sheet name - SheetName!CellRef
