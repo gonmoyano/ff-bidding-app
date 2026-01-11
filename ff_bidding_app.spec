@@ -17,6 +17,7 @@ Note: The app launches in Terminal.app with log output visible.
 import sys
 import os
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 # Determine target architecture for macOS
 # Set via environment variable or default to native
@@ -33,51 +34,24 @@ PROJECT_ROOT = Path(SPECPATH)
 CLIENT_DIR = PROJECT_ROOT / 'client'
 APP_DIR = CLIENT_DIR / 'ff_bidding_app'
 
-# Collect all Python files from the client directory
-datas = [
-    # Include the entire client package
-    (str(CLIENT_DIR / 'ff_bidding_app'), 'ff_bidding_app'),
-]
+# Add the client directory to sys.path so PyInstaller can find ff_bidding_app
+sys.path.insert(0, str(CLIENT_DIR))
+
+# Collect all submodules from ff_bidding_app
+ff_bidding_app_modules = collect_submodules('ff_bidding_app')
+
+# Data files (non-Python files like icons, configs, etc.)
+datas = []
 
 # Hidden imports that PyInstaller might miss
-hiddenimports = [
+hiddenimports = ff_bidding_app_modules + [
     # PySide6 modules
     'PySide6.QtCore',
     'PySide6.QtGui',
     'PySide6.QtWidgets',
     'PySide6.QtSvg',
     'PySide6.QtNetwork',
-
-    # Application modules
-    'ff_bidding_app',
-    'ff_bidding_app.app',
-    'ff_bidding_app.shotgrid',
-    'ff_bidding_app.package_data_treeview',
-    'ff_bidding_app.packages_tab',
-    'ff_bidding_app.bidding_tab',
-    'ff_bidding_app.delivery_tab',
-    'ff_bidding_app.bid_selector_widget',
-    'ff_bidding_app.settings',
-    'ff_bidding_app.settings_dialog',
-    'ff_bidding_app.gdrive_service',
-    'ff_bidding_app.spreadsheet_cache',
-    'ff_bidding_app.logger',
-    'ff_bidding_app.assets_tab',
-    'ff_bidding_app.costs_tab',
-    'ff_bidding_app.rates_tab',
-    'ff_bidding_app.vfx_breakdown_tab',
-    'ff_bidding_app.vfx_breakdown_widget',
-    'ff_bidding_app.vfx_breakdown_model',
-    'ff_bidding_app.spreadsheet_widget',
-    'ff_bidding_app.formula_evaluator',
-    'ff_bidding_app.table_with_totals_bar',
-    'ff_bidding_app.thumbnail_cache',
-    'ff_bidding_app.image_viewer_widget',
-    'ff_bidding_app.document_viewer_widget',
-    'ff_bidding_app.document_folder_pane_widget',
-    'ff_bidding_app.folder_pane_widget',
-    'ff_bidding_app.sliding_overlay_panel',
-    'ff_bidding_app.multi_entity_reference_widget',
+    'PySide6.QtPrintSupport',
 
     # Google API dependencies (optional)
     'google.auth',
@@ -86,6 +60,7 @@ hiddenimports = [
     'google_auth_oauthlib.flow',
     'googleapiclient.discovery',
     'googleapiclient.errors',
+    'googleapiclient.http',
 
     # ShotGrid API
     'shotgun_api3',
@@ -97,6 +72,8 @@ hiddenimports = [
     'pathlib',
     'ssl',
     'certifi',
+    'http.cookiejar',
+    'urllib.request',
 ]
 
 a = Analysis(

@@ -10,13 +10,25 @@ Usage:
 import sys
 from pathlib import Path
 
-# Add the client directory to path
-client_dir = Path(__file__).parent / "client"
-sys.path.insert(0, str(client_dir))
+# Check if running as a PyInstaller bundle
+def is_frozen():
+    """Check if we're running from a PyInstaller bundle."""
+    return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
+
+# Add the client directory to path (only needed when running from source)
+if not is_frozen():
+    client_dir = Path(__file__).parent / "client"
+    sys.path.insert(0, str(client_dir))
 
 print("=" * 80)
 print("FF Package Manager - Standalone Mode")
 print("=" * 80)
+print()
+
+if is_frozen():
+    print(f"Running from bundle: {sys._MEIPASS}")
+else:
+    print("Running from source")
 print()
 
 try:
@@ -26,7 +38,7 @@ try:
     print("✓ QtWidgets imported")
 except ImportError as e:
     print(f"✗ Failed to import QtWidgets: {e}")
-    print("  Install: pip install qtpy PyQt5")
+    print("  Install: pip install PySide6")
     sys.exit(1)
 
 try:
@@ -41,14 +53,20 @@ except Exception as e:
 
 try:
     print("Importing FFPackageManagerApp...")
-    # Import directly from sg_app to avoid loading addon.py
-    import importlib.util
 
-    sg_app_path = client_dir / "ff_bidding_app" / "app.py"
-    spec = importlib.util.spec_from_file_location("sg_app", sg_app_path)
-    sg_app = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(sg_app)
-    FFPackageManagerApp = sg_app.PackageManagerApp
+    if is_frozen():
+        # When running as a PyInstaller bundle, use standard imports
+        from ff_bidding_app.app import PackageManagerApp as FFPackageManagerApp
+    else:
+        # When running from source, use file-based import for flexibility
+        import importlib.util
+        client_dir = Path(__file__).parent / "client"
+        sg_app_path = client_dir / "ff_bidding_app" / "app.py"
+        spec = importlib.util.spec_from_file_location("sg_app", sg_app_path)
+        sg_app = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(sg_app)
+        FFPackageManagerApp = sg_app.PackageManagerApp
+
     print("✓ FFPackageManagerApp imported")
 except ImportError as e:
     print(f"✗ Failed to import FFPackageManagerApp: {e}")
