@@ -53,6 +53,13 @@ hiddenimports = ff_bidding_app_modules + [
     'PySide6.QtNetwork',
     'PySide6.QtPrintSupport',
 
+    # Formula evaluation (used by rates_tab)
+    'numpy',
+    'formulas',
+    'formulas.parser',
+    'formulas.tokens',
+    'formulas.functions',
+
     # Google API dependencies (optional)
     'google.auth',
     'google.auth.transport.requests',
@@ -89,7 +96,6 @@ a = Analysis(
         # Exclude unnecessary modules to reduce size
         'tkinter',
         'matplotlib',
-        'numpy',
         'pandas',
         'scipy',
         'PIL',

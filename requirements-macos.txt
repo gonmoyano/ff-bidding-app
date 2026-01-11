@@ -15,5 +15,9 @@ google-api-python-client>=2.80.0
 # ShotGrid API
 shotgun_api3>=3.3.0
 
+# Formula evaluation
+numpy>=1.24.0
+formulas>=1.2.0
+
 # PyInstaller for building the app
 pyinstaller>=6.0.0
