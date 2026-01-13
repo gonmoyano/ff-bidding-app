@@ -1007,7 +1007,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
     def set_readonly_mode(self, enabled, entity_type=None):
         """Enable or disable read-only mode for this table.
 
-        When enabled, clicking on any cell shows a popup message indicating
+        When enabled, double-clicking on any cell shows a popup message indicating
         the table is read-only and displays a reference to the original entity.
 
         Args:
@@ -1021,8 +1021,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             if enabled:
                 # Disable all editing triggers
                 self.table_view.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-                # Connect clicked signal to show readonly popup
-                self.table_view.clicked.connect(self._on_readonly_cell_clicked)
+                # Connect doubleClicked signal to show readonly popup (not single click)
+                self.table_view.doubleClicked.connect(self._on_readonly_cell_clicked)
             else:
                 # Restore default editing triggers
                 self.table_view.setEditTriggers(
@@ -1030,9 +1030,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                     QtWidgets.QAbstractItemView.EditKeyPressed |
                     QtWidgets.QAbstractItemView.AnyKeyPressed
                 )
-                # Disconnect the readonly click handler
+                # Disconnect the readonly double-click handler
                 try:
-                    self.table_view.clicked.disconnect(self._on_readonly_cell_clicked)
+                    self.table_view.doubleClicked.disconnect(self._on_readonly_cell_clicked)
                 except (TypeError, RuntimeError):
                     pass  # Not connected
 
@@ -2300,6 +2300,18 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 else:
                     # For other fields, use DisplayRole
                     text = self.model.data(index, QtCore.Qt.DisplayRole) or ""
+
+                    # If it's a formula, evaluate it to get the calculated value
+                    if isinstance(text, str) and text.startswith('=') and self.model.formula_evaluator:
+                        try:
+                            result = self.model.formula_evaluator.evaluate(text, row, col)
+                            if isinstance(result, (float, int)):
+                                # Format as number (Excel will recognize this)
+                                text = f"{result:.2f}"
+                            else:
+                                text = str(result) if result else ""
+                        except Exception:
+                            pass  # Keep original formula on error
 
                 row_data.append(text)
             clipboard_text.append("\t".join(row_data))
