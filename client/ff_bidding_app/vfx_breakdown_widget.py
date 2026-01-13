@@ -781,13 +781,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                         next_index = self.model.index(next_row, current_index.column())
                         self.table_view.setCurrentIndex(next_index)
                 return True
-            elif key == QtCore.Qt.Key_Delete:
-                # Delete key pressed - delete selected rows
-                selected_rows = set()
-                for index in self.table_view.selectedIndexes():
-                    selected_rows.add(index.row())
-                if selected_rows:
-                    self._delete_bidding_scene(min(selected_rows))
+            elif key in (QtCore.Qt.Key_Delete, QtCore.Qt.Key_Backspace):
+                # Delete/Backspace key pressed - clear selected cells
+                self._clear_selected_cells()
                 return True
 
         return super().eventFilter(obj, event)
@@ -2453,6 +2449,94 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 self,
                 "Paste Failed",
                 f"Failed to paste cells:\n{str(e)}"
+            )
+
+    def _clear_selected_cells(self):
+        """Clear values from selected cells (Delete/Backspace key)."""
+        selected_indexes = self.table_view.selectedIndexes()
+        if not selected_indexes:
+            return
+
+        # Collect changes
+        changes = []
+
+        for index in selected_indexes:
+            if not (self.model.flags(index) & QtCore.Qt.ItemIsEditable):
+                continue
+
+            field_name = self.model.column_fields[index.column()]
+
+            # Skip virtual fields that shouldn't be cleared
+            if field_name == "_export_to_excel":
+                continue
+
+            # Determine the appropriate empty value based on field type
+            if field_name == "sg_bid_assets":
+                # Multi-entity field
+                new_value = []
+                old_value = self.model.data(index, QtCore.Qt.EditRole) or []
+            else:
+                # Check field type from schema
+                field_info = self.model.field_schema.get(field_name, {})
+                data_type = field_info.get("data_type", "")
+
+                if data_type == "checkbox":
+                    # For checkbox, set to None to clear
+                    new_value = None
+                    old_value = self.model.data(index, QtCore.Qt.EditRole)
+                elif data_type == "multi_entity":
+                    new_value = []
+                    old_value = self.model.data(index, QtCore.Qt.EditRole) or []
+                else:
+                    # For text, number, list, etc - use None
+                    new_value = None
+                    old_value = self.model.data(index, QtCore.Qt.EditRole)
+
+            # Skip if already empty
+            if new_value == old_value:
+                continue
+
+            # Also skip if old_value is already None/empty
+            if old_value is None or old_value == "" or old_value == []:
+                continue
+
+            bidding_scene_data = self.model.get_bidding_scene_data_for_row(index.row())
+            if not bidding_scene_data:
+                continue
+
+            changes.append({
+                'row': index.row(),
+                'col': index.column(),
+                'old_value': old_value,
+                'new_value': new_value,
+                'bidding_scene_data': bidding_scene_data,
+                'field_name': field_name
+            })
+
+        if not changes:
+            self.statusMessageChanged.emit("No cells to clear", False)
+            return
+
+        # Create command using PasteCommand (works for batch changes)
+        command = PasteCommand(changes, self.model, self.sg_session, field_schema=self.model.field_schema, entity_type=self.model.entity_type)
+
+        try:
+            # Execute clear
+            command.redo()
+
+            # Add to undo stack
+            self.model.undo_stack.append(command)
+            self.model.redo_stack.clear()
+
+            self.statusMessageChanged.emit(f"Cleared {len(changes)} cell(s)", False)
+
+        except Exception as e:
+            logger.error(f"Failed to clear cells: {e}", exc_info=True)
+            self.statusMessageChanged.emit(f"Failed to clear cells", True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Clear Failed",
+                f"Failed to clear cells:\n{str(e)}"
             )
 
     def _on_context_menu(self, position):
