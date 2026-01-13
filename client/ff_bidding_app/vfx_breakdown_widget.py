@@ -2328,14 +2328,23 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         is_single_value = len(rows_data) == 1 and "\t" not in rows_data[0]
 
+        # Flatten clipboard data into a list of values (row by row, left to right)
+        clipboard_values = []
+        for row_text in rows_data:
+            cells = row_text.split("\t")
+            clipboard_values.extend(cells)
+
         # Collect changes
         changes = []
         selected_indexes = self.table_view.selectedIndexes()
 
-        # Single value to multiple cells
-        if is_single_value and len(selected_indexes) > 1:
+        # Sort selected indexes by row, then by column (to match Excel order)
+        sorted_indexes = sorted(selected_indexes, key=lambda idx: (idx.row(), idx.column()))
+
+        # Case 1: Single value to multiple cells - paste same value to all selected
+        if is_single_value and len(sorted_indexes) > 1:
             paste_value = rows_data[0]
-            for index in selected_indexes:
+            for index in sorted_indexes:
                 if not (self.model.flags(index) & QtCore.Qt.ItemIsEditable):
                     continue
 
@@ -2352,6 +2361,48 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                     old_value = self.model.data(index, QtCore.Qt.EditRole) or []
                 else:
                     new_value = paste_value
+                    old_value = self.model.data(index, QtCore.Qt.EditRole) or ""
+
+                if new_value == old_value:
+                    continue
+
+                bidding_scene_data = self.model.get_bidding_scene_data_for_row(index.row())
+                if not bidding_scene_data:
+                    continue
+
+                changes.append({
+                    'row': index.row(),
+                    'col': index.column(),
+                    'old_value': old_value,
+                    'new_value': new_value,
+                    'bidding_scene_data': bidding_scene_data,
+                    'field_name': field_name
+                })
+
+        # Case 2: Multiple values to multiple selected cells - paste in order
+        elif len(sorted_indexes) > 1 and len(clipboard_values) > 1:
+            # Paste clipboard values to selected cells in order
+            for i, index in enumerate(sorted_indexes):
+                if i >= len(clipboard_values):
+                    break  # No more values to paste
+
+                if not (self.model.flags(index) & QtCore.Qt.ItemIsEditable):
+                    continue
+
+                field_name = self.model.column_fields[index.column()]
+                cell_value = clipboard_values[i]
+
+                # For multi-entity fields, try to parse JSON
+                if field_name == "sg_bid_assets":
+                    try:
+                        parsed_value = json.loads(cell_value) if cell_value else []
+                    except (json.JSONDecodeError, ValueError):
+                        logger.warning(f"Failed to parse JSON for sg_bid_assets: {cell_value}")
+                        continue
+                    new_value = parsed_value
+                    old_value = self.model.data(index, QtCore.Qt.EditRole) or []
+                else:
+                    new_value = cell_value
                     old_value = self.model.data(index, QtCore.Qt.EditRole) or ""
 
                 if new_value == old_value:
@@ -2465,6 +2516,11 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 continue
 
             field_name = self.model.column_fields[index.column()]
+
+            # Skip identifier fields that cannot be set to empty
+            # These are required fields in ShotGrid that cannot be cleared
+            if field_name in ("id", "code"):
+                continue
 
             # Skip virtual fields that shouldn't be cleared
             if field_name == "_export_to_excel":
