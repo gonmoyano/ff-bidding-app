@@ -16,7 +16,7 @@ try:
     from .formula_evaluator import FormulaEvaluator
     from .bid_selector_widget import CollapsibleGroupBox
 except ImportError:
-    logger = logging.getLogger("FFPackageManager")
+    logger = logging.getLogger("FireframeProdigy")
     from vfx_breakdown_model import VFXBreakdownModel, PasteCommand, CheckBoxDelegate
     from settings import AppSettings
     from multi_entity_reference_widget import MultiEntityReferenceWidget, EntityPillWidget

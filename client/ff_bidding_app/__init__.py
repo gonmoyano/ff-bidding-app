@@ -5,8 +5,8 @@ __all__ = []
 
 # Only import the addon if ayon_core is available (not in standalone mode)
 try:
-    from .addon import FFPackageManagerAddon
-    __all__.append("FFPackageManagerAddon")
+    from .addon import FireframeProdigyAddon
+    __all__.append("FireframeProdigyAddon")
 except ImportError:
     # Running in standalone mode without AYON
     pass

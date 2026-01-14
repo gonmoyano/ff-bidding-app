@@ -44,7 +44,7 @@ except ImportError:
         log_dir = Path(__file__).parent.parent.parent / "logs"
         log_dir.mkdir(exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = log_dir / f"ff_package_manager_{timestamp}.log"
+        log_file = log_dir / f"fireframe_prodigy_{timestamp}.log"
 
         logging.basicConfig(
             level=logging.WARNING,
@@ -54,12 +54,12 @@ except ImportError:
                 logging.StreamHandler()
             ]
         )
-        logger = logging.getLogger("FFPackageManager")
+        logger = logging.getLogger("FireframeProdigy")
         logger.setLevel(logging.WARNING)
     except Exception as e:
         print(f"Could not setup file logging: {e}")
         logging.basicConfig(level=logging.WARNING)
-        logger = logging.getLogger("FFPackageManager")
+        logger = logging.getLogger("FireframeProdigy")
         logger.setLevel(logging.WARNING)
 
 

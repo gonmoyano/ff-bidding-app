@@ -11,7 +11,7 @@ try:
     from .settings import AppSettings
     from .document_folder_pane_widget import DocumentFolderPaneWidget
 except (ImportError, ValueError, SystemError):
-    logger = logging.getLogger("FFPackageManager")
+    logger = logging.getLogger("FireframeProdigy")
     from sliding_overlay_panel import SlidingOverlayPanel
     from bid_selector_widget import CollapsibleGroupBox
     from thumbnail_cache import ThumbnailCache

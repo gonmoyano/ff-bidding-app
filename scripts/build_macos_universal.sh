@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Build FF Package Manager as a Universal Binary for macOS
+# Build Fireframe Prodigy as a Universal Binary for macOS
 # Creates an app that runs natively on both Intel (x86_64) and Apple Silicon (arm64)
 #
 # IMPORTANT: Creating a true universal binary requires building for both architectures.
@@ -41,7 +41,7 @@ for arg in "$@"; do
 done
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}FF Package Manager - Universal Build${NC}"
+echo -e "${GREEN}Fireframe Prodigy - Universal Build${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
@@ -173,9 +173,9 @@ create_universal_binary() {
     echo -e "${BLUE}Creating Universal Binary...${NC}"
     echo -e "${BLUE}========================================${NC}"
 
-    local arm64_app="$DIST_DIR/arm64/FF Package Manager.app"
-    local x86_64_app="$DIST_DIR/x86_64/FF Package Manager.app"
-    local universal_app="$UNIVERSAL_DIR/FF Package Manager.app"
+    local arm64_app="$DIST_DIR/arm64/Fireframe Prodigy.app"
+    local x86_64_app="$DIST_DIR/x86_64/Fireframe Prodigy.app"
+    local universal_app="$UNIVERSAL_DIR/Fireframe Prodigy.app"
 
     # Check both builds exist
     if [ ! -d "$arm64_app" ]; then
@@ -192,7 +192,7 @@ create_universal_binary() {
     echo "Copying arm64 app as base..."
     cp -R "$arm64_app" "$universal_app"
 
-    # Find all Mach-O binaries and merge them (look for FFPackageManager-bin)
+    # Find all Mach-O binaries and merge them (look for FireframeProdigy-bin)
     echo "Merging Mach-O binaries with lipo..."
 
     # Find all executable files in MacOS directory
@@ -239,7 +239,7 @@ if [ "$NATIVE_ARCH" = "arm64" ]; then
     if [ "$ARM64_ONLY" = true ]; then
         echo ""
         echo -e "${YELLOW}Skipping x86_64 build (--arm64-only specified)${NC}"
-        cp -R "$DIST_DIR/arm64/FF Package Manager.app" "$UNIVERSAL_DIR/"
+        cp -R "$DIST_DIR/arm64/Fireframe Prodigy.app" "$UNIVERSAL_DIR/"
     else
         # Try to find x86_64 Python
         X86_64_PYTHON=$(find_x86_64_python || true)
@@ -257,7 +257,7 @@ if [ "$NATIVE_ARCH" = "arm64" ]; then
                 echo "Install with: $X86_64_PYTHON -m pip install -r requirements-macos.txt"
                 echo ""
                 echo "Building arm64-only for now..."
-                cp -R "$DIST_DIR/arm64/FF Package Manager.app" "$UNIVERSAL_DIR/"
+                cp -R "$DIST_DIR/arm64/Fireframe Prodigy.app" "$UNIVERSAL_DIR/"
             fi
         else
             # Check if Rosetta is available
@@ -273,7 +273,7 @@ if [ "$NATIVE_ARCH" = "arm64" ]; then
 
             echo ""
             echo -e "${YELLOW}Continuing with arm64-only build...${NC}"
-            cp -R "$DIST_DIR/arm64/FF Package Manager.app" "$UNIVERSAL_DIR/"
+            cp -R "$DIST_DIR/arm64/Fireframe Prodigy.app" "$UNIVERSAL_DIR/"
         fi
     fi
 
@@ -285,7 +285,7 @@ elif [ "$NATIVE_ARCH" = "x86_64" ]; then
     build_for_arch "x86_64" "python3"
 
     # Copy x86_64 as the output
-    cp -R "$DIST_DIR/x86_64/FF Package Manager.app" "$UNIVERSAL_DIR/"
+    cp -R "$DIST_DIR/x86_64/Fireframe Prodigy.app" "$UNIVERSAL_DIR/"
 fi
 
 # Add Terminal launcher script to the app bundle
@@ -296,20 +296,20 @@ add_terminal_launcher() {
     echo -e "${YELLOW}Adding Terminal launcher...${NC}"
 
     local macos_dir="$app_bundle/Contents/MacOS"
-    local launcher="$macos_dir/FF Package Manager"
+    local launcher="$macos_dir/Fireframe Prodigy"
 
     # Create the launcher script
     cat > "$launcher" << 'LAUNCHER_EOF'
 #!/bin/bash
 #
-# FF Package Manager Launcher
+# Fireframe Prodigy Launcher
 # Opens Terminal.app with log output visible
 # Terminal stays open after app exit
 #
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_EXECUTABLE="$SCRIPT_DIR/FFPackageManager-bin"
-APP_NAME="FF Package Manager"
+APP_EXECUTABLE="$SCRIPT_DIR/FireframeProdigy-bin"
+APP_NAME="Fireframe Prodigy"
 
 # Check if we're already in a terminal
 if [ -t 0 ] && [ -t 1 ]; then
@@ -345,8 +345,8 @@ LAUNCHER_EOF
 }
 
 # Add the launcher to the final app bundle
-if [ -d "$UNIVERSAL_DIR/FF Package Manager.app" ]; then
-    add_terminal_launcher "$UNIVERSAL_DIR/FF Package Manager.app"
+if [ -d "$UNIVERSAL_DIR/Fireframe Prodigy.app" ]; then
+    add_terminal_launcher "$UNIVERSAL_DIR/Fireframe Prodigy.app"
 fi
 
 echo ""
@@ -354,18 +354,18 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Build Complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo "Application: $UNIVERSAL_DIR/FF Package Manager.app"
+echo "Application: $UNIVERSAL_DIR/Fireframe Prodigy.app"
 echo "Terminal output: Enabled (logs visible, stays open after exit)"
 echo ""
 
 # Verify the build
-if [ -f "$UNIVERSAL_DIR/FF Package Manager.app/Contents/MacOS/FFPackageManager-bin" ]; then
+if [ -f "$UNIVERSAL_DIR/Fireframe Prodigy.app/Contents/MacOS/FireframeProdigy-bin" ]; then
     echo -e "${GREEN}Build verification:${NC}"
-    file "$UNIVERSAL_DIR/FF Package Manager.app/Contents/MacOS/FFPackageManager-bin"
+    file "$UNIVERSAL_DIR/Fireframe Prodigy.app/Contents/MacOS/FireframeProdigy-bin"
     echo ""
 
     # Check if it's actually universal
-    if file "$UNIVERSAL_DIR/FF Package Manager.app/Contents/MacOS/FFPackageManager-bin" | grep -q "universal binary"; then
+    if file "$UNIVERSAL_DIR/Fireframe Prodigy.app/Contents/MacOS/FireframeProdigy-bin" | grep -q "universal binary"; then
         echo -e "${GREEN}✓ Universal binary created successfully!${NC}"
     else
         echo -e "${YELLOW}Note: This is a single-architecture build.${NC}"

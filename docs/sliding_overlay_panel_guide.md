@@ -242,9 +242,9 @@ class PackagesTab(QtWidgets.QWidget):
         self.overlay_panel.panel_hidden.connect(self._on_panel_hidden)
 ```
 
-### FF Package Manager Application
+### Fireframe Prodigy Application
 
-To apply the same pattern to the FF Package Manager:
+To apply the same pattern to the Fireframe Prodigy:
 
 ```python
 # In your main application file

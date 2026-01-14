@@ -10,8 +10,8 @@ from ayon_server.actions import (
 )
 
 
-class FFPackageManagerSettings(BaseSettingsModel):
-    """Settings for FF Package Manager Addon."""
+class FireframeProdigySettings(BaseSettingsModel):
+    """Settings for Fireframe Prodigy Addon."""
     
     enabled: bool = SettingsField(
         True,
@@ -65,10 +65,10 @@ DEFAULT_VALUES = {
 IDENTIFIER_PREFIX = "ff_bidding_app"
 
 
-class FFPackageManagerAddon(BaseServerAddon):
+class FireframeProdigyAddon(BaseServerAddon):
     """Server-side addon."""
-    
-    settings_model: Type[FFPackageManagerSettings] = FFPackageManagerSettings
+
+    settings_model: Type[FireframeProdigySettings] = FireframeProdigySettings
     
     async def get_default_settings(self):
         """Get default settings."""
@@ -86,7 +86,7 @@ class FFPackageManagerAddon(BaseServerAddon):
         output.append(
             SimpleActionManifest(
                 identifier=f"{IDENTIFIER_PREFIX}.open_manager",
-                label="Open FF Package Manager",
+                label="Open Fireframe Prodigy",
                 icon={"type": "material-symbols", "name": "folder_data"},
                 order=100,
                 entity_type="project",

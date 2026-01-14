@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Build FF Package Manager for macOS
+# Build Fireframe Prodigy for macOS
 # This script builds the app for the current architecture
 #
 # Usage:
@@ -27,7 +27,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}FF Package Manager - macOS Build${NC}"
+echo -e "${GREEN}Fireframe Prodigy - macOS Build${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
@@ -77,7 +77,7 @@ echo "Launch in Terminal: $([ $LAUNCH_IN_TERMINAL -eq 1 ] && echo 'Yes' || echo 
 echo ""
 
 # Build the application
-echo -e "${GREEN}Building FF Package Manager...${NC}"
+echo -e "${GREEN}Building Fireframe Prodigy...${NC}"
 cd "$PROJECT_ROOT"
 
 # Set architecture environment variable
@@ -93,26 +93,26 @@ python3 -m PyInstaller \
     "$PROJECT_ROOT/ff_bidding_app.spec"
 
 # Add Terminal launcher script if enabled
-APP_BUNDLE="$DIST_DIR/FF Package Manager.app"
+APP_BUNDLE="$DIST_DIR/Fireframe Prodigy.app"
 if [ "$LAUNCH_IN_TERMINAL" -eq 1 ] && [ -d "$APP_BUNDLE" ]; then
     echo ""
     echo -e "${YELLOW}Adding Terminal launcher...${NC}"
 
     MACOS_DIR="$APP_BUNDLE/Contents/MacOS"
-    LAUNCHER="$MACOS_DIR/FF Package Manager"
+    LAUNCHER="$MACOS_DIR/Fireframe Prodigy"
 
     # Create the launcher script
     cat > "$LAUNCHER" << 'LAUNCHER_EOF'
 #!/bin/bash
 #
-# FF Package Manager Launcher
+# Fireframe Prodigy Launcher
 # Opens Terminal.app with log output visible
 # Terminal stays open after app exit
 #
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_EXECUTABLE="$SCRIPT_DIR/FFPackageManager-bin"
-APP_NAME="FF Package Manager"
+APP_EXECUTABLE="$SCRIPT_DIR/FireframeProdigy-bin"
+APP_NAME="Fireframe Prodigy"
 
 # Get the app bundle path for nice display
 BUNDLE_PATH="$(dirname "$(dirname "$SCRIPT_DIR")")"
@@ -155,7 +155,7 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Build Complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo "Application bundle: $DIST_DIR/FF Package Manager.app"
+echo "Application bundle: $DIST_DIR/Fireframe Prodigy.app"
 echo "Architecture: $ARCH"
 if [ "$LAUNCH_IN_TERMINAL" -eq 1 ]; then
     echo "Terminal output: Enabled (logs visible, stays open after exit)"
@@ -163,15 +163,15 @@ fi
 echo ""
 
 # Check if app was created
-if [ -d "$DIST_DIR/FF Package Manager.app" ]; then
+if [ -d "$DIST_DIR/Fireframe Prodigy.app" ]; then
     echo -e "${GREEN}Build successful!${NC}"
     echo ""
     echo "To test the app:"
-    echo "  open \"$DIST_DIR/FF Package Manager.app\""
+    echo "  open \"$DIST_DIR/Fireframe Prodigy.app\""
     echo ""
     echo "To verify architecture:"
-    EXEC_NAME=$([ $LAUNCH_IN_TERMINAL -eq 1 ] && echo "FFPackageManager-bin" || echo "FF Package Manager")
-    echo "  file \"$DIST_DIR/FF Package Manager.app/Contents/MacOS/$EXEC_NAME\""
+    EXEC_NAME=$([ $LAUNCH_IN_TERMINAL -eq 1 ] && echo "FireframeProdigy-bin" || echo "Fireframe Prodigy")
+    echo "  file \"$DIST_DIR/Fireframe Prodigy.app/Contents/MacOS/$EXEC_NAME\""
 else
     echo -e "${RED}Build failed - app bundle not found${NC}"
     exit 1

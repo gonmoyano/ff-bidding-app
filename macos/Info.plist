@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>FF Package Manager</string>
+    <string>Fireframe Prodigy</string>
     <key>CFBundleDisplayName</key>
-    <string>FF Package Manager</string>
+    <string>Fireframe Prodigy</string>
     <key>CFBundleIdentifier</key>
-    <string>com.fireframe.ffpackagemanager</string>
+    <string>com.fireframe.fireframeprodigy</string>
     <key>CFBundleVersion</key>
     <string>0.0.1</string>
     <key>CFBundleShortVersionString</key>
@@ -15,9 +15,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleSignature</key>
-    <string>FFPM</string>
+    <string>FFPD</string>
     <key>CFBundleExecutable</key>
-    <string>FF Package Manager</string>
+    <string>Fireframe Prodigy</string>
     <key>CFBundleIconFile</key>
     <string>app.icns</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -39,10 +39,10 @@
     </array>
     <!-- Privacy permissions -->
     <key>NSAppleEventsUsageDescription</key>
-    <string>FF Package Manager needs to control other apps to integrate with your workflow.</string>
+    <string>Fireframe Prodigy needs to control other apps to integrate with your workflow.</string>
     <key>NSDocumentsFolderUsageDescription</key>
-    <string>FF Package Manager needs access to Documents to save packages.</string>
+    <string>Fireframe Prodigy needs access to Documents to save packages.</string>
     <key>NSDownloadsFolderUsageDescription</key>
-    <string>FF Package Manager needs access to Downloads to save packages.</string>
+    <string>Fireframe Prodigy needs access to Downloads to save packages.</string>
 </dict>
 </plist>

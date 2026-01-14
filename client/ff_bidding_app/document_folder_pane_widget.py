@@ -8,7 +8,7 @@ try:
     from .logger import logger
     from .bid_selector_widget import CollapsibleGroupBox
 except (ImportError, ValueError, SystemError):
-    logger = logging.getLogger("FFPackageManager")
+    logger = logging.getLogger("FireframeProdigy")
     from bid_selector_widget import CollapsibleGroupBox
 
 

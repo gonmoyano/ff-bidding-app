@@ -1,5 +1,5 @@
 """
-Standalone test script for FF Package Manager
+Standalone test script for Fireframe Prodigy
 Run this to test if the app works outside of AYON
 
 Usage:
@@ -14,7 +14,7 @@ client_dir = Path(__file__).parent / "client"
 sys.path.insert(0, str(client_dir))
 
 print("=" * 60)
-print("Testing FF Package Manager Standalone")
+print("Testing Fireframe Prodigy Standalone")
 print("=" * 60)
 print()
 
@@ -38,18 +38,18 @@ except Exception as e:
     sys.exit(1)
 
 try:
-    print("3. Importing FFPackageManagerApp...")
-    from ff_package_manager.sg_app import FFPackageManagerApp
-    print("   ✓ FFPackageManagerApp imported")
+    print("3. Importing FireframeProdigyApp...")
+    from ff_package_manager.sg_app import FireframeProdigyApp
+    print("   ✓ FireframeProdigyApp imported")
 except ImportError as e:
-    print(f"   ✗ Failed to import FFPackageManagerApp: {e}")
+    print(f"   ✗ Failed to import FireframeProdigyApp: {e}")
     import traceback
     traceback.print_exc()
     sys.exit(1)
 
 try:
     print("4. Creating app window...")
-    window = FFPackageManagerApp(
+    window = FireframeProdigyApp(
         sg_url="",
         sg_script_name="",
         sg_api_key="",

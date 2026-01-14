@@ -5,7 +5,7 @@ import logging
 try:
     from .logger import logger
 except (ImportError, ValueError, SystemError):
-    logger = logging.getLogger("FFPackageManager")
+    logger = logging.getLogger("FireframeProdigy")
 
 
 class SGWorker(QtCore.QObject):

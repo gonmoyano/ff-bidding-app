@@ -12,7 +12,7 @@ try:
     from .logger import logger
     from .settings import AppSettings
 except ImportError:
-    logger = logging.getLogger("FFPackageManager")
+    logger = logging.getLogger("FireframeProdigy")
     from settings import AppSettings
 
 

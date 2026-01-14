@@ -10,7 +10,7 @@ try:
     from .thumbnail_cache import ThumbnailCache
     from .settings import AppSettings
 except (ImportError, ValueError, SystemError):
-    logger = logging.getLogger("FFPackageManager")
+    logger = logging.getLogger("FireframeProdigy")
     from folder_pane_widget import FolderPaneWidget
     from sliding_overlay_panel import SlidingOverlayPanel
     from bid_selector_widget import CollapsibleGroupBox

@@ -1,7 +1,7 @@
 """Package metadata."""
 
 name = "ff_bidding_app"
-title = "FF Package Manager"
+title = "Fireframe Prodigy"
 version = "0.0.1+dev"
 
 client_dir = "ff_bidding_app"

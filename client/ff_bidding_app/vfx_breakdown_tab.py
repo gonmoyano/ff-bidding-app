@@ -12,7 +12,7 @@ try:
     from .vfx_breakdown_widget import VFXBreakdownWidget
     from .bid_selector_widget import CollapsibleGroupBox
 except ImportError:
-    logger = logging.getLogger("FFPackageManager")
+    logger = logging.getLogger("FireframeProdigy")
     from settings import AppSettings
     from vfx_breakdown_model import VFXBreakdownModel, ValidatedComboBoxDelegate
     from vfx_breakdown_widget import VFXBreakdownWidget

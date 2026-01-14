@@ -50,8 +50,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ff-package-manager-${{ matrix.arch }}
-          path: dist/${{ matrix.arch }}/FF Package Manager.app
+          name: fireframe-prodigy-${{ matrix.arch }}
+          path: dist/${{ matrix.arch }}/Fireframe Prodigy.app
           retention-days: 7
 
   create-universal:
@@ -65,34 +65,34 @@ jobs:
       - name: Download arm64 build
         uses: actions/download-artifact@v4
         with:
-          name: ff-package-manager-arm64
-          path: dist/arm64/FF Package Manager.app
+          name: fireframe-prodigy-arm64
+          path: dist/arm64/Fireframe Prodigy.app
 
       - name: Download x86_64 build
         uses: actions/download-artifact@v4
         with:
-          name: ff-package-manager-x86_64
-          path: dist/x86_64/FF Package Manager.app
+          name: fireframe-prodigy-x86_64
+          path: dist/x86_64/Fireframe Prodigy.app
 
       - name: Create universal binary
         run: |
           mkdir -p dist/universal
 
           # Copy arm64 as base
-          cp -R "dist/arm64/FF Package Manager.app" "dist/universal/"
+          cp -R "dist/arm64/Fireframe Prodigy.app" "dist/universal/"
 
           # Merge main executable
           lipo -create \
-            "dist/arm64/FF Package Manager.app/Contents/MacOS/FF Package Manager" \
-            "dist/x86_64/FF Package Manager.app/Contents/MacOS/FF Package Manager" \
-            -output "dist/universal/FF Package Manager.app/Contents/MacOS/FF Package Manager"
+            "dist/arm64/Fireframe Prodigy.app/Contents/MacOS/Fireframe Prodigy" \
+            "dist/x86_64/Fireframe Prodigy.app/Contents/MacOS/Fireframe Prodigy" \
+            -output "dist/universal/Fireframe Prodigy.app/Contents/MacOS/Fireframe Prodigy"
 
           # Merge all .dylib and .so files in Frameworks
-          if [ -d "dist/arm64/FF Package Manager.app/Contents/Frameworks" ]; then
-            find "dist/arm64/FF Package Manager.app/Contents/Frameworks" -type f \( -name "*.dylib" -o -name "*.so" \) | while read arm64_lib; do
-              relative_path="${arm64_lib#dist/arm64/FF Package Manager.app/}"
-              x86_64_lib="dist/x86_64/FF Package Manager.app/$relative_path"
-              universal_lib="dist/universal/FF Package Manager.app/$relative_path"
+          if [ -d "dist/arm64/Fireframe Prodigy.app/Contents/Frameworks" ]; then
+            find "dist/arm64/Fireframe Prodigy.app/Contents/Frameworks" -type f \( -name "*.dylib" -o -name "*.so" \) | while read arm64_lib; do
+              relative_path="${arm64_lib#dist/arm64/Fireframe Prodigy.app/}"
+              x86_64_lib="dist/x86_64/Fireframe Prodigy.app/$relative_path"
+              universal_lib="dist/universal/Fireframe Prodigy.app/$relative_path"
 
               if [ -f "$x86_64_lib" ]; then
                 lipo -create "$arm64_lib" "$x86_64_lib" -output "$universal_lib" 2>/dev/null || true
@@ -102,7 +102,7 @@ jobs:
 
           # Verify
           echo "Universal binary info:"
-          file "dist/universal/FF Package Manager.app/Contents/MacOS/FF Package Manager"
+          file "dist/universal/Fireframe Prodigy.app/Contents/MacOS/Fireframe Prodigy"
 
       - name: Sign app (if secrets available)
         if: env.DEVELOPER_ID != ''
@@ -112,31 +112,31 @@ jobs:
           codesign --force --options runtime --timestamp \
             --entitlements macos/entitlements.plist \
             --sign "$DEVELOPER_ID" \
-            "dist/universal/FF Package Manager.app"
+            "dist/universal/Fireframe Prodigy.app"
 
       - name: Create DMG
         run: |
           # Create a simple DMG
-          hdiutil create -size 200m -fs HFS+ -volname "FF Package Manager" temp.dmg
+          hdiutil create -size 200m -fs HFS+ -volname "Fireframe Prodigy" temp.dmg
           MOUNT_POINT=$(hdiutil attach temp.dmg | grep "/Volumes/" | awk '{print $3}')
-          cp -R "dist/universal/FF Package Manager.app" "$MOUNT_POINT/"
+          cp -R "dist/universal/Fireframe Prodigy.app" "$MOUNT_POINT/"
           ln -s /Applications "$MOUNT_POINT/Applications"
           hdiutil detach "$MOUNT_POINT"
-          hdiutil convert temp.dmg -format UDZO -o "FF_Package_Manager_Universal.dmg"
+          hdiutil convert temp.dmg -format UDZO -o "Fireframe_Prodigy_Universal.dmg"
           rm temp.dmg
 
       - name: Upload universal app
         uses: actions/upload-artifact@v4
         with:
-          name: ff-package-manager-universal
-          path: dist/universal/FF Package Manager.app
+          name: fireframe-prodigy-universal
+          path: dist/universal/Fireframe Prodigy.app
           retention-days: 30
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: ff-package-manager-dmg
-          path: FF_Package_Manager_Universal.dmg
+          name: fireframe-prodigy-dmg
+          path: Fireframe_Prodigy_Universal.dmg
           retention-days: 30
 
   release:
@@ -148,11 +148,11 @@ jobs:
       - name: Download DMG
         uses: actions/download-artifact@v4
         with:
-          name: ff-package-manager-dmg
+          name: fireframe-prodigy-dmg
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: FF_Package_Manager_Universal.dmg
+          files: Fireframe_Prodigy_Universal.dmg
           draft: true
           generate_release_notes: true

@@ -12,7 +12,7 @@ try:
     from .settings import AppSettings
     from .gdrive_service import get_gdrive_service, GOOGLE_API_AVAILABLE
 except ImportError:
-    logger = logging.getLogger("FFPackageManager")
+    logger = logging.getLogger("FireframeProdigy")
     from bid_selector_widget import CollapsibleGroupBox
     from settings import AppSettings
     from gdrive_service import get_gdrive_service, GOOGLE_API_AVAILABLE

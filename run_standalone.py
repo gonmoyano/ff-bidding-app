@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Standalone launcher for FF Package Manager
+Standalone launcher for Fireframe Prodigy
 Run this to test the app without AYON
 
 Usage:
@@ -21,7 +21,7 @@ if not is_frozen():
     sys.path.insert(0, str(client_dir))
 
 print("=" * 80)
-print("FF Package Manager - Standalone Mode")
+print("Fireframe Prodigy - Standalone Mode")
 print("=" * 80)
 print()
 
@@ -52,11 +52,11 @@ except Exception as e:
     sys.exit(1)
 
 try:
-    print("Importing FFPackageManagerApp...")
+    print("Importing FireframeProdigyApp...")
 
     if is_frozen():
         # When running as a PyInstaller bundle, use standard imports
-        from ff_bidding_app.app import PackageManagerApp as FFPackageManagerApp
+        from ff_bidding_app.app import PackageManagerApp as FireframeProdigyApp
     else:
         # When running from source, use file-based import for flexibility
         import importlib.util
@@ -65,11 +65,11 @@ try:
         spec = importlib.util.spec_from_file_location("sg_app", sg_app_path)
         sg_app = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(sg_app)
-        FFPackageManagerApp = sg_app.PackageManagerApp
+        FireframeProdigyApp = sg_app.PackageManagerApp
 
-    print("✓ FFPackageManagerApp imported")
+    print("✓ FireframeProdigyApp imported")
 except ImportError as e:
-    print(f"✗ Failed to import FFPackageManagerApp: {e}")
+    print(f"✗ Failed to import FireframeProdigyApp: {e}")
     import traceback
 
     traceback.print_exc()
@@ -80,9 +80,9 @@ try:
 
 
     # Apply dark theme BEFORE creating the window
-    FFPackageManagerApp.apply_dark_theme(app)
+    FireframeProdigyApp.apply_dark_theme(app)
     # Default settings for standalone mode
-    window = FFPackageManagerApp(
+    window = FireframeProdigyApp(
         sg_url="https://fireframe.shotgrid.autodesk.com/",
         sg_script_name="ff_bidding_app",
         sg_api_key="tiviqwk^jeZqaon8aeemdnnnk",

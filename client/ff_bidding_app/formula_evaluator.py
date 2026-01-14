@@ -17,7 +17,7 @@ try:
     from .logger import logger
 except ImportError:
     import logging
-    logger = logging.getLogger("FFPackageManager")
+    logger = logging.getLogger("FireframeProdigy")
 
 
 class FormulaEvaluator:

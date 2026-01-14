@@ -1,4 +1,4 @@
-"""Simplified Shotgrid client for FF Package Manager."""
+"""Simplified Shotgrid client for Fireframe Prodigy."""
 import logging
 import os
 import re
@@ -1318,7 +1318,7 @@ class ShotgridClient:
         import tempfile
         import os
         import logging
-        logger = logging.getLogger("FFPackageManager")
+        logger = logging.getLogger("FireframeProdigy")
 
         update_data = {}
 

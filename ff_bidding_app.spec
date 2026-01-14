@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec file for FF Package Manager
+PyInstaller spec file for Fireframe Prodigy
 Supports macOS universal binary builds (Intel x86_64 + Apple Silicon arm64)
 
 Build commands:
@@ -112,7 +112,7 @@ a = Analysis(
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 # The actual executable name (launcher script will call this)
-exe_name = 'FFPackageManager-bin' if launch_in_terminal else 'FF Package Manager'
+exe_name = 'FireframeProdigy-bin' if launch_in_terminal else 'Fireframe Prodigy'
 
 exe = EXE(
     pyz,
@@ -140,26 +140,26 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='FF Package Manager',
+    name='Fireframe Prodigy',
 )
 
 # Determine the bundle executable name
-bundle_executable = 'FF Package Manager' if launch_in_terminal else exe_name
+bundle_executable = 'Fireframe Prodigy' if launch_in_terminal else exe_name
 
 # macOS-specific: Create .app bundle
 app = BUNDLE(
     coll,
-    name='FF Package Manager.app',
+    name='Fireframe Prodigy.app',
     icon=str(PROJECT_ROOT / 'macos' / 'app.icns') if (PROJECT_ROOT / 'macos' / 'app.icns').exists() else None,
-    bundle_identifier='com.fireframe.ffpackagemanager',
+    bundle_identifier='com.fireframe.fireframeprodigy',
     info_plist={
-        'CFBundleName': 'FF Package Manager',
-        'CFBundleDisplayName': 'FF Package Manager',
-        'CFBundleIdentifier': 'com.fireframe.ffpackagemanager',
+        'CFBundleName': 'Fireframe Prodigy',
+        'CFBundleDisplayName': 'Fireframe Prodigy',
+        'CFBundleIdentifier': 'com.fireframe.fireframeprodigy',
         'CFBundleVersion': '0.0.1',
         'CFBundleShortVersionString': '0.0.1',
         'CFBundlePackageType': 'APPL',
-        'CFBundleSignature': 'FFPM',
+        'CFBundleSignature': 'FFPD',
         'CFBundleExecutable': bundle_executable,
         'CFBundleIconFile': 'app.icns',
         'CFBundleInfoDictionaryVersion': '6.0',
@@ -171,8 +171,8 @@ app = BUNDLE(
         # Required for Terminal.app integration
         'LSUIElement': False,
         # Privacy permissions
-        'NSAppleEventsUsageDescription': 'FF Package Manager needs to control Terminal.app to display log output.',
-        'NSDocumentsFolderUsageDescription': 'FF Package Manager needs access to Documents to save packages.',
-        'NSDownloadsFolderUsageDescription': 'FF Package Manager needs access to Downloads to save packages.',
+        'NSAppleEventsUsageDescription': 'Fireframe Prodigy needs to control Terminal.app to display log output.',
+        'NSDocumentsFolderUsageDescription': 'Fireframe Prodigy needs access to Documents to save packages.',
+        'NSDownloadsFolderUsageDescription': 'Fireframe Prodigy needs access to Downloads to save packages.',
     },
 )

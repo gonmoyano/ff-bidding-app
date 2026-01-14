@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Create a DMG installer for FF Package Manager
+# Create a DMG installer for Fireframe Prodigy
 #
 # Usage:
 #   ./scripts/create_dmg.sh
@@ -10,9 +10,9 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-APP_PATH="$PROJECT_ROOT/dist/universal/FF Package Manager.app"
-DMG_PATH="$PROJECT_ROOT/dist/FF_Package_Manager.dmg"
-VOLUME_NAME="FF Package Manager"
+APP_PATH="$PROJECT_ROOT/dist/universal/Fireframe Prodigy.app"
+DMG_PATH="$PROJECT_ROOT/dist/Fireframe_Prodigy.dmg"
+VOLUME_NAME="Fireframe Prodigy"
 TEMP_DMG="$PROJECT_ROOT/dist/temp.dmg"
 
 # Colors

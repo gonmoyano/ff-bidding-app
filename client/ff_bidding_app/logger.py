@@ -1,4 +1,4 @@
-"""Shared logging configuration for FF Package Manager."""
+"""Shared logging configuration for Fireframe Prodigy."""
 
 import logging
 from pathlib import Path
@@ -24,7 +24,7 @@ def get_logger():
 
         # Create log file with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = log_dir / f"ff_package_manager_{timestamp}.log"
+        log_file = log_dir / f"fireframe_prodigy_{timestamp}.log"
 
         # Setup logging
         logging.basicConfig(
@@ -37,7 +37,7 @@ def get_logger():
             force=True  # Override any existing configuration
         )
 
-        _logger = logging.getLogger("FFPackageManager")
+        _logger = logging.getLogger("FireframeProdigy")
         _logger.setLevel(logging.WARNING)
 
         return _logger
@@ -48,7 +48,7 @@ def get_logger():
         traceback.print_exc()
 
         # Return a basic logger if setup fails
-        _logger = logging.getLogger("FFPackageManager")
+        _logger = logging.getLogger("FireframeProdigy")
         return _logger
 
 

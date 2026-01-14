@@ -23,7 +23,7 @@ def setup_logging():
 
         # Create log file with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = log_dir / f"ff_package_manager_{timestamp}.log"
+        log_file = log_dir / f"fireframe_prodigy_{timestamp}.log"
 
         # Setup logging
         logging.basicConfig(
@@ -35,14 +35,14 @@ def setup_logging():
             ]
         )
 
-        logger = logging.getLogger("FFPackageManager")
+        logger = logging.getLogger("FireframeProdigy")
         logger.setLevel(logging.WARNING)
 
         return logger
     except Exception as e:
         print(f"Failed to setup logging: {e}")
         traceback.print_exc()
-        return logging.getLogger("FFPackageManager")
+        return logging.getLogger("FireframeProdigy")
 
 
 # Initialize logger
@@ -56,10 +56,10 @@ except Exception as e:
     logger.error(f"Failed to apply DPI scaling on module import: {e}")
 
 
-class FFPackageManagerAddon(AYONAddon, ITrayAddon):
-    """FF Package Manager Addon for AYON Tray."""
+class FireframeProdigyAddon(AYONAddon, ITrayAddon):
+    """Fireframe Prodigy Addon for AYON Tray."""
 
-    label = "FF Package Manager"
+    label = "Fireframe Prodigy"
     name = "ff_bidding_app"
     version = __version__
 
@@ -130,7 +130,7 @@ class FFPackageManagerAddon(AYONAddon, ITrayAddon):
                 QtWidgets.QMessageBox.warning(
                     None,
                     "Addon Disabled",
-                    "FF Package Manager addon is disabled in AYON settings.",
+                    "Fireframe Prodigy addon is disabled in AYON settings.",
                 )
                 return
 
@@ -175,7 +175,7 @@ class FFPackageManagerAddon(AYONAddon, ITrayAddon):
             # Show error dialog
             QtWidgets.QMessageBox.critical(
                 None,
-                "Error Opening FF Package Manager",
+                "Error Opening Fireframe Prodigy",
                 f"Failed to open the application:\n\n{str(e)}\n\n"
                 f"Check logs at:\n{Path(__file__).parent / 'logs'}"
             )
@@ -202,7 +202,7 @@ class FFPackageManagerAddon(AYONAddon, ITrayAddon):
         click_group.add_command(cli_main.to_click_obj())
 
 
-@click_wrap.group("ff_bidding_app", help="FF Package Manager CLI commands")
+@click_wrap.group("ff_bidding_app", help="Fireframe Prodigy CLI commands")
 def cli_main():
     """Main CLI group."""
     pass
@@ -271,7 +271,7 @@ def open_manager(project):
         window.show()
 
         if project:
-            window.setWindowTitle(f"FF Package Manager - {project}")
+            window.setWindowTitle(f"Fireframe Prodigy - {project}")
 
         logger.info("CLI: Window shown, entering event loop")
         sys.exit(app.exec_())

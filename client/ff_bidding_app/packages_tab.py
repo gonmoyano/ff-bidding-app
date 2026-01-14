@@ -22,7 +22,7 @@ except ImportError:
     from image_viewer_widget import ImageViewerWidget
     from document_viewer_widget import DocumentViewerWidget
     from sliding_overlay_panel import SlidingOverlayPanelWithBackground
-    logger = logging.getLogger("FFPackageManager")
+    logger = logging.getLogger("FireframeProdigy")
 
 
 class PackagesTab(QtWidgets.QWidget):
@@ -1003,7 +1003,7 @@ class PackagesTab(QtWidgets.QWidget):
                     "sg_project_code": sg_project["code"],
                     "sg_rfq_id": sg_rfq["id"],
                     "sg_rfq_code": sg_rfq["code"],
-                    "created_by": "FF Package Manager",
+                    "created_by": "Fireframe Prodigy",
                     "package_name": package_name,
                     "data_types": data_types,
                     "active_versions_count": len(active_versions),
@@ -1111,7 +1111,7 @@ class PackagesTab(QtWidgets.QWidget):
         lines.append(f"  Project:         {sg_project.get('code', 'N/A')}")
         lines.append(f"  RFQ:             {sg_rfq.get('code', 'N/A')}")
         lines.append(f"  Created:         {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        lines.append(f"  Created By:      FF Package Manager")
+        lines.append(f"  Created By:      Fireframe Prodigy")
         lines.append("")
 
         # Summary

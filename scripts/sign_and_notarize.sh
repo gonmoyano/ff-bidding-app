@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Sign and notarize FF Package Manager for macOS distribution
+# Sign and notarize Fireframe Prodigy for macOS distribution
 #
 # This script:
 #   1. Signs the app with your Developer ID certificate
@@ -30,7 +30,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-APP_PATH="$PROJECT_ROOT/dist/universal/FF Package Manager.app"
+APP_PATH="$PROJECT_ROOT/dist/universal/Fireframe Prodigy.app"
 ENTITLEMENTS="$PROJECT_ROOT/macos/entitlements.plist"
 
 # Colors
@@ -40,7 +40,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}FF Package Manager - Sign & Notarize${NC}"
+echo -e "${GREEN}Fireframe Prodigy - Sign & Notarize${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
@@ -97,7 +97,7 @@ codesign --verify --verbose=2 "$APP_PATH"
 
 echo ""
 echo -e "${GREEN}Step 2: Creating ZIP for notarization...${NC}"
-ZIP_PATH="$PROJECT_ROOT/dist/FF_Package_Manager.zip"
+ZIP_PATH="$PROJECT_ROOT/dist/Fireframe_Prodigy.zip"
 ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
 echo "Created: $ZIP_PATH"
 

@@ -17,7 +17,7 @@ try:
     from .spreadsheet_cache import get_spreadsheet_cache
 except ImportError:
     import logging
-    logger = logging.getLogger("FFPackageManager")
+    logger = logging.getLogger("FireframeProdigy")
     from settings import AppSettings
     from vfx_breakdown_widget import VFXBreakdownWidget, FormulaDelegate
     from vfx_breakdown_model import ValidatedComboBoxDelegate

@@ -1,4 +1,4 @@
-# AYON FF Package Manager
+# AYON Fireframe Prodigy
 
 Standalone application for fetching Shotgrid data and creating data packages for AYON.
 
@@ -11,14 +11,14 @@ Standalone application for fetching Shotgrid data and creating data packages for
 
 2. Upload to AYON server through web interface
 
-3. Configure settings in AYON Settings -> Addons -> FF Package Manager
+3. Configure settings in AYON Settings -> Addons -> Fireframe Prodigy
 
 ## Usage
 
 ### From AYON Tray
 
 1. Click AYON Tray icon
-2. Navigate to: **FF Package Manager** -> **Open Package Manager**
+2. Navigate to: **Fireframe Prodigy** -> **Open Fireframe Prodigy**
 3. Select projects and create packages
 
 ### From CLI

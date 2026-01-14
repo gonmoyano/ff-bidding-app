@@ -14,7 +14,7 @@ try:
     from .formula_evaluator import FormulaEvaluator
 except ImportError:
     import logging
-    logger = logging.getLogger("FFPackageManager")
+    logger = logging.getLogger("FireframeProdigy")
     from settings import AppSettings
     from bid_selector_widget import CollapsibleGroupBox, parse_sg_currency
     from vfx_breakdown_widget import VFXBreakdownWidget, FormulaDelegate

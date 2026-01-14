@@ -1,6 +1,6 @@
-# Building FF Package Manager for macOS
+# Building Fireframe Prodigy for macOS
 
-This guide explains how to build FF Package Manager as a native macOS application that runs on both Intel (x86_64) and Apple Silicon (arm64) Macs.
+This guide explains how to build Fireframe Prodigy as a native macOS application that runs on both Intel (x86_64) and Apple Silicon (arm64) Macs.
 
 ## Quick Start
 
@@ -22,7 +22,7 @@ pip install -r requirements-macos.txt
 ./scripts/build_macos.sh
 ```
 
-The app will be created at `dist/FF Package Manager.app`.
+The app will be created at `dist/Fireframe Prodigy.app`.
 
 ## Universal Binary (Intel + Apple Silicon)
 
@@ -41,7 +41,7 @@ This script:
 2. Builds the x86_64 version using Rosetta
 3. Merges both into a universal binary
 
-Output: `dist/universal/FF Package Manager.app`
+Output: `dist/universal/Fireframe Prodigy.app`
 
 ### Option 2: GitHub Actions (Automated)
 
@@ -61,17 +61,17 @@ Build on separate machines and merge:
 ```bash
 # On Intel Mac
 ./scripts/build_macos.sh
-# Copy dist/FF Package Manager.app to shared location as "Intel.app"
+# Copy dist/Fireframe Prodigy.app to shared location as "Intel.app"
 
 # On Apple Silicon Mac
 ./scripts/build_macos.sh
-# Copy dist/FF Package Manager.app as "AppleSilicon.app"
+# Copy dist/Fireframe Prodigy.app as "AppleSilicon.app"
 
 # Merge (on any Mac)
 lipo -create \
-  "Intel.app/Contents/MacOS/FF Package Manager" \
-  "AppleSilicon.app/Contents/MacOS/FF Package Manager" \
-  -output "Universal.app/Contents/MacOS/FF Package Manager"
+  "Intel.app/Contents/MacOS/Fireframe Prodigy" \
+  "AppleSilicon.app/Contents/MacOS/Fireframe Prodigy" \
+  -output "Universal.app/Contents/MacOS/Fireframe Prodigy"
 ```
 
 ## Code Signing & Notarization
@@ -139,7 +139,7 @@ ff-bidding-app/
 
 The app is not signed. Either:
 - Sign it with your Developer ID
-- Remove the quarantine attribute: `xattr -cr "FF Package Manager.app"`
+- Remove the quarantine attribute: `xattr -cr "Fireframe Prodigy.app"`
 
 ### "Cannot be opened because the developer cannot be verified"
 
@@ -158,7 +158,7 @@ pip install -r requirements-macos.txt
 
 Verify with:
 ```bash
-file "dist/universal/FF Package Manager.app/Contents/MacOS/FF Package Manager"
+file "dist/universal/Fireframe Prodigy.app/Contents/MacOS/Fireframe Prodigy"
 ```
 
 Should show: `Mach-O universal binary with 2 architectures`

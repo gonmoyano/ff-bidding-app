@@ -23,7 +23,7 @@ except ImportError:
     from sliding_overlay_panel import SlidingOverlayPanelWithBackground
     from settings import AppSettings
     import logging
-    logger = logging.getLogger("FFPackageManager")
+    logger = logging.getLogger("FireframeProdigy")
 
 
 class BiddingTab(QtWidgets.QWidget):
