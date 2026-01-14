@@ -781,13 +781,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                         next_index = self.model.index(next_row, current_index.column())
                         self.table_view.setCurrentIndex(next_index)
                 return True
-            elif key == QtCore.Qt.Key_Delete:
-                # Delete key pressed - delete selected rows
-                selected_rows = set()
-                for index in self.table_view.selectedIndexes():
-                    selected_rows.add(index.row())
-                if selected_rows:
-                    self._delete_bidding_scene(min(selected_rows))
+            elif key in (QtCore.Qt.Key_Delete, QtCore.Qt.Key_Backspace):
+                # Delete/Backspace key pressed - clear selected cells
+                self._clear_selected_cells()
                 return True
 
         return super().eventFilter(obj, event)
@@ -1011,7 +1007,7 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
     def set_readonly_mode(self, enabled, entity_type=None):
         """Enable or disable read-only mode for this table.
 
-        When enabled, clicking on any cell shows a popup message indicating
+        When enabled, double-clicking on any cell shows a popup message indicating
         the table is read-only and displays a reference to the original entity.
 
         Args:
@@ -1025,8 +1021,8 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
             if enabled:
                 # Disable all editing triggers
                 self.table_view.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-                # Connect clicked signal to show readonly popup
-                self.table_view.clicked.connect(self._on_readonly_cell_clicked)
+                # Connect doubleClicked signal to show readonly popup (not single click)
+                self.table_view.doubleClicked.connect(self._on_readonly_cell_clicked)
             else:
                 # Restore default editing triggers
                 self.table_view.setEditTriggers(
@@ -1034,9 +1030,9 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                     QtWidgets.QAbstractItemView.EditKeyPressed |
                     QtWidgets.QAbstractItemView.AnyKeyPressed
                 )
-                # Disconnect the readonly click handler
+                # Disconnect the readonly double-click handler
                 try:
-                    self.table_view.clicked.disconnect(self._on_readonly_cell_clicked)
+                    self.table_view.doubleClicked.disconnect(self._on_readonly_cell_clicked)
                 except (TypeError, RuntimeError):
                     pass  # Not connected
 
@@ -2305,6 +2301,18 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                     # For other fields, use DisplayRole
                     text = self.model.data(index, QtCore.Qt.DisplayRole) or ""
 
+                    # If it's a formula, evaluate it to get the calculated value
+                    if isinstance(text, str) and text.startswith('=') and self.model.formula_evaluator:
+                        try:
+                            result = self.model.formula_evaluator.evaluate(text, row, col)
+                            if isinstance(result, (float, int)):
+                                # Format as number (Excel will recognize this)
+                                text = f"{result:.2f}"
+                            else:
+                                text = str(result) if result else ""
+                        except Exception:
+                            pass  # Keep original formula on error
+
                 row_data.append(text)
             clipboard_text.append("\t".join(row_data))
 
@@ -2332,14 +2340,23 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
 
         is_single_value = len(rows_data) == 1 and "\t" not in rows_data[0]
 
+        # Flatten clipboard data into a list of values (row by row, left to right)
+        clipboard_values = []
+        for row_text in rows_data:
+            cells = row_text.split("\t")
+            clipboard_values.extend(cells)
+
         # Collect changes
         changes = []
         selected_indexes = self.table_view.selectedIndexes()
 
-        # Single value to multiple cells
-        if is_single_value and len(selected_indexes) > 1:
+        # Sort selected indexes by row, then by column (to match Excel order)
+        sorted_indexes = sorted(selected_indexes, key=lambda idx: (idx.row(), idx.column()))
+
+        # Case 1: Single value to multiple cells - paste same value to all selected
+        if is_single_value and len(sorted_indexes) > 1:
             paste_value = rows_data[0]
-            for index in selected_indexes:
+            for index in sorted_indexes:
                 if not (self.model.flags(index) & QtCore.Qt.ItemIsEditable):
                     continue
 
@@ -2356,6 +2373,48 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                     old_value = self.model.data(index, QtCore.Qt.EditRole) or []
                 else:
                     new_value = paste_value
+                    old_value = self.model.data(index, QtCore.Qt.EditRole) or ""
+
+                if new_value == old_value:
+                    continue
+
+                bidding_scene_data = self.model.get_bidding_scene_data_for_row(index.row())
+                if not bidding_scene_data:
+                    continue
+
+                changes.append({
+                    'row': index.row(),
+                    'col': index.column(),
+                    'old_value': old_value,
+                    'new_value': new_value,
+                    'bidding_scene_data': bidding_scene_data,
+                    'field_name': field_name
+                })
+
+        # Case 2: Multiple values to multiple selected cells - paste in order
+        elif len(sorted_indexes) > 1 and len(clipboard_values) > 1:
+            # Paste clipboard values to selected cells in order
+            for i, index in enumerate(sorted_indexes):
+                if i >= len(clipboard_values):
+                    break  # No more values to paste
+
+                if not (self.model.flags(index) & QtCore.Qt.ItemIsEditable):
+                    continue
+
+                field_name = self.model.column_fields[index.column()]
+                cell_value = clipboard_values[i]
+
+                # For multi-entity fields, try to parse JSON
+                if field_name == "sg_bid_assets":
+                    try:
+                        parsed_value = json.loads(cell_value) if cell_value else []
+                    except (json.JSONDecodeError, ValueError):
+                        logger.warning(f"Failed to parse JSON for sg_bid_assets: {cell_value}")
+                        continue
+                    new_value = parsed_value
+                    old_value = self.model.data(index, QtCore.Qt.EditRole) or []
+                else:
+                    new_value = cell_value
                     old_value = self.model.data(index, QtCore.Qt.EditRole) or ""
 
                 if new_value == old_value:
@@ -2453,6 +2512,99 @@ class VFXBreakdownWidget(QtWidgets.QWidget):
                 self,
                 "Paste Failed",
                 f"Failed to paste cells:\n{str(e)}"
+            )
+
+    def _clear_selected_cells(self):
+        """Clear values from selected cells (Delete/Backspace key)."""
+        selected_indexes = self.table_view.selectedIndexes()
+        if not selected_indexes:
+            return
+
+        # Collect changes
+        changes = []
+
+        for index in selected_indexes:
+            if not (self.model.flags(index) & QtCore.Qt.ItemIsEditable):
+                continue
+
+            field_name = self.model.column_fields[index.column()]
+
+            # Skip identifier fields that cannot be set to empty
+            # These are required fields in ShotGrid that cannot be cleared
+            if field_name in ("id", "code"):
+                continue
+
+            # Skip virtual fields that shouldn't be cleared
+            if field_name == "_export_to_excel":
+                continue
+
+            # Determine the appropriate empty value based on field type
+            if field_name == "sg_bid_assets":
+                # Multi-entity field
+                new_value = []
+                old_value = self.model.data(index, QtCore.Qt.EditRole) or []
+            else:
+                # Check field type from schema
+                field_info = self.model.field_schema.get(field_name, {})
+                data_type = field_info.get("data_type", "")
+
+                if data_type == "checkbox":
+                    # For checkbox, set to None to clear
+                    new_value = None
+                    old_value = self.model.data(index, QtCore.Qt.EditRole)
+                elif data_type == "multi_entity":
+                    new_value = []
+                    old_value = self.model.data(index, QtCore.Qt.EditRole) or []
+                else:
+                    # For text, number, list, etc - use None
+                    new_value = None
+                    old_value = self.model.data(index, QtCore.Qt.EditRole)
+
+            # Skip if already empty
+            if new_value == old_value:
+                continue
+
+            # Also skip if old_value is already None/empty
+            if old_value is None or old_value == "" or old_value == []:
+                continue
+
+            bidding_scene_data = self.model.get_bidding_scene_data_for_row(index.row())
+            if not bidding_scene_data:
+                continue
+
+            changes.append({
+                'row': index.row(),
+                'col': index.column(),
+                'old_value': old_value,
+                'new_value': new_value,
+                'bidding_scene_data': bidding_scene_data,
+                'field_name': field_name
+            })
+
+        if not changes:
+            self.statusMessageChanged.emit("No cells to clear", False)
+            return
+
+        # Create command using PasteCommand (works for batch changes)
+        command = PasteCommand(changes, self.model, self.sg_session, field_schema=self.model.field_schema, entity_type=self.model.entity_type)
+
+        try:
+            # Execute clear
+            command.redo()
+
+            # Add to undo stack
+            self.model.undo_stack.append(command)
+            self.model.redo_stack.clear()
+
+            self.statusMessageChanged.emit(f"Cleared {len(changes)} cell(s)", False)
+
+        except Exception as e:
+            logger.error(f"Failed to clear cells: {e}", exc_info=True)
+            self.statusMessageChanged.emit(f"Failed to clear cells", True)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Clear Failed",
+                f"Failed to clear cells:\n{str(e)}"
             )
 
     def _on_context_menu(self, position):
